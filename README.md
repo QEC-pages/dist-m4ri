@@ -6,3 +6,5 @@ how to install m4ri ( on cherenkov; not succeed on HPCC )
 
 - mv libm4ri.so to /usr/local/lib
 - mv header files in m4ri/ to /usr/local/include
+
+An example is given in [Dockerfile](Dockerfile)
