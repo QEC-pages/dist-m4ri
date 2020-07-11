@@ -17,7 +17,7 @@ qdist_rec: qdist_m4ri_rec.c util_m4ri.h makefile ${mmio}.o util_m4ri.o
 
 
 qdist_m4ri: qdist_m4ri.c util_io.o util_m4ri.o ${mmio}.o  makefile 
-	${cc} -DDEBUG -o qdist_m4ri $< ${mmio}.o util_m4ri.o util_io.o -l:libm4ri.a -lm
+	${cc} -DDEBUG -o qdist_m4ri $< ${mmio}.o util_m4ri.o util_io.o -lm4ri -lm
 
 qdist_m4ri_old: qdist_m4ri_old.c util_io.o util_m4ri.o ${mmio}.o  makefile 
 	${cc} -DDEBUG -o qdist_m4ri_old $< ${mmio}.o util_m4ri.o util_io.o -lm4ri -lm
