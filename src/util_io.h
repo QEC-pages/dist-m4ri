@@ -33,7 +33,7 @@ typedef struct{
   int dist_max; /* distance actually checked */
   int dist_min; /* distance actually checked */
   int max_row_wgt_G; /* needed for C */
-  //! int maxrow;  /* WARNING: this is defined in `qdist_m4ri.h` as `static const int` */
+  //! int maxrow;  /* WARNING: this is defined in `dist_m4ri.h` as `static const int` */
   int start;
   //  int linear; /* not supported */
   int n0;  /* code length, =nvar for css, (nvar/2) for non-css */

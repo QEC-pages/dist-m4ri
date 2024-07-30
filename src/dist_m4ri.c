@@ -21,7 +21,7 @@
 #include "mmio.h"
 #include "util_m4ri.h"
 #include "util_io.h"
-#include "qdist_m4ri.h"
+#include "dist_m4ri.h"
 // #include "util.h"
 
 /** 

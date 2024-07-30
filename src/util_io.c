@@ -60,7 +60,7 @@ void var_init(int argc, char **argv, params_t * const p){
         p->finH = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
 	printf("# read %s, finH=%s; setting fin=\"\"\n",argv[i],p->finH);
-      p->fin[0]='\0';
+      p->fin="";
     }
     else if (0==strncmp(argv[i],"finG=",5)){/** `finG` degeneracy generator matrix */
       if(strlen(argv[i])>5)
@@ -69,7 +69,7 @@ void var_init(int argc, char **argv, params_t * const p){
         p->finG = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
 	printf("# read %s, finG=%s; setting fin=\"\"\n",argv[i],p->finG);
-      p->fin[0]='\0';
+      p->fin="";
     }
     else if (0==strncmp(argv[i],"fin=",4)){
       if(p->finH)
