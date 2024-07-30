@@ -1,7 +1,8 @@
-/* 	$Id$	 */
 
 /************************************************************************ 
- * calculate distance of a quantum LDPC code using random window algorithm
+ * calculate distance of a quantum LDPC code using 
+ * (1) random information set (random window) algorithm (upper bound)
+ * (2) depth-first codeword enumeration (cluster) algorithm (lower bound)
  * A. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..."
  * in IEEE Trans. Inf. Th., vol. 63, p. 4675 (2017). 
  * doi: 10.1109/TIT.2017.2690381
@@ -20,18 +21,15 @@
 #include "mmio.h"
 #include "util_m4ri.h"
 #include "util_io.h"
+#include "qdist_m4ri.h"
 // #include "util.h"
-
-const int maxrow=10;
-
-#define DBG 0
 
 /** 
  * Add row=i of sparse matrix spaQ to row.
  * no range check is done 
  */ 
 static inline void addto_inline(mzd_t *row, const csr_t *spaQ, const int i){
-#if DBG  
+#ifndef NDEBUG  
   if (i>=spaQ->rows)
     ERROR("addto: attempt to get row=%d of %d",i,spaQ->rows);
   if (row->ncols != spaQ->cols)
@@ -53,13 +51,13 @@ static inline void addto_inline(mzd_t *row, const csr_t *spaQ, const int i){
  *  P: LDPC parity check (with row weight <= maxrow )
  */
 
-static inline int prep_neis(const int z0, int * nei, const mzd_t * v, const mzd_t * s, const csr_t * P){ 
+static inline int prep_neis(const int z0, int * nei, const mzd_t * v, _maybe_unused const mzd_t * s, const csr_t * P){ 
   int cnt=0, max=P->p[z0+1];
   for (int j=P->p[z0]; j<max; j++){
     if (!mzd_read_bit(v,0,P->i[j])) /* never flip a bit twice */
       nei[cnt++]=P->i[j]; 
   }
-#if DBG
+#ifndef NDEBUG
   //  if(prm.debug&256){
     printf("nei=[");
     for(int i=0; i< cnt; i++)
@@ -79,12 +77,12 @@ static inline int prep_neis(const int z0, int * nei, const mzd_t * v, const mzd_
  * 	P, PT, G: matrices as in do_dist_clus
  */
 static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
-		     const csr_t * P, const csr_t * PT, const mzd_t * G){
+		     const csr_t * const P, const csr_t * const PT, const mzd_t * const G){
   int res=0, all_zero=1;
   mzd_t *v0=NULL;
   word * rawrow = s->rows[0];  
   rci_t ns=v->ncols;
-#if DBG  
+#ifndef NDEBUG  
   //  if(prm.debug & 512){
     printf("w=%d wgh(Pv)=%d  \nv=",w,syndrome_bit_count(v, P));
     mzd_print(v);
@@ -125,7 +123,7 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
     int result=do_reduce(v0,G,G->nrows);
     if (result==-1)  
       return -1; /* go back down, the found row was trivial */
-#if DBG    
+#ifndef NDEBUG    
     if ((mzd_weight(v)!=wmax)||(0!=syndrome_bit_count(v, P)))
       ERROR(" start_rec: something is wrong %d != wmax=%d ",mzd_weight(v),wmax);
 #endif     
@@ -134,6 +132,10 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
   return 0; /* keep going */
 }
 
+/** @brief lower bound on the minimum distance by cluster enumeration
+ * 
+ * WARNING: only intended for LDPC codes
+ */
 int do_dist_clus(csr_t *P, mzd_t *G, int debug, int wmax, int start){
   // input: wmax=max cluster weight,
   // start=initial position (-1 to scan all),
@@ -156,7 +158,8 @@ int do_dist_clus(csr_t *P, mzd_t *G, int debug, int wmax, int start){
     for(int i=beg;i<=end;i++){ // starting bit loop 
       if ((debug&8)&&(w==wmax))
 	printf( "# w=%d start=%d\n", w,i);
-      mzd_set_ui(v,0);   mzd_set_ui(s,0); 
+      mzd_set_ui(v,0);
+      mzd_set_ui(s,0); 
       mzd_write_bit(v,0,i,1);      
       //      printf("v="); mzd_print(v);
       addto_inline(s,PT,i); //  s+=col[i];
@@ -277,6 +280,8 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
       mzd_free(row0);
       row0=NULL;
     }
+    if (weimin<0)
+      break;
   }
   if (debug & 2) 
     printf("# n=%d k=%d weimin=%d\n",n,rt-matP0->nrows,weimin);
@@ -284,144 +289,24 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
   return weimin;
 }
 
-#ifdef DEBUG
+#ifdef STANDALONE
 
-typedef struct{
-  //  int css; /* 1: css, 0: non-css -- currently not supported */
-  int debug; /* debug information */ 
-  int method; /* bitmap. 1: random window; 2: cluster */
-  int steps; /* how many random decoding steps */
-  //  char *finP, *finG; /* generators */
-  int wmax; /* max cluster size to try */
-  int wmin; /* min distance below which we are not interested at all */
-  int seed;/* rng seed, set=0 for automatic */
-  int dist; /* target distance of the code */
-  int dist_max; /* distance actually checked */
-  int dist_min; /* distance actually checked */
-  int max_row_wgt_G; /* needed for C */
-  int start;
-    //  int n0;  /* code length, =n for css, (n/2) for non-css */
-  //  int n; /* actual n = matrix size*/
-} params_t; 
+int main(int argc, char **argv){
 
+  var_init(argc,argv,p);
 
-//extern params_t prm;
-params_t prm={0,0,0,0,0,0,0,0};
-
-
-void local_init(int argc, char **argv,int start){
-  int i;
-  //  memset(&prm,0,sizeof(params_t));
-  int dbg=0;
-  prm.debug=pio.debug;
-
-  for(i=start; i<argc; i++){
-    if(sscanf(argv[i],"debug=%d",& dbg)==1){
-      if(dbg==0)
-	prm.debug=0;
-      else{
-	prm.debug|=dbg;
-	printf("# read %s, debug=%d octal=%o\n",argv[i],prm.debug,prm.debug);
-      }
-    }					
-    else if (sscanf(argv[i],"method=%d",&dbg)==1){
-      prm.method=dbg;
-      if (prm.debug)
-	printf("# read %s, method=%d\n",argv[i],prm.method);
-      if( (prm.method<=0) || (prm.method>3))
-	ERROR("Unsupported method %d",prm.method);
-    }
-    else if (sscanf(argv[i],"wmax=%d",&dbg)==1){
-      prm.wmax=dbg;
-      if (prm.debug)
-	printf("# read %s, wmax=%d\n",argv[i],prm.wmax);
-    }
-    else if (sscanf(argv[i],"start=%d",&dbg)==1){
-      prm.start=dbg;
-      if (prm.debug)
-	printf("# read %s, start=%d\n",argv[i],prm.start);
-    }
-    else if (sscanf(argv[i],"wmin=%d",&dbg)==1){
-      prm.wmin=dbg;
-      if (prm.debug)
-	printf("# read %s, wmin=%d\n",argv[i],prm.wmin);
-    }
-    else if (sscanf(argv[i],"steps=%d",&dbg)==1){
-      prm.steps=dbg;
-      if (prm.debug)
-	printf("# read %s, steps=%d\n",argv[i],prm.steps);
-    }
-    else if (sscanf(argv[i],"seed=%d",&dbg)==1){
-      prm.seed=dbg;
-      if (prm.debug)
-	printf("# read %s, seed=%d\n",argv[i],prm.seed);
-    }    
-    else if((strcmp(argv[i],"--help")==0)||(strcmp(argv[i],"-h")==0)){
-      printf( "%s: calculate the minumum distance of a q-LDPC code\n"
-	      "\tusage: %s [input parameters] [algorithm params]\n"
-	      USAGE_IO
-	      "Supported algorithm parameters:\n"	
-	      "\tseed=0: rng seed  [0 for time(NULL)]\n"
-	      "\tmethod=1: bitmap for method used. \n"
-	      "\t\t1: random window (RW)\n"
-	      "\t\t2: cluster algorithm (C)\n"
-	      "\tsteps=1: how many RW decoding cycles\n"
-	      "\twmax=5: max cluster weight (C)\n"
-	      "\twmin=0: min distance of interest (RW)\n"
-	      "\t-h or --help gives this help\n"
-	      "\tdefault: wmax=5 seed=0\n",argv[0],argv[0]);
-      exit (-1);
-    }
-    else{ /* unrecognized option */
-      printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
-      ERROR("try \"%s -h\" for options",argv[0]);
-    }      
-  } /* end parameter scan cycle */
-
-  if (prm.seed==0){
-    if(prm.debug)
-      printf("# initializing rng from time(NULL)\n");
-    srand(time(NULL));
-  }
-  else {
-    srand(prm.seed);
-    if(prm.debug)
-      printf("# setting srand(%d)\n",prm.seed);
-  }
-  if(prm.method &1 ){ /* RW */
-    if (prm.steps<=0)
-      prm.steps=1; /* need to run at least once */
-    if (prm.debug)
-      printf("# using RW method, wmin=%d steps=%d\n",prm.wmin,prm.steps);
-  }
-  if(prm.method &2 ){ /* RW */
-    if (prm.wmax<=0)
-      prm.wmax=10; /* some reasonable lower bound */
-    if (prm.debug)
-      printf("# using Cluster method, wmax=%d steps=%d\n",prm.wmax,prm.steps);
-  }
-}
-
-int main(int argc, char **argv)
-{
-  csr_t *spaP=NULL;  
-  csr_t *spaG=NULL;
-  int istart=local_io_init(argc,argv,&spaP,&spaG);
-  local_init(argc,argv,istart); /* initialized variables */
-
-  if (prm.method & 2)
-  { /* cluster */
-    prm.max_row_wgt_G=csr_max_row_wght(spaG);
+  if (p->method & 2){ /* cluster */
+    prm.max_row_wgt_G=csr_max_row_wght(p->spaG);
     if(prm.max_row_wgt_G>maxrow)
       ERROR("main: increase maxrow=%d to %d",maxrow,prm.max_row_wgt_G);
 
   }
-  int n=pio.n;
+  const int n=p->nvar;
 
   
   /* convert G to standard form */
   mzp_t *piv0=mzp_init(n);  //  mzp_out(piv0);
-  mzd_t *matG0=mzd_from_csr(NULL,spaG); 
+  mzd_t *matG0=mzd_from_csr(NULL,p->spaG); 
   rci_t rankG=mzd_gauss_naive(matG0,piv0,1); 
   if(prm.debug & 1)
     printf("# rankG=%d\n",rankG);
@@ -429,66 +314,68 @@ int main(int argc, char **argv)
   matG0->nrows=rankG;
 
   mzp_t *q0=perm_p_trans(NULL,piv0,1);    // permutation equiv to piv0 
-  csr_t* spaP0=csr_apply_perm(NULL,spaP,q0); // permuted sparse P
-  //  csr_t* spaG0=csr_apply_perm(NULL,spaG,q0); // permuted sparse G -- not needed here
-  if(prm.debug & 2048)
-  {
+  csr_t *spaH0=csr_apply_perm(NULL,p->spaH,q0); // permuted sparse H
+  //  csr_t* spaG0=csr_apply_perm(NULL,p->spaG,q0); // permuted sparse G -- not needed here
+  if(prm.debug & 2048){
     if ((n<=150))
     {
       printf("matG0=\n");
       mzd_print(matG0);
 
       printf("matP0=\n");
-      mzd_t *matP0=mzd_from_csr(NULL,spaP0);  
+      mzd_t *matP0=mzd_from_csr(NULL,spaH0);  
       mzd_print(matP0);
       mzd_free(matP0);
     }
-    int wei=product_weight_csr_mzd(spaP0, matG0,1);    
-    printf("weigt of P0*G0_T=%d\n",wei);
+    int wei=product_weight_csr_mzd(spaH0, matG0,1);    
+    printf("weigt of H0*G0_T=%d\n",wei);
     if(wei>0)
       ERROR("expected zero weight product!");
   }  
 
-  if (prm.method & 1)
-  { /* RW method */
-    prm.dist_max=do_dist_rnd(spaP0,matG0,prm.debug,prm.steps,prm.wmin);
-    if (prm.debug) 
+  if (prm.method & 1){ /* RW method */
+    prm.dist_max=do_dist_rnd(spaH0,matG0,prm.debug,prm.steps,prm.wmin);
+    if (prm.debug & 1){
       printf("### RW upper bound on the distance: %d\n",prm.dist_max);
-    prm.wmax=minint(prm.wmax,prm.dist_max-1);
+    if(prm.dist_max <0)
+      printf("### negative distance due to wmax=%d set (early termination)\n",prm.wmax);
+    }
+    prm.wmax=minint(prm.wmax, abs(prm.dist_max)-1);
   }
-  if (prm.method & 2)
-  { /* cluster method */    
-    int dmin=do_dist_clus(spaP0,matG0,prm.debug,prm.wmax,prm.start);
-    if (prm.debug)
-      printf("### Cluster: dmin=%d\n",dmin);
-    if (dmin>0)
-    { 
+  
+  if (prm.method & 2){ /* cluster method */    
+    int dmin=do_dist_clus(spaH0,matG0,prm.debug,prm.wmax,prm.start);
+    if (dmin>0){ 
+      if (prm.debug & 1)
+	printf("### Cluster (actual min-weight codeword found): dmin=%d\n",dmin);
       prm.dist_min = dmin; /* actual distance found */
       prm.dist_max = dmin;
     }
-    else if (dmin<0)
-    {
-      if (-dmin==prm.dist_max-1)
-	prm.dist_min=prm.dist_max; /* OK */
+    else if (dmin<0){
+      if (prm.debug & 1)
+	printf("### Cluster dmin=%d  (no codewords of weight up to %d)\n",dmin,-dmin);
+      if (-dmin==abs(prm.dist_max)-1)
+	prm.dist_min=abs(prm.dist_max); /* OK */
       else 
 	prm.dist_min=-dmin;
     }
-    //    if(prm.debug){
-      if (prm.dist_min==prm.dist_max)
-	printf("success d=%d\n",prm.dist_min);
-      else if (prm.dist_max>prm.dist_min)
-	printf("distance in the interval %d to %d\n", prm.dist_min,prm.dist_max);
-      else
-	printf("cluster algorithm failed up to wmax=%d\n",-dmin);
-      //    }
+    else
+      ERROR("unexpected dmin=0\n");
+
+    if (prm.dist_min==abs(prm.dist_max))
+      printf("success  (two distance bounds coincide) d=%d\n",prm.dist_min);
+    else if (prm.dist_max>prm.dist_min)
+      printf("distance in the interval (inclusive) %d to %d\n", prm.dist_min,prm.dist_max);
+    else
+      printf("cluster algorithm failed to find a codeword up to wmax=%d\n",-dmin);
   }
-  else
-  { /* just RW */
-    //    if(prm.debug){
-      printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);      
+  else{ /* just RW */
+    //    if(prm.debug &1)
+    printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
+      
       //    }
   }
   return 0;
 }
 
-#endif /* DEBUG */
+#endif /* STANDALONE */

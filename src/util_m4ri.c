@@ -1,4 +1,3 @@
-/* 	$Id: util_m4ri.c,v 1.1 2017/10/31 21:56:50 leonid Exp leonid $	 */
 /************************************************************************ 
  * helper functions for use with m4ri library, 
  * including binary sparse matrices and conversion utilities 
@@ -6,6 +5,9 @@
  * some code borrowed from various sources 
  ************************************************************************/
 #include <m4ri/m4ri.h>
+#include <m4ri/mzd.h>
+#include <stdio.h>
+#include <ctype.h>
 #include "mmio.h"
 
 #include "util_m4ri.h"
@@ -180,7 +182,7 @@ mzd_t *mzd_from_csr(mzd_t *dst, const csr_t *p) {
  * [ CT I ], and permute the cols back.  
  * (re)allocate G if needed.
  */
-mzd_t *mzd_generator_from_csr(mzd_t *G, csr_t *H){  
+mzd_t *mzd_generator_from_csr(mzd_t *G, const csr_t * const H){  
   rci_t n=H->cols;
   mzd_t *mat=mzd_from_csr(NULL,H); /* convert to dense matrix */
   mzp_t * pivots = mzp_init(n);    /* initialize the permutation */
@@ -229,9 +231,9 @@ mzd_t * csr_mzd_mul(mzd_t *C, const csr_t *S, const mzd_t *B, int clear){
   else {
     if (C->nrows != S->rows || C->ncols != B->ncols) 
       ERROR("Provided return matrix has wrong dimensions.\n");    
-  }
   if(clear)
     mzd_set_ui(C,0); 
+  }
   rci_t const m = S->rows;
   
   for(rci_t i = 0; i < m; ++i)
@@ -335,12 +337,16 @@ size_t product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose){
  * return uniformly distributed random number in the range [0,...,max-1] 
  */
 int rand_uniform(const int max){
+#if 1
   int divisor = RAND_MAX/(max);
   int retval;
   do  
     retval = rand() / divisor;
   while (retval >= max);
   return retval;
+#else
+  return (int) floor(max * tinymt64_generate_double(&tinymt));
+#endif /* 0 */
 }
 
 /**
@@ -357,11 +363,9 @@ mzp_t * mzp_rand_len(mzp_t *q, rci_t length){
     ERROR("mzp_rand_len: second parameter too large, %d > %d", length, q->length);
   for(int i=0;i<=length-2;i++){
     q->values[i]= i+rand_uniform(length-i);
-    //    printf("%d %d %d\t",i,q->values[i],length-i);
   }
   for(int i=length-1; i< (q-> length); i++)
     q->values[i]=i; /* no swap for the remaining columns */
-  //  printf("\n");
   return q;
 }
 
@@ -433,24 +437,30 @@ csr_t *csr_free(csr_t *p){
  * check existing size and (re)allocate if  needded 
  */
 csr_t *csr_init(csr_t *mat, int rows, int cols, int nzmax){
-  if ((mat!=NULL)&&((mat->nzmax<nzmax)||(mat->nzmax<rows+1)))
-    mat=csr_free(mat);  /* allocated size was too small */  
-  if(mat==NULL)
+  if ((mat!=NULL)&&((mat->nzmax < nzmax)||(mat->nzmax < rows+1))){
+    // mat=csr_free(mat);  /* allocated size was too small */
+    /** keep allocated `mat` */
+    mat->p = realloc(mat->p,MAX(nzmax,(rows+1))*sizeof(int));
+    mat->i = realloc(mat->i, nzmax*sizeof(int));
+    if ((mat->p==NULL) || (mat->i==NULL))
+      ERROR("csr_init: failed to reallocate CSR rows=%d cols=%d nzmax=%d",
+            rows,cols,nzmax);
+    mat->nzmax=nzmax;
+  }
+  else if(mat==NULL){
     mat=malloc(sizeof(csr_t));  
-  mat->p=calloc(MAX(nzmax,(rows+1)),sizeof(int));
-  mat->i=calloc(nzmax,sizeof(int)); 
-  if ((mat->p==NULL) || (mat->i==NULL))
-    ERROR("csr_init: failed to allocate CSR rows=%d cols=%d nzmax=%d",
-	  rows,cols,nzmax);
+    mat->p=calloc(MAX(nzmax,(rows+1)),sizeof(int));
+    mat->i=calloc(nzmax,sizeof(int)); 
+    if ((mat == NULL) || (mat->p==NULL) || (mat->i==NULL))
+      ERROR("csr_init: failed to allocate CSR rows=%d cols=%d nzmax=%d",
+            rows,cols,nzmax);
+    mat->nzmax=nzmax;
+  }
   mat->rows=rows;
   mat->cols=cols;
   mat->nz=0; /* empty */
-  mat->nzmax=nzmax; 
   return mat;
 }
-
-
-typedef struct { int a; int b; } int_pair;
 
 /* helper function */
 static int cmp_int_pairs(const void *p1, const void *p2){
