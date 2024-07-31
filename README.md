@@ -1,4 +1,4 @@
-# dist-m4ri - calculate distance of a classical or quantum CSS binary code
+# dist-m4ri - distance of a classical or quantum CSS code
 
 ## Overview
 
