@@ -77,7 +77,7 @@ static inline int prep_neis(const int z0, int * nei, const mzd_t * v, _maybe_unu
  * 	P, PT, G: matrices as in do_dist_clus
  */
 static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
-		     const csr_t * const P, const csr_t * const PT, const mzd_t * const G){
+		     const csr_t * const P, const csr_t * const PT, const mzd_t * const G, const int rankG){
   int res=0, all_zero=1;
   mzd_t *v0=NULL;
   word * rawrow = s->rows[0];  
@@ -90,7 +90,7 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
     //  }
 #endif
     
-  for(rci_t i=0 ; i< ns ; i++){
+  for(rci_t i=0 ; i+1< ns ; i++){
     i=nextelement(rawrow,s->width,i);
     if (i<0)
       break; /* no more non-zero syndrome bits */
@@ -106,7 +106,7 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
 	int j=nei[p];
 	mzd_write_bit(v,0,j,1); 
 	addto_inline(s,PT,j); 
-	res=start_rec(w+1,wmax,v,s,P,PT,G);
+	res=start_rec(w+1,wmax,v,s,P,PT,G, rankG);
 	if(res==1)
 	  return 1; /* just get out fast */
 	addto_inline(s,PT,j); 
@@ -117,16 +117,18 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
     else break;
   }
   //  printf("done with w=%d all_zero=%d\n",w,all_zero);
-  if(all_zero){ // syndrome vector was zero 
+  if(all_zero){ // syndrome vector was zero
+    if(G){ /** quantum code */
     //    cout<< "found v="<< v<< endl;
     v0=mzd_copy(v0,v);
-    int result=do_reduce(v0,G,G->nrows);
+    int result=do_reduce(v0,G,rankG);
     if (result==-1)  
       return -1; /* go back down, the found row was trivial */
 #ifndef NDEBUG    
-    if ((mzd_weight(v)!=wmax)||(0!=syndrome_bit_count(v, P)))
-      ERROR(" start_rec: something is wrong %d != wmax=%d ",mzd_weight(v),wmax);
-#endif     
+    if (((int)mzd_weight(v)!=wmax)||(0!=syndrome_bit_count(v, P)))
+      ERROR(" start_rec: something is wrong %zu != wmax=%d ",mzd_weight(v),wmax);
+#endif
+    }
     return 1; /* success */
   }
   return 0; /* keep going */
@@ -136,7 +138,7 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
  * 
  * WARNING: only intended for LDPC codes
  */
-int do_dist_clus(csr_t *P, mzd_t *G, int debug, int wmax, int start){
+int do_dist_clus(const csr_t * const P, const mzd_t * const G, int debug, int wmax, int start, const int rankG){
   // input: wmax=max cluster weight,
   // start=initial position (-1 to scan all),
   // P:  LDPC parity check 
@@ -164,7 +166,7 @@ int do_dist_clus(csr_t *P, mzd_t *G, int debug, int wmax, int start){
       //      printf("v="); mzd_print(v);
       addto_inline(s,PT,i); //  s+=col[i];
       //      printf("s=");  mzd_print(s);
-      int done=start_rec(1,w,v,s,P,PT,G);
+      int done=start_rec(1,w,v,s,P,PT,G,rankG);
       if(done==1){
 	//	cout << "distance="<< weight(v)<< endl;
 	//	cout << "prod="<< P.get_H()*v<< endl;
@@ -172,9 +174,176 @@ int do_dist_clus(csr_t *P, mzd_t *G, int debug, int wmax, int start){
       }
     }
   }
+  csr_free(PT);
+  mzd_free(v);
   return -wmax; /* failed up to wmax */
 }
 
+
+/** @brief prepare an ordered pivot-skip list of length `n-rank` */
+mzp_t * do_skip_pivs(const size_t rank, const mzp_t * const pivs){
+  const rci_t n=pivs->length;
+  rci_t j1=rank; /** position to insert the next result */
+  mzp_t * ans = mzp_copy(NULL,pivs);
+  qsort(ans->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
+
+  for(rci_t j=0; j<n; j++){
+    if(!bsearch(&j, ans->values, rank, sizeof(ans->values[0]), cmp_rci_t)){
+      ans->values[j1++]=j;
+    }
+  }
+  assert(j1==n);
+
+  int j=rank;
+  for(size_t i=0; j<n; j++)
+    ans->values[i++] = ans->values[j];
+  ans->length = n-rank;
+
+  if(prm.debug & 8){/** in skip_pivs */
+    printf("skip_pivs of len=%d: ",ans->length);
+    for(int i=0; i< ans->length; i++)
+      printf(" %d%s",ans->values[i],i+1 == ans->length ?"\n":"");
+    printf("pivs of len=%d, rank=%zu: ",pivs->length, rank);
+    for(size_t i=0; i< rank; i++)
+      printf(" %d%s",pivs->values[i],i+1 == rank ?"\n":"");
+  }
+  return ans;
+}
+
+
+/** @brief Random Information Set search for small-E logical operators.
+ *
+ * @param dW weight increment from the minimum found
+ * @param p pointer to global parameters structure
+ * @param classical set to `1` for classical code (do not use `L` matrix), `0` otherwise  
+ * @return minimum `weight` of a CW found (or `-weigt` if early termination condition is reached). 
+ */
+int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
+	       const int steps, const int wmin, const int classical, const int swait, const int debug){
+  /** whether to verify logical ops as a vector or individually */
+  const int nvar = spaH0->cols;
+  if(((!classical)&&(spaL0==NULL)) ||
+     ((classical)&&(spaL0!=NULL))){
+    printf("L0 %s NULL classical=%d\n",spaL0==NULL ? "=" : "!=", classical);	   
+    ERROR("L0 should be non-NULL present only for classical code!\n");
+  }
+
+  int minW=nvar+1;
+
+  if(debug&16)
+    printf("running do_RW_dist() with steps=%d wmin=%d classical=%d swait=%d nvar=%d\n",steps, wmin, classical, swait, nvar);
+  
+  mzd_t * mH = mzd_from_csr(NULL, spaH0);
+  //  mzd_t *mLt = NULL, *eemLt = NULL; //, *mL = NULL;
+  rci_t *ee = malloc(nvar*sizeof(rci_t)); /** actual `vector` */
+  
+  if((!mH) || (!ee))
+    ERROR("memory allocation failed!\n");
+  //  if(p->debug & 16)  mzd_print(mH);
+  /** 1. Construct random column permutation P */
+
+  mzp_t * perm=mzp_init(nvar); /** identity column permutation */
+  mzp_t * pivs=mzp_init(nvar); /** list of pivot columns */
+  if((!pivs) || (!perm))
+    ERROR("memory allocation failed!\n");
+
+  int iwait=0, ichanged=0;
+  for (int ii=0; ii< steps; ii++){
+    pivs=mzp_rand(pivs); /** random pivots LAPAC-style */
+    mzp_set_ui(perm,1);
+    perm=perm_p_trans(perm,pivs,0); /**< corresponding permutation */
+
+    /** full row echelon form of `H` (gauss) using the order in `perm` */
+    int rank=0;
+    for(int i=0; i< nvar; i++){
+      int col=perm->values[i];
+      int ret=gauss_one(mH, col, rank);
+      if(ret)
+        pivs->values[rank++]=col;
+    }
+    /** construct skip-pivot permutation */
+    mzp_t * skip_pivs = do_skip_pivs(rank, pivs);
+
+    /** calculate sparse version of each vector (list of positions)
+     *  `p`    `p``p`               # pivot columns marked with `p`   
+     *  [1  a1        b1 ] ->  [a1  1  a2 a3 0 ]
+     *  [   a2  1     b2 ]     [b1  0  b2 b3 1 ]
+     *  [   a3     1  b3 ]
+     */
+    int k = nvar - rank;
+    for (int ir=0; ir< k; ir++){ /** each row in the dual matrix */
+      int cnt=0; /** how many non-zero elements */
+      const int col = ee[cnt++] = skip_pivs->values[ir];
+      for(int ix=0; ix<rank; ix++){
+        if(mzd_read_bit(mH,ix,col))
+          ee[cnt++] = pivs->values[ix];
+	if (cnt >= minW)
+	  break;
+      }
+      if(cnt < minW){
+	/** sort the column indices */
+	qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
+      
+	/** verify logical operator */
+	int nz;
+	if (classical)
+	  nz=1; /** no need to verify */
+	else{
+	  /** for each logical operator = row of `mL` */
+	  nz=0;
+	  for(int ir=0; (ir < spaL0->rows) && (nz==0); ir++){	    
+	    for(int iL = spaL0->p[ir], iE = 0; iL < spaL0->p[ir+1]; iL++){
+	      int ic = spaL0->i[iL];
+	      while((iE < cnt) && (ee[iE] < ic))
+		iE++;
+	      if(iE >= cnt)
+		break;
+	      if(ee[iE]==ic){
+		nz=1;
+		break;
+	      }
+	    }
+	  }
+	}
+	if(nz){ /** we got non-trivial codeword! */
+	  /** TODO: try local search to `lerr` (if 2 or larger) */
+	  /** calculate the energy and compare */
+	  /** at this point we have `cnt` codeword indices in `ee`, and its `energ` */
+	  //        if (cnt < minW){
+	  minW=cnt;
+	  if (minW <= wmin){ /** early termination condition */
+	    minW = - minW; /** this distance value is of little interest; */
+	  }
+	}
+      }
+    } /** end of the dual matrix rows loop */
+    if(debug & 16)
+      printf(" round=%d of %d minW=%d ichanged=%d iwait=%d\n",
+	     ii+1, steps, minW, ichanged, iwait);
+    
+    mzp_free(skip_pivs);
+    
+    iwait = ichanged > 0 ? 0 : iwait+1 ;
+    ichanged=0;
+    if((swait > 0)&&(iwait > swait)){
+      if(debug & 16)
+        printf("  iwait=%d >swait=%d, terminating after %d steps\n", iwait, swait, ii+1);
+      break;
+    }
+    
+  }/** end of `steps` random window */
+
+  //alldone: /** early termination label */
+
+  /** clean up */
+  mzp_free(perm);
+  mzp_free(pivs);
+  free(ee);
+
+  mzd_free(mH);
+  
+  return minW;
+}
 
 
 int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
@@ -292,7 +461,7 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
 #ifdef STANDALONE
 
 int main(int argc, char **argv){
-
+  params_t * const p = &prm;
   var_init(argc,argv,p);
 
   if (p->method & 2){ /* cluster */
@@ -304,37 +473,13 @@ int main(int argc, char **argv){
   const int n=p->nvar;
 
   
-  /* convert G to standard form */
-  mzp_t *piv0=mzp_init(n);  //  mzp_out(piv0);
-  mzd_t *matG0=mzd_from_csr(NULL,p->spaG); 
-  rci_t rankG=mzd_gauss_naive(matG0,piv0,1); 
-  if(prm.debug & 1)
-    printf("# rankG=%d\n",rankG);
-  mzd_apply_p_right_trans(matG0,piv0);
-  matG0->nrows=rankG;
-
-  mzp_t *q0=perm_p_trans(NULL,piv0,1);    // permutation equiv to piv0 
-  csr_t *spaH0=csr_apply_perm(NULL,p->spaH,q0); // permuted sparse H
-  //  csr_t* spaG0=csr_apply_perm(NULL,p->spaG,q0); // permuted sparse G -- not needed here
-  if(prm.debug & 2048){
-    if ((n<=150))
-    {
-      printf("matG0=\n");
-      mzd_print(matG0);
-
-      printf("matP0=\n");
-      mzd_t *matP0=mzd_from_csr(NULL,spaH0);  
-      mzd_print(matP0);
-      mzd_free(matP0);
-    }
-    int wei=product_weight_csr_mzd(spaH0, matG0,1);    
-    printf("weigt of H0*G0_T=%d\n",wei);
-    if(wei>0)
-      ERROR("expected zero weight product!");
-  }  
 
   if (prm.method & 1){ /* RW method */
+#if 0 /** older version, may have bugs */    
     prm.dist_max=do_dist_rnd(spaH0,matG0,prm.debug,prm.steps,prm.wmin);
+#else //! `new` distance-finding routine 
+    prm.dist_max=do_RW_dist(p->spaH,p->spaL,p->steps, p->wmin, p->classical, p->swait, p->debug);
+#endif /* 0 */    
     if (prm.debug & 1){
       printf("### RW upper bound on the distance: %d\n",prm.dist_max);
     if(prm.dist_max <0)
@@ -342,9 +487,42 @@ int main(int argc, char **argv){
     }
     prm.wmax=minint(prm.wmax, abs(prm.dist_max)-1);
   }
-  
-  if (prm.method & 2){ /* cluster method */    
-    int dmin=do_dist_clus(spaH0,matG0,prm.debug,prm.wmax,prm.start);
+
+  if (prm.method & 2){ /* cluster method */
+    /* convert G to standard form */
+    mzp_t *piv0=mzp_init(n);  //  mzp_out(piv0);
+    mzd_t *matG0=mzd_from_csr(NULL,p->spaG); 
+    rci_t rankG=mzd_gauss_naive(matG0,piv0,1); 
+    if(prm.debug & 1)
+      printf("# rankG=%d\n",rankG);
+    mzd_apply_p_right_trans(matG0,piv0);
+    //    matG0->nrows=rankG;
+      
+    mzp_t *q0=perm_p_trans(NULL,piv0,1);    // permutation equiv to piv0 
+    csr_t *spaH0=csr_apply_perm(NULL,p->spaH,q0); // permuted sparse H
+    //  csr_t* spaG0=csr_apply_perm(NULL,p->spaG,q0); // permuted sparse G -- not needed here
+    if(prm.debug & 2048){
+      if ((n<=150))
+	{
+	  printf("matG0=\n");
+	  mzd_print(matG0);
+	    
+	  printf("matP0=\n");
+	  mzd_t *matP0=mzd_from_csr(NULL,spaH0);  
+	  mzd_print(matP0);
+	  mzd_free(matP0);
+	}
+      int wei=product_weight_csr_mzd(spaH0, matG0,1);    
+      printf("weigt of H0*G0_T=%d\n",wei);
+      if(wei>0)
+	ERROR("expected zero weight product!");
+    }
+    mzp_free(piv0);
+    mzp_free(q0);
+    
+    int dmin=do_dist_clus(spaH0,matG0,prm.debug,prm.wmax,prm.start,rankG);
+    csr_free(spaH0);
+    mzd_free(matG0);
     if (dmin>0){ 
       if (prm.debug & 1)
 	printf("### Cluster (actual min-weight codeword found): dmin=%d\n",dmin);
@@ -362,8 +540,12 @@ int main(int argc, char **argv){
     else
       ERROR("unexpected dmin=0\n");
 
-    if (prm.dist_min==abs(prm.dist_max))
-      printf("success  (two distance bounds coincide) d=%d\n",prm.dist_min);
+    if (prm.dist_min==abs(prm.dist_max)){
+      if(p->method==3)
+	printf("success  (two distance bounds coincide) d=%d\n",prm.dist_min);
+      else
+	printf("success  (found min-weight codeword) d=%d\n",prm.dist_min);
+    }      
     else if (prm.dist_max>prm.dist_min)
       printf("distance in the interval (inclusive) %d to %d\n", prm.dist_min,prm.dist_max);
     else
@@ -375,6 +557,8 @@ int main(int argc, char **argv){
       
       //    }
   }
+  var_kill(p);
+  
   return 0;
 }
 

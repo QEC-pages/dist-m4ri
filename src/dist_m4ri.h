@@ -12,4 +12,14 @@
 
 static const int maxrow = 10;
 
+  /** @brief helper function to sort `int`
+   *  use `qsort(array, len, sizeof(rci_t), cmp_rci_t);`
+   */
+  static inline int cmp_rci_t(const void *a, const void *b){
+    const int va= *((int *) a);
+    const int vb= *((int *) b);
+    return va-vb;
+  }
+
+
 #endif /* DIST_M4RI */

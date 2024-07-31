@@ -15,6 +15,7 @@ static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
 
 #define ERROR(fmt,...)                                                 \
   do{                                                                  \
+    fprintf (stderr, "%s:%d: *** ERROR in function '%s()' ***\n", __FILE__, __LINE__, __FUNCTION__); \
     printf("#:[31;1m *** ERROR: " fmt " ***[0m \n",##__VA_ARGS__); \
     exit(-1);                                                          \
   }                                                                    \
@@ -144,7 +145,7 @@ extern "C" {
    * of length m, starting with position pos.
    * with all zero bits, return -1 or number outside the range
    */
-  static inline int nextelement(word *set1, int m, int pos){
+  static inline int nextelement(const word * const set1, const int m, const int pos){
     word setwd;
     int w;
 #if 0
@@ -297,7 +298,7 @@ extern "C" {
   /** 
    * Permute columns of a CSR matrix with permutation perm.
    */
-  csr_t *csr_apply_perm(csr_t *dst, csr_t *src, mzp_t *perm);
+  csr_t *csr_apply_perm(csr_t *dst, const csr_t * const src, const mzp_t * const perm);
 
 
   /**
@@ -315,11 +316,44 @@ extern "C" {
     __M4RI_FLIP_BIT(M->rows[row][col/m4ri_radix], col%m4ri_radix);
   }
 
+
+/**
+ * @brief one step of gauss on column `idx` of matrix `M`
+ * @param M the matrix
+ * @param idx index of the column of `M` to deal with
+ * @param begrow row to start with
+ * @return number of pivot points found, `0` or `1` only
+ */
+static inline int gauss_one(mzd_t *M, const int idx, const int begrow){
+  /** note: force-inlining actually slows it down (`???`) */
+  rci_t startrow = begrow;
+  rci_t pivots = 0;
+  const rci_t i = idx;
+  //  for (rci_t i = startcol; i < endcol ; ++i) {
+  for(rci_t j = startrow ; j < M->nrows; ++j) {
+    if (mzd_read_bit(M, j, i)) {
+      mzd_row_swap(M, startrow, j);
+      ++pivots;
+      for(rci_t ii = 0 ;  ii < M->nrows; ++ii) {
+        if (ii != startrow) {
+          if (mzd_read_bit(M, ii, i)) {
+            mzd_row_add_offset(M, ii, startrow,0);
+          }
+        }
+      }
+      startrow = startrow + 1;
+      break;
+    }
+  }
+  //  }
+  return pivots; /** 0 or 1 only */
+  // if one, need to update the current pivot list
+}
   
   /** 
    * Check whether syndrome is zero or not 
    */ 
-  int syndrome_bit_count(mzd_t *row, csr_t *spaQ);
+  int syndrome_bit_count(const mzd_t * const row, const csr_t * const spaQ);
 
   /** 
    * Check if row is linearly dependent with the rows of matP0
@@ -334,8 +368,10 @@ extern "C" {
    */
   void make_err(mzd_t *row, double p);
 
-  int do_dist_clus(csr_t *P, mzd_t *G, int debug, int wmax, int start);
+  int do_dist_clus(const csr_t * const P, const mzd_t * const G, int debug, int wmax, int start, const int rankG);
 
+  csr_t * Lx_for_CSS_code(const csr_t * const Hx, const csr_t *const Hz);
+  
 #if defined(__cplusplus) && !defined (_MSC_VER)
 }
 #endif

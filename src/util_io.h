@@ -38,15 +38,22 @@ typedef struct{
   //  int linear; /* not supported */
   int n0;  /* code length, =nvar for css, (nvar/2) for non-css */
   int nvar; /* actual n = matrix size */
+  int nchk; /* actual k = number of codewords */
+  int swait;
+  int maxC;
   char *finH;
   char *finG;
+  char *finL;
   char *fin;
   csr_t *spaH;
   csr_t *spaG;
+  csr_t *spaL;
 } params_t; 
 
-extern params_t prm, * const p;
+extern params_t prm;
 void var_init(int argc, char **argv, params_t * const p);
+void var_kill(params_t * const p);
+
 #define USAGE								\
   "%s: calculate the minumum distance of a q-LDPC code\n"		\
   "\tusage: %s [arguments [...]]\n"					\
@@ -56,6 +63,8 @@ void var_init(int argc, char **argv, params_t * const p);
   "\t\t finH->\"${try}X.mtx\"  finG->\"${try}X.mtx\"\n"			\
   "\tfinH=[str]: parity check matrix Hx (NULL)\n"			\
   "\tfinG=[str]: matrix Hz or NULL for classical code (NULL)\n"		\
+  "\tfinL=[str]: matrix Lx or NULL for classical code (NULL)\n"		\
+  "\t\t Either L=Lx or G=Hz matrix is required for a quantum CSS code\n" \
   "\tcss=1: this is a CSS code (the only supported one) (1)\n"		\
   "\tseed=[int]: rng seed  [0 for time(NULL)]\n"			\
   "\tmethod=[int]: bitmap for method used: \n"				\

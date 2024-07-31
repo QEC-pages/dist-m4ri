@@ -16,11 +16,16 @@ params_t prm={
   .max_row_wgt_G =0,
   .n0=0,
   .nvar=0,
+  .nchk=0,
+  .maxC=0,
+  .swait=0,
   .finH=NULL,
   .finG=NULL,
+  .finL=NULL,
   .fin="../examples/try", 
   .spaH=NULL,
-  .spaG=NULL
+  .spaG=NULL,
+  .spaL=NULL
 };
 
 params_t * const p = &prm;
@@ -62,6 +67,15 @@ void var_init(int argc, char **argv, params_t * const p){
 	printf("# read %s, finH=%s; setting fin=\"\"\n",argv[i],p->finH);
       p->fin="";
     }
+    else if (0==strncmp(argv[i],"finL=",5)){ /** `finL` */
+      if(strlen(argv[i])>5)
+        p->finL = argv[i]+5;
+      else
+        p->finL = argv[++i]; /**< allow space before file name */
+      if (p->debug&4)
+	printf("# read %s, finL=%s; setting fin=\"\"\n",argv[i],p->finL);
+      p->fin="";
+    }
     else if (0==strncmp(argv[i],"finG=",5)){/** `finG` degeneracy generator matrix */
       if(strlen(argv[i])>5)
         p->finG = argv[i]+5;
@@ -76,6 +90,8 @@ void var_init(int argc, char **argv, params_t * const p){
 	ERROR("arg[%d]='%s' in conflict with finH=%s\n",i,argv[i],p->finH);
       if(p->finG)
 	ERROR("arg[%d]='%s' in conflict with finG=%s\n",i,argv[i],p->finG);
+      if(p->finL)
+	ERROR("arg[%d]='%s' in conflict with finL=%s\n",i,argv[i],p->finL);
       if (strlen(argv[i])>4)
 	p->fin = argv[i]+4;
       else{
@@ -142,19 +158,19 @@ void var_init(int argc, char **argv, params_t * const p){
       printf("# using Cluster method, wmax=%d steps=%d\n",p->wmax,p->steps);
   }
 
-  if(!p->finH){
+  if((strlen(p->fin)!=0) && (!p->finH)){
     int len = strlen(p->fin);
     char *s = (char *) malloc((len+6)*sizeof(char));
     if(!s)
       ERROR("memory allocation");
-    sprintf(s,"%s%s",p->fin,swit>0?"Z.mtx":"X.mtx");
+    sprintf(s,"%s%s",p->fin,swit>0?"X.mtx":"Z.mtx");
     p->finG=s;
     s = (char *) malloc((len+6)*sizeof(char));
     if(!s)
       ERROR("memory allocation");
-    sprintf(s,"%s%s",p->fin,swit>0?"X.mtx":"Z.mtx");
+    sprintf(s,"%s%s",p->fin,swit>0?"Z.mtx":"X.mtx");
     p->finH=s;
-    if (p->debug)
+    if (p->debug & 2)
       printf("# read 'fin=%s'; since switch=%d assigning \n# finH=%s\n# finG=%s\n",
 	     p->fin,swit,p->finH,p->finG);
   }
@@ -163,10 +179,17 @@ void var_init(int argc, char **argv, params_t * const p){
     p->spaH=csr_mm_read(p->finH,p->spaH,0);
   else
     ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
-  
+
+  if((p->finG) && (p->finL))
+    ERROR("either G=Hz or L=Lx matrix should be specified but not both finG='%s' finL='%s'\n",p->finG, p->finL);
+
   if(p->finG){
     p->classical=0;
     p->spaG=csr_mm_read(p->finG,p->spaG,0);
+  } 
+  else if (p->finL){
+    p->classical=0;
+    p->spaL=csr_mm_read(p->finL,p->spaL,0);
   } 
   else{
     p->classical=1;
@@ -174,12 +197,38 @@ void var_init(int argc, char **argv, params_t * const p){
   }
 
   rci_t n = (p->spaH)-> cols;
-  if ((!p->classical) && (n != (p->spaG) -> cols))
+  if ((!p->classical) && ((p->spaG) && (n != (p->spaG) -> cols)))
     ERROR("Column count mismatch in H and G matrices: %d != %d",
 	  (p->spaH)-> cols, (p->spaG)->cols);
   p->nvar=n; 
   p->n0=n;
   if (p->css!=1)
     ERROR("Non-CSS codes are currently not supported, css=%d",p->css);
+  
+  if((p->spaG) && (p->spaL==NULL)){
+    /** create `Lx` */
+    /** WARNING: this does not necessarily have minimal row weights */
+    p->spaL=Lx_for_CSS_code(p->spaH,p->spaG);
+    p->nchk = p->spaL->rows;
+  }
+  
+}
 
+void var_kill(params_t * const p){
+  if(p->spaL)
+    csr_free(p->spaL);
+  if(p->spaH)
+    csr_free(p->spaH);
+  if(p->spaG)
+    csr_free(p->spaG);
+#if 0  
+  if(strlen(p->fin) != 0){
+    if(p->finH){
+      printf("freeing finH=%s\n", p->finH);
+      free(p->finH);
+    }
+    if(p->finG)
+      free(p->finH);    
+  }
+#endif 
 }
