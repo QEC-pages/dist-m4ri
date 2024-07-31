@@ -1,0 +1,22 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Pryadko
+    given-names: "Leonid P."
+    orcid: https://orcid.org/0000-0002-4990-0259
+title: "dist-m4ri: distance of a classical or quantum CSS code"
+version: v0.5.0
+date-released: 2024-07-31
+repository-code: "https://github.com/QEC-pages/dist-m4ri"
+url: "https://QEC-pages.github.io/dist-m4ri/"
+keywords:
+  - QECC
+  - "quantum code"
+  - "stabilizer code"
+  - "CSS code"
+  - "quantum error correcting code"
+  - "minimal distance"
+  - "qubit code"
+license:
+  - GPL-2.0-or-later
+ 
