@@ -9,12 +9,27 @@ a classical or quantum CSS binary code:
   the upper distance bound, and
 - Connected cluster (`CC`), to calculate the actual distance or lower
   distance bound of an LDPC code (quantum or classical).
-  
+
+For a classical (binary linear) code, only matrix `H`, the
+parity-check matrix, should be specified.
+
+For a quantum CSS code, matrix `H=Hx` and either `G=Hz` or `L=Lx`
+matrices are needed.
+
+All matrices with entries in `GF(2)` should have the same number of
+columns, `n`, and obey the following orthogonality conditions:
+$$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$
+where $I$ is an identity matrix.  Notice that the latter identity is
+not required; it is sufficient that `Lx` and `Lz` matrices have the
+same full row rank `=k`, the dimension of the code, each row of `Lx`
+has a non-zero scalar product with a row of `Lz`, and vice versa.
+
 ## How it works: RW algorithm (`method=1`)
 
-Given the error model, i.e., the matrices $H=Hx$, $L=Lx$ ($L$ is empty
+Given the error model, i.e., the matrices $H=H_x$, $L=L_x$ ($L$ is empty
 for a classical code), the program searches for smallest-weight binary
 `codewords` $c$ such that $Hc=0$, $Lc\neq0$.
+
 
 It repeatedly calculates reduced row echelon form of `H`, with columns
 taken in random order, which uniquely fixes the information set
