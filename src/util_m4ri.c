@@ -133,14 +133,14 @@ int csr_max_row_wght(const csr_t *p){
  * TODO: add code for List of Pairs 
  */
 csr_t * csr_transpose(csr_t *dst, const csr_t *p){
-  int m=p->rows, n=p->cols, nz=p->p[m];
+  int rows=p->rows, cols=p->cols, nz=p->p[rows];
   if (dst == NULL) 
-    dst = csr_init(NULL,n,m,nz);
-  else if ((dst->cols != m) || (dst->rows != n) || (dst->nzmax < MAX(nz, n+1))) 
+    dst = csr_init(NULL,cols,rows,nz);
+  else if ((dst->cols != rows) || (dst->rows != cols) || (dst->nzmax < MAX(nz, cols+1))) 
     ERROR("Wrong size for return matrix.\n");
   else
     dst->nz=0; /* clear matrix */
-  for(int i=0;i<m;i++)    
+  for(int i=0;i<rows;i++)    
     for(int j=p->p[i]; j < p->p[i+1] ; j++){
       dst->p[j]=p->i[j]; // pair format, to be compressed later
       dst->i[j]=i ;

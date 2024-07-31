@@ -148,7 +148,7 @@ extern "C" {
   static inline int nextelement(const word * const set1, const int m, const int pos){
     word setwd;
     int w;
-#if 0
+#if 1
     if (pos < 0){
       w = 0;
       setwd = set1[0];

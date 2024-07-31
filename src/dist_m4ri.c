@@ -90,8 +90,8 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
     //  }
 #endif
     
-  for(rci_t i=0 ; i+1< ns ; i++){
-    i=nextelement(rawrow,s->width,i);
+  for(rci_t i=-1 ; i+1< ns ; ){
+    i=nextelement(rawrow,s->width,i+1);
     if (i<0)
       break; /* no more non-zero syndrome bits */
     else if(i<ns){ /* found a syndrome to fix */
