@@ -349,6 +349,32 @@ static inline int gauss_one(mzd_t *M, const int idx, const int begrow){
   return pivots; /** 0 or 1 only */
   // if one, need to update the current pivot list
 }
+
+/**
+ * @brief return 1 if syndrome is non-zero
+ * 
+ * @param ee vector with `cnt` ordered set bit coordinates 
+ */
+
+static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt, const int ee[]){
+  for(int ir=0; ir < H->rows; ir++){
+    int nz=0;
+    for(int iL = H->p[ir], iE = 0; iL < H->p[ir+1]; iL++){
+      int ic = H->i[iL];
+      while((iE < cnt) && (ee[iE] < ic))
+	iE++;
+      if(iE >= cnt)
+	break;
+      if(ee[iE]==ic)
+	nz ^= 1;      
+    }
+    if (nz)
+      return 1;
+  }
+  return 0;
+}
+
+
   
   /** 
    * Check whether syndrome is zero or not 

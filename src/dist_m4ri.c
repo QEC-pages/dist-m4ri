@@ -288,23 +288,8 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	int nz;
 	if (classical)
 	  nz=1; /** no need to verify */
-	else{
-	  /** for each logical operator = row of `mL` */
-	  nz=0;
-	  for(int ir=0; (ir < spaL0->rows) && (nz==0); ir++){	    
-	    for(int iL = spaL0->p[ir], iE = 0; iL < spaL0->p[ir+1]; iL++){
-	      int ic = spaL0->i[iL];
-	      while((iE < cnt) && (ee[iE] < ic))
-		iE++;
-	      if(iE >= cnt)
-		break;
-	      if(ee[iE]==ic){
-		nz=1;
-		break;
-	      }
-	    }
-	  }
-	}
+	else
+	  nz = sparse_syndrome_non_zero(spaL0, cnt, ee);	
 	if(nz){ /** we got non-trivial codeword! */
 	  /** TODO: try local search to `lerr` (if 2 or larger) */
 	  /** calculate the energy and compare */
