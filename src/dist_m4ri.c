@@ -147,7 +147,7 @@ int do_dist_clus(const csr_t * const P, const mzd_t * const G, int debug, int wm
   // these must be orthogonal (no check)
 
   int nc=P->cols, ns=P->rows;
-  csr_t* PT=csr_transpose(NULL,P); // transpose
+  csr_t* PT=csr_transpose(NULL,P); 
   //  csr_out(spaG0T);
 
   mzd_t *v=mzd_init(1,nc), *s=mzd_init(1,ns);
@@ -170,11 +170,13 @@ int do_dist_clus(const csr_t * const P, const mzd_t * const G, int debug, int wm
       if(done==1){
 	//	cout << "distance="<< weight(v)<< endl;
 	//	cout << "prod="<< P.get_H()*v<< endl;
+	csr_free(PT);
+	mzd_free(v);
 	return w;
       }
     }
   }
-  csr_free(PT);
+  csr_free(PT);  
   mzd_free(v);
   return -wmax; /* failed up to wmax */
 }
