@@ -57,7 +57,7 @@ Additional command-line parameters relevant for this method:
 ## How it works: CC algorithm (`method=2`).
 
 The program tries to construct a codeword recursively, by starting
-with a non-zero bit in a position `i` in the range $0\le$ `i` $<n$,
+with a non-zero bit in a position `i` in the range $0\le i<n$,
 where $n$ is the number of columns, and then recursively adding the
 additional bits in the support of unsatisfied checks starting from the
 top.  The complexity to enumerate all codewords of weight up to $w$
