@@ -1,0 +1,20 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-20.04
+    # ubuntu-20.04
+    # ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: make
+      run: cd src && sudo apt-get install libm4ri-dev && make -j dist_m4ri
+    
