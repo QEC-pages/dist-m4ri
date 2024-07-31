@@ -1,0 +1,73 @@
+# temp directory and tmp files to be ignored 
+tmp/*
+tmp
+tmp*
+
+# tags file
+tags
+TAGS
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+src/dist_m4ri
+dist_m4ri
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+*.log
+# Long input files
+
+# emacs backup files 
+*~
+\#todo.md#
+.\#todo.md
+../\#todo.md#
+../.\#todo.md
+
+# documentation files
+# src/docs/
+*.pdf
+
+# python cache directory
+__pycache__/
+
+# emacs created directory
+auto/
+
+# IDE files
+.idea/

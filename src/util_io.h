@@ -1,4 +1,3 @@
-/* 	$Id:  $	 */
 #ifndef UTIL_IO_H
 /************************************************************************ 
  * qLDPC code input utility routines for distance/decoder package               
@@ -19,30 +18,63 @@
 #include "mmio.h"
 #include "util_m4ri.h"
 
-#define USAGE_IO						\
-  "Supported input parameters:\n"				\
-  "\tdebug=1: bitmap for aux information\n"			\
-  "\tstring: fin=\"try\": base name for input files\n"		\
-  "\tstring: finP=\"tryX.mtx\": check matrix\n"			\
-  "\tstring: finG=\"tryZ.mtx\": dual generator matrix\n"	\
-  "\tswitch=1: switch X and Z generators\n"			\
-  "\tcss=1: this is a CSS code (the only supported one)\n"
+#define _maybe_unused __attribute__((unused))
 
 typedef struct{
-  int css; /* 1: css, 0: non-css -- currently not supported */
-  //  int linear; /* not supported */
   int debug; /* debug information */ 
-  //  char *finP, *finG; /* generators */
-  int n0;  /* code length, =n for css, (n/2) for non-css */
-  int n; /* actual n = matrix size */
-} params_io_t; 
+  int classical; /* 1 for a classical code, i.e., no `G=Hz` matrix*/
+  int css; /* 1: css, 0: non-css -- currently not supported */
+  int method; /* bitmap. 1: random window; 2: cluster; 3: both */
+  int steps; /* how many RW decoding steps */
+  int wmax; /* max cluster size to try */
+  int wmin; /* min distance below which we are not interested at all */
+  int seed;/* rng seed, set=0 for automatic */
+  int dist; /* target distance of the code */
+  int dist_max; /* distance actually checked */
+  int dist_min; /* distance actually checked */
+  int max_row_wgt_G; /* needed for C */
+  //! int maxrow;  /* WARNING: this is defined in `dist_m4ri.h` as `static const int` */
+  int start;
+  //  int linear; /* not supported */
+  int n0;  /* code length, =nvar for css, (nvar/2) for non-css */
+  int nvar; /* actual n = matrix size */
+  int nchk; /* actual k = number of codewords */
+  int swait;
+  int maxC;
+  char *finH;
+  char *finG;
+  char *finL;
+  char *fin;
+  csr_t *spaH;
+  csr_t *spaG;
+  csr_t *spaL;
+} params_t; 
 
-extern params_io_t pio;
+extern params_t prm;
+void var_init(int argc, char **argv, params_t * const p);
+void var_kill(params_t * const p);
 
-int local_io_init(int argc, char **argv, csr_t **spaP, csr_t **spaG);
-/* initialized variables needed and the sparse matrices P and G;
- * return the position of the first argument which failed to interpret
- * (to be treated by a subsequent routine specific to the program) 
- */
+#define USAGE								\
+  "%s: calculate the minumum distance of a q-LDPC code\n"		\
+  "\tusage: %s [arguments [...]]\n"					\
+  "Supported parameters:\n"						\
+  "\tdebug=[int]:\t bitmap for aux information (3)\n"			\
+  "\tfin=[string]: base name for input files (\"try\")\n"		\
+  "\t\t finH->\"${try}X.mtx\"  finG->\"${try}X.mtx\"\n"			\
+  "\tfinH=[str]: parity check matrix Hx (NULL)\n"			\
+  "\tfinG=[str]: matrix Hz or NULL for classical code (NULL)\n"		\
+  "\tfinL=[str]: matrix Lx or NULL for classical code (NULL)\n"		\
+  "\t\t Either L=Lx or G=Hz matrix is required for a quantum CSS code\n" \
+  "\tcss=1: this is a CSS code (the only supported one) (1)\n"		\
+  "\tseed=[int]: rng seed  [0 for time(NULL)]\n"			\
+  "\tmethod=[int]: bitmap for method used: \n"				\
+  "\t\t1: random window (RW) algorithm\n"				\
+  "\t\t2: cluster (C) algorithm\n"					\
+  "\tsteps=[int]: how many RW decoding cycles to use (1)\n"		\
+  "\twmax=[int]: max cluster weight in C (5) \n"			\
+  "\twmin=[int]: min distance of interest in RW (1)\n"			\
+  "\t-h or --help gives this help\n"
+
+
 
 #endif /* UTIL_IO_H */

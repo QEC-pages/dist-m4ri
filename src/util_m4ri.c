@@ -1,4 +1,3 @@
-/* 	$Id: util_m4ri.c,v 1.1 2017/10/31 21:56:50 leonid Exp leonid $	 */
 /************************************************************************ 
  * helper functions for use with m4ri library, 
  * including binary sparse matrices and conversion utilities 
@@ -6,6 +5,9 @@
  * some code borrowed from various sources 
  ************************************************************************/
 #include <m4ri/m4ri.h>
+#include <m4ri/mzd.h>
+#include <stdio.h>
+#include <ctype.h>
 #include "mmio.h"
 
 #include "util_m4ri.h"
@@ -131,14 +133,14 @@ int csr_max_row_wght(const csr_t *p){
  * TODO: add code for List of Pairs 
  */
 csr_t * csr_transpose(csr_t *dst, const csr_t *p){
-  int m=p->rows, n=p->cols, nz=p->p[m];
+  int rows=p->rows, cols=p->cols, nz=p->p[rows];
   if (dst == NULL) 
-    dst = csr_init(NULL,n,m,nz);
-  else if ((dst->cols != m) || (dst->rows != n) || (dst->nzmax < MAX(nz, n+1))) 
+    dst = csr_init(NULL,cols,rows,nz);
+  else if ((dst->cols != rows) || (dst->rows != cols) || (dst->nzmax < MAX(nz, cols+1))) 
     ERROR("Wrong size for return matrix.\n");
   else
     dst->nz=0; /* clear matrix */
-  for(int i=0;i<m;i++)    
+  for(int i=0;i<rows;i++)    
     for(int j=p->p[i]; j < p->p[i+1] ; j++){
       dst->p[j]=p->i[j]; // pair format, to be compressed later
       dst->i[j]=i ;
@@ -180,7 +182,7 @@ mzd_t *mzd_from_csr(mzd_t *dst, const csr_t *p) {
  * [ CT I ], and permute the cols back.  
  * (re)allocate G if needed.
  */
-mzd_t *mzd_generator_from_csr(mzd_t *G, csr_t *H){  
+mzd_t *mzd_generator_from_csr(mzd_t *G, const csr_t * const H){  
   rci_t n=H->cols;
   mzd_t *mat=mzd_from_csr(NULL,H); /* convert to dense matrix */
   mzp_t * pivots = mzp_init(n);    /* initialize the permutation */
@@ -229,9 +231,9 @@ mzd_t * csr_mzd_mul(mzd_t *C, const csr_t *S, const mzd_t *B, int clear){
   else {
     if (C->nrows != S->rows || C->ncols != B->ncols) 
       ERROR("Provided return matrix has wrong dimensions.\n");    
-  }
   if(clear)
     mzd_set_ui(C,0); 
+  }
   rci_t const m = S->rows;
   
   for(rci_t i = 0; i < m; ++i)
@@ -291,7 +293,7 @@ mzd_t * syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear){
 /** 
  * just check whether syndrome is zero or not 
  */ 
-int syndrome_bit_count(mzd_t *row, csr_t *spaQ){
+int syndrome_bit_count(const mzd_t * const row, const csr_t * const spaQ){
   int wei=0;
   int m=spaQ->rows;
   //  mzd_print(row);
@@ -335,12 +337,16 @@ size_t product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose){
  * return uniformly distributed random number in the range [0,...,max-1] 
  */
 int rand_uniform(const int max){
+#if 1
   int divisor = RAND_MAX/(max);
   int retval;
   do  
     retval = rand() / divisor;
   while (retval >= max);
   return retval;
+#else
+  return (int) floor(max * tinymt64_generate_double(&tinymt));
+#endif /* 0 */
 }
 
 /**
@@ -357,11 +363,9 @@ mzp_t * mzp_rand_len(mzp_t *q, rci_t length){
     ERROR("mzp_rand_len: second parameter too large, %d > %d", length, q->length);
   for(int i=0;i<=length-2;i++){
     q->values[i]= i+rand_uniform(length-i);
-    //    printf("%d %d %d\t",i,q->values[i],length-i);
   }
   for(int i=length-1; i< (q-> length); i++)
     q->values[i]=i; /* no swap for the remaining columns */
-  //  printf("\n");
   return q;
 }
 
@@ -433,24 +437,30 @@ csr_t *csr_free(csr_t *p){
  * check existing size and (re)allocate if  needded 
  */
 csr_t *csr_init(csr_t *mat, int rows, int cols, int nzmax){
-  if ((mat!=NULL)&&((mat->nzmax<nzmax)||(mat->nzmax<rows+1)))
-    mat=csr_free(mat);  /* allocated size was too small */  
-  if(mat==NULL)
+  if ((mat!=NULL)&&((mat->nzmax < nzmax)||(mat->nzmax < rows+1))){
+    // mat=csr_free(mat);  /* allocated size was too small */
+    /** keep allocated `mat` */
+    mat->p = realloc(mat->p,MAX(nzmax,(rows+1))*sizeof(int));
+    mat->i = realloc(mat->i, nzmax*sizeof(int));
+    if ((mat->p==NULL) || (mat->i==NULL))
+      ERROR("csr_init: failed to reallocate CSR rows=%d cols=%d nzmax=%d",
+            rows,cols,nzmax);
+    mat->nzmax=nzmax;
+  }
+  else if(mat==NULL){
     mat=malloc(sizeof(csr_t));  
-  mat->p=calloc(MAX(nzmax,(rows+1)),sizeof(int));
-  mat->i=calloc(nzmax,sizeof(int)); 
-  if ((mat->p==NULL) || (mat->i==NULL))
-    ERROR("csr_init: failed to allocate CSR rows=%d cols=%d nzmax=%d",
-	  rows,cols,nzmax);
+    mat->p=calloc(MAX(nzmax,(rows+1)),sizeof(int));
+    mat->i=calloc(nzmax,sizeof(int)); 
+    if ((mat == NULL) || (mat->p==NULL) || (mat->i==NULL))
+      ERROR("csr_init: failed to allocate CSR rows=%d cols=%d nzmax=%d",
+            rows,cols,nzmax);
+    mat->nzmax=nzmax;
+  }
   mat->rows=rows;
   mat->cols=cols;
   mat->nz=0; /* empty */
-  mat->nzmax=nzmax; 
   return mat;
 }
-
-
-typedef struct { int a; int b; } int_pair;
 
 /* helper function */
 static int cmp_int_pairs(const void *p1, const void *p2){
@@ -475,13 +485,14 @@ void csr_compress(csr_t *mat){
   int i, j=0;
   for(i=0;i<mat->rows;i++){
     mat->p[i]=j;
-    while ((pairs[j].a == i)&&(j<nz)){
+    while ((j<nz)&&(pairs[j].a == i)){
       mat->i[j]=pairs[j].b;
       j++;
     }
   }
   mat->p[i]=j; /* final value */
   mat->nz=-1; /* indicate compressed form */
+  free(pairs);
 }
 
 /**
@@ -562,13 +573,14 @@ csr_t *csr_mm_read(char *fin, csr_t *mat, int transpose){
   mat->nz=nz;  // csr_out(mat);
   csr_compress(mat); /* sort entries by row */
   // csr_out(mat);
+  fclose(f);
   return mat;
 }
 
 /** 
  * Permute columns of a CSR matrix with permutation perm.
  */
-csr_t *csr_apply_perm(csr_t *dst, csr_t *src, mzp_t *perm){
+csr_t *csr_apply_perm(csr_t *dst, const csr_t * const src, const mzp_t * const perm){
   int m=src->rows, n=src->cols;
   if (src->nz!=-1)
     ERROR("pair format unsupported, nz=%d; expected \"-1\"",src->nz);
@@ -660,3 +672,86 @@ void make_err(mzd_t *row, double p){
   }
 }
 
+
+/** 
+ * @brief convert `m4ri` dense matrix to `csr`
+ * 
+ * Optimized for sparse matrices.  
+ * 
+ * @param mat pointer to existing matrix or NULL 
+ *
+ */
+csr_t * csr_from_mzd(csr_t *mat, const mzd_t * const orig){
+  int nz=mzd_weight(orig);
+  mat = csr_init(mat, orig->nrows, orig->ncols, nz);/** will reallocate if needed */
+  int i, j=0;
+  for(i=0;i < mat->rows; i++){
+    mat->p[i]=j;
+#if 1 /** optimized version */
+    int idx=0;
+    const word * const rawrow = orig->rows[i];
+    while(((idx=nextelement(rawrow,orig->width,idx))!=-1)&&(idx<orig->ncols)){
+      mat->i[j++]=idx++;
+    }
+#else /** naive version */
+    for(int idx=0; idx< orig->ncols; idx++)
+      if(mzd_read_bit(orig,i,idx)){
+	mat->i[j++]=idx;
+	//	printf("i=%d j=%d idx=%d\n",i,j,idx);
+      }
+#endif /* 0 */    
+  }      
+  mat->p[i]=j; /* final value */
+  assert(j==nz);
+  mat->nz=-1; /* indicate compressed form */
+  return mat;
+}
+
+/**
+ * @brief Compute logical generator matrix Lx for a CSS code
+ *
+ * Given a pair of binary CSS generator matrices in CSR format,
+ * `Hx*Hz^T=0`, compute a sparse matrix `Lx` s.t. `Lx*Hz^T=0`
+ * and rows of `Lx` be linearly independent from those of `Hx`.
+ * TODO: see if sparsity of Lx can be improved.
+ */
+
+csr_t * Lx_for_CSS_code(const csr_t * const Hx, const csr_t *const Hz){
+  rci_t n=Hx->cols;
+  if(n!=Hz->cols)
+    ERROR("unequal number of columns in matrices Hx[%d,%d] and Hz[%d,%d]",
+	  Hx->rows, Hx->cols, Hz->rows, Hz->cols);  
+  mzd_t *Mx = mzd_from_csr(NULL,Hx); /* convert to dense matrix */
+  mzp_t *pivots = mzp_init(n);     /* initialize the permutation */
+  rci_t rank = mzd_gauss_naive(Mx, pivots, 1);
+  mzd_apply_p_right_trans(Mx,pivots); /** permute columns to make std form [ I C ] */
+  mzp_t *perm  = perm_p(      NULL, pivots,0);
+  mzp_t *permT = perm_p_trans(NULL, pivots,0);
+  mzp_free(pivots);
+  csr_t* HzPerm=csr_apply_perm(NULL,Hz,permT);
+  mzp_free(permT);
+#ifndef NDEBUG /** `verify` orthogonality */
+  mzd_t *MxT = mzd_transpose(NULL,Mx); 
+  if(product_weight_csr_mzd(HzPerm,MxT,0))
+    ERROR("rows of Hx and Hz should be orthogonal ");
+  mzd_free(MxT);
+#endif
+  mzd_t *MzStar = mzd_generator_from_csr(NULL, HzPerm);
+  csr_free(HzPerm);
+
+  mzd_t *mat = mzd_stack(NULL,Mx,MzStar);
+  mzd_free(MzStar);
+  //  printf("stacked:\n");  mzd_print(mat);
+  int rank1=mzd_echelonize(mat,0);
+  //  printf("after gauss %d -> %d:\n", rank, rank1); mzd_print(mat);
+
+  mzd_t *window = mzd_init_window(mat,rank,0,rank1,n);
+  csr_t *Lx=csr_from_mzd(NULL, window);
+  csr_t *ans = csr_apply_perm(NULL,Lx,perm);
+  mzd_free(Mx);
+  csr_free(Lx);  
+  mzd_free(window);
+  mzp_free(perm);
+  mzd_free(mat);
+  return ans;
+}

@@ -3,7 +3,7 @@
 *
 *   See http://math.nist.gov/MatrixMarket for details.
 *
-*
+*   modified by Leonid P. Pryadko (2024)
 */
 
 
@@ -13,6 +13,9 @@
 #include <ctype.h>
 
 #include "mmio.h"
+
+#define _maybe_unused __attribute__((unused)) 
+
 
 int mm_read_unsymmetric_sparse(const char *fname, int *M_, int *N_, int *nz_,
                 double **val_, int **I_, int **J_)
@@ -74,9 +77,15 @@ int mm_read_unsymmetric_sparse(const char *fname, int *M_, int *N_, int *nz_,
  
     for (i=0; i<nz; i++)
     {
-        fscanf(f, "%d %d %lg\n", &I[i], &J[i], &val[i]);
+      int res = fscanf(f, "%d %d %lg\n", &I[i], &J[i], &val[i]);
+      if ((res!=EOF) && (res==3)){
         I[i]--;  /* adjust from 1-based to 0-based */
         J[i]--;
+      }else {
+	fprintf(stderr, "error reading file %s at data line %d\n",fname,i);
+	exit(-1);
+      }
+      
     }
     fclose(f);
  
@@ -262,7 +271,7 @@ int mm_write_mtx_array_size(FILE *f, int M, int N)
 /* use when I[], J[], and val[]J, and val[] are already allocated */
 /******************************************************************/
 
-int mm_read_mtx_crd_data(FILE *f, int M, int N, int nz, int I[], int J[],
+int mm_read_mtx_crd_data(FILE *f, _maybe_unused int M, _maybe_unused int N, int nz, int I[], int J[],
         double val[], MM_typecode matcode)
 {
     int i;
@@ -457,7 +466,7 @@ char  *mm_typecode_to_str(MM_typecode matcode)
     char buffer[MM_MAX_LINE_LENGTH];
     char *types[4];
 	char *mm_strdup(const char *);
-    int error =0;
+	_maybe_unused int error =0;
 
     /* check for MTX type */
     if (mm_is_matrix(matcode)) 
