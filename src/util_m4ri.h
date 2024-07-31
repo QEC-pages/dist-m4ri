@@ -16,7 +16,7 @@ static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
 #define ERROR(fmt,...)                                                 \
   do{                                                                  \
     fprintf (stderr, "%s:%d: *** ERROR in function '%s()' ***\n", __FILE__, __LINE__, __FUNCTION__); \
-    printf("#:[31;1m *** ERROR: " fmt " ***[0m \n",##__VA_ARGS__); \
+    printf("[31;1m " fmt "[0m\n",##__VA_ARGS__); \
     exit(-1);                                                          \
   }                                                                    \
   while(0)

@@ -221,7 +221,7 @@ mzp_t * do_skip_pivs(const size_t rank, const mzp_t * const pivs){
  * @return minimum `weight` of a CW found (or `-weigt` if early termination condition is reached). 
  */
 int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
-	       const int steps, const int wmin, const int classical, const int swait, const int debug){
+	       const int steps, const int wmin, const int classical, const int debug){
   /** whether to verify logical ops as a vector or individually */
   const int nvar = spaH0->cols;
   if(((!classical)&&(spaL0==NULL)) ||
@@ -233,7 +233,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
   int minW=nvar+1;
 
   if(debug&16)
-    printf("running do_RW_dist() with steps=%d wmin=%d classical=%d swait=%d nvar=%d\n",steps, wmin, classical, swait, nvar);
+    printf("running do_RW_dist() with steps=%d wmin=%d classical=%d nvar=%d\n",steps, wmin, classical, nvar);
   
   mzd_t * mH = mzd_from_csr(NULL, spaH0);
   //  mzd_t *mLt = NULL, *eemLt = NULL; //, *mL = NULL;
@@ -249,7 +249,6 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
   if((!pivs) || (!perm))
     ERROR("memory allocation failed!\n");
 
-  int iwait=0, ichanged=0;
   for (int ii=0; ii< steps; ii++){
     pivs=mzp_rand(pivs); /** random pivots LAPAC-style */
     mzp_set_ui(perm,1);
@@ -305,18 +304,9 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
       }
     } /** end of the dual matrix rows loop */
     if(debug & 16)
-      printf(" round=%d of %d minW=%d ichanged=%d iwait=%d\n",
-	     ii+1, steps, minW, ichanged, iwait);
+      printf(" round=%d of %d minW=%d\n", ii+1, steps, minW);
     
     mzp_free(skip_pivs);
-    
-    iwait = ichanged > 0 ? 0 : iwait+1 ;
-    ichanged=0;
-    if((swait > 0)&&(iwait > swait)){
-      if(debug & 16)
-        printf("  iwait=%d >swait=%d, terminating after %d steps\n", iwait, swait, ii+1);
-      break;
-    }
     
   }/** end of `steps` random window */
 
@@ -465,7 +455,7 @@ int main(int argc, char **argv){
 #if 0 /** older version, may have bugs */    
     prm.dist_max=do_dist_rnd(spaH0,matG0,prm.debug,prm.steps,prm.wmin);
 #else //! `new` distance-finding routine 
-    prm.dist_max=do_RW_dist(p->spaH,p->spaL,p->steps, p->wmin, p->classical, p->swait, p->debug);
+    prm.dist_max=do_RW_dist(p->spaH,p->spaL,p->steps, p->wmin, p->classical, p->debug);
 #endif /* 0 */    
     if (prm.debug & 1){
       printf("### RW upper bound on the distance: %d\n",prm.dist_max);

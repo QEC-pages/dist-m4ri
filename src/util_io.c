@@ -9,6 +9,7 @@ params_t prm={
   .css=1,
   .wmax=5,
   .wmin=1,
+  .start=-1, 
   .seed=0,
   .dist=0,
   .dist_max=0,
@@ -18,7 +19,6 @@ params_t prm={
   .nvar=0,
   .nchk=0,
   .maxC=0,
-  .swait=0,
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
@@ -33,6 +33,9 @@ params_t * const p = &prm;
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
+
+  if(argc <= 1)
+    ERROR("no command-line arguments given, " BRIEF_HELP,argv[0]);
 
   for (int i=1; i<argc;i++) /* scan arguments for help message */
     if((strcmp(argv[i],"--help")==0)||(strcmp(argv[i],"-h")==0)){
@@ -200,16 +203,21 @@ void var_init(int argc, char **argv, params_t * const p){
   if ((!p->classical) && ((p->spaG) && (n != (p->spaG) -> cols)))
     ERROR("Column count mismatch in H and G matrices: %d != %d",
 	  (p->spaH)-> cols, (p->spaG)->cols);
-  p->nvar=n; 
-  p->n0=n;
+  p->nvar = n; 
+  p->n0 = n;
   if (p->css!=1)
     ERROR("Non-CSS codes are currently not supported, css=%d",p->css);
   
   if((p->spaG) && (p->spaL==NULL)){
     /** create `Lx` */
     /** WARNING: this does not necessarily have minimal row weights */
-    p->spaL=Lx_for_CSS_code(p->spaH,p->spaG);
+    p->spaL = Lx_for_CSS_code(p->spaH,p->spaG);
     p->nchk = p->spaL->rows;
+  }
+
+  if ((p->method <= 0) || (p->method > 3)){
+      printf("invalid method=%d specified\n", p->method);
+      ERROR(BRIEF_HELP,argv[0]);
   }
   
 }
