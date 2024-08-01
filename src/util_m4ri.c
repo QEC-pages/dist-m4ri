@@ -111,10 +111,10 @@ rci_t mzd_gauss_naive(mzd_t *M, mzp_t *q, int full) {
 }
 
 /** 
- * return max row weight of CSR matrix p
+ * @brief return max row weight of CSR matrix p
  * TODO: add code for List of Pairs 
  */
-int csr_max_row_wght(const csr_t *p){
+int csr_max_row_wght(const csr_t * const p){
   int m=p->rows;
   int wmax=0;
   for(int i=0;i<m;i++){

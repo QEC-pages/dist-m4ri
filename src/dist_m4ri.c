@@ -1,15 +1,18 @@
 
-/************************************************************************ 
- * calculate distance of a quantum LDPC code using 
- * (1) random information set (random window) algorithm (upper bound)
- * (2) depth-first codeword enumeration (cluster) algorithm (lower bound)
+/** ********************************************************************** 
+ * @brief distance of a classical or quantum CSS code
+ * 
+ * The program implements two methods:
+ * 1. Random information set (random window) algorithm (upper bound).  
+ *    This works with any code (LDPC or not).
+ * (2) depth-first codeword enumeration (connected cluster) algorithm
+ * (Lower bound or actual distance if a codeword is found.)  
+ * 
  * A. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..."
  * in IEEE Trans. Inf. Th., vol. 63, p. 4675 (2017). 
  * doi: 10.1109/TIT.2017.2690381
  *
- * currently: CSS only 
- *
- * author: Leonid Pryadko <leonid.pryadko@ucr.edu>
+ * author: Leonid Pryadko <leonid.pryadko@ucr.edu>, Weilei Zeng
  ************************************************************************/
 // #include <m4ri/config.h>
 #include <inttypes.h>
@@ -25,8 +28,8 @@
 // #include "util.h"
 
 /** 
- * Add row=i of sparse matrix spaQ to row.
- * no range check is done 
+ * @brief Add row=i of sparse matrix spaQ to row.
+ * WARNING: no range check is done 
  */ 
 static inline void addto_inline(mzd_t *row, const csr_t *spaQ, const int i){
 #ifndef NDEBUG  
@@ -48,7 +51,7 @@ static inline void addto_inline(mzd_t *row, const csr_t *spaQ, const int i){
  *  nei: neighborhood vector to construct 
  *  v: value bits 
  *  s: syndrome bits 
- *  P: LDPC parity check (with row weight <= maxrow )
+ *  P: LDPC parity check (with row weight <= max_row_wt )
  */
 
 static inline int prep_neis(const int z0, int * nei, const mzd_t * v, _maybe_unused const mzd_t * s, const csr_t * P){ 
@@ -98,7 +101,7 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
       if(w>=wmax)
 	return -1; /* failed to find a cluster */
       all_zero=0;
-      int nei[maxrow];
+      int nei[max_row_wt];
       int neisize=prep_neis(i,nei,v,s,P);
       //      cout << " row="<< i<< " nei=" << nei<< endl;
       //      if(neisize==0) ERROR("neisize=0");  /* this is actually OK: just continue */
@@ -201,7 +204,7 @@ mzp_t * do_skip_pivs(const size_t rank, const mzp_t * const pivs){
     ans->values[i++] = ans->values[j];
   ans->length = n-rank;
 
-  if(prm.debug & 8){/** in skip_pivs */
+  if(prm.debug&8){/** in skip_pivs */
     printf("skip_pivs of len=%d: ",ans->length);
     for(int i=0; i< ans->length; i++)
       printf(" %d%s",ans->values[i],i+1 == ans->length ?"\n":"");
@@ -441,17 +444,13 @@ int main(int argc, char **argv){
   params_t * const p = &prm;
   var_init(argc,argv,p);
 
-  if (p->method & 2){ /* cluster */
-    prm.max_row_wgt_G=csr_max_row_wght(p->spaG);
-    if(prm.max_row_wgt_G>maxrow)
-      ERROR("main: increase maxrow=%d to %d",maxrow,prm.max_row_wgt_G);
-
-  }
   const int n=p->nvar;
 
   
 
   if (prm.method & 1){ /* RW method */
+    if (p->debug & 1)
+      printf("# starting RW method with wmin=%d steps=%d classical=%d\n",p->wmin,p->steps,p->classical);
 #if 0 /** older version, may have bugs */    
     prm.dist_max=do_dist_rnd(spaH0,matG0,prm.debug,prm.steps,prm.wmin);
 #else //! `new` distance-finding routine 

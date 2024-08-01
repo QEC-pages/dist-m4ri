@@ -10,8 +10,6 @@
 
 
 
-static const int maxrow = 10;
-
   /** @brief helper function to sort `int`
    *  use `qsort(array, len, sizeof(rci_t), cmp_rci_t);`
    */

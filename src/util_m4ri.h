@@ -178,7 +178,7 @@ extern "C" {
    * return max row weight of CSR matrix p
    * TODO: add code for List of Pairs 
    */
-  int csr_max_row_wght(const csr_t *p);
+  int csr_max_row_wght(const csr_t * const p);
   
   /** 
    * transpose compressed CSR matrix, 

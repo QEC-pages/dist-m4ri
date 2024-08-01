@@ -20,6 +20,8 @@
 
 #define _maybe_unused __attribute__((unused))
 
+static const int max_row_wt=10; 
+
 typedef struct{
   int debug; /* debug information */ 
   int classical; /* 1 for a classical code, i.e., no `G=Hz` matrix*/
@@ -32,8 +34,9 @@ typedef struct{
   int dist; /* target distance of the code */
   int dist_max; /* distance actually checked */
   int dist_min; /* distance actually checked */
-  int max_row_wgt_G; /* needed for C */
-  //! int maxrow;  /* WARNING: this is defined in `dist_m4ri.h` as `static const int` */
+  int max_row_wgt_H; /* needed for C */
+  int max_col_wgt_H; /* needed ? */
+  //! int max_row_wt;  /* WARNING: this is defined in `util_io.h` as `static const int` */
   int start;
   //  int linear; /* not supported */
   int n0;  /* code length, =nvar for css, (nvar/2) for non-css */
