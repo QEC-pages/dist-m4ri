@@ -4,6 +4,8 @@ authors:
   - family-names: Pryadko
     given-names: "Leonid P."
     orcid: https://orcid.org/0000-0002-4990-0259
+  - family-names: Zeng
+    given-names: "Weilei"
 title: "dist-m4ri: distance of a classical or quantum CSS code"
 version: v0.5.0
 date-released: 2024-07-31
