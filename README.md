@@ -1,4 +1,11 @@
+---
+title: README
+authors: Leonid P. Pryadko; Weilei Zeng
+date: 2024-08-01
+---
 # dist-m4ri - distance of a classical or quantum CSS code
+
+
 
 ## Overview
 
@@ -101,12 +108,10 @@ Supported parameters:
 
 ## Compilation
 
-I only tried it with recent `gcc` compilers under linux.  Download the
-distribution from `github` then run from the `dist-m4ri/src` directory
-```sh
-make -j all
-```
-This should compile the executable `dist_m4ri`.
+The program is intended for use with recent `gcc` compilers under
+linux.  Download the distribution from `github` then run from the
+`dist-m4ri/src` directory ```sh make -j all ``` This should compile
+the executable `dist_m4ri`.
 
 The program uses `m4ri` library for binary linear algebra.  To install
 under Ubuntu, run
