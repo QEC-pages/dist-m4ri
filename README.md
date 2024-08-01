@@ -1,6 +1,8 @@
 ---
 title: README
-authors: Leonid P. Pryadko; Weilei Zeng
+author: 
+ - Leonid P. Pryadko
+ - Weilei Zeng
 date: 2024-08-01
 ---
 # dist-m4ri - distance of a classical or quantum CSS code
