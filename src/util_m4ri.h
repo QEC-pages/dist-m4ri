@@ -10,9 +10,6 @@
 
 #define SWAPINT(a,b) do{ int t=a; a=b; b=t; } while(0)
 
-static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
-// #define MININT(a,b) do{ int t1=(a); int t2=(b); t1<t2? t1 :t2; } while(0)
-
 #define ERROR(fmt,...)                                                 \
   do{                                                                  \
     fprintf (stderr, "%s:%d: *** ERROR in function '%s()' ***\n", __FILE__, __LINE__, __FUNCTION__); \
@@ -186,7 +183,7 @@ extern "C" {
    * return resulting matrix
    * TODO: add code for List of Pairs 
    */
-  csr_t * csr_transpose(csr_t *dst, const csr_t *p);
+  csr_t * csr_transpose(csr_t *dst, const csr_t * const p);
 
   
   /**
@@ -241,8 +238,10 @@ extern "C" {
 
   /* same as above but of equal length */
   static inline mzp_t * mzp_rand(mzp_t *q){
-    if (q==NULL)
-      ERROR("permutation must be initialized!");
+    if (q==NULL){
+      printf("mzp_rand: permutation must be initialized!");
+      exit(-1);
+    }
     return mzp_rand_len(q,q->length);
   }
 
@@ -374,7 +373,11 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
   return 0;
 }
 
-
+  /** @brief return 1 if matrix product A*B^T is non-zero 
+   * @param A first matrix
+   * @param B second matrix 
+   * */  
+  int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B);
   
   /** 
    * Check whether syndrome is zero or not 

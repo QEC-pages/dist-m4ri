@@ -50,7 +50,10 @@ typedef struct{
   csr_t *spaH;
   csr_t *spaG;
   csr_t *spaL;
-} params_t; 
+} params_t;
+
+static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
+// #define MININT(a,b) do{ int t1=(a); int t2=(b); t1<t2? t1 :t2; } while(0)
 
 extern params_t prm;
 void var_init(int argc, char **argv, params_t * const p);

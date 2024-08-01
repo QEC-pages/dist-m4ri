@@ -198,6 +198,8 @@ void var_init(int argc, char **argv, params_t * const p){
   if(p->finG){
     p->classical=0;
     p->spaG=csr_mm_read(p->finG,p->spaG,0);
+    if(csr_csr_mul_non_zero(p->spaH, p->spaG))
+       ERROR("rows of H and G matrices are not orthogonal");
   } 
   else if (p->finL){
     p->classical=0;

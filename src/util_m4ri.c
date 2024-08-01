@@ -132,7 +132,7 @@ int csr_max_row_wght(const csr_t * const p){
  * return resulting matrix
  * TODO: add code for List of Pairs 
  */
-csr_t * csr_transpose(csr_t *dst, const csr_t *p){
+csr_t * csr_transpose(csr_t *dst, const csr_t * const p){
   int rows=p->rows, cols=p->cols, nz=p->p[rows];
   if (dst == NULL) 
     dst = csr_init(NULL,cols,rows,nz);
@@ -288,6 +288,23 @@ mzd_t * syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear){
     while( TRUE);
   }
   return syndrome;
+}
+
+int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B){
+  if(!A)
+    ERROR("matrix A is NULL");
+  if(!B)
+    ERROR("matrix B is NULL");
+  if (A->cols != B->cols) 
+    ERROR("col count mismatch: A[%d,%d] and B[%d,%d]",
+	  A->rows,A->cols, B->rows, B->cols);
+  
+  for(int i=0; i < B->rows; i++){
+    const int begr = B->p[i];
+    if(sparse_syndrome_non_zero(A,B->p[i+1] - begr, & (B->i[begr])))
+      return 1;
+  }
+  return 0;
 }
 
 /** 
