@@ -7,8 +7,6 @@ date: 2024-08-01
 ---
 # dist-m4ri - distance of a classical or quantum CSS code
 
-
-
 ## Overview
 
 The program implements two algorithms for calculating the distance of
