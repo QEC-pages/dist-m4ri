@@ -179,6 +179,8 @@ void var_init(int argc, char **argv, params_t * const p){
   
   if (p->finH){
     p->spaH=csr_mm_read(p->finH,p->spaH,0);
+    if(p->debug&1)
+      printf("# read H <- file '%s'\n",p->finH);
   }
   else
     ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
@@ -198,12 +200,17 @@ void var_init(int argc, char **argv, params_t * const p){
   if(p->finG){
     p->classical=0;
     p->spaG=csr_mm_read(p->finG,p->spaG,0);
+    if(p->debug&1)
+      printf("# read G <- file '%s'\n",p->finG);
     if(csr_csr_mul_non_zero(p->spaH, p->spaG))
        ERROR("rows of H and G matrices are not orthogonal");
   } 
   else if (p->finL){
     p->classical=0;
     p->spaL=csr_mm_read(p->finL,p->spaL,0);
+    if(p->debug&1)
+      printf("# read L <- file '%s'\n",p->finL);
+
   } 
   else{
     p->classical=1;
@@ -240,7 +247,7 @@ void var_kill(params_t * const p){
     csr_free(p->spaH);
   if(p->spaG)
     csr_free(p->spaG);
-#if 0  
+#if 0
   if(strlen(p->fin) != 0){
     if(p->finH){
       printf("freeing finH=%s\n", p->finH);

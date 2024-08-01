@@ -82,6 +82,17 @@ void var_kill(params_t * const p);
   "\tdebug=[int]:\t bitmap for aux information to output (3)\n"		\
   "\t\t0: clear the entire debug bitmap to 0.\n"			\
   "\t\t1: output misc general info (on by default)\n"			\
+  "\t\t2: output more general info (on by default)\n"			\
+  "\t\t4: debug command line arguments parsing\n"			\
+  "\t\t8: output progress reports every 1000 steps\n"			\
+  "\t\t16: output new min-weight codewords found (cut large vectors)\n"	\
+  "\t\t32: output matrices (unless n is large)\n"			\
+  "\t\t64: reserved\n"							\
+  "\t\t128: reserved\n"							\
+  "\t\t256: print out neighbor lists\n"					\
+  "\t\t512: print out vectors/syndrome weights during recursion\n"	\
+  "\t\t1024: print piv/skip_pivs/reserved\n"						\
+  "\t\t2048: allow big matrix / large vector output\n"			\
   "\t\t   see the source code for more options\n"			\
   "\t  Multiple 'debug' parameters are XOR combined except for 0.\n"	\
   "\t  Use debug=0 as the 1st argument to suppress all debug messages.\n"\

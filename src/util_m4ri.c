@@ -293,8 +293,12 @@ mzd_t * syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear){
 int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B){
   if(!A)
     ERROR("matrix A is NULL");
+  if(A->nz != -1)
+    ERROR("matrix A shold be in compressed form");
   if(!B)
     ERROR("matrix B is NULL");
+  if(A->nz != -1)
+    ERROR("matrix B should be in compressed form");
   if (A->cols != B->cols) 
     ERROR("col count mismatch: A[%d,%d] and B[%d,%d]",
 	  A->rows,A->cols, B->rows, B->cols);

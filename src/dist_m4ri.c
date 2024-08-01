@@ -32,7 +32,7 @@
  * WARNING: no range check is done 
  */ 
 static inline void addto_inline(mzd_t *row, const csr_t *spaQ, const int i){
-#ifndef NDEBUG  
+#ifndef NDEBUG
   if (i>=spaQ->rows)
     ERROR("addto: attempt to get row=%d of %d",i,spaQ->rows);
   if (row->ncols != spaQ->cols)
@@ -61,12 +61,12 @@ static inline int prep_neis(const int z0, int * nei, const mzd_t * v, _maybe_unu
       nei[cnt++]=P->i[j]; 
   }
 #ifndef NDEBUG
-  //  if(prm.debug&256){
+  if(prm.debug&256){
     printf("nei=[");
     for(int i=0; i< cnt; i++)
       printf(" %d ",nei[i]);
     printf("]\n");
-    //  }
+  }
 #endif 
   return cnt;
 }
@@ -86,11 +86,13 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
   word * rawrow = s->rows[0];  
   rci_t ns=v->ncols;
 #ifndef NDEBUG  
-  //  if(prm.debug & 512){
+  if(prm.debug&512){
     printf("w=%d wgh(Pv)=%d  \nv=",w,syndrome_bit_count(v, P));
-    mzd_print(v);
-    printf("s=");  mzd_print(s);
-    //  }
+    if(prm.debug&2048){
+      mzd_print(v);
+      printf("s=");  mzd_print(s);
+    }
+  }
 #endif
     
   for(rci_t i=-1 ; i+1< ns ; ){
@@ -204,7 +206,7 @@ mzp_t * do_skip_pivs(const size_t rank, const mzp_t * const pivs){
     ans->values[i++] = ans->values[j];
   ans->length = n-rank;
 
-  if(prm.debug&8){/** in skip_pivs */
+  if(prm.debug&1024){/** in skip_pivs */
     printf("skip_pivs of len=%d: ",ans->length);
     for(int i=0; i< ans->length; i++)
       printf(" %d%s",ans->values[i],i+1 == ans->length ?"\n":"");
@@ -235,16 +237,17 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 
   int minW=nvar+1;
 
-  if(debug&16)
-    printf("running do_RW_dist() with steps=%d wmin=%d classical=%d nvar=%d\n",steps, wmin, classical, nvar);
+  if(debug&2)
+    printf("running do_RW_dist() with steps=%d wmin=%d classical=%d nvar=%d\n",
+	   steps, wmin, classical, nvar);
   
   mzd_t * mH = mzd_from_csr(NULL, spaH0);
-  //  mzd_t *mLt = NULL, *eemLt = NULL; //, *mL = NULL;
-  rci_t *ee = malloc(nvar*sizeof(rci_t)); /** actual `vector` */
+  /** actual `vector` in sparse form */
+  rci_t *ee = malloc(nvar*sizeof(rci_t)); 
   
   if((!mH) || (!ee))
     ERROR("memory allocation failed!\n");
-  //  if(p->debug & 16)  mzd_print(mH);
+
   /** 1. Construct random column permutation P */
 
   mzp_t * perm=mzp_init(nvar); /** identity column permutation */
@@ -265,8 +268,11 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
       if(ret)
         pivs->values[rank++]=col;
     }
+
     /** construct skip-pivot permutation */
     mzp_t * skip_pivs = do_skip_pivs(rank, pivs);
+
+    /** TODO: would it be faster to transpose `mH` first? */
 
     /** calculate sparse version of each vector (list of positions)
      *  `p`    `p``p`               # pivot columns marked with `p`   
@@ -281,12 +287,21 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
       for(int ix=0; ix<rank; ix++){
         if(mzd_read_bit(mH,ix,col))
           ee[cnt++] = pivs->values[ix];
-	if (cnt >= minW)
+	if (cnt >= minW) /** `cw` of no interest */
 	  break;
       }
       if(cnt < minW){
 	/** sort the column indices */
 	qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
+#ifndef NDEBUG
+	/** expensive: verify orthogonality */
+	if(sparse_syndrome_non_zero(spaH0, cnt, ee)){
+	  printf("# cw of weight %d: [",cnt);
+	  for(int i=0; i<cnt;i++)
+	    printf("%d%s",ee[i],i+1==cnt?" ":"]\n");
+	  ERROR("this should not happen: cw not orthogonal to H");
+	}
+#endif /* NDEBUG */
       
 	/** verify logical operator */
 	int nz;
@@ -296,19 +311,24 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	  nz = sparse_syndrome_non_zero(spaL0, cnt, ee);	
 	if(nz){ /** we got non-trivial codeword! */
 	  /** TODO: try local search to `lerr` (if 2 or larger) */
-	  /** calculate the energy and compare */
-	  /** at this point we have `cnt` codeword indices in `ee`, and its `energ` */
-	  //        if (cnt < minW){
+	  /** at this point we have `cnt` codeword indices in `ee` */
+	  if(debug&16){
+	    printf("# minW=%d found cw of weight %d: [",minW,cnt);
+	    int max = ((cnt<50) || (debug&2048)) ? cnt : 50 ;
+	    for(int i=0; i< max;i++)
+	      printf("%d%s",ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
+	  }
 	  minW=cnt;
 	  if (minW <= wmin){ /** early termination condition */
-	    minW = - minW; /** this distance value is of little interest; */
+	    minW = - minW;   /** this distance value is of little interest; */
 	  }
 	}
       }
     } /** end of the dual matrix rows loop */
-    if(debug & 16)
-      printf(" round=%d of %d minW=%d\n", ii+1, steps, minW);
-    
+    if(debug&8){
+      if(ii%1000==999)
+	printf("# round=%d of %d minW=%d\n", ii+1, steps, minW);
+    }
     mzp_free(skip_pivs);
     
   }/** end of `steps` random window */
@@ -342,12 +362,12 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
     mzd_apply_p_right(matG0perp, piv1); // permute cols back to order in G0
     //    mzd_info(matG0perp,0);
     // generator matrix dual to G0
-    if((debug & 1)&&(ii==0))
+    if((debug&1)&&(ii==0))
       printf("# rankG=%d\n",matG0perp->nrows);
-    if (((debug &512)||(debug & 2048)) ){
-      if (debug & 2048) printf("current G\n");
+    if (((debug&512)||(debug&2048)) ){
+      if (debug&2048) printf("current G\n");
       mzd_t *matG0=mzd_from_csr(NULL,spaG0);
-      if ((debug & 2048) && (n<=150)){
+      if ((debug&2048) && (n<=150)){
 	mzd_print(matG0); 
 	printf("current Gperp=\n");
 	mzd_print(matG0perp);
@@ -360,10 +380,10 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
       mzd_t * matG0ptran = mzd_transpose(NULL,matG0perp);
       prod1=csr_mzd_mul(NULL,spaG0,matG0ptran,1);
       mzd_free(matG0ptran);
-      if ((debug & 2048) && (n<=150))
+      if ((debug&2048) && (n<=150))
 	mzd_print(prod1);
       printf("weigt of G0*G0perp_T=%d\n",(int)mzd_weight(prod1));
-      if ((debug & 2048) && (n<=150)){
+      if ((debug&2048) && (n<=150)){
 	printf("current P=\n");
 	mzd_print(matP0);
 	printf(" G*P_T=\n");
@@ -371,7 +391,7 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
       mzd_free(prod1);
       prod1=mzd_init(matG0->nrows,matP0->nrows);
       prod1=_mzd_mul_naive(prod1,matG0,matP0,1);
-      if ((debug & 2048) && (n<=150))
+      if ((debug&2048) && (n<=150))
 	mzd_print(prod1);
       printf("weigt of G*P^T=%d\n",(int)mzd_weight(prod1));
       mzd_free(matG0);
@@ -384,7 +404,7 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
     rci_t wei;
     mzd_t *row, *row0=NULL;
     int width = matG0perp -> width;
-    if((debug & 1)&&(ii==0))
+    if((debug&1)&&(ii==0))
       printf("# n=%d width=%d\n",n,width);
     //    printf("##### here ########\n");
     for(int i=0;i<rt;i++){
@@ -392,23 +412,23 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
       row=mzd_init_window(matG0perp,i,0,i+1,n);
       wei=mzd_weight(row); 
       if((wei<weimin)){ 
-	//	if (debug & 1024)
+	//	if (debug&1024)
 	  row0=mzd_copy(row0,row);
 	  //	else
 	  //	  row0=row;
 	rci_t j=do_reduce(row,matP0,matP0->nrows);
 	if (j!=-1){ /* not an empty row */
-	  if (debug & 1024){
-	    int wei0=mzd_weight_naive(row0);
-	    if (wei!=wei0){
-	      printf("### naive wei=%d vs std_bitcount %d\n",wei0,wei);
-	      mzd_print(row0);
-	    }
+#ifndef NDEBUG	  
+	  int wei0=mzd_weight_naive(row0);
+	  if (wei!=wei0){
+	    printf("### naive wei=%d vs std_bitcount %d\n",wei0,wei);
+	    mzd_print(row0);
 	  }
-	  if (debug & 3)
+#endif 	  
+	  if (debug&3)
 	    printf("# round=%d i=%d w=%d s=%d " "s0=%d "
 		   "min=%d\n",ii,i,wei,
-		   debug &2 ? syndrome_bit_count(row0,spaG0):0,syndrome_bit_count(row,spaG0),
+		   debug&2 ? syndrome_bit_count(row0,spaG0):0,syndrome_bit_count(row,spaG0),
 		   weimin);	    	  
 	  weimin=wei;
 	}
@@ -432,7 +452,7 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
     if (weimin<0)
       break;
   }
-  if (debug & 2) 
+  if (debug&2) 
     printf("# n=%d k=%d weimin=%d\n",n,rt-matP0->nrows,weimin);
 
   return weimin;
@@ -442,21 +462,20 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
 
 int main(int argc, char **argv){
   params_t * const p = &prm;
+
   var_init(argc,argv,p);
 
-  const int n=p->nvar;
-
-  
+  //  const int n=p->nvar;
 
   if (prm.method & 1){ /* RW method */
-    if (p->debug & 1)
-      printf("# starting RW method with wmin=%d steps=%d classical=%d\n",p->wmin,p->steps,p->classical);
+    
 #if 0 /** older version, may have bugs */    
     prm.dist_max=do_dist_rnd(spaH0,matG0,prm.debug,prm.steps,prm.wmin);
 #else //! `new` distance-finding routine 
     prm.dist_max=do_RW_dist(p->spaH,p->spaL,p->steps, p->wmin, p->classical, p->debug);
 #endif /* 0 */    
-    if (prm.debug & 1){
+
+    if (prm.debug&1){
       printf("### RW upper bound on the distance: %d\n",prm.dist_max);
     if(prm.dist_max <0)
       printf("### negative distance due to wmax=%d set (early termination)\n",prm.wmax);
@@ -466,47 +485,48 @@ int main(int argc, char **argv){
 
   if (prm.method & 2){ /* cluster method */
     /* convert G to standard form */
-    mzp_t *piv0=mzp_init(n);  //  mzp_out(piv0);
+    mzp_t *piv0=mzp_init(p->nvar);  //  mzp_out(piv0);
     mzd_t *matG0=mzd_from_csr(NULL,p->spaG); 
     rci_t rankG=mzd_gauss_naive(matG0,piv0,1); 
-    if(prm.debug & 1)
-      printf("# rankG=%d\n",rankG);
+    if(prm.debug&1)
+      printf("# created G with rankG=%d\n",rankG);
     mzd_apply_p_right_trans(matG0,piv0);
     //    matG0->nrows=rankG;
       
     mzp_t *q0=perm_p_trans(NULL,piv0,1);    // permutation equiv to piv0 
     csr_t *spaH0=csr_apply_perm(NULL,p->spaH,q0); // permuted sparse H
     //  csr_t* spaG0=csr_apply_perm(NULL,p->spaG,q0); // permuted sparse G -- not needed here
-    if(prm.debug & 2048){
-      if ((n<=150))
-	{
-	  printf("matG0=\n");
-	  mzd_print(matG0);
-	    
-	  printf("matP0=\n");
-	  mzd_t *matP0=mzd_from_csr(NULL,spaH0);  
-	  mzd_print(matP0);
-	  mzd_free(matP0);
-	}
-      int wei=product_weight_csr_mzd(spaH0, matG0,1);    
-      printf("weigt of H0*G0_T=%d\n",wei);
-      if(wei>0)
-	ERROR("expected zero weight product!");
+    if(prm.debug&32){/** print matrices */
+      if ((p->debug&2048)||(p->nvar <= 150)){
+	printf("matG0=\n");
+	mzd_print(matG0);
+	
+	printf("matP0=\n");
+	mzd_t *matP0=mzd_from_csr(NULL,spaH0);  
+	mzd_print(matP0);
+	mzd_free(matP0);
+      }
     }
+#ifndef DEBUG
+    if (product_weight_csr_mzd(spaH0, matG0,1))
+      ERROR("this should not happen: expected zero product H0*G0^T !");
+
+#endif     
     mzp_free(piv0);
     mzp_free(q0);
     
     int dmin=do_dist_clus(spaH0,matG0,prm.debug,prm.wmax,prm.start,rankG);
     csr_free(spaH0);
     mzd_free(matG0);
+    
     if (dmin>0){ 
-      if (prm.debug & 1)
+      if (prm.debug&1)
 	printf("### Cluster (actual min-weight codeword found): dmin=%d\n",dmin);
       prm.dist_min = dmin; /* actual distance found */
       prm.dist_max = dmin;
     }
     else if (dmin<0){
-      if (prm.debug & 1)
+      if (prm.debug&1)
 	printf("### Cluster dmin=%d  (no codewords of weight up to %d)\n",dmin,-dmin);
       if (-dmin==abs(prm.dist_max)-1)
 	prm.dist_min=abs(prm.dist_max); /* OK */
@@ -528,10 +548,7 @@ int main(int argc, char **argv){
       printf("cluster algorithm failed to find a codeword up to wmax=%d\n",-dmin);
   }
   else{ /* just RW */
-    //    if(prm.debug &1)
     printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
-      
-      //    }
   }
   var_kill(p);
   
