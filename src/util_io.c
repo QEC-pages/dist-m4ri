@@ -181,16 +181,21 @@ void var_init(int argc, char **argv, params_t * const p){
     p->spaH=csr_mm_read(p->finH,p->spaH,0);
     if(p->debug&1)
       printf("# read H <- file '%s'\n",p->finH);
+    if(p->debug&32){
+      if((p->spaH->cols<150)||(p->debug&2048))
+	csr_print(p->spaH,"H");
+    }
   }
   else
     ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
 
-
+#if 0
   if (p->method&2){ /* cluster */
     p->max_row_wgt_H = csr_max_row_wght(p->spaH);
     if(p->max_row_wgt_H > max_row_wt)
       ERROR("increase max_row_wt=%d to %d",max_row_wt,p->max_row_wgt_H);
   }
+#endif
 
 
   if((p->finG) && (p->finL))
@@ -204,13 +209,20 @@ void var_init(int argc, char **argv, params_t * const p){
       printf("# read G <- file '%s'\n",p->finG);
     if(csr_csr_mul_non_zero(p->spaH, p->spaG))
        ERROR("rows of H and G matrices are not orthogonal");
+    if(p->debug&32){
+      if((p->spaG->cols<150)||(p->debug&2048))
+	csr_print(p->spaG,"G");
+    }
   } 
   else if (p->finL){
     p->classical=0;
     p->spaL=csr_mm_read(p->finL,p->spaL,0);
     if(p->debug&1)
       printf("# read L <- file '%s'\n",p->finL);
-
+    if(p->debug&32){
+      if((p->spaL->cols<150)||(p->debug&2048))
+	csr_print(p->spaL,"L");
+    }
   } 
   else{
     p->classical=1;

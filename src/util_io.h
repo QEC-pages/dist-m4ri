@@ -20,7 +20,7 @@
 
 #define _maybe_unused __attribute__((unused))
 
-static const int max_row_wt=10; 
+//static const int max_row_wt=10; 
 
 typedef struct{
   int debug; /* debug information */ 

@@ -16,14 +16,17 @@ CPP = g++
 default: give_help
 all: dist_m4ri 
 
-dist_m4ri: dist_m4ri.c dist_m4ri.h util_io.o util_m4ri.o mmio.o  makefile 
-	${CC} ${CFLAGS} -DSTANDALONE -o dist_m4ri $< mmio.o util_m4ri.o util_io.o -lm4ri -lm
+dist_m4ri: dist_m4ri.c dist_m4ri.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
+	${CC} ${CFLAGS} -DSTANDALONE -o dist_m4ri $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm
 
 util_m4ri.o: util_m4ri.c util_m4ri.h mmio.h makefile 
 	${CC} ${CFLAGS} -c -o util_m4ri.o $<  
 
 util_io.o: util_io.c util_io.h util_m4ri.h mmio.h makefile 
 	${CC} ${CFLAGS} -c -o util_io.o $<  
+
+dist_cc.o: dist_cc.c util_io.h util_m4ri.h mmio.h makefile 
+	${CC} ${CFLAGS} -c -o dist_cc.o $<  
 
 mmio.o: mmio.c mmio.h makefile
 	${CC} ${CFLAGS} -c $< 

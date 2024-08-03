@@ -541,6 +541,18 @@ void csr_out(const csr_t *mat){
   }
 }
 
+void csr_print(const csr_t * const smat, const char str[]){
+  mzd_t *mH0 = mzd_from_csr(NULL,smat);
+  if(str)
+    printf("matrix %s:\n",str);
+  else
+    printf("matrix:\n");
+  mzd_print(mH0);
+  mzd_free(mH0);
+}
+
+
+
 /**
  * read sparse matrix into a (binary) CSR (all entries default to 1)
  * (re)allocate mat if needed

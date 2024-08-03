@@ -286,7 +286,7 @@ extern "C" {
    *  output a CSR matrix  
    */ 
   void csr_out(const csr_t *mat);
-
+  void csr_print(const csr_t * const smat, const char str[]);
   /**
    * read sparse matrix into a (binary) CSR (all entries default to 1)
    * (re)allocate mat if needed

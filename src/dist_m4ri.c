@@ -71,6 +71,7 @@ static inline int prep_neis(const int z0, int * nei, const mzd_t * v, _maybe_unu
   return cnt;
 }
 
+#if 0
 /** recursive function. 
  *  return: -1: fail; 0: success; 1: immediate termination 
  *  input: 
@@ -93,7 +94,6 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
       printf("s=");  mzd_print(s);
     }
   }
-#endif
     
   for(rci_t i=-1 ; i+1< ns ; ){
     i=nextelement(rawrow,s->width,i+1);
@@ -138,6 +138,7 @@ static int start_rec(const int w, const int wmax, mzd_t * v, mzd_t * s,
   }
   return 0; /* keep going */
 }
+#endif 
 
 /** @brief lower bound on the minimum distance by cluster enumeration
  * 
@@ -185,6 +186,7 @@ int do_dist_clus(const csr_t * const P, const mzd_t * const G, int debug, int wm
   mzd_free(v);
   return -wmax; /* failed up to wmax */
 }
+#endif
 
 
 /** @brief prepare an ordered pivot-skip list of length `n-rank` */
@@ -460,6 +462,9 @@ int do_dist_rnd(csr_t *spaG0, mzd_t *matP0, int debug,int steps, int wmin){
 
 #ifdef STANDALONE
 
+int do_CC_dist(const csr_t * const mH, const csr_t * mL,
+	       const int wmax, const int start, const int debug);
+
 int main(int argc, char **argv){
   params_t * const p = &prm;
 
@@ -484,6 +489,7 @@ int main(int argc, char **argv){
   }
 
   if (prm.method & 2){ /* cluster method */
+#if 0 /** old method */
     /* convert G to standard form */
     mzp_t *piv0=mzp_init(p->nvar);  //  mzp_out(piv0);
     mzd_t *matG0=mzd_from_csr(NULL,p->spaG); 
@@ -518,7 +524,9 @@ int main(int argc, char **argv){
     int dmin=do_dist_clus(spaH0,matG0,prm.debug,prm.wmax,prm.start,rankG);
     csr_free(spaH0);
     mzd_free(matG0);
-    
+#else /* not 0 */
+    int dmin=do_CC_dist(p->spaH,p->spaL,p->wmax,p->start,p->debug);
+#endif /* 0 */    
     if (dmin>0){ 
       if (prm.debug&1)
 	printf("### Cluster (actual min-weight codeword found): dmin=%d\n",dmin);
