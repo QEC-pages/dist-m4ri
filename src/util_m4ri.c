@@ -258,6 +258,24 @@ void addto(mzd_t *row, const csr_t *spaQ, const int i){
     mzd_flip_bit(row, 0,spaQ->i[j]); /* flip that bit */
 }
 
+
+/** 
+ * @brief Add row=i of sparse matrix spaQ to row.
+ * WARNING: no range check is done 
+ */ 
+static inline void addto_inline(mzd_t *row, const csr_t *spaQ, const int i){
+#ifndef NDEBUG
+  if (i>=spaQ->rows)
+    ERROR("addto: attempt to get row=%d of %d",i,spaQ->rows);
+  if (row->ncols != spaQ->cols)
+    ERROR("addto: column number mismatch");
+  //  mzd_print(row);
+#endif
+  for (int j=spaQ->p[i]; j<spaQ->p[i+1]; j++)
+    mzd_flip_bit(row, 0,spaQ->i[j]); /* flip that bit */
+}
+
+
 /** 
  * Calculate the syndrome vector change: syndrome=syndrome +row.spaQ
  * optionally clear the destination 
