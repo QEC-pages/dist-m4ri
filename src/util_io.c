@@ -136,11 +136,12 @@ void var_init(int argc, char **argv, params_t * const p){
       p->seed=dbg;
       if (p->debug&4)
 	printf("# read %s, seed=%d\n",argv[i],p->seed);
-      if (p->seed==0){
+      if (p->seed<=0){
+	p->seed=time(NULL)+1000*p->seed;
 	if(p->debug&4)
-	  printf("# initializing rng from time(NULL)\n");
-	srand(time(NULL));
-      }      
+	  printf("# initializing rng from time(NULL), seed=%d\n",p->seed);
+      }
+	srand(p->seed);
     }    
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
