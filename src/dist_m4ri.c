@@ -26,39 +26,42 @@
 #include "util_io.h"
 #include "dist_m4ri.h"
 
-
-
-
 /** @brief prepare an ordered pivot-skip list of length `n-rank` */
-mzp_t * do_skip_pivs(const size_t rank, const mzp_t * const pivs){
+mzp_t * do_skip_pivs(const int rank, const mzp_t * const pivs){
   const rci_t n=pivs->length;
-  rci_t j1=rank; /** position to insert the next result */
-  mzp_t * ans = mzp_copy(NULL,pivs);
-  qsort(ans->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
-
-  for(rci_t j=0; j<n; j++){
-    if(!bsearch(&j, ans->values, rank, sizeof(ans->values[0]), cmp_rci_t)){
-      ans->values[j1++]=j;
-    }
+  int *arr=calloc(rank,sizeof(int));
+  if(!arr)
+    ERROR("memory allocation");
+  for(int i=0; i< rank; i++)
+    arr[i] = pivs->values[i];
+  qsort(arr, rank, sizeof(arr[0]), cmp_rci_t);
+  mzp_t *ans=mzp_init(n-rank);
+  rci_t j=0, j1=0; /** position to insert the next result */
+  for(rci_t i1=0; i1 < rank; i1++, j++){    
+    const rci_t piv=arr[i1];
+    while(j<piv)
+      ans->values[j1++] = j++;    
   }
-  assert(j1==n);
+  while(j<n)
+    ans->values[j1++] = j++;
+  assert(j1==n-rank);
 
-  int j=rank;
-  for(size_t i=0; j<n; j++)
-    ans->values[i++] = ans->values[j];
-  ans->length = n-rank;
-
+#ifndef NDEBUG
   if(prm.debug&1024){/** in skip_pivs */
+    printf("orig pivs of len=%d, rank=%d: ",pivs->length, rank);
+    for(int i=0; i< rank; i++)
+      printf(" %d%s",pivs->values[i],i+1 == rank ?"\n":"");
+    printf("srtd pivs of len=%d:          ", rank);
+    for(int i=0; i< rank; i++)
+      printf(" %d%s",arr[i],i+1 == rank ?"\n":"");
     printf("skip_pivs of len=%d: ",ans->length);
     for(int i=0; i< ans->length; i++)
       printf(" %d%s",ans->values[i],i+1 == ans->length ?"\n":"");
-    printf("pivs of len=%d, rank=%zu: ",pivs->length, rank);
-    for(size_t i=0; i< rank; i++)
-      printf(" %d%s",pivs->values[i],i+1 == rank ?"\n":"");
   }
+#endif
+  free(arr);
   return ans;
 }
-
 
 /** @brief Random Information Set search for small-E logical operators.
  *
