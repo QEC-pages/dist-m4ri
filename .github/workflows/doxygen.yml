@@ -5,6 +5,13 @@ branding:
   icon: "upload-cloud"
   color: "purple"
 
+on:
+  push:
+    branches: [ "doxy" ]
+  pull_request:
+    branches: [ "doxy" ]
+  
+
 inputs:
   github_token:
     description: 'A GitHub token for pushing to the repo. Example: https://git.io/passing-token'
