@@ -37,7 +37,6 @@ Given the error model, i.e., the matrices $H=H_x$, $L=L_x$ ($L$ is empty
 for a classical code), the program searches for smallest-weight binary
 `codewords` $c$ such that $Hc=0$, $Lc\neq0$.
 
-
 It repeatedly calculates reduced row echelon form of `H`, with columns
 taken in random order, which uniquely fixes the information set
 (non-pivot columns).  Generally, column permutation and row reduction
@@ -85,25 +84,45 @@ For help, just run `./dist_m4ri -h` or `./dist_m4ri --help`.  This
 shows the following 
 ```sh
 $ ./dist_m4ri --help 
-./dist_m4ri: calculate the minumum distance of a q-LDPC code
-        usage: ./dist_m4ri [arguments [...]]
-Supported parameters:
-        debug=[int]:     bitmap for aux information (3)
-        fin=[string]: base name for input files ("try")
-                 finH->"${try}X.mtx"  finG->"${try}X.mtx"
+./dist_m4ri: distance of a classical or quantum CSS code
+        usage: ./dist_m4ri parameter=value [...]
+
+   Required parameter:
+        method=[int]: bitmap for method used (required, default 0: none):
+                1: random window (RW) algorithm. Options:
+                   steps=[int]: how many information sets to use (1)
+                   wmin=[int]:  minimum distance of interest (1)
+                2: connected cluster (CC) algorithm.  Options:
+                   wmax=[int]:  maximum cluster weight (5)
+                   start=[int]: use only this position to start (-1)
+
+   General parameters:
         finH=[str]: parity check matrix Hx (NULL)
-        finG=[str]: matrix Hz or NULL for classical code (NULL)
-        finL=[str]: matrix Lx or NULL for classical code (NULL)
+        finG=[str]: matrix Hz (quantum CSS code only) (NULL)
+        finL=[str]: matrix Lx (quantum CSS code only) (NULL)
                  Either L=Lx or G=Hz matrix is required for a quantum CSS code
-        css=1: this is a CSS code (the only supported one) (1)
-        seed=[int]: rng seed  [0 for time(NULL)]
-        method=[int]: bitmap for method used:
-                1: random window (RW) algorithm
-                2: connected cluster (CC) algorithm
-        steps=[int]: how many RW decoding cycles to use (1)
-        wmax=[int]: max cluster weight in CC (5)
-        wmin=[int]: min distance of interest in RW (1)
-        -h or --help gives this help
+        fin=[str]:  base name for input files ("try")
+                 set finH->"${fin}X.mtx"  finG->"${fin}Z.mtx"
+        css=[int]:  reserved for future use (1)
+        seed=[int]: rng seed [use 0 for time(NULL)] (0)
+        debug=[int]:     bitmap for aux information to output (3)
+                0: clear the entire debug bitmap to 0.
+                1: output misc general info (on by default)
+                2: output more general info (on by default)
+                4: debug command line arguments parsing
+                8: output progress reports every 1000 steps
+                16: output new min-weight codewords found (cut large vectors)
+                32: output matrices (unless n is large)
+                64: reserved
+                128: reserved
+                256: print out neighbor lists
+                512: print out vectors/syndrome weights during recursion
+                1024: print piv/skip_pivs/reserved
+                2048: allow big matrix / large vector output
+                   see the source code for more options
+          Multiple 'debug' parameters are XOR combined except for 0.
+          Use debug=0 as the 1st argument to suppress all debug messages.
+   -h gives this help (also '--help')
 ```
 
 ## Compilation

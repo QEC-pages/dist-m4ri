@@ -10,13 +10,10 @@
 
 #define SWAPINT(a,b) do{ int t=a; a=b; b=t; } while(0)
 
-static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
-// #define MININT(a,b) do{ int t1=(a); int t2=(b); t1<t2? t1 :t2; } while(0)
-
 #define ERROR(fmt,...)                                                 \
   do{                                                                  \
     fprintf (stderr, "%s:%d: *** ERROR in function '%s()' ***\n", __FILE__, __LINE__, __FUNCTION__); \
-    printf("#:[31;1m *** ERROR: " fmt " ***[0m \n",##__VA_ARGS__); \
+    printf("[31;1m " fmt "[0m\n",##__VA_ARGS__); \
     exit(-1);                                                          \
   }                                                                    \
   while(0)
@@ -148,21 +145,20 @@ extern "C" {
   static inline int nextelement(const word * const set1, const int m, const int pos){
     word setwd;
     int w;
-#if 1
     if (pos < 0){
       w = 0;
       setwd = set1[0];
     }
-    else
-#endif 
-      //    {
-      w = SETWD(pos);
-    setwd = set1[w] & (m4ri_ffff<< SETBT(pos));
-    //  }
+    else{
+	w = SETWD(pos);
+	setwd = set1[w] & (m4ri_ffff<< SETBT(pos));
+      }
 
     for (;;){
-      if (setwd != 0) return  TIMESWORDSIZE(w) + FIRSTBIT(setwd);
-      if (++w == m) return -1;
+      if (setwd != 0)
+	return TIMESWORDSIZE(w) + FIRSTBIT(setwd);
+      if (++w == m)
+	return -1;
       setwd = set1[w];
     }
   }
@@ -178,7 +174,7 @@ extern "C" {
    * return max row weight of CSR matrix p
    * TODO: add code for List of Pairs 
    */
-  int csr_max_row_wght(const csr_t *p);
+  int csr_max_row_wght(const csr_t * const p);
   
   /** 
    * transpose compressed CSR matrix, 
@@ -186,7 +182,7 @@ extern "C" {
    * return resulting matrix
    * TODO: add code for List of Pairs 
    */
-  csr_t * csr_transpose(csr_t *dst, const csr_t *p);
+  csr_t * csr_transpose(csr_t *dst, const csr_t * const p);
 
   
   /**
@@ -241,8 +237,10 @@ extern "C" {
 
   /* same as above but of equal length */
   static inline mzp_t * mzp_rand(mzp_t *q){
-    if (q==NULL)
-      ERROR("permutation must be initialized!");
+    if (q==NULL){
+      printf("mzp_rand: permutation must be initialized!");
+      exit(-1);
+    }
     return mzp_rand_len(q,q->length);
   }
 
@@ -287,7 +285,7 @@ extern "C" {
    *  output a CSR matrix  
    */ 
   void csr_out(const csr_t *mat);
-
+  void csr_print(const csr_t * const smat, const char str[]);
   /**
    * read sparse matrix into a (binary) CSR (all entries default to 1)
    * (re)allocate mat if needed
@@ -374,7 +372,11 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
   return 0;
 }
 
-
+  /** @brief return 1 if matrix product A*B^T is non-zero 
+   * @param A first matrix
+   * @param B second matrix 
+   * */  
+  int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B);
   
   /** 
    * Check whether syndrome is zero or not 

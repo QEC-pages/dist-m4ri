@@ -111,10 +111,10 @@ rci_t mzd_gauss_naive(mzd_t *M, mzp_t *q, int full) {
 }
 
 /** 
- * return max row weight of CSR matrix p
+ * @brief return max row weight of CSR matrix p
  * TODO: add code for List of Pairs 
  */
-int csr_max_row_wght(const csr_t *p){
+int csr_max_row_wght(const csr_t * const p){
   int m=p->rows;
   int wmax=0;
   for(int i=0;i<m;i++){
@@ -132,7 +132,7 @@ int csr_max_row_wght(const csr_t *p){
  * return resulting matrix
  * TODO: add code for List of Pairs 
  */
-csr_t * csr_transpose(csr_t *dst, const csr_t *p){
+csr_t * csr_transpose(csr_t *dst, const csr_t * const p){
   int rows=p->rows, cols=p->cols, nz=p->p[rows];
   if (dst == NULL) 
     dst = csr_init(NULL,cols,rows,nz);
@@ -258,6 +258,24 @@ void addto(mzd_t *row, const csr_t *spaQ, const int i){
     mzd_flip_bit(row, 0,spaQ->i[j]); /* flip that bit */
 }
 
+
+/** 
+ * @brief Add row=i of sparse matrix spaQ to row.
+ * WARNING: no range check is done 
+ */ 
+static inline void addto_inline(mzd_t *row, const csr_t *spaQ, const int i){
+#ifndef NDEBUG
+  if (i>=spaQ->rows)
+    ERROR("addto: attempt to get row=%d of %d",i,spaQ->rows);
+  if (row->ncols != spaQ->cols)
+    ERROR("addto: column number mismatch");
+  //  mzd_print(row);
+#endif
+  for (int j=spaQ->p[i]; j<spaQ->p[i+1]; j++)
+    mzd_flip_bit(row, 0,spaQ->i[j]); /* flip that bit */
+}
+
+
 /** 
  * Calculate the syndrome vector change: syndrome=syndrome +row.spaQ
  * optionally clear the destination 
@@ -288,6 +306,27 @@ mzd_t * syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear){
     while( TRUE);
   }
   return syndrome;
+}
+
+int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B){
+  if(!A)
+    ERROR("matrix A is NULL");
+  if(A->nz != -1)
+    ERROR("matrix A shold be in compressed form");
+  if(!B)
+    ERROR("matrix B is NULL");
+  if(A->nz != -1)
+    ERROR("matrix B should be in compressed form");
+  if (A->cols != B->cols) 
+    ERROR("col count mismatch: A[%d,%d] and B[%d,%d]",
+	  A->rows,A->cols, B->rows, B->cols);
+  
+  for(int i=0; i < B->rows; i++){
+    const int begr = B->p[i];
+    if(sparse_syndrome_non_zero(A,B->p[i+1] - begr, & (B->i[begr])))
+      return 1;
+  }
+  return 0;
 }
 
 /** 
@@ -519,6 +558,18 @@ void csr_out(const csr_t *mat){
       printf("%d %d\n",mat->p[i]+1,mat->i[i]+1);
   }
 }
+
+void csr_print(const csr_t * const smat, const char str[]){
+  mzd_t *mH0 = mzd_from_csr(NULL,smat);
+  if(str)
+    printf("matrix %s:\n",str);
+  else
+    printf("matrix:\n");
+  mzd_print(mH0);
+  mzd_free(mH0);
+}
+
+
 
 /**
  * read sparse matrix into a (binary) CSR (all entries default to 1)
