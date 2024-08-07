@@ -27,7 +27,7 @@
 #include "dist_m4ri.h"
 
 /** @brief prepare an ordered pivot-skip list of length `n-rank` */
-mzp_t * do_skip_pivs(const int rank, const mzp_t * const pivs){
+mzp_t * do_skip_pivs(mzp_t * ans, const int rank, const mzp_t * const pivs){
   const rci_t n=pivs->length;
   int *arr=calloc(rank,sizeof(int));
   if(!arr)
@@ -35,7 +35,13 @@ mzp_t * do_skip_pivs(const int rank, const mzp_t * const pivs){
   for(int i=0; i< rank; i++)
     arr[i] = pivs->values[i];
   qsort(arr, rank, sizeof(arr[0]), cmp_rci_t);
-  mzp_t *ans=mzp_init(n-rank);
+  if((ans) && (ans->length != n-rank)){
+    mzp_free(ans);
+    ans=NULL;
+  }
+  if (!ans)
+    ans=mzp_init(n-rank);
+
   rci_t j=0, j1=0; /** position to insert the next result */
   for(rci_t i1=0; i1 < rank; i1++, j++){    
     const rci_t piv=arr[i1];
@@ -87,6 +93,8 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	   steps, wmin, classical, nvar);
   
   mzd_t * mH = mzd_from_csr(NULL, spaH0);
+  mzd_t *mHT = NULL;
+  mzp_t * skip_pivs = NULL;
   /** actual `vector` in sparse form */
   rci_t *ee = malloc(nvar*sizeof(rci_t)); 
   
@@ -94,7 +102,6 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     ERROR("memory allocation failed!\n");
 
   /** 1. Construct random column permutation P */
-
   mzp_t * perm=mzp_init(nvar); /** identity column permutation */
   mzp_t * pivs=mzp_init(nvar); /** list of pivot columns */
   if((!pivs) || (!perm))
@@ -115,10 +122,14 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     }
 
     /** construct skip-pivot permutation */
-    mzp_t * skip_pivs = do_skip_pivs(rank, pivs);
-
-    /** TODO: would it be faster to transpose `mH` first? */
-
+    skip_pivs = do_skip_pivs(skip_pivs, rank, pivs);
+#ifndef NEW
+# define NEW 1
+#endif 
+#if (NEW==1)
+    /** it is a bit faster to transpose `mH` first. */
+    mHT = mzd_transpose(mHT,mH);
+#endif     
     /** calculate sparse version of each vector (list of positions)
      *  `p`    `p``p`               # pivot columns marked with `p`   
      *  [1  a1        b1 ] ->  [a1  1  a2 a3 0 ]
@@ -129,13 +140,43 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     for (int ir=0; ir< k; ir++){ /** each row in the dual matrix */
       int cnt=0; /** how many non-zero elements */
       const int col = ee[cnt++] = skip_pivs->values[ir];
+#if (NEW==0) /** older version going over columns of `H` */
       for(int ix=0; ix<rank; ix++){
         if(mzd_read_bit(mH,ix,col))
           ee[cnt++] = pivs->values[ix];
 	if (cnt >= minW) /** `cw` of no interest */
 	  break;
       }
-      if(cnt < minW){
+#elif (NEW==2) /** 
+		   function `mzd_find_pivot()` walks over columns
+		   one-by-one to find a non-zero bit.  Returns `1` if
+		   a non-zero bit was found.
+		   WARNING: this is the slowest option!!!
+	       */
+      rci_t ic=col, ix=0;
+      while (ix < rank){
+	int res = mzd_find_pivot(mH, ix, col, &ix, &ic);
+	if((res)&&(ic==col)){
+	  ee[cnt++] = pivs->values[ix++];
+	  //	  printf("cnt=%d j=%d\n",cnt,ix); 
+	  if (cnt >= minW) /** `cw` of no interest */
+	    break;
+	}
+	else
+	  break;
+      }
+#else /** NEW, use transposed `H` -- the `fastest` version of the code*/
+      word * rawrow = mHT->rows[col];  
+      rci_t j=-1;
+      while(cnt < minW){/** `cw` of no interest */
+	j=nextelement(rawrow,mHT->width,j);
+	if(j==-1) // empty line after simplification
+	  break; 
+	//	printf("cnt=%d j=%d\n",cnt,j);
+	ee[cnt++] = pivs->values[j++];
+      }
+#endif /* NEW */              
+      if (cnt < minW){
 	/** sort the column indices */
 	qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
 #ifndef NDEBUG
@@ -158,33 +199,35 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	  /** TODO: try local search to `lerr` (if 2 or larger) */
 	  /** at this point we have `cnt` codeword indices in `ee` */
 	  if(debug&16){
-	    printf("# minW=%d found cw of weight %d: [",minW,cnt);
-	    int max = ((cnt<50) || (debug&2048)) ? cnt : 50 ;
-	    for(int i=0; i< max;i++)
-	      printf("%d%s",ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
+	    printf("# step=%d row=%d minW=%d found cw of W=%d: [",ii,ir,minW,cnt);
+	    int max = ((cnt<25) || (debug&2048)) ?  cnt : 25 ;
+	    for(int i=0; i< max; i++)
+	      printf("%d%s", ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
 	  }
 	  minW=cnt;
 	  if (minW <= wmin){ /** early termination condition */
 	    minW = - minW;   /** this distance value is of little interest; */
 	  }
 	}
-      }
+      }      
     } /** end of the dual matrix rows loop */
     if(debug&8){
       if(ii%1000==999)
 	printf("# round=%d of %d minW=%d\n", ii+1, steps, minW);
     }
-    mzp_free(skip_pivs);
     
   }/** end of `steps` random window */
 
   //alldone: /** early termination label */
 
   /** clean up */
+  if(skip_pivs)
+    mzp_free(skip_pivs);
   mzp_free(perm);
   mzp_free(pivs);
   free(ee);
-
+  if(mHT)
+    mzd_free(mHT);
   mzd_free(mH);
   
   return minW;

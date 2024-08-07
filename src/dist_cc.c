@@ -168,10 +168,10 @@ static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused cons
 #ifndef NDEBUG
   if ((pos<0) || (pos >= err->wei) || (err->wei == 0) || (err->vec[pos] != val))
     ERROR("this should not happen!");
-#endif   
+#endif
+  err->wei --; 
   for(int i=pos; i < err->wei; i++)
       err->vec[i] = err->vec[i+1];
-  err->wei --;
 }
 
 /** @brief recursively construct codewords 

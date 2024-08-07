@@ -1,5 +1,5 @@
+#include <unistd.h>
 #include "util_io.h"
-// #include "util.h"
 
 params_t prm={
   .debug=3,
@@ -137,11 +137,10 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	printf("# read %s, seed=%d\n",argv[i],p->seed);
       if (p->seed<=0){
-	p->seed=time(NULL)+1000*p->seed;
+	p->seed=time(NULL)+1000*p->seed+10*getpid();
 	if(p->debug&4)
 	  printf("# initializing rng from time(NULL), seed=%d\n",p->seed);
       }
-	srand(p->seed);
     }    
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
@@ -229,6 +228,8 @@ void var_init(int argc, char **argv, params_t * const p){
     p->classical=1;
     p->spaG=NULL;
   }
+
+  srand(p->seed);
 
   rci_t n = (p->spaH)-> cols;
   if ((!p->classical) && ((p->spaG) && (n != (p->spaG) -> cols)))

@@ -145,21 +145,20 @@ extern "C" {
   static inline int nextelement(const word * const set1, const int m, const int pos){
     word setwd;
     int w;
-#if 1
     if (pos < 0){
       w = 0;
       setwd = set1[0];
     }
-    else
-#endif 
-      //    {
-      w = SETWD(pos);
-    setwd = set1[w] & (m4ri_ffff<< SETBT(pos));
-    //  }
+    else{
+	w = SETWD(pos);
+	setwd = set1[w] & (m4ri_ffff<< SETBT(pos));
+      }
 
     for (;;){
-      if (setwd != 0) return  TIMESWORDSIZE(w) + FIRSTBIT(setwd);
-      if (++w == m) return -1;
+      if (setwd != 0)
+	return TIMESWORDSIZE(w) + FIRSTBIT(setwd);
+      if (++w == m)
+	return -1;
       setwd = set1[w];
     }
   }
