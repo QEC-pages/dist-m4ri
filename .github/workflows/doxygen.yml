@@ -1,58 +1,19 @@
-name: doxygen github pages CI
+name: Doxygen GitHub Pages Deploy Action
 
-inputs:
-        github_token:
-          description: 'A GitHub token for pushing to the repo. Example: https://git.io/passing-token'
-          required: true
-        branch:
-          description: 'Branch name for pushing GitHub pages files'
-          required: true
-          default: "gh-pages"
-        folder:
-          description: 'Folder where Doxygen will generate the HTML build files'
-          required: true
-          default: "docs/html"
-        config_file:
-          description: 'Path of the Doxygen configuration file'
-          required: true
-          default: "Doxyfile"
-        target_folder:
-          description: 'Directory on the deployment branch for pushing the build files'
-          required: false
 on:
   push:
-    branches: [ "doxy" ]
-  pull_request:
-    branches: [ "doxy" ]
+    branches:
+      - main
+      - doxy
+  workflow_dispatch:
 
 jobs:
-      runs:
-        using: "composite"
-        steps:
-          - name: Checkout repository
-            uses: actions/checkout@v4
-            with:
-              submodules: "true"
-
-          - name: Install Doxygen
-            run: sudo apt-get install doxygen graphviz -y
-            shell: bash
-
-          - name: Generate Doxygen Documentation
-            run: doxygen ${{ inputs.config_file }}
-            shell: bash
-            
-          - name: Create .nojekyll (ensures pages with underscores work on gh pages)
-            run: touch ${{ inputs.folder }}/.nojekyll
-            shell: bash
-
-          - name: Deploy to GitHub Pages
-            uses: JamesIves/github-pages-deploy-action@v4
-            with:
-              token: ${{ inputs.github_token }}
-              branch: ${{ inputs.branch }}
-              folder: ${{ inputs.folder }}
-              target-folder: ${{ inputs.target_folder }}
-
-
-
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: DenverCoder1/doxygen-github-pages-action@v1.3.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: gh-pages
+          folder: docs/html
+          config_file: Doxyfile
