@@ -1,26 +1,6 @@
 name: doxygen github pages CI
 
-on:
-  push:
-    branches: [ "doxy" ]
-  pull_request:
-    branches: [ "doxy" ]
-
-jobs:
-  build:
-    runs-on: ubuntu-20.04
-    # ubuntu-20.04
-    # ubuntu-latest
-
-    steps:
-    - name: 'Doxygen GitHub Pages Deploy Action'
-      author: 'Jonah Lawrence'
-      description: 'Make docs with Doxygen then deploy the generated HTML to GitHub pages'
-      branding:
-        icon: "upload-cloud"
-        color: "purple"  
-
-      inputs:
+inputs:
         github_token:
           description: 'A GitHub token for pushing to the repo. Example: https://git.io/passing-token'
           required: true
@@ -39,7 +19,13 @@ jobs:
         target_folder:
           description: 'Directory on the deployment branch for pushing the build files'
           required: false
+on:
+  push:
+    branches: [ "doxy" ]
+  pull_request:
+    branches: [ "doxy" ]
 
+jobs:
       runs:
         using: "composite"
         steps:
