@@ -64,3 +64,7 @@ give_help:
 	@echo  "  - On a Mac, you may want to disable '\e[32m-march=native\e[0m' compiler switch by running" 
 	@echo  "\t\e[36m make dist_m4ri OPT='-g -mtune=native -O3'\e[0m" 
 
+test:
+	echo "start test"
+	./dist_m4ri method=1
+	./dist_m4ri method=2
