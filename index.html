@@ -85,19 +85,19 @@ Overview</h2>
 </ul>
 <p>For a classical (binary linear) code, only matrix <code>H</code>, the parity-check matrix, should be specified.</p>
 <p>For a quantum CSS code, matrix <code>H=Hx</code> and either <code>G=Hz</code> or <code>L=Lx</code> matrices are needed.</p>
-<p>All matrices with entries in <code>GF(2)</code> should have the same number of columns, <code>n</code>, and obey the following orthogonality conditions: $$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$ where $I$ is an identity matrix. Notice that the latter identity is not required; it is sufficient that <code>Lx</code> and <code>Lz</code> matrices have the same full row rank <code>=k</code>, the dimension of the code, each row of <code>Lx</code> has a non-zero scalar product with a row of <code>Lz</code>, and vice versa.</p>
+<p>All matrices with entries in <code>GF(2)</code> should have the same number of columns, <code>n</code>, and obey the following orthogonality conditions: $$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$ where \(I\) is an identity matrix. Notice that the latter identity is not required; it is sufficient that <code>Lx</code> and <code>Lz</code> matrices have the same full row rank <code>=k</code>, the dimension of the code, each row of <code>Lx</code> has a non-zero scalar product with a row of <code>Lz</code>, and vice versa.</p>
 <h2><a class="anchor" id="autotoc_md4"></a>
-How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)</h2>
-<p>Given the error model, i.e., the matrices $H=H_x$, $L=L_x$ ($L$ is empty for a classical code), the program searches for smallest-weight binary <code>codewords</code> $c$ such that $Hc=0$, $Lc\neq0$.</p>
-<p>It repeatedly calculates reduced row echelon form of <code>H</code>, with columns taken in random order, which uniquely fixes the information set (non-pivot columns). Generally, column permutation and row reduction gives $H=U\,(I|A)\,P$, where $U$ is invertible, $P$ is a permutation matrix, $I$ is the identity matrix of size given by the rank of $H$, and columns of $A$ form the information set of the corresponding binary code. The corresponding codewords can be drawn as the rows of the matrix $(A^T|I')\,P$. Because of the identity matrix $I'$, the distribution of such vectors is tilted toward smaller weight, which qualitatively explains why it works.</p>
-<p>To speed up the distance calculation, you can use the parameter <code>wmin</code> (by default, <code>wmin=1</code>). When non-zero, if a code word of weight <code>w</code> $\le$ <code>wmin</code> is found, the distance calculation is terminated immediately, and the result <code>-w</code> with a negative sign is returned. This is useful, e.g., if we need to construct a code with big enough distance.</p>
+How it works: RW algorithm (method=1)</h2>
+<p>Given the error model, i.e., the matrices \(H=H_x\), \(L=L_x\) ( \(L\) is empty for a classical code), the program searches for smallest-weight binary <code>codewords</code> \(c\) such that \(Hc=0\), \(Lc\neq0\).</p>
+<p>It repeatedly calculates reduced row echelon form of <code>H</code>, with columns taken in random order, which uniquely fixes the information set (non-pivot columns). Generally, column permutation and row reduction gives \(H=U\,(I|A)\,P\), where \(U\) is invertible, \(P\) is a permutation matrix, \(I\) is the identity matrix of size given by the rank of \(H\), and columns of \(A\) form the information set of the corresponding binary code. The corresponding codewords can be drawn as the rows of the matrix \((A^T|I&#39;)\,P\). Because of the identity matrix \(I&#39;\), the distribution of such vectors is tilted toward smaller weight, which qualitatively explains why it works.</p>
+<p>To speed up the distance calculation, you can use the parameter <code>wmin</code> (by default, <code>wmin=1</code>). When non-zero, if a code word of weight <code>w</code> \(\le\) <code>wmin</code> is found, the distance calculation is terminated immediately, and the result <code>-w</code> with a negative sign is returned. This is useful, e.g., if we need to construct a code with big enough distance.</p>
 <p>Additional command-line parameters relevant for this method:</p>
 <ul>
 <li><code>steps</code> the number of RW decoding steps (the number of information sets to be constructed).</li>
 </ul>
 <h2><a class="anchor" id="autotoc_md5"></a>
-How it works: CC algorithm ( &lt;tt&gt;method=2&lt;/tt&gt; ).</h2>
-<p>The program tries to construct a codeword recursively, by starting with a non-zero bit in a position <code>i</code> in the range from $0$ to $n-1$, where $n$ is the number of columns, and then recursively adding the additional bits in the support of unsatisfied checks starting from the top. The complexity to enumerate all codewords of weight up to $w$ can be estimated as $n\,(\Delta-1)^{w-1}$, where $\Delta$ is the maximum row weight.</p>
+How it works: CC algorithm (method=2).</h2>
+<p>The program tries to construct a codeword recursively, by starting with a non-zero bit in a position <code>i</code> in the range from \(0\) to \(n-1\), where \(n\) is the number of columns, and then recursively adding the additional bits in the support of unsatisfied checks starting from the top. The complexity to enumerate all codewords of weight up to \(w\) can be estimated as \(n\,(\Delta-1)^{w-1}\), where \(\Delta\) is the maximum row weight.</p>
 <p>Additional command-line parameters relevant for this method:</p>
 <ul>
 <li><code>wmax</code> the maximum size of the connected cluster.</li>
@@ -132,7 +132,7 @@ Compilation</h2>
 <div class="line">sudo apt-get install -y libm4ri-dev</div>
 </div><!-- fragment --><h2><a class="anchor" id="autotoc_md8"></a>
 Documentation</h2>
-<p>The document for this package is available at <a href="https://qec-pages.github.io/dist-m4ri/">https://qec-pages.github.io/dist-m4ri/</a></p>
+<p>The document for this package is available at <a href="https://qec-pages.github.io/dist-m4ri/">https://qec-pages.github.io/dist-m4ri/</a>. The package is hosted on <a href="https://github.com/QEC-pages/dist-m4ri">github</a></p>
 <p>This file (<code><a class="el" href="introduction_8md.html">introduction.md</a></code>) is used as the main page for the doxygen documentation.</p>
 <h3><a class="anchor" id="autotoc_md9"></a>
 Formula syntax</h3>
