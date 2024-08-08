@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['new_335',['NEW',['../dist__m4ri_8c.html#ab6bca16ed021b1e211fde8669758f199',1,'dist_m4ri.c']]]
+  ['timeswordsize_315',['TIMESWORDSIZE',['../util__m4ri_8h.html#ae6e6da42f2354ac135a644be865328bd',1,'util_m4ri.h']]]
 ];
