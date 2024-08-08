@@ -2,31 +2,6 @@ Author: Leonid P. Pryadko & Weilei Zeng
 
 Date: 2024-08-01
 
-This file (`introduction.md`) is used as the main page for the doxygen documentation.
-
-# Syntax 
-## Formula syntax
-
-Inline formula: here \f$ a \f$ is random variable. \f$J \in {-1,1} \f$, 
-and (display mode) \f[ x \in (0,\infty) \f]
-
-Then one can compute \f$y\f$ as (display mode)
-$$ y=a \exp(-Jx) $$
-
-$single dollar sign$ is not supported for inline formulas
-
-## Code blocks
-
-A `Python` function can be defined as
-```
-def add(a,b):
-    return a+b
-```
-
-## Inline code block `y=\exp(Jx)` is not supported in section titles, how about just use (method = 1)
-
-# Original readme
-
 ## Overview
 
 The program implements two algorithms for calculating the distance of
@@ -142,3 +117,25 @@ sudo apt-get update -y
 sudo apt-get install -y libm4ri-dev
 ```
 
+This file (`introduction.md`) is used as the main page for the doxygen documentation.
+
+# Documentation Syntax 
+## Formula syntax
+
+Inline formula: here \f$ a \f$ is random variable. \f$J \in {-1,1} \f$, 
+and (display mode) \f[ x \in (0,\infty) \f]
+
+Then one can compute \f$y\f$ as (display mode)
+$$ y=a \exp(-Jx) $$
+
+$single dollar sign$ is not supported for inline formulas
+
+## Code blocks
+
+A `Python` function can be defined as
+```
+def add(a,b):
+    return a+b
+```
+
+## Inline code block `y=\exp(Jx)` is not supported in section titles, how about just use (method = 1)
