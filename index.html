@@ -12,6 +12,13 @@
 <link href="search/search.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="search/searchdata.js"></script>
 <script type="text/javascript" src="search/search.js"></script>
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    extensions: ["tex2jax.js"],
+    jax: ["input/TeX","output/HTML-CSS"],
+});
+</script>
+<script type="text/javascript" async="async" src="https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js"></script>
 <link href="doxygen.css" rel="stylesheet" type="text/css" />
 </head>
 <body>
@@ -67,17 +74,27 @@ $(function() {
 <div class="title">Dist m4ri Documentation</div>  </div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><h2><a class="anchor" id="autotoc_md3"></a>
-@anchor md_README\ilineb</h2>
-<p>title: README author:</p><ul>
-<li>Leonid P. Pryadko</li>
-<li>Weilei Zeng </li>
-</ul>
+<div class="textblock"><p><a class="anchor" id="md_introduction"></a> Author: Leonid P. Pryadko &amp; Weilei Zeng</p>
+<p>Date: 2024-08-01</p>
+<p>This file (<code><a class="el" href="introduction_8md.html">introduction.md</a></code>) is used as the main page for the doxygen documentation.</p>
+<h1><a class="anchor" id="autotoc_md3"></a>
+Syntax</h1>
 <h2><a class="anchor" id="autotoc_md4"></a>
-date: 2024-08-01</h2>
-<h1><a class="anchor" id="autotoc_md5"></a>
-dist-m4ri - distance of a classical or quantum CSS code</h1>
-<h2><a class="anchor" id="autotoc_md6"></a>
+Formula syntax</h2>
+<p>Inline formula: here \( a \) is random variable. \(J \in {-1,1} \), and (display mode) </p><p class="formulaDsp">
+\[ x \in (0,\infty) \]
+</p>
+<p>Then one can compute \(y\) as (display mode) $$ y=a \exp(-Jx) $$</p>
+<p>$single dollar sign$ is not supported for inline formulas</p>
+<h2><a class="anchor" id="autotoc_md5"></a>
+Code blocks</h2>
+<p>A <code>Python</code> function can be defined as </p><div class="fragment"><div class="line">def add(a,b):</div>
+<div class="line">    return a+b</div>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md6"></a>
+Inline code block &lt;tt&gt;y=\exp(Jx)&lt;/tt&gt; is not supported in section titles, how about just use (method = 1)</h2>
+<h1><a class="anchor" id="autotoc_md7"></a>
+Original readme</h1>
+<h2><a class="anchor" id="autotoc_md8"></a>
 Overview</h2>
 <p>The program implements two algorithms for calculating the distance of a classical or quantum CSS binary code:</p>
 <ul>
@@ -87,7 +104,7 @@ Overview</h2>
 <p>For a classical (binary linear) code, only matrix <code>H</code>, the parity-check matrix, should be specified.</p>
 <p>For a quantum CSS code, matrix <code>H=Hx</code> and either <code>G=Hz</code> or <code>L=Lx</code> matrices are needed.</p>
 <p>All matrices with entries in <code>GF(2)</code> should have the same number of columns, <code>n</code>, and obey the following orthogonality conditions: $$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$ where $I$ is an identity matrix. Notice that the latter identity is not required; it is sufficient that <code>Lx</code> and <code>Lz</code> matrices have the same full row rank <code>=k</code>, the dimension of the code, each row of <code>Lx</code> has a non-zero scalar product with a row of <code>Lz</code>, and vice versa.</p>
-<h2><a class="anchor" id="autotoc_md7"></a>
+<h2><a class="anchor" id="autotoc_md9"></a>
 How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)</h2>
 <p>Given the error model, i.e., the matrices $H=H_x$, $L=L_x$ ($L$ is empty for a classical code), the program searches for smallest-weight binary <code>codewords</code> $c$ such that $Hc=0$, $Lc\neq0$.</p>
 <p>It repeatedly calculates reduced row echelon form of <code>H</code>, with columns taken in random order, which uniquely fixes the information set (non-pivot columns). Generally, column permutation and row reduction gives $H=U\,(I|A)\,P$, where $U$ is invertible, $P$ is a permutation matrix, $I$ is the identity matrix of size given by the rank of $H$, and columns of $A$ form the information set of the corresponding binary code. The corresponding codewords can be drawn as the rows of the matrix $(A^T|I')\,P$. Because of the identity matrix $I'$, the distribution of such vectors is tilted toward smaller weight, which qualitatively explains why it works.</p>
@@ -96,15 +113,15 @@ How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)</h2>
 <ul>
 <li><code>steps</code> the number of RW decoding steps (the number of information sets to be constructed).</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md8"></a>
-How it works: CC algorithm (&lt;tt&gt;method=2&lt;/tt&gt;).</h2>
+<h2><a class="anchor" id="autotoc_md10"></a>
+How it works: CC algorithm ( &lt;tt&gt;method=2&lt;/tt&gt; ).</h2>
 <p>The program tries to construct a codeword recursively, by starting with a non-zero bit in a position <code>i</code> in the range from $0$ to $n-1$, where $n$ is the number of columns, and then recursively adding the additional bits in the support of unsatisfied checks starting from the top. The complexity to enumerate all codewords of weight up to $w$ can be estimated as $n\,(\Delta-1)^{w-1}$, where $\Delta$ is the maximum row weight.</p>
 <p>Additional command-line parameters relevant for this method:</p>
 <ul>
 <li><code>wmax</code> the maximum size of the connected cluster.</li>
 <li><code>start</code> the position to start the cluster. In this case only one starting position <code>i=start</code> will be used. This is useful, e.g., if the code is symmetric (as, e.g., for cyclic codes).</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md9"></a>
+<h2><a class="anchor" id="autotoc_md11"></a>
 How to run it</h2>
 <p>For help, just run <code>./dist_m4ri -h</code> or <code>./dist_m4ri --help</code>. This shows the following </p><div class="fragment"><div class="line">$ ./dist_m4ri --help </div>
 <div class="line">./dist_m4ri: calculate the minumum distance of a q-LDPC code</div>
@@ -126,7 +143,7 @@ How to run it</h2>
 <div class="line">        wmax=[int]: max cluster weight in CC (5)</div>
 <div class="line">        wmin=[int]: min distance of interest in RW (1)</div>
 <div class="line">        -h or --help gives this help</div>
-</div><!-- fragment --><h2><a class="anchor" id="autotoc_md10"></a>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md12"></a>
 Compilation</h2>
 <p>The program is intended for use with recent <code>gcc</code> compilers under linux. Download the distribution from <code>github</code> then run from the <code>dist-m4ri/src</code> directory <code>sh make -j all</code> This should compile the executable <code>dist_m4ri</code>.</p>
 <p>The program uses <code>m4ri</code> library for binary linear algebra. To install under Ubuntu, run </p><div class="fragment"><div class="line">sudo apt-get update -y</div>
