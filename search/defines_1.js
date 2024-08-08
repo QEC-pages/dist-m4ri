@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['brief_5fhelp_280',['BRIEF_HELP',['../util__io_8h.html#a55cfbec271d6194265f07926902deba8',1,'util_io.h']]]
+  ['dist_5fm4ri_258',['DIST_M4RI',['../dist__m4ri_8h.html#a2bd3e4aa1534d1a1020391b9d58f3f35',1,'dist_m4ri.h']]]
 ];

@@ -112,10 +112,9 @@ This graph shows which files directly or indirectly include this file:</div>
 <div class="dyncontent">
 <div class="center"><img src="util__io_8h__dep__incl.png" border="0" usemap="#asrc_2util__io_8hdep" alt=""/></div>
 <map name="asrc_2util__io_8hdep" id="asrc_2util__io_8hdep">
-<area shape="rect" title=" " alt="" coords="141,5,238,32"/>
-<area shape="rect" href="dist__cc_8c.html" title=" " alt="" coords="5,80,107,107"/>
-<area shape="rect" href="dist__m4ri_8c.html" title=" " alt="" coords="131,80,248,107"/>
-<area shape="rect" href="util__io_8c.html" title=" " alt="" coords="272,80,368,107"/>
+<area shape="rect" title=" " alt="" coords="81,5,178,32"/>
+<area shape="rect" href="dist__m4ri_8c.html" title=" " alt="" coords="5,80,123,107"/>
+<area shape="rect" href="util__io_8c.html" title=" " alt="" coords="147,80,243,107"/>
 </map>
 </div>
 </div>
@@ -134,8 +133,6 @@ Macros</h2></td></tr>
 <tr class="separator:a2e7a5d6297b074e7b1499afaaa7af841"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a56fe9bff0a1be75aae2da3e593053e2c"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8h.html#a56fe9bff0a1be75aae2da3e593053e2c">USAGE</a></td></tr>
 <tr class="separator:a56fe9bff0a1be75aae2da3e593053e2c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a55cfbec271d6194265f07926902deba8"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8h.html#a55cfbec271d6194265f07926902deba8">BRIEF_HELP</a>&#160;&#160;&#160;  &quot;try \&quot;%s -h\&quot; for help&quot;</td></tr>
-<tr class="separator:a55cfbec271d6194265f07926902deba8"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="func-members"></a>
 Functions</h2></td></tr>
@@ -166,22 +163,6 @@ Variables</h2></td></tr>
 
 </div>
 </div>
-<a id="a55cfbec271d6194265f07926902deba8"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a55cfbec271d6194265f07926902deba8">&#9670;&nbsp;</a></span>BRIEF_HELP</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">#define BRIEF_HELP&#160;&#160;&#160;  &quot;try \&quot;%s -h\&quot; for help&quot;</td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00101">101</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
-
-</div>
-</div>
 <a id="a56fe9bff0a1be75aae2da3e593053e2c"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a56fe9bff0a1be75aae2da3e593053e2c">&#9670;&nbsp;</a></span>USAGE</h2>
 
@@ -193,8 +174,27 @@ Variables</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00062">62</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<b>Value:</b><div class="fragment"><div class="line">  <span class="stringliteral">&quot;%s: calculate the minumum distance of a q-LDPC code\n&quot;</span>       \</div>
+<div class="line">  <span class="stringliteral">&quot;\tusage: %s [arguments [...]]\n&quot;</span>                 \</div>
+<div class="line">  <span class="stringliteral">&quot;Supported parameters:\n&quot;</span>                     \</div>
+<div class="line">  <span class="stringliteral">&quot;\tdebug=[int]:\t bitmap for aux information (3)\n&quot;</span>           \</div>
+<div class="line">  <span class="stringliteral">&quot;\tfin=[string]: base name for input files (\&quot;try\&quot;)\n&quot;</span>       \</div>
+<div class="line">  <span class="stringliteral">&quot;\t\t finH-&gt;\&quot;${try}X.mtx\&quot;  finG-&gt;\&quot;${try}X.mtx\&quot;\n&quot;</span>         \</div>
+<div class="line">  <span class="stringliteral">&quot;\tfinH=[str]: parity check matrix Hx (NULL)\n&quot;</span>           \</div>
+<div class="line">  <span class="stringliteral">&quot;\tfinG=[str]: matrix Hz or NULL for classical code (NULL)\n&quot;</span>     \</div>
+<div class="line">  <span class="stringliteral">&quot;\tfinL=[str]: matrix Lx or NULL for classical code (NULL)\n&quot;</span>     \</div>
+<div class="line">  <span class="stringliteral">&quot;\t\t Either L=Lx or G=Hz matrix is required for a quantum CSS code\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;\tcss=1: this is a CSS code (the only supported one) (1)\n&quot;</span>      \</div>
+<div class="line">  <span class="stringliteral">&quot;\tseed=[int]: rng seed  [0 for time(NULL)]\n&quot;</span>            \</div>
+<div class="line">  <span class="stringliteral">&quot;\tmethod=[int]: bitmap for method used: \n&quot;</span>              \</div>
+<div class="line">  <span class="stringliteral">&quot;\t\t1: random window (RW) algorithm\n&quot;</span>               \</div>
+<div class="line">  <span class="stringliteral">&quot;\t\t2: cluster (C) algorithm\n&quot;</span>                  \</div>
+<div class="line">  <span class="stringliteral">&quot;\tsteps=[int]: how many RW decoding cycles to use (1)\n&quot;</span>     \</div>
+<div class="line">  <span class="stringliteral">&quot;\twmax=[int]: max cluster weight in C (5) \n&quot;</span>            \</div>
+<div class="line">  <span class="stringliteral">&quot;\twmin=[int]: min distance of interest in RW (1)\n&quot;</span>          \</div>
+<div class="line">  <span class="stringliteral">&quot;\t-h or --help gives this help\n&quot;</span></div>
+</div><!-- fragment -->
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00057">57</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -258,9 +258,9 @@ Variables</h2></td></tr>
 <p>create <code>Lx</code></p>
 <p>WARNING: this does not necessarily have minimal row weights</p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00034">34</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00033">33</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00101">BRIEF_HELP</a>, <a class="el" href="util__io_8h_source.html#l00027">params_t::classical</a>, <a class="el" href="util__m4ri_8h_source.html#l00104">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00311">csr_csr_mul_non_zero()</a>, <a class="el" href="util__m4ri_8c_source.html#l00117">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00579">csr_mm_read()</a>, <a class="el" href="util__m4ri_8c_source.html#l00562">csr_print()</a>, <a class="el" href="util__io_8h_source.html#l00028">params_t::css</a>, <a class="el" href="util__io_8h_source.html#l00026">params_t::debug</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00049">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00047">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00046">params_t::finH</a>, <a class="el" href="util__io_8h_source.html#l00048">params_t::finL</a>, <a class="el" href="util__m4ri_8c_source.html#l00770">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00037">params_t::max_row_wgt_H</a>, <a class="el" href="util__io_8h_source.html#l00029">params_t::method</a>, <a class="el" href="util__io_8h_source.html#l00042">params_t::n0</a>, <a class="el" href="util__io_8h_source.html#l00044">params_t::nchk</a>, <a class="el" href="util__io_8h_source.html#l00043">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l00032">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00103">csr_t::rows</a>, <a class="el" href="util__io_8h_source.html#l00033">params_t::seed</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00050">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00052">params_t::spaL</a>, <a class="el" href="util__io_8h_source.html#l00040">params_t::start</a>, <a class="el" href="util__io_8h_source.html#l00030">params_t::steps</a>, <a class="el" href="util__io_8h_source.html#l00062">USAGE</a>, <a class="el" href="util__io_8h_source.html#l00031">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00032">params_t::wmin</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00025">params_t::classical</a>, <a class="el" href="util__m4ri_8c_source.html#l00528">csr_mm_read()</a>, <a class="el" href="util__io_8h_source.html#l00026">params_t::css</a>, <a class="el" href="util__io_8h_source.html#l00024">params_t::debug</a>, <a class="el" href="util__m4ri_8h_source.html#l00016">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00047">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00045">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00044">params_t::finH</a>, <a class="el" href="util__io_8h_source.html#l00046">params_t::finL</a>, <a class="el" href="util__m4ri_8c_source.html#l00719">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00027">params_t::method</a>, <a class="el" href="util__io_8h_source.html#l00039">params_t::n0</a>, <a class="el" href="util__io_8h_source.html#l00041">params_t::nchk</a>, <a class="el" href="util__io_8h_source.html#l00040">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l00031">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00106">csr_t::rows</a>, <a class="el" href="util__io_8h_source.html#l00031">params_t::seed</a>, <a class="el" href="util__io_8h_source.html#l00049">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00048">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00050">params_t::spaL</a>, <a class="el" href="util__io_8h_source.html#l00037">params_t::start</a>, <a class="el" href="util__io_8h_source.html#l00028">params_t::steps</a>, <a class="el" href="util__io_8h_source.html#l00057">USAGE</a>, <a class="el" href="util__io_8h_source.html#l00029">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00030">params_t::wmin</a>.</p>
 
 </div>
 </div>
@@ -280,9 +280,9 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00257">257</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00217">217</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00461">csr_free()</a>, <a class="el" href="util__io_8h_source.html#l00049">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00047">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00046">params_t::finH</a>, <a class="el" href="util__io_8c_source.html#l00032">p</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00050">params_t::spaH</a>, and <a class="el" href="util__io_8h_source.html#l00052">params_t::spaL</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00422">csr_free()</a>, <a class="el" href="util__io_8h_source.html#l00047">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00045">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00044">params_t::finH</a>, <a class="el" href="util__io_8c_source.html#l00031">p</a>, <a class="el" href="util__io_8h_source.html#l00049">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00048">params_t::spaH</a>, and <a class="el" href="util__io_8h_source.html#l00050">params_t::spaL</a>.</p>
 
 </div>
 </div>

@@ -1,6 +1,5 @@
 var searchData=
 [
-  ['start_5fcc_5frecurs_235',['start_CC_recurs',['../dist__cc_8c.html#a4f9ef3e7d4e5edf717dfa0854772ec32',1,'dist_cc.c']]],
-  ['syndrome_5fbit_5fcount_236',['syndrome_bit_count',['../util__m4ri_8c.html#a1b61da7b7a49ccd8fefef388c9130412',1,'syndrome_bit_count(const mzd_t *const row, const csr_t *const spaQ):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a1b61da7b7a49ccd8fefef388c9130412',1,'syndrome_bit_count(const mzd_t *const row, const csr_t *const spaQ):&#160;util_m4ri.c']]],
-  ['syndrome_5fvector_237',['syndrome_vector',['../util__m4ri_8c.html#aa2723bc11fe30ec16a866bc9001fe32a',1,'syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aa2723bc11fe30ec16a866bc9001fe32a',1,'syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear):&#160;util_m4ri.c']]]
+  ['var_5finit_220',['var_init',['../util__io_8c.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c'],['../util__io_8h.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c']]],
+  ['var_5fkill_221',['var_kill',['../util__io_8c.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c'],['../util__io_8h.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c']]]
 ];

@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['error_282',['ERROR',['../util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa',1,'util_m4ri.h']]]
+  ['firstbit_260',['FIRSTBIT',['../util__m4ri_8h.html#a4aec4c59fc492a10f6b76e26c847439b',1,'util_m4ri.h']]]
 ];
