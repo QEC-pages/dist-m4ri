@@ -1,5 +1,9 @@
 var searchData=
 [
-  ['var_5finit_156',['var_init',['../util__io_8c.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c'],['../util__io_8h.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c']]],
-  ['var_5fkill_157',['var_kill',['../util__io_8c.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c'],['../util__io_8h.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c']]]
+  ['usage_160',['USAGE',['../util__io_8h.html#a56fe9bff0a1be75aae2da3e593053e2c',1,'util_io.h']]],
+  ['util_5fio_2ec_161',['util_io.c',['../util__io_8c.html',1,'']]],
+  ['util_5fio_2eh_162',['util_io.h',['../util__io_8h.html',1,'']]],
+  ['util_5fio_5fh_163',['UTIL_IO_H',['../util__io_8h.html#aad0b2d857866864d846cabfd913cdea9',1,'util_io.h']]],
+  ['util_5fm4ri_2ec_164',['util_m4ri.c',['../util__m4ri_8c.html',1,'']]],
+  ['util_5fm4ri_2eh_165',['util_m4ri.h',['../util__m4ri_8h.html',1,'']]]
 ];

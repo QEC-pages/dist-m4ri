@@ -75,6 +75,7 @@ $(function() {
 </div><!-- top -->
 <div class="header">
   <div class="summary">
+<a href="#define-members">Macros</a> &#124;
 <a href="#func-members">Functions</a>  </div>
   <div class="headertitle">
 <div class="title">dist_m4ri.c File Reference</div>  </div>
@@ -110,130 +111,38 @@ Include dependency graph for dist_m4ri.c:</div>
 </div>
 <p><a href="dist__m4ri_8c_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="define-members"></a>
+Macros</h2></td></tr>
+<tr class="memitem:ab6bca16ed021b1e211fde8669758f199"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#ab6bca16ed021b1e211fde8669758f199">NEW</a>&#160;&#160;&#160;1</td></tr>
+<tr class="separator:ab6bca16ed021b1e211fde8669758f199"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="func-members"></a>
 Functions</h2></td></tr>
-<tr class="memitem:a63e16fae6732551ceefdb0cee6238b27"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a63e16fae6732551ceefdb0cee6238b27">do_dist_clus</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const P, const mzd_t *const G, int debug, int wmax, int start, const int rankG)</td></tr>
-<tr class="memdesc:a63e16fae6732551ceefdb0cee6238b27"><td class="mdescLeft">&#160;</td><td class="mdescRight">lower bound on the minimum distance by cluster enumeration  <a href="dist__m4ri_8c.html#a63e16fae6732551ceefdb0cee6238b27">More...</a><br /></td></tr>
-<tr class="separator:a63e16fae6732551ceefdb0cee6238b27"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aa9ae4fd7b5046cb55c6ab6263009c607"><td class="memItemLeft" align="right" valign="top">mzp_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#aa9ae4fd7b5046cb55c6ab6263009c607">do_skip_pivs</a> (const size_t rank, const mzp_t *const pivs)</td></tr>
-<tr class="memdesc:aa9ae4fd7b5046cb55c6ab6263009c607"><td class="mdescLeft">&#160;</td><td class="mdescRight">prepare an ordered pivot-skip list of length <code>n-rank</code>  <a href="dist__m4ri_8c.html#aa9ae4fd7b5046cb55c6ab6263009c607">More...</a><br /></td></tr>
-<tr class="separator:aa9ae4fd7b5046cb55c6ab6263009c607"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a477188a461f053acc183f1a19632a05f"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a477188a461f053acc183f1a19632a05f">do_RW_dist</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const spaH0, const <a class="el" href="structcsr__t.html">csr_t</a> *const spaL0, const int steps, const int wmin, const int classical, const int swait, const int debug)</td></tr>
-<tr class="memdesc:a477188a461f053acc183f1a19632a05f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Random Information Set search for small-E logical operators.  <a href="dist__m4ri_8c.html#a477188a461f053acc183f1a19632a05f">More...</a><br /></td></tr>
-<tr class="separator:a477188a461f053acc183f1a19632a05f"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae10e85cbce76e2263e09ee70eb5af2dd"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#ae10e85cbce76e2263e09ee70eb5af2dd">do_dist_rnd</a> (<a class="el" href="structcsr__t.html">csr_t</a> *spaG0, mzd_t *matP0, int debug, int steps, int wmin)</td></tr>
-<tr class="separator:ae10e85cbce76e2263e09ee70eb5af2dd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5a83ac9dd9b4bc649009014458e2413d"><td class="memItemLeft" align="right" valign="top">mzp_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a5a83ac9dd9b4bc649009014458e2413d">do_skip_pivs</a> (mzp_t *ans, const int rank, const mzp_t *const pivs)</td></tr>
+<tr class="memdesc:a5a83ac9dd9b4bc649009014458e2413d"><td class="mdescLeft">&#160;</td><td class="mdescRight">distance of a classical or quantum CSS code  <a href="dist__m4ri_8c.html#a5a83ac9dd9b4bc649009014458e2413d">More...</a><br /></td></tr>
+<tr class="separator:a5a83ac9dd9b4bc649009014458e2413d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a65145c0f2666e3584826fe9ec7657ca1"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a65145c0f2666e3584826fe9ec7657ca1">do_RW_dist</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const spaH0, const <a class="el" href="structcsr__t.html">csr_t</a> *const spaL0, const int steps, const int wmin, const int classical, const int debug)</td></tr>
+<tr class="memdesc:a65145c0f2666e3584826fe9ec7657ca1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Random Information Set search for small-E logical operators.  <a href="dist__m4ri_8c.html#a65145c0f2666e3584826fe9ec7657ca1">More...</a><br /></td></tr>
+<tr class="separator:a65145c0f2666e3584826fe9ec7657ca1"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
+<h2 class="groupheader">Macro Definition Documentation</h2>
+<a id="ab6bca16ed021b1e211fde8669758f199"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab6bca16ed021b1e211fde8669758f199">&#9670;&nbsp;</a></span>NEW</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define NEW&#160;&#160;&#160;1</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <h2 class="groupheader">Function Documentation</h2>
-<a id="a63e16fae6732551ceefdb0cee6238b27"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a63e16fae6732551ceefdb0cee6238b27">&#9670;&nbsp;</a></span>do_dist_clus()</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">int do_dist_clus </td>
-          <td>(</td>
-          <td class="paramtype">const <a class="el" href="structcsr__t.html">csr_t</a> *const&#160;</td>
-          <td class="paramname"><em>P</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">const mzd_t *const&#160;</td>
-          <td class="paramname"><em>G</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">int&#160;</td>
-          <td class="paramname"><em>debug</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">int&#160;</td>
-          <td class="paramname"><em>wmax</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">int&#160;</td>
-          <td class="paramname"><em>start</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">const int&#160;</td>
-          <td class="paramname"><em>rankG</em>&#160;</td>
-        </tr>
-        <tr>
-          <td></td>
-          <td>)</td>
-          <td></td><td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p>lower bound on the minimum distance by cluster enumeration </p>
-<p>WARNING: only intended for LDPC codes </p>
-
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00141">141</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
-
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00107">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00135">csr_transpose()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00106">csr_t::rows</a>.</p>
-
-</div>
-</div>
-<a id="ae10e85cbce76e2263e09ee70eb5af2dd"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae10e85cbce76e2263e09ee70eb5af2dd">&#9670;&nbsp;</a></span>do_dist_rnd()</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">int do_dist_rnd </td>
-          <td>(</td>
-          <td class="paramtype"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td>
-          <td class="paramname"><em>spaG0</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">mzd_t *&#160;</td>
-          <td class="paramname"><em>matP0</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">int&#160;</td>
-          <td class="paramname"><em>debug</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">int&#160;</td>
-          <td class="paramname"><em>steps</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">int&#160;</td>
-          <td class="paramname"><em>wmin</em>&#160;</td>
-        </tr>
-        <tr>
-          <td></td>
-          <td>)</td>
-          <td></td><td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00336">336</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
-
-</div>
-</div>
-<a id="a477188a461f053acc183f1a19632a05f"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a477188a461f053acc183f1a19632a05f">&#9670;&nbsp;</a></span>do_RW_dist()</h2>
+<a id="a65145c0f2666e3584826fe9ec7657ca1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a65145c0f2666e3584826fe9ec7657ca1">&#9670;&nbsp;</a></span>do_RW_dist()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -272,12 +181,6 @@ Functions</h2></td></tr>
           <td class="paramkey"></td>
           <td></td>
           <td class="paramtype">const int&#160;</td>
-          <td class="paramname"><em>swait</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">const int&#160;</td>
           <td class="paramname"><em>debug</em>&#160;</td>
         </tr>
         <tr>
@@ -300,7 +203,7 @@ Functions</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>minimum <code>weight</code> of a CW found (or <code>-weigt</code> if early termination condition is reached). </dd></dl>
 <p>whether to verify logical ops as a vector or individually</p>
-<p>actual <code>vector</code></p>
+<p>actual <code>vector</code> in sparse form</p>
 <ol type="1">
 <li>Construct random column permutation P</li>
 </ol>
@@ -310,31 +213,36 @@ Functions</h2></td></tr>
 <p>&lt; corresponding permutation</p>
 <p>full row echelon form of <code>H</code> (gauss) using the order in <code>perm</code></p>
 <p>construct skip-pivot permutation</p>
+<p>it is a bit faster to transpose <code>mH</code> first.</p>
 <p>calculate sparse version of each vector (list of positions) <code>p</code> <code>p</code><code>p</code> # pivot columns marked with <code>p</code> <br  />
  [1 a1 b1 ] -&gt; [a1 1 a2 a3 0 ] [ a2 1 b2 ] [b1 0 b2 b3 1 ] [ a3 1 b3 ]</p>
 <p>each row in the dual matrix</p>
 <p>how many non-zero elements</p>
+<p>older version going over columns of <code>H</code></p>
+<p>function <code>mzd_find_pivot()</code> walks over columns one-by-one to find a non-zero bit. Returns <code>1</code> if a non-zero bit was found. WARNING: this is the slowest option!!!</p>
+<p>NEW, use transposed <code>H</code> &ndash; the <code>fastest</code> version of the code</p>
+<p><code>cw</code> of no interest</p>
 <p>sort the column indices</p>
+<p>expensive: verify orthogonality</p>
 <p>verify logical operator</p>
 <p>no need to verify</p>
 <p>we got non-trivial codeword!</p>
 <p>TODO: try local search to <code>lerr</code> (if 2 or larger)</p>
-<p>calculate the energy and compare</p>
-<p>at this point we have <code>cnt</code> codeword indices in <code>ee</code>, and its <code>energ</code></p>
+<p>at this point we have <code>cnt</code> codeword indices in <code>ee</code></p>
 <p>early termination condition</p>
 <p>this distance value is of little interest;</p>
 <p>end of the dual matrix rows loop</p>
 <p>end of <code>steps</code> random window</p>
 <p>clean up</p>
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00223">223</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00079">79</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00107">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00016">ERROR</a>, and <a class="el" href="util__m4ri_8c_source.html#l00158">mzd_from_csr()</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00104">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__m4ri_8c_source.html#l00158">mzd_from_csr()</a>.</p>
 
 </div>
 </div>
-<a id="aa9ae4fd7b5046cb55c6ab6263009c607"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aa9ae4fd7b5046cb55c6ab6263009c607">&#9670;&nbsp;</a></span>do_skip_pivs()</h2>
+<a id="a5a83ac9dd9b4bc649009014458e2413d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5a83ac9dd9b4bc649009014458e2413d">&#9670;&nbsp;</a></span>do_skip_pivs()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -342,7 +250,13 @@ Functions</h2></td></tr>
         <tr>
           <td class="memname">mzp_t* do_skip_pivs </td>
           <td>(</td>
-          <td class="paramtype">const size_t&#160;</td>
+          <td class="paramtype">mzp_t *&#160;</td>
+          <td class="paramname"><em>ans</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int&#160;</td>
           <td class="paramname"><em>rank</em>, </td>
         </tr>
         <tr>
@@ -359,11 +273,22 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
+<p>distance of a classical or quantum CSS code </p>
+<hr  />
+<p>The program implements two methods:</p><ol type="1">
+<li>Random information set (random window) algorithm (upper bound). <br  />
+ This works with any code (LDPC or not). (2) depth-first codeword enumeration (connected cluster) algorithm (Lower bound or actual distance if a codeword is found.) <br  />
+</li>
+</ol>
+<p>A. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..." in IEEE Trans. Inf. Th., vol. 63, p. 4675 (2017). doi: 10.1109/TIT.2017.2690381</p>
+<p>author: Leonid Pryadko <a href="#" onclick="location.href='mai'+'lto:'+'leo'+'ni'+'d.p'+'ry'+'adk'+'o@'+'ucr'+'.e'+'du'; return false;">leoni<span style="display: none;">.nosp@m.</span>d.pr<span style="display: none;">.nosp@m.</span>yadko<span style="display: none;">.nosp@m.</span>@ucr<span style="display: none;">.nosp@m.</span>.edu</a>, Weilei Zeng</p>
 <p>prepare an ordered pivot-skip list of length <code>n-rank</code> </p>
 <p>position to insert the next result</p>
 <p>in skip_pivs</p>
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00186">186</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00030">30</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>.</p>
 
 </div>
 </div>

@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['wmax_158',['wmax',['../structparams__t.html#a761376b54173bf5b7554553693dcc1e8',1,'params_t']]],
-  ['wmin_159',['wmin',['../structparams__t.html#a7698d0ba01e3d1875fc0ed33de3abef4',1,'params_t']]]
+  ['var_5finit_166',['var_init',['../util__io_8c.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c'],['../util__io_8h.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c']]],
+  ['var_5fkill_167',['var_kill',['../util__io_8c.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c'],['../util__io_8h.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c']]],
+  ['vec_168',['vec',['../structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a',1,'ONE_VEC_T']]]
 ];
