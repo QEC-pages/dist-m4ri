@@ -28,7 +28,7 @@ has a non-zero scalar product with a row of `Lz`, and vice versa.
 
 
 
-## How it works: RW algorithm (`method=1`)
+## How it works: RW algorithm (method=1)
 
 Given the error model, i.e., the matrices \f$H=H_x\f$, \f$L=L_x\f$ (\f$L\f$ is empty
 for a classical code), the program searches for smallest-weight binary
@@ -58,7 +58,7 @@ Additional command-line parameters relevant for this method:
 - `steps` the number of RW decoding steps (the number of information
   sets to be constructed).
 
-## How it works: CC algorithm ( `method=2` ).
+## How it works: CC algorithm (method=2).
 
 The program tries to construct a codeword recursively, by starting
 with a non-zero bit in a position `i` in the range from \f$0\f$ to \f$n-1\f$,
@@ -119,7 +119,7 @@ sudo apt-get install -y libm4ri-dev
 
 
 ## Documentation 
-The document for this package is available at [https://qec-pages.github.io/dist-m4ri/](https://qec-pages.github.io/dist-m4ri/)
+The document for this package is available at [https://qec-pages.github.io/dist-m4ri/](https://qec-pages.github.io/dist-m4ri/). The package is hosted on [github](https://github.com/QEC-pages/dist-m4ri)
 
 This file (`introduction.md`) is used as the main page for the doxygen documentation.
 
