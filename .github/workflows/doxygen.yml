@@ -3,8 +3,10 @@ name: Doxygen GitHub Pages Deploy Action
 on:
   push:
     branches:
-      - main
+      - master
       - doxy
+  pull_request:
+     branches: [ "master", "doxy" ]
   workflow_dispatch:
 
 jobs:
