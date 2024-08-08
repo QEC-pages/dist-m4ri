@@ -21,7 +21,7 @@ matrices are needed.
 All matrices with entries in `GF(2)` should have the same number of
 columns, `n`, and obey the following orthogonality conditions:
 $$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$
-where $I$ is an identity matrix.  Notice that the latter identity is
+where \f$I\f$ is an identity matrix.  Notice that the latter identity is
 not required; it is sufficient that `Lx` and `Lz` matrices have the
 same full row rank `=k`, the dimension of the code, each row of `Lx`
 has a non-zero scalar product with a row of `Lz`, and vice versa.
@@ -30,25 +30,25 @@ has a non-zero scalar product with a row of `Lz`, and vice versa.
 
 ## How it works: RW algorithm (`method=1`)
 
-Given the error model, i.e., the matrices $H=H_x$, $L=L_x$ ($L$ is empty
+Given the error model, i.e., the matrices \f$H=H_x\f$, \f$L=L_x\f$ (\f$L\f$ is empty
 for a classical code), the program searches for smallest-weight binary
-`codewords` $c$ such that $Hc=0$, $Lc\neq0$.
+`codewords` \f$c\f$ such that \f$Hc=0\f$, \f$Lc\neq0\f$.
 
 
 It repeatedly calculates reduced row echelon form of `H`, with columns
 taken in random order, which uniquely fixes the information set
 (non-pivot columns).  Generally, column permutation and row reduction
-gives $H=U\,(I|A)\,P$, where $U$ is invertible, $P$ is a permutation
-matrix, $I$ is the identity matrix of size given by the rank of $H$,
-and columns of $A$ form the information set of the corresponding
+gives \f$H=U\,(I|A)\,P\f$, where \f$U\f$ is invertible, \f$P\f$ is a permutation
+matrix, \f$I\f$ is the identity matrix of size given by the rank of \f$H\f$,
+and columns of \f$A\f$ form the information set of the corresponding
 binary code.  The corresponding codewords can be drawn as the rows of
-the matrix $(A^T|I')\,P$.  Because of the identity matrix $I'$, the
+the matrix \f$(A^T|I')\,P\f$.  Because of the identity matrix \f$I'\f$, the
 distribution of such vectors is tilted toward smaller weight, which
 qualitatively explains why it works.
 
 To speed up the distance calculation, you can use the parameter `wmin`
 (by default, `wmin=1`).  When non-zero, if a code word of weight `w`
-$\le$ `wmin` is found, the distance calculation is terminated
+\f$\le\f$ `wmin` is found, the distance calculation is terminated
 immediately, and the result `-w` with a negative sign is returned.
 This is useful, e.g., if we need to construct a code with big enough
 distance.
@@ -61,11 +61,11 @@ Additional command-line parameters relevant for this method:
 ## How it works: CC algorithm ( `method=2` ).
 
 The program tries to construct a codeword recursively, by starting
-with a non-zero bit in a position `i` in the range from $0$ to $n-1$,
-where $n$ is the number of columns, and then recursively adding the
+with a non-zero bit in a position `i` in the range from \f$0\f$ to \f$n-1\f$,
+where \f$n\f$ is the number of columns, and then recursively adding the
 additional bits in the support of unsatisfied checks starting from the
-top.  The complexity to enumerate all codewords of weight up to $w$
-can be estimated as $n\,(\Delta-1)^{w-1}$, where $\Delta$ is the
+top.  The complexity to enumerate all codewords of weight up to \f$w\f$
+can be estimated as \f$n\,(\Delta-1)^{w-1}\f$, where \f$\Delta\f$ is the
 maximum row weight.
 
 Additional command-line parameters relevant for this method: 
