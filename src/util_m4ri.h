@@ -148,17 +148,15 @@ extern "C" {
   static inline int nextelement(const word * const set1, const int m, const int pos){
     word setwd;
     int w;
-#if 1
+
     if (pos < 0){
       w = 0;
       setwd = set1[0];
     }
-    else
-#endif 
-      //    {
+    else{
       w = SETWD(pos);
-    setwd = set1[w] & (m4ri_ffff<< SETBT(pos));
-    //  }
+      setwd = set1[w] & (m4ri_ffff<< SETBT(pos));
+    }
 
     for (;;){
       if (setwd != 0) return  TIMESWORDSIZE(w) + FIRSTBIT(setwd);
