@@ -153,10 +153,7 @@ void var_init(int argc, char **argv, params_t * const p){
       ERROR("parameter steps=%d should be positive for RW method=%d", p->steps,p->method);
   }
   
-  if(p->method &2 ){ /* CC */
-    if (p->wmax<=0)
-      ERROR("parameter wmax=%d should be positive for CC method=%d", p->wmax,p->method);
-  }
+
 
   if((strlen(p->fin)!=0) && (!p->finH)){
     int len = strlen(p->fin);
@@ -189,6 +186,15 @@ void var_init(int argc, char **argv, params_t * const p){
   else
     ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
 
+  if(p->method &2 ){ /* CC */
+    if (p->wmax<=0)
+      ERROR("parameter wmax=%d should be positive for CC method=%d", p->wmax,p->method);
+    if(p->wmax>=MAX_W)
+      ERROR("increase MAX_W=%d defined in 'util_io.h'",MAX_W);
+    for(int i=0; i<=p->wmax; i++)
+      p->swei[i]=p->spaH->rows +1; 
+  }
+  
 #if 0
   if (p->method&2){ /* cluster */
     p->max_row_wgt_H = csr_max_row_wght(p->spaH);

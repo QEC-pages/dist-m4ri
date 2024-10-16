@@ -182,7 +182,7 @@ static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused cons
  */
 int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		    const int wmax, const int max_col_wt, 
-		    const csr_t * const mH, const csr_t * const mHT, const csr_t * const mL,
+		    const csr_t * const mH, const csr_t * const mHT, const csr_t * const mL, int p_swei[], 
 		    const int debug){
   const int w=err->wei;
   int row = syn[w]->vec[0]; /** row with the first non-zero syndrome bit */
@@ -214,11 +214,24 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 #endif 	
 	pos = one_ordered_ins(err,col);
 	int swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);
+	if(p_swei[err->wei] > swei){
+	  //#ifndef NDEBUG
+	  if(debug&64){
+	    printf("# swei[%d]=%d -> %d change\n# err: ",
+		   err->wei,p_swei[err->wei],swei);
+	    one_vec_print(err);
+	    printf("# syn: ");
+	    one_vec_print(syn[w+1]);
+	  }
+	  //#endif 	  
+	  p_swei[err->wei]=swei;
+	}
 	int result = 0;
 	if (err->wei < wmax){
 	  if (swei){ /** go up */
 	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
-	      result = start_CC_recurs(err,urr,syn,wmax,max_col_wt,mH,mHT,mL,debug);
+	      result = start_CC_recurs(err,urr,syn,wmax,max_col_wt,
+				       mH,mHT,mL,p_swei,debug);
 	      if(result == 1)
 		return 1;
 	    }
@@ -254,7 +267,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 //! rewrite of the cluster method function using only sparse matrices
 //! try recursive version first 
 int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	   const int wmax, const int start, const int debug){
+	       const int wmax, const int start, int p_swei[], const int debug){
 
   const int nchk = mH->rows, nvar = mH->cols;
   if((start<-1) || (start>=nvar))
@@ -290,9 +303,11 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
       err->vec[0] = urr->vec[0] = i;
       err->wei = urr->wei = 1;
       int swei = one_csr_row_combine(syn[1], syn[0], mHT, i);
+      if(p_swei[1] > swei)
+	p_swei[1]=swei;
       if (1<w){
 	if (swei){ /** go up */
-	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,mL,debug);
+	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,debug);
 	  if(result == 1)
 	    break;
 	}
@@ -324,6 +339,12 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   else
     result = -wmax; /** not found a codeword up to wmax */
 
+  if(debug&2){
+    for(int i=1;i<=wmax; i++)
+      if(p_swei[i] <= mH->rows)
+	printf("# w=%d min syndrome weight %d\n",i,p_swei[i]);
+  }
+  
   for(int i=0; i<= wmax; i++)
     free(syn[i]);
   free(syn);
