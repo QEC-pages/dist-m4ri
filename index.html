@@ -78,14 +78,14 @@ $(function() {
 <p>Date: 2024-08-01</p>
 <h2><a class="anchor" id="autotoc_md3"></a>
 Overview</h2>
-<p>The program implements two algorithms for calculating the distance of a classical or quantum CSS binary code:</p>
+<p>The program implements two algorithms for calculating the distance of a classical linear binary code or a quantum CSS qubit code:</p>
 <ul>
 <li>Random information set (also, random window, or <code>RW</code>), to calculate the upper distance bound, and</li>
 <li>Connected cluster (<code>CC</code>), to calculate the actual distance or lower distance bound of an LDPC code (quantum or classical).</li>
 </ul>
 <p>For a classical (binary linear) code, only matrix <code>H</code>, the parity-check matrix, should be specified.</p>
 <p>For a quantum CSS code, matrix <code>H=Hx</code> and either <code>G=Hz</code> or <code>L=Lx</code> matrices are needed.</p>
-<p>All matrices with entries in <code>GF(2)</code> should have the same number of columns, <code>n</code>, and obey the following orthogonality conditions: $$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$ where \(I\) is an identity matrix. Notice that the latter identity is not required; it is sufficient that <code>Lx</code> and <code>Lz</code> matrices have the same full row rank <code>=k</code>, the dimension of the code, each row of <code>Lx</code> has a non-zero scalar product with a row of <code>Lz</code>, and vice versa.</p>
+<p>All matrices with entries in <code>GF(2)</code> should have the same number of columns, <code>n</code>, and obey the following orthogonality conditions: $$H_XH_Z^T=0,\ \ \ \ H_XL_Z^T=0,\ \ \ \ L_XH_Z^T=0,\ \ \ \ L_XL_Z^T=I,$$ where \(I\) is an identity matrix. Notice that the latter identity is not required; it is sufficient that matrices <code>Lx</code>, <code>Lz</code>, and the product \(L_XL_Z^T\) have the same full row rank \(k\), which is also the dimension of the code (number of encoded qubits).</p>
 <h2><a class="anchor" id="autotoc_md4"></a>
 How it works: RW algorithm (method=1)</h2>
 <p>Given the error model, i.e., the matrices \(H=H_x\), \(L=L_x\) ( \(L\) is empty for a classical code), the program searches for smallest-weight binary <code>codewords</code> \(c\) such that \(Hc=0\), \(Lc\neq0\).</p>
@@ -103,28 +103,69 @@ How it works: CC algorithm (method=2).</h2>
 <li><code>wmax</code> the maximum size of the connected cluster.</li>
 <li><code>start</code> the position to start the cluster. In this case only one starting position <code>i=start</code> will be used. This is useful, e.g., if the code is symmetric (as, e.g., for cyclic codes).</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md6"></a>
+<p>With <code>debug&amp;2</code> non-zero, the program in this mode also displays the minimum weight of the syndrome found for each error weight <code>w</code>. Example (run from <code>dist-m4ri/src/</code>)</p>
+<div class="fragment"><div class="line">./dist_m4ri debug=3 finH= ../examples/c204H.mmx method=2 wmax=10</div>
+<div class="line"># read H &lt;- file &#39;../examples/c204H.mmx&#39;</div>
+<div class="line"># recursively searching for w=1 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># recursively searching for w=2 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># recursively searching for w=3 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># recursively searching for w=4 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># recursively searching for w=5 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># recursively searching for w=6 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># recursively searching for w=7 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># recursively searching for w=8 codewords wmax=10 beg=0 end=194</div>
+<div class="line"># w=1 min syndrome weight 2</div>
+<div class="line"># w=2 min syndrome weight 3</div>
+<div class="line"># w=3 min syndrome weight 3</div>
+<div class="line"># w=4 min syndrome weight 2</div>
+<div class="line"># w=5 min syndrome weight 1</div>
+<div class="line"># w=6 min syndrome weight 1</div>
+<div class="line"># w=7 min syndrome weight 1</div>
+<div class="line"># w=8 min syndrome weight 0</div>
+<div class="line">### Cluster (actual min-weight codeword found): dmin=8</div>
+<div class="line">success  (found min-weight codeword) d=8</div>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md6"></a>
 How to run it</h2>
 <p>For help, just run <code>./dist_m4ri -h</code> or <code>./dist_m4ri --help</code>. This shows the following </p><div class="fragment"><div class="line">$ ./dist_m4ri --help </div>
-<div class="line">./dist_m4ri: calculate the minumum distance of a q-LDPC code</div>
-<div class="line">        usage: ./dist_m4ri [arguments [...]]</div>
-<div class="line">Supported parameters:</div>
-<div class="line">        debug=[int]:     bitmap for aux information (3)</div>
-<div class="line">        fin=[string]: base name for input files (&quot;try&quot;)</div>
-<div class="line">                 finH-&gt;&quot;${try}X.mtx&quot;  finG-&gt;&quot;${try}X.mtx&quot;</div>
-<div class="line">        finH=[str]: parity check matrix Hx (NULL)</div>
-<div class="line">        finG=[str]: matrix Hz or NULL for classical code (NULL)</div>
-<div class="line">        finL=[str]: matrix Lx or NULL for classical code (NULL)</div>
-<div class="line">                 Either L=Lx or G=Hz matrix is required for a quantum CSS code</div>
-<div class="line">        css=1: this is a CSS code (the only supported one) (1)</div>
-<div class="line">        seed=[int]: rng seed  [0 for time(NULL)]</div>
-<div class="line">        method=[int]: bitmap for method used:</div>
-<div class="line">                1: random window (RW) algorithm</div>
-<div class="line">                2: connected cluster (CC) algorithm</div>
-<div class="line">        steps=[int]: how many RW decoding cycles to use (1)</div>
-<div class="line">        wmax=[int]: max cluster weight in CC (5)</div>
-<div class="line">        wmin=[int]: min distance of interest in RW (1)</div>
-<div class="line">        -h or --help gives this help</div>
+<div class="line">./dist_m4ri: distance of a classical or quantum CSS code</div>
+<div class="line">    usage: ./dist_m4ri parameter=value [...]</div>
+<div class="line"> </div>
+<div class="line">   Required parameter:</div>
+<div class="line">    method=[int]: bitmap for method used (required, default 0: none): </div>
+<div class="line">        1: random window (RW) algorithm. Options:</div>
+<div class="line">           steps=[int]: how many information sets to use (1)</div>
+<div class="line">           wmin=[int]:  minimum distance of interest (1)</div>
+<div class="line">        2: connected cluster (CC) algorithm.  Options:</div>
+<div class="line">           wmax=[int]:  maximum cluster weight (5) </div>
+<div class="line">           start=[int]: use only this position to start (-1)</div>
+<div class="line"> </div>
+<div class="line">   General parameters:</div>
+<div class="line">    finH=[str]: parity check matrix Hx (NULL)</div>
+<div class="line">    finG=[str]: matrix Hz (quantum CSS code only) (NULL)</div>
+<div class="line">    finL=[str]: matrix Lx (quantum CSS code only) (NULL)</div>
+<div class="line">         Either L=Lx or G=Hz matrix is required for a quantum CSS code</div>
+<div class="line">    fin=[str]:  base name for input files (&quot;try&quot;)</div>
+<div class="line">         set finH-&gt;&quot;${fin}X.mtx&quot;  finG-&gt;&quot;${fin}Z.mtx&quot;</div>
+<div class="line">    css=[int]:  reserved for future use (1)</div>
+<div class="line">    seed=[int]: rng seed [use 0 for time(NULL)] (0)</div>
+<div class="line">    debug=[int]:     bitmap for aux information to output (3)</div>
+<div class="line">        0: clear the entire debug bitmap to 0.</div>
+<div class="line">        1: output misc general info (on by default)</div>
+<div class="line">        2: output more general info (on by default)</div>
+<div class="line">        4: debug command line arguments parsing</div>
+<div class="line">        8: output progress reports every 1000 steps</div>
+<div class="line">        16: output new min-weight codewords found (cut large vectors)</div>
+<div class="line">        32: output matrices (unless n is large)</div>
+<div class="line">        64: reserved</div>
+<div class="line">        128: reserved</div>
+<div class="line">        256: print out neighbor lists</div>
+<div class="line">        512: print out vectors/syndrome weights during recursion</div>
+<div class="line">        1024: print piv/skip_pivs/reserved</div>
+<div class="line">        2048: allow big matrix / large vector output</div>
+<div class="line">           see the source code for more options</div>
+<div class="line">      Multiple &#39;debug&#39; parameters are XOR combined except for 0.</div>
+<div class="line">      Use debug=0 as the 1st argument to suppress all debug messages.</div>
+<div class="line">   -h gives this help (also &#39;--help&#39;)</div>
 </div><!-- fragment --><h2><a class="anchor" id="autotoc_md7"></a>
 Compilation</h2>
 <p>The program is intended for use with recent <code>gcc</code> compilers under linux. Download the distribution from <code>github</code> then run from the <code>dist-m4ri/src</code> directory <code>sh make -j all</code> This should compile the executable <code>dist_m4ri</code>.</p>
@@ -133,20 +174,7 @@ Compilation</h2>
 </div><!-- fragment --><h2><a class="anchor" id="autotoc_md8"></a>
 Documentation</h2>
 <p>The document for this package is available at <a href="https://qec-pages.github.io/dist-m4ri/">https://qec-pages.github.io/dist-m4ri/</a>. The package is hosted on <a href="https://github.com/QEC-pages/dist-m4ri">github</a></p>
-<p>This file (<code><a class="el" href="introduction_8md.html">introduction.md</a></code>) is used as the main page for the doxygen documentation.</p>
-<h3><a class="anchor" id="autotoc_md9"></a>
-Formula syntax</h3>
-<p>Inline formula: here \( a \) is random variable. \(J \in {-1,1} \), and (display mode) </p><p class="formulaDsp">
-\[ x \in (0,\infty) \]
-</p>
-<p>Then one can compute \(y\) as (display mode) $$ y=a \exp(-Jx) $$</p>
-<p>$single dollar sign$ is not supported for inline formulas</p>
-<h3><a class="anchor" id="autotoc_md10"></a>
-Code blocks</h3>
-<p>A <code>Python</code> function can be defined as </p><div class="fragment"><div class="line">def add(a,b):</div>
-<div class="line">    return a+b</div>
-</div><!-- fragment --><h3><a class="anchor" id="autotoc_md11"></a>
-Inline code block &lt;tt&gt;y=\exp(Jx)&lt;/tt&gt; is not supported in section titles, how about just use (method = 1)</h3>
+<p>This file (<code><a class="el" href="introduction_8md.html">introduction.md</a></code>) is used as the main page for the doxygen documentation. </p>
 </div></div><!-- PageDoc -->
 </div><!-- contents -->
 <!-- start footer part -->

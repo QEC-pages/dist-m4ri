@@ -218,7 +218,7 @@ Functions</h2></td></tr>
 <p>codeword weight found</p>
 <p>not found a codeword up to wmax</p>
 
-<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00269">269</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00276">276</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00104">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00117">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00562">csr_print()</a>, <a class="el" href="util__m4ri_8c_source.html#l00135">csr_transpose()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="dist__cc_8c_source.html#l00032">ONE_VEC_T::max</a>, <a class="el" href="util__m4ri_8h_source.html#l00103">csr_t::rows</a>, <a class="el" href="dist__cc_8c_source.html#l00033">ONE_VEC_T::vec</a>, and <a class="el" href="dist__cc_8c_source.html#l00031">ONE_VEC_T::wei</a>.</p>
 
@@ -246,7 +246,7 @@ Functions</h2></td></tr>
 
 <p class="reference">References <a class="el" href="dist__cc_8c_source.html#l00033">ONE_VEC_T::vec</a>, and <a class="el" href="dist__cc_8c_source.html#l00031">ONE_VEC_T::wei</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00183">start_CC_recurs()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00190">start_CC_recurs()</a>.</p>
 
 </div>
 </div>
@@ -330,6 +330,13 @@ Functions</h2></td></tr>
     <tr><td class="paramname">err</td><td>error vector with sorted components </td></tr>
     <tr><td class="paramname">urr</td><td>unsorted vector so far </td></tr>
     <tr><td class="paramname">syn</td><td>array of syndrome vectors with sorted components (indexed by weight of error) </td></tr>
+    <tr><td class="paramname">wmax</td><td>max recursion level (max weight of an error to process) </td></tr>
+    <tr><td class="paramname">max_col_wt</td><td>maximum column weight (used to predict early termination) </td></tr>
+    <tr><td class="paramname">mH</td><td>matrix <code>H</code> (check matrix of the code or <code>Hx</code> for a CSS code) </td></tr>
+    <tr><td class="paramname">mHT</td><td>matrix <code>H</code> transposed </td></tr>
+    <tr><td class="paramname">mL</td><td>matrix <code>L=Lx</code> for a CSS code, or <code>NULL</code> for a classical binary code, used to check whether zero-syndrome error is trivial or not </td></tr>
+    <tr><td class="paramname">p_swei</td><td>minimum syndrome weight array </td></tr>
+    <tr><td class="paramname">debug</td><td>bitmap </td></tr>
   </table>
   </dd>
 </dl>
@@ -342,7 +349,7 @@ Functions</h2></td></tr>
 <p>success, just get out fast</p>
 <p>nothing found</p>
 
-<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00183">183</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00190">190</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00108">csr_t::i</a>, <a class="el" href="dist__cc_8c_source.html#l00037">one_vec_print()</a>, <a class="el" href="util__io_8c_source.html#l00032">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00107">csr_t::p</a>, <a class="el" href="dist__cc_8c_source.html#l00033">ONE_VEC_T::vec</a>, and <a class="el" href="dist__cc_8c_source.html#l00031">ONE_VEC_T::wei</a>.</p>
 
