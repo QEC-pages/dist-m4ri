@@ -1,8 +1,8 @@
-name: C/C++ CI
+name: C/C++ test CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "test" ]
   pull_request:
     branches: [ "master" ]
 
@@ -17,4 +17,6 @@ jobs:
     - uses: actions/checkout@v3
     - name: make
       run: cd src && sudo apt-get install libm4ri-dev && make -j dist_m4ri
+    - name: test
+      run: cd src && make test && make run-test
     
