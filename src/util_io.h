@@ -22,6 +22,7 @@
 
 //static const int max_row_wt=10; 
 
+#define MAX_W 100 
 typedef struct{
   int debug; /* debug information */ 
   int classical; /* 1 for a classical code, i.e., no `G=Hz` matrix*/
@@ -37,6 +38,7 @@ typedef struct{
   int max_row_wgt_H; /* needed for C */
   int max_col_wgt_H; /* needed ? */
   //! int max_row_wt;  /* WARNING: this is defined in `util_io.h` as `static const int` */
+  int swei[MAX_W]; /** minimum syndrome weight for each error weight */
   int start;
   //  int linear; /* not supported */
   int n0;  /* code length, =nvar for css, (nvar/2) for non-css */
