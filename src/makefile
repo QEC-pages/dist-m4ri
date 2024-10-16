@@ -36,8 +36,8 @@ mmio.o: mmio.c mmio.h makefile
 clean:
 	rm -f *~ *.tmp *.out *.o ../input/*~ ../examples/*~ TAGS 
 
-#dox: 
-#	doxygen ../Doxyfile mainpage.h
+dox: 
+	cd .. && doxygen Doxyfile 
 
 tags:
 	etags *.c *.h 

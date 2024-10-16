@@ -179,6 +179,13 @@ static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused cons
  * @param err error vector with sorted components 
  * @param urr unsorted vector so far 
  * @param syn array of syndrome vectors with sorted components (indexed by weight of error)
+ * @param wmax max recursion level (max weight of an error to process)
+ * @param max_col_wt maximum column weight (used to predict early termination)
+ * @param mH matrix `H` (check matrix of the code or `Hx` for a CSS code)
+ * @param mHT matrix `H` transposed
+ * @param mL matrix `L=Lx` for a CSS code, or `NULL` for a classical binary code, used to check whether zero-syndrome error is trivial or not
+ * @param p_swei minimum syndrome weight array
+ * @param debug bitmap 
  */
 int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		    const int wmax, const int max_col_wt, 
