@@ -221,7 +221,7 @@ $(function() {
 <div class="line"><a name="l00184"></a><span class="lineno">  184</span>&#160;    <span class="keywordflow">if</span>(sparse_syndrome_non_zero(spaH0, cnt, ee)){</div>
 <div class="line"><a name="l00185"></a><span class="lineno">  185</span>&#160;      printf(<span class="stringliteral">&quot;# cw of weight %d: [&quot;</span>,cnt);</div>
 <div class="line"><a name="l00186"></a><span class="lineno">  186</span>&#160;      <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt;cnt;i++)</div>
-<div class="line"><a name="l00187"></a><span class="lineno">  187</span>&#160;        printf(<span class="stringliteral">&quot;%d%s&quot;</span>,ee[i],i+1==cnt?<span class="stringliteral">&quot; &quot;</span>:<span class="stringliteral">&quot;]\n&quot;</span>);</div>
+<div class="line"><a name="l00187"></a><span class="lineno">  187</span>&#160;        printf(<span class="stringliteral">&quot;%d%s&quot;</span>,1+ee[i],i+1==cnt?<span class="stringliteral">&quot; &quot;</span>:<span class="stringliteral">&quot;]\n&quot;</span>);</div>
 <div class="line"><a name="l00188"></a><span class="lineno">  188</span>&#160;      <a class="code" href="util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa">ERROR</a>(<span class="stringliteral">&quot;this should not happen: cw not orthogonal to H&quot;</span>);</div>
 <div class="line"><a name="l00189"></a><span class="lineno">  189</span>&#160;    }</div>
 <div class="line"><a name="l00190"></a><span class="lineno">  190</span>&#160;<span class="preprocessor">#endif </span><span class="comment">/* NDEBUG */</span><span class="preprocessor"></span></div>
@@ -236,7 +236,7 @@ $(function() {
 <div class="line"><a name="l00202"></a><span class="lineno">  202</span>&#160;        printf(<span class="stringliteral">&quot;# step=%d row=%d minW=%d found cw of W=%d: [&quot;</span>,ii,ir,minW,cnt);</div>
 <div class="line"><a name="l00203"></a><span class="lineno">  203</span>&#160;        <span class="keywordtype">int</span> max = ((cnt&lt;25) || (debug&amp;2048)) ?  cnt : 25 ;</div>
 <div class="line"><a name="l00204"></a><span class="lineno">  204</span>&#160;        <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt; max; i++)</div>
-<div class="line"><a name="l00205"></a><span class="lineno">  205</span>&#160;          printf(<span class="stringliteral">&quot;%d%s&quot;</span>, ee[i], i+1!=max?<span class="stringliteral">&quot; &quot;</span>: (cnt==max ? <span class="stringliteral">&quot;]\n&quot;</span> : <span class="stringliteral">&quot;...]\n&quot;</span>));</div>
+<div class="line"><a name="l00205"></a><span class="lineno">  205</span>&#160;          printf(<span class="stringliteral">&quot;%d%s&quot;</span>, 1+ee[i], i+1!=max?<span class="stringliteral">&quot; &quot;</span>: (cnt==max ? <span class="stringliteral">&quot;]\n&quot;</span> : <span class="stringliteral">&quot;...]\n&quot;</span>));</div>
 <div class="line"><a name="l00206"></a><span class="lineno">  206</span>&#160;      }</div>
 <div class="line"><a name="l00207"></a><span class="lineno">  207</span>&#160;      minW=cnt;</div>
 <div class="line"><a name="l00208"></a><span class="lineno">  208</span>&#160;      <span class="keywordflow">if</span> (minW &lt;= wmin){ </div>
