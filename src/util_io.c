@@ -135,12 +135,7 @@ void var_init(int argc, char **argv, params_t * const p){
     else if (sscanf(argv[i],"seed=%d",&dbg)==1){
       p->seed=dbg;
       if (p->debug&4)
-	printf("# read %s, seed=%d\n",argv[i],p->seed);
-      if (p->seed<=0){
-	p->seed=time(NULL)+1000*p->seed+10*getpid();
-	if(p->debug&4)
-	  printf("# initializing rng from time(NULL), seed=%d\n",p->seed);
-      }
+	printf("# read %s, seed=%d\n",argv[i],p->seed);      
     }    
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
@@ -234,6 +229,14 @@ void var_init(int argc, char **argv, params_t * const p){
     p->classical=1;
     p->spaG=NULL;
   }
+
+  if (p->seed<=0){
+    p->seed=time(NULL)+1000*p->seed+10*getpid();
+    if(p->debug&4)
+      printf("# initializing rng from time(NULL), seed=%d\n",p->seed);
+  }
+  else if(p->debug&4)
+    printf("# initializing rng from seed=%d\n",p->seed);
 
   srand(p->seed);
 
