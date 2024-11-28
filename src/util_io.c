@@ -231,7 +231,7 @@ void var_init(int argc, char **argv, params_t * const p){
   }
 
   if (p->seed<=0){
-    p->seed=time(NULL)+1000*p->seed+10*getpid();
+    p->seed = time(NULL) - 1000 * p->seed + 10*getpid();
     if(p->debug&4)
       printf("# initializing rng from time(NULL), seed=%d\n",p->seed);
   }
