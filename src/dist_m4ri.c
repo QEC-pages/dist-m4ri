@@ -26,48 +26,6 @@
 #include "util_io.h"
 #include "dist_m4ri.h"
 
-/** @brief prepare an ordered pivot-skip list of length `n-rank` */
-mzp_t * do_skip_pivs(mzp_t * ans, const int rank, const mzp_t * const pivs){
-  const rci_t n=pivs->length;
-  int *arr=calloc(rank,sizeof(int));
-  if(!arr)
-    ERROR("memory allocation");
-  for(int i=0; i< rank; i++)
-    arr[i] = pivs->values[i];
-  qsort(arr, rank, sizeof(arr[0]), cmp_rci_t);
-  if((ans) && (ans->length != n-rank)){
-    mzp_free(ans);
-    ans=NULL;
-  }
-  if (!ans)
-    ans=mzp_init(n-rank);
-
-  rci_t j=0, j1=0; /** position to insert the next result */
-  for(rci_t i1=0; i1 < rank; i1++, j++){    
-    const rci_t piv=arr[i1];
-    while(j<piv)
-      ans->values[j1++] = j++;    
-  }
-  while(j<n)
-    ans->values[j1++] = j++;
-  assert(j1==n-rank);
-
-#ifndef NDEBUG
-  if(prm.debug&1024){/** in skip_pivs */
-    printf("orig pivs of len=%d, rank=%d: ",pivs->length, rank);
-    for(int i=0; i< rank; i++)
-      printf(" %d%s",pivs->values[i],i+1 == rank ?"\n":"");
-    printf("srtd pivs of len=%d:          ", rank);
-    for(int i=0; i< rank; i++)
-      printf(" %d%s",arr[i],i+1 == rank ?"\n":"");
-    printf("skip_pivs of len=%d: ",ans->length);
-    for(int i=0; i< ans->length; i++)
-      printf(" %d%s",ans->values[i],i+1 == ans->length ?"\n":"");
-  }
-#endif
-  free(arr);
-  return ans;
-}
 
 /** @brief Random Information Set search for small-E logical operators.
  *
@@ -94,7 +52,6 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
   
   mzd_t * mH = mzd_from_csr(NULL, spaH0);
   mzd_t *mHT = NULL;
-  mzp_t * skip_pivs = NULL;
   /** actual `vector` in sparse form */
   rci_t *ee = malloc(nvar*sizeof(rci_t)); 
   
@@ -104,6 +61,8 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
   /** 1. Construct random column permutation P */
   mzp_t * perm=mzp_init(nvar); /** identity column permutation */
   mzp_t * pivs=mzp_init(nvar); /** list of pivot columns */
+  mzp_t * pivs_srtd=mzp_init(nvar); /** list of pivot columns */
+  mzp_t * skip_pivs=mzp_init(nvar); /** list of pivot columns */
   if((!pivs) || (!perm))
     ERROR("memory allocation failed!\n");
 
@@ -122,7 +81,26 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     }
 
     /** construct skip-pivot permutation */
-    skip_pivs = do_skip_pivs(skip_pivs, rank, pivs);
+    //    skip_pivs = do_skip_pivs(skip_pivs, rank, pivs);
+    pivs_srtd = mzp_copy(pivs_srtd,pivs);
+    qsort(pivs_srtd->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
+    int end=-1, num=0;
+    for(int i=0; i < rank; i++){
+      int beg = end + 1;
+      end = pivs_srtd->values[i];
+      for(int j = beg; j < end; j++)
+	skip_pivs->values[num++] = j;
+      //      printf("beg=%d end=%d\n",beg,end);
+    }
+    for(int j = end + 1 ; j < nvar; j++)
+      skip_pivs->values[num++] = j;
+    
+#ifndef NDEBUG
+    if (num + rank != nvar)
+      ERROR("mismatch: rank=%d and num=%d do not add to nvar=%d\n",rank,num,nvar);
+#endif
+    skip_pivs->length = num;
+
 #ifndef NEW
 # define NEW 1
 #endif 
@@ -223,6 +201,8 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
   /** clean up */
   if(skip_pivs)
     mzp_free(skip_pivs);
+  if(pivs_srtd)
+    mzp_free(pivs_srtd);
   mzp_free(perm);
   mzp_free(pivs);
   free(ee);
