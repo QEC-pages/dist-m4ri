@@ -1,8 +1,15 @@
 <map id="src/util_m4ri.h" name="src/util_m4ri.h">
-<area shape="rect" id="node1" title=" " alt="" coords="164,5,279,32"/>
-<area shape="rect" id="node2" href="$dist__cc_8c.html" title=" " alt="" coords="5,155,107,181"/>
-<area shape="rect" id="node3" href="$dist__m4ri_8c.html" title=" " alt="" coords="251,155,368,181"/>
-<area shape="rect" id="node4" href="$util__io_8h.html" title=" " alt="" coords="130,80,227,107"/>
-<area shape="rect" id="node6" href="$util__m4ri_8c.html" title=" " alt="" coords="303,80,417,107"/>
-<area shape="rect" id="node5" href="$util__io_8c.html" title=" " alt="" coords="131,155,227,181"/>
+<area shape="rect" id="Node000001" title=" " alt="" coords="164,5,279,31"/>
+<area shape="rect" id="Node000002" href="$dist__cc_8c.html" title=" " alt="" coords="5,152,107,177"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="184,39,151,57,119,81,86,118,65,153,60,150,82,115,116,77,148,53,181,34"/>
+<area shape="rect" id="Node000003" href="$dist__m4ri_8c.html" title=" " alt="" coords="251,152,368,177"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="238,41,305,150,300,153,233,44"/>
+<area shape="rect" id="Node000004" href="$util__io_8h.html" title=" " alt="" coords="130,79,227,104"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="210,44,188,80,183,77,205,41"/>
+<area shape="rect" id="Node000006" href="$util__m4ri_8c.html" title=" " alt="" coords="303,79,417,104"/>
+<area shape="poly" id="edge7_Node000001_Node000006" title=" " alt="" coords="257,34,339,76,336,81,254,39"/>
+<area shape="poly" id="edge4_Node000004_Node000002" title=" " alt="" coords="149,113,77,154,75,149,146,108"/>
+<area shape="poly" id="edge5_Node000004_Node000003" title=" " alt="" coords="213,108,289,149,287,154,211,113"/>
+<area shape="rect" id="Node000005" href="$util__io_8c.html" title=" " alt="" coords="131,152,227,177"/>
+<area shape="poly" id="edge6_Node000004_Node000005" title=" " alt="" coords="181,118,181,152,176,152,176,118"/>
 </map>

@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['_5fmaybe_5funused_0',['_maybe_unused',['../mmio_8c.html#a2e7a5d6297b074e7b1499afaaa7af841',1,'_maybe_unused():&#160;mmio.c'],['../util__io_8h.html#a2e7a5d6297b074e7b1499afaaa7af841',1,'_maybe_unused():&#160;util_io.h']]]
+  ['01_0',['date: 2024-08-01',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md10',1,'']]],
+  ['08_2001_1',['date: 2024-08-01',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md10',1,'']]]
 ];

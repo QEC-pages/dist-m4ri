@@ -1,16 +1,9 @@
 var searchData=
 [
-  ['seed_147',['seed',['../structparams__t.html#aedc69284ea56d4b02256baba42790e4c',1,'params_t']]],
-  ['setbt_148',['SETBT',['../util__m4ri_8h.html#aa6a01367c9a384408d19ccba06a29e6d',1,'util_m4ri.h']]],
-  ['setwd_149',['SETWD',['../util__m4ri_8h.html#aae2dc2d100864b9e1554289ee860a906',1,'util_m4ri.h']]],
-  ['spag_150',['spaG',['../structparams__t.html#a401b2879fcc12e5880b15e2913bcb452',1,'params_t']]],
-  ['spah_151',['spaH',['../structparams__t.html#a4b6c894c9f71c8ae733d479f9091a29e',1,'params_t']]],
-  ['spal_152',['spaL',['../structparams__t.html#a3b1829675dc96846b9ea2d9c22de89b4',1,'params_t']]],
-  ['start_153',['start',['../structparams__t.html#aaf596e306a9163de6c34ca099d1beb83',1,'params_t']]],
-  ['start_5fcc_5frecurs_154',['start_CC_recurs',['../dist__cc_8c.html#a4b1b881b9dab3ea5a11bf69dd640703b',1,'dist_cc.c']]],
-  ['steps_155',['steps',['../structparams__t.html#a98e23e7755528a567048d6ab3631ac30',1,'params_t']]],
-  ['swapint_156',['SWAPINT',['../util__m4ri_8h.html#aa39556c77c5f5f70caf97f41b2b442b2',1,'util_m4ri.h']]],
-  ['swei_157',['swei',['../structparams__t.html#afd5e0451b022d4a16f27fd2e68411a97',1,'params_t']]],
-  ['syndrome_5fbit_5fcount_158',['syndrome_bit_count',['../util__m4ri_8c.html#a1b61da7b7a49ccd8fefef388c9130412',1,'syndrome_bit_count(const mzd_t *const row, const csr_t *const spaQ):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a1b61da7b7a49ccd8fefef388c9130412',1,'syndrome_bit_count(const mzd_t *const row, const csr_t *const spaQ):&#160;util_m4ri.c']]],
-  ['syndrome_5fvector_159',['syndrome_vector',['../util__m4ri_8c.html#aa2723bc11fe30ec16a866bc9001fe32a',1,'syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aa2723bc11fe30ec16a866bc9001fe32a',1,'syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear):&#160;util_m4ri.c']]]
+  ['n0_0',['n0',['../structparams__t.html#a25f587c153f763af776bd21f89f4d029',1,'params_t']]],
+  ['nchk_1',['nchk',['../structparams__t.html#a2a380c61241b18a605719b406c1435fb',1,'params_t']]],
+  ['new_2',['NEW',['../dist__m4ri_8c.html#ab6bca16ed021b1e211fde8669758f199',1,'dist_m4ri.c']]],
+  ['nvar_3',['nvar',['../structparams__t.html#a691cc572781a2b35351e846ebcb8e6ba',1,'params_t']]],
+  ['nz_4',['nz',['../structcsr__t.html#a8165d5f059150d9602c5329ebe415197',1,'csr_t']]],
+  ['nzmax_5',['nzmax',['../structcsr__t.html#a91d6a7baf1505544be123a48d2400291',1,'csr_t']]]
 ];

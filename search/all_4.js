@@ -1,16 +1,12 @@
 var searchData=
 [
-  ['debug_23',['debug',['../structparams__t.html#ac71d44285373a5bfe9aec4bb8b3a8bea',1,'params_t']]],
-  ['dist_24',['dist',['../structparams__t.html#add35140e341aba1ab36244a70be29393',1,'params_t']]],
-  ['dist_5fcc_2ec_25',['dist_cc.c',['../dist__cc_8c.html',1,'']]],
-  ['dist_5fm4ri_26',['DIST_M4RI',['../dist__m4ri_8h.html#a2bd3e4aa1534d1a1020391b9d58f3f35',1,'dist_m4ri.h']]],
-  ['dist_5fm4ri_2ec_27',['dist_m4ri.c',['../dist__m4ri_8c.html',1,'']]],
-  ['dist_5fm4ri_2eh_28',['dist_m4ri.h',['../dist__m4ri_8h.html',1,'']]],
-  ['dist_5fmax_29',['dist_max',['../structparams__t.html#a23a033fd80e49ab1d7761c05a832c248',1,'params_t']]],
-  ['dist_5fmin_30',['dist_min',['../structparams__t.html#a668de621912ff858fe5a235b8b2c5345',1,'params_t']]],
-  ['do_5fcc_5fdist_31',['do_CC_dist',['../dist__cc_8c.html#a318b626a23c1c1279713b011d0026d4f',1,'dist_cc.c']]],
-  ['do_5fdist_5fclus_32',['do_dist_clus',['../util__m4ri_8h.html#a63e16fae6732551ceefdb0cee6238b27',1,'util_m4ri.h']]],
-  ['do_5freduce_33',['do_reduce',['../util__m4ri_8c.html#aa544a382a89cfb255aed9149d687ee08',1,'do_reduce(mzd_t *row, const mzd_t *matG0, const rci_t rankG0):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a28bb122363dc1e068f508ebf67da5df7',1,'do_reduce(mzd_t *row, const mzd_t *matP0, const rci_t rankP0):&#160;util_m4ri.c']]],
-  ['do_5frw_5fdist_34',['do_RW_dist',['../dist__m4ri_8c.html#a65145c0f2666e3584826fe9ec7657ca1',1,'dist_m4ri.c']]],
-  ['do_5fskip_5fpivs_35',['do_skip_pivs',['../dist__m4ri_8c.html#a5a83ac9dd9b4bc649009014458e2413d',1,'dist_m4ri.c']]]
+  ['a_0',['a',['../structint__pair.html#a7cedb4f9e4cea6cc30e12fb8f81e1b1f',1,'int_pair']]],
+  ['a_20classical_20or_20quantum_20css_20code_1',['dist-m4ri - distance of a classical or quantum CSS code',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md11',1,'']]],
+  ['a_20contribution_2',['How do I make a contribution?',['../md_CONTRIBUTING.html#autotoc_md2',1,'']]],
+  ['addto_3',['addto',['../util__m4ri_8c.html#adb3cc9c7e188ca69220eefc3ef217ae8',1,'util_m4ri.c']]],
+  ['algorithm_20method_201_4',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
+  ['algorithm_20method_202_5',['How it works: CC algorithm (method=2).',['../index.html#autotoc_md5',1,'']]],
+  ['algorithm_20tt_20method_201_20tt_6',['How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md13',1,'']]],
+  ['algorithm_20tt_20method_202_20tt_7',['How it works: CC algorithm (&lt;tt&gt;method=2&lt;/tt&gt;).',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md14',1,'']]],
+  ['and_20code_20contributions_8',['Issue reporting and code contributions',['../md_CONTRIBUTING.html#autotoc_md1',1,'']]]
 ];

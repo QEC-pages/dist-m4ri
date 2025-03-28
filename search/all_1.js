@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['a_1',['a',['../structint__pair.html#a7cedb4f9e4cea6cc30e12fb8f81e1b1f',1,'int_pair']]],
-  ['addto_2',['addto',['../util__m4ri_8c.html#adb3cc9c7e188ca69220eefc3ef217ae8',1,'util_m4ri.c']]]
+  ['1_0',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
+  ['1_20tt_1',['How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md13',1,'']]]
 ];

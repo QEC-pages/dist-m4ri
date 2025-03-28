@@ -1,4 +1,5 @@
 <map id="params_t" name="params_t">
-<area shape="rect" id="node1" title=" " alt="" coords="5,124,88,151"/>
-<area shape="rect" id="node2" href="$structcsr__t.html" title=" " alt="" coords="20,5,73,32"/>
+<area shape="rect" id="Node000001" title=" " alt="" coords="5,123,88,148"/>
+<area shape="rect" id="Node000002" href="$structcsr__t.html" title=" " alt="" coords="20,5,73,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="49,44,49,123,44,123,44,44"/>
 </map>
