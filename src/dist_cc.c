@@ -22,16 +22,12 @@
 #include <m4ri/m4ri.h>
 
 #include "mmio.h"
+#include "uthash.h"
+#include "util_hash.h"
 #include "util_m4ri.h"
 #include "util_io.h"
 //#include "dist_m4ri.h"
 // #include "util.h"
-
-typedef struct ONE_VEC_T{
-  int wei; /** current weight */
-  int max; /** allocated */
-  int vec[0];
-} one_vec_t;
 
 /** @brief print entire `one_vec_t` structure by pointer */
 void one_vec_print(const one_vec_t * const pvec){
@@ -174,6 +170,8 @@ static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused cons
       err->vec[i] = err->vec[i+1];
 }
 
+two_vec_t *errors=NULL;
+
 /** @brief recursively construct codewords 
  * 
  * @param err error vector with sorted components 
@@ -189,8 +187,9 @@ static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused cons
  */
 int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		    const int wmax, const int max_col_wt, 
-		    const csr_t * const mH, const csr_t * const mHT, const csr_t * const mL, int p_swei[], 
-		    const int debug){
+		    const csr_t * const mH, const csr_t * const mHT, const csr_t * const mL,
+		    int p_swei[],
+		    const int smax, const int debug){
   const int w=err->wei;
   int row = syn[w]->vec[0]; /** row with the first non-zero syndrome bit */
 #ifndef NDEBUG  
@@ -221,24 +220,15 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 #endif 	
 	pos = one_ordered_ins(err,col);
 	int swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);
-	if(p_swei[err->wei] > swei){
-#ifndef NDEBUG
-	  if(debug&64){
-	    printf("# swei[%d]=%d -> %d change\n# err: ",
-		   err->wei,p_swei[err->wei],swei);
-	    one_vec_print(err);
-	    printf("# syn: ");
-	    one_vec_print(syn[w+1]);
-	  }
-#endif 	  
-	  p_swei[err->wei]=swei;
-	}
+	if(swei < smax)/** update p_swei if not in hash yet */
+	  errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
+	
 	int result = 0;
 	if (err->wei < wmax){
 	  if (swei){ /** go up */
 	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
 	      result = start_CC_recurs(err,urr,syn,wmax,max_col_wt,
-				       mH,mHT,mL,p_swei,debug);
+				       mH,mHT,mL,p_swei,smax,debug);
 	      if(result == 1)
 		return 1;
 	    }
@@ -276,7 +266,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 //! try recursive version first
 //! p_swei[]: min syndrome weight distribution to return (`confinement`).
 int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmin, const int wmax, const int start, int p_swei[], const int debug){
+	       const int wmin, const int wmax, const int start, int p_swei[], const int smax, const int debug){
 
   const int nchk = mH->rows, nvar = mH->cols;
   if((start<-1) || (start>=nvar))
@@ -294,11 +284,11 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   one_vec_t **syn = calloc(wmax+1, sizeof(one_vec_t *));
   if((!syn) || (!err) || (!urr))
     ERROR("memory allocation");
-  err->max = wmax;
+  //  err->max = wmax;
   for(int i=0; i <= wmax; i++){
     syn[i]=calloc(1, sizeof(one_vec_t)+sizeof(int)*mH->rows);
     if(!syn[i]) ERROR("i=%d memory allocation",i);
-    syn[i]->max = mH->rows;    
+    //    syn[i]->max = mH->rows;    
   }
   int result = 0;
   for(int w=wmin; w <= wmax; w++){ /* cluster weight */
@@ -312,11 +302,12 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
       err->vec[0] = urr->vec[0] = i;
       err->wei = urr->wei = 1;
       int swei = one_csr_row_combine(syn[1], syn[0], mHT, i);
-      if(p_swei[1] > swei)
-	p_swei[1]=swei;
+      if(swei < smax) /** update p_swei if not in hash yet */
+	  errors = hash_add_maybe(syn[1],err,errors,p_swei, debug);
+      
       if (1<w){
 	if (swei){ /** go up */
-	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,debug);
+	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,smax,debug);
 	  if(result == 1)
 	    break;
 	}
@@ -360,6 +351,14 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   free(err);
   free(urr);
   csr_free(mHT);
+
+  /** prescribed way to clean the hashing table */
+  two_vec_t *terr, *tmp;
+  HASH_ITER(hh, errors, terr, tmp) {
+    HASH_DEL(errors, terr);
+    free(terr);
+  }
+  
   return result;
 }
 

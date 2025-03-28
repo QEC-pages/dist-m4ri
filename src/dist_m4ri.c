@@ -28,7 +28,7 @@
 
 
 /** @brief Random Information Set search for small-E logical operators.
- *
+4 *
  * @param dW weight increment from the minimum found
  * @param p pointer to global parameters structure
  * @param classical set to `1` for classical code (do not use `L` matrix), `0` otherwise  
