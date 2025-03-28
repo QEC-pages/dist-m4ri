@@ -222,7 +222,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	pos = one_ordered_ins(err,col);
 	int swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);
 	if(p_swei[err->wei] > swei){
-	  //#ifndef NDEBUG
+#ifndef NDEBUG
 	  if(debug&64){
 	    printf("# swei[%d]=%d -> %d change\n# err: ",
 		   err->wei,p_swei[err->wei],swei);
@@ -230,7 +230,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	    printf("# syn: ");
 	    one_vec_print(syn[w+1]);
 	  }
-	  //#endif 	  
+#endif 	  
 	  p_swei[err->wei]=swei;
 	}
 	int result = 0;
@@ -244,6 +244,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	    }
 	  }
 	  // swei == 0 means it is a degenerate vector
+	  // do not go up in this case 
 	}
 	else{ // wei == wmax
 	  if(!swei){
@@ -272,9 +273,10 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 }
 
 //! rewrite of the cluster method function using only sparse matrices
-//! try recursive version first 
+//! try recursive version first
+//! p_swei[]: min syndrome weight distribution to return (`confinement`).
 int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmax, const int start, int p_swei[], const int debug){
+	       const int wmin, const int wmax, const int start, int p_swei[], const int debug){
 
   const int nchk = mH->rows, nvar = mH->cols;
   if((start<-1) || (start>=nvar))
@@ -299,7 +301,7 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
     syn[i]->max = mH->rows;    
   }
   int result = 0;
-  for(int w=1; w <= wmax; w++){ /* cluster weight */
+  for(int w=wmin; w <= wmax; w++){ /* cluster weight */
     int beg = 0, end = nvar - wmax ;
     if (start >= 0)
       beg = end = start;

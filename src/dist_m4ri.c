@@ -32,23 +32,24 @@
  * @param dW weight increment from the minimum found
  * @param p pointer to global parameters structure
  * @param classical set to `1` for classical code (do not use `L` matrix), `0` otherwise  
- * @return minimum `weight` of a CW found (or `-weigt` if early termination condition is reached). 
+ * @return minimum `weight` of a CW found (or `-weigt` if early termination condition is reached). Or `0` if no codewords wit `w<wmax` have been found.
  */
 int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
-	       const int steps, const int wmin, const int classical, const int debug){
+	       const int steps, const int wmin, const int wmax,
+	       const int classical, const int debug){
   /** whether to verify logical ops as a vector or individually */
   const int nvar = spaH0->cols;
   if(((!classical)&&(spaL0==NULL)) ||
      ((classical)&&(spaL0!=NULL))){
     printf("L0 %s NULL classical=%d\n",spaL0==NULL ? "=" : "!=", classical);	   
-    ERROR("L0 should be non-NULL present only for classical code!\n");
+    ERROR("L0 should be non-NULL only for classical code!\n");
   }
 
-  int minW=nvar+1;
+  int minW = wmax > 0 ? wmax : nvar+1;
 
   if(debug&2)
-    printf("# running do_RW_dist() with steps=%d wmin=%d classical=%d nvar=%d\n",
-	   steps, wmin, classical, nvar);
+    printf("# running do_RW_dist() with steps=%d wmin=%d wmax=%d classical=%d nvar=%d\n",
+	   steps, wmin, wmax, classical, nvar);
   
   mzd_t * mH = mzd_from_csr(NULL, spaH0);
   mzd_t *mHT = NULL;
@@ -81,7 +82,6 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     }
 
     /** construct skip-pivot permutation */
-    //    skip_pivs = do_skip_pivs(skip_pivs, rank, pivs);
     pivs_srtd = mzp_copy(pivs_srtd,pivs);
     qsort(pivs_srtd->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
     int end=-1, num=0;
@@ -90,7 +90,6 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
       end = pivs_srtd->values[i];
       for(int j = beg; j < end; j++)
 	skip_pivs->values[num++] = j;
-      //      printf("beg=%d end=%d\n",beg,end);
     }
     for(int j = end + 1 ; j < nvar; j++)
       skip_pivs->values[num++] = j;
@@ -150,7 +149,6 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	j=nextelement(rawrow,mHT->width,j);
 	if(j==-1) // empty line after simplification
 	  break; 
-	//	printf("cnt=%d j=%d\n",cnt,j);
 	ee[cnt++] = pivs->values[j++];
       }
 #endif /* NEW */              
@@ -178,13 +176,14 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	  /** at this point we have `cnt` codeword indices in `ee` */
 	  if(debug&16){
 	    printf("# step=%d row=%d minW=%d found cw of W=%d: [",ii,ir,minW,cnt);
-	    int max = ((cnt<25) || (debug&2048)) ?  cnt : 25 ;
+	    const int max = ((cnt<25) || (debug&2048)) ?  cnt : 25 ;
 	    for(int i=0; i< max; i++)
 	      printf("%d%s", 1+ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
 	  }
 	  minW=cnt;
 	  if (minW <= wmin){ /** early termination condition */
 	    minW = - minW;   /** this distance value is of little interest; */
+	    goto alldone; /** stop right away */
 	  }
 	}
       }      
@@ -196,7 +195,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     
   }/** end of `steps` random window */
 
-  //alldone: /** early termination label */
+ alldone: /** early termination label */
 
   /** clean up */
   if(skip_pivs)
@@ -210,14 +209,14 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     mzd_free(mHT);
   mzd_free(mH);
   
-  return minW;
+  return ((wmax>0) && (minW==wmax)) ? 0 :minW ;
 }
 
 
 #ifdef STANDALONE
 
 int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmax, const int start, int p_swei[], const int debug);
+	       const int wmin, const int wmax, const int start, int p_swei[], const int debug);
 
 
 int main(int argc, char **argv){
@@ -229,18 +228,20 @@ int main(int argc, char **argv){
 
   if (prm.method & 1){ /* RW method */
     
-    prm.dist_max=do_RW_dist(p->spaH,p->spaL,p->steps, p->wmin, p->classical, p->debug);
+    prm.dist_max=do_RW_dist(p->spaH,p->spaL,p->steps, p->wmin, p->wmax, p->classical, p->debug);
 
     if (prm.debug&1){
       printf("### RW upper bound on the distance: %d\n",prm.dist_max);
     if(prm.dist_max <0)
-      printf("### negative distance due to wmax=%d set (early termination)\n",prm.wmax);
+      printf("### negative distance due to wmin=%d set (early termination)\n",prm.wmin);
+    else if (prm.dist_max ==0)
+            printf("### no vectors below wmax=%d found\n",prm.wmax);
     }
     prm.wmax=minint(prm.wmax, abs(prm.dist_max)-1);
   }
 
   if (prm.method & 2){ /* cluster method */
-    int dmin=do_CC_dist(p->spaH,p->spaL,p->wmax,p->start,p->swei,p->debug);
+    int dmin=do_CC_dist(p->spaH,p->spaL,p->wmin,p->wmax,p->start,p->swei,p->debug);
 
     if (dmin>0){ 
       if (prm.debug&1)

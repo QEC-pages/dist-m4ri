@@ -48,8 +48,8 @@ the matrix $(A^T|I')\,P$.  Because of the identity matrix $I'$, the
 distribution of such vectors is tilted toward smaller weight, which
 qualitatively explains why it works.
 
-To speed up the distance calculation, you can use the parameter `wmin`
-(by default, `wmin=1`).  When non-zero, if a code word of weight `w`
+To speed up the distance calculation, you can use the parameter `wmin` and `wmax`
+(by default, `wmin=1` and `wmax=-1`).  When non-zero, if a code word of weight `w`
 $\le$ `wmin` is found, the distance calculation is terminated
 immediately, and the result `-w` with a negative sign is returned.
 This is useful, e.g., if we need to construct a code with big enough
