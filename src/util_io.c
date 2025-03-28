@@ -7,7 +7,7 @@ params_t prm={
   .classical=0,
   .steps=1,
   .css=1,
-  .wmax=5,
+  .wmax=0,
   .wmin=1,
   .start=-1, 
   .seed=0,
@@ -68,7 +68,7 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->finH = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
-	printf("# read %s, finH=%s; setting fin=\"\"\n",argv[i],p->finH);
+	printf("# read %s, finH=%s; setting finH=\"\"\n",argv[i],p->finH);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finL=",5)){ /** `finL` */
@@ -77,7 +77,7 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->finL = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
-	printf("# read %s, finL=%s; setting fin=\"\"\n",argv[i],p->finL);
+	printf("# read %s, finL=%s; setting finL=\"\"\n",argv[i],p->finL);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finG=",5)){/** `finG` degeneracy generator matrix */
@@ -86,7 +86,7 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->finG = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
-	printf("# read %s, finG=%s; setting fin=\"\"\n",argv[i],p->finG);
+	printf("# read %s, finG=%s; setting finG=\"\"\n",argv[i],p->finG);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"fin=",4)){
