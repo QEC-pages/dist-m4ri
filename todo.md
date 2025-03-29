@@ -30,7 +30,8 @@
 - [ ] see what can be done regarding early recursion termination --
       **currently it is removed**.  Perhaps, separate `confinement` to a
       different method, so that full enumeration can be done.
-
+- [ ] see if the constructed hash can be used to find minimum code
+      distance better (using half-weight vectors).
 ## operation mode: distance verification.
 
 We believe we know the distance (in reality, an upper bound), and we
