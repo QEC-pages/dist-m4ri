@@ -139,9 +139,9 @@ static inline int by_syndrome(void *a, void *b){
 	p_swei[err->wei]=syn->wei;      
       }
     }
-    //#ifndef NDEBUG  
     else{  /** we construct small-weight vectors first, thus should not
 	       worry about replacing error vectors already in the hash */
+    //#ifndef NDEBUG  
       if(debug&128){
 	printf("err: ");
 	one_vec_print(err);
@@ -150,8 +150,8 @@ static inline int by_syndrome(void *a, void *b){
 	printf("already in the hash:\n");
 	two_vec_print(pvec);
       }
-    }
     //#endif   
+    }
     return errors;
   }
   

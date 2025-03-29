@@ -83,7 +83,6 @@ void var_kill(params_t * const p);
   "\t\t   wmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)\n" \
   "\n"									\
   "\t\t2: connected cluster (CC) algorithm.  Options:\n"		\
-  "\t\t   wmin=[int]:  min cluster weight to check (1)\n"		\
   "\t\t   wmax=[int]:  maximum cluster weight, exclusive (0)\n"		\
   "\t\t\t must be non-zero for CC only, otherwise use upper bound from RW\n" \
   "\t\t   smax=[int]:  maximum syndrome weight, inclusive (0)\n"	\
