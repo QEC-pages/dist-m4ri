@@ -223,12 +223,12 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	int result = 0;
 	if (err->wei < wmax){
 	  if (swei){ /** go up */
-	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
+//	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
 	      result = start_CC_recurs(err,urr,syn,wmax,max_col_wt,
 				       mH,mHT,mL,p_swei,smax,debug);
 	      if(result == 1)
 		return 1;
-	    }
+//	    }
 	  }
 	  // swei == 0 means it is a degenerate vector
 	  // do not go up in this case 
@@ -243,6 +243,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		one_vec_print(err);
 		one_vec_print(syn[w+1]);
 	      }
+//	      errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
 	      return 1; /** success, just get out fast */
 	    }
 	  }
@@ -346,10 +347,10 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   else
     result = -wmax; /** not found a codeword up to wmax */
 
-  if(debug&2){
+  if(smax){
     for(int i=1;i<=wmax; i++)
       if(p_swei[i] <= mH->rows)
-	printf("# w=%d min syndrome weight %d\n",i,p_swei[i]);
+	printf("# w=%d min non-zero syndrome weight %d\n",i,p_swei[i]);
   }
   
   for(int i=0; i<= wmax; i++)

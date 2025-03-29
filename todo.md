@@ -18,15 +18,18 @@
       times they have been encountered.  Perhaps, bound the hash size
       by a relatively small limit, like it is done in `QDistRnd`, to
       be able to set up an alternative stopping condition.
-- [ ] To calculate the `confinement` correctly, we need to set up a
+- [x] To calculate the `confinement` correctly, we need to set up a
       hash of syndrome vectors and corresponding min-weight errors.
-      **Do we also need to separate by logical sectors?**  Right now
+      **Do we also need to separate by logical sectors?** ~~Right now
       the degeneracy is not taken into account, i.e., zero syndrome
       weight is calculated for a trivial error of weight 4 (since it
-      is equivalent to a zero-weight error this should not be counted).
+      is equivalent to a zero-weight error this should not be counted).~~
 - [ ] make sure `debug` and `method` are read first (as a separate items)
 - [ ] given `method`, check parameters for relevancy
 - [ ] see if parameters need disambiguation when `method=3` (both) 
+- [ ] see what can be done regarding early recursion termination --
+      **currently it is removed**.  Perhaps, separate `confinement` to a
+      different method, so that full enumeration can be done.
 
 ## operation mode: distance verification.
 
