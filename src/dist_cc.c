@@ -223,12 +223,12 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	int result = 0;
 	if (err->wei < wmax){
 	  if (swei){ /** go up */
-	    //	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
+	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
 	      result = start_CC_recurs(err,urr,syn,wmax,max_col_wt,
 				       mH,mHT,mL,p_swei,smax,debug);
 	      if(result == 1)
 		return 1;
-	      //}
+	    }
 	  }
 	  // swei == 0 means it is a degenerate vector
 	  // do not go up in this case 
