@@ -7,6 +7,7 @@ params_t prm={
   .classical=0,
   .steps=1,
   .css=1,
+  .smax=0,
   .wmax=0,
   .wmin=1,
   .start=-1, 
@@ -111,6 +112,11 @@ void var_init(int argc, char **argv, params_t * const p){
 	printf("# read %s, method=%d\n",argv[i],p->method);
       if( (p->method<=0) || (p->method>3))
 	ERROR("Unsupported method %d",p->method);
+    }
+    else if (sscanf(argv[i],"smax=%d",&dbg)==1){
+      p->smax=dbg;
+      if (p->debug&4)
+	printf("# read %s, smax=%d\n",argv[i],p->smax);
     }
     else if (sscanf(argv[i],"wmax=%d",&dbg)==1){
       p->wmax=dbg;
@@ -279,5 +285,7 @@ void var_kill(params_t * const p){
     if(p->finG)
       free(p->finH);    
   }
-#endif 
+#endif
+
+
 }

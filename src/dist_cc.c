@@ -22,16 +22,12 @@
 #include <m4ri/m4ri.h>
 
 #include "mmio.h"
+#include "uthash.h"
+#include "util_hash.h"
 #include "util_m4ri.h"
 #include "util_io.h"
 //#include "dist_m4ri.h"
 // #include "util.h"
-
-typedef struct ONE_VEC_T{
-  int wei; /** current weight */
-  int max; /** allocated */
-  int vec[0];
-} one_vec_t;
 
 /** @brief print entire `one_vec_t` structure by pointer */
 void one_vec_print(const one_vec_t * const pvec){
@@ -50,9 +46,8 @@ static inline int one_csr_row_combine(one_vec_t * const v1, const one_vec_t * co
     ERROR("all arguments must be allocated: v1=%p v0=%p mat=%p\n",v1,v0,mat);
   if(v1 == v0)
     ERROR("the two vectors should not be the same !");
-  if((row<0) || (row >= mat->rows) ||
-     (v1->max < mat->cols) ||
-     (v0->max < mat->cols))
+  if((row<0) || (row >= mat->rows))
+     //     (v1->max < mat->cols) || (v0->max < mat->cols)
     ERROR("this should not happen\n");
 #endif
   int iM, i0=0, i1=0; /** iterators */
@@ -93,8 +88,7 @@ static inline int one_ordered_ins(one_vec_t * const err, const int j){
 #endif   
   err->vec[pos+1]=j;
 #ifndef NDEBUG
-  if(err->wei >= err->max)
-    ERROR("unexpected!"); /** before increment */
+  //  if(err->wei >= err->max)    ERROR("unexpected!"); /** before increment */
   for(int i=0; i < err->wei; i++)
     if(err->vec[i] >= err->vec[i+1]){
       printf("check ordering at i=%d! ",i); /** before increment */
@@ -174,6 +168,8 @@ static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused cons
       err->vec[i] = err->vec[i+1];
 }
 
+two_vec_t *errors=NULL;
+
 /** @brief recursively construct codewords 
  * 
  * @param err error vector with sorted components 
@@ -189,9 +185,11 @@ static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused cons
  */
 int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		    const int wmax, const int max_col_wt, 
-		    const csr_t * const mH, const csr_t * const mHT, const csr_t * const mL, int p_swei[], 
-		    const int debug){
+		    const csr_t * const mH, const csr_t * const mHT, const csr_t * const mL,
+		    int p_swei[],
+		    const int smax, const int debug){
   const int w=err->wei;
+  assert(urr->wei == err->wei);
   int row = syn[w]->vec[0]; /** row with the first non-zero syndrome bit */
 #ifndef NDEBUG  
   if(debug&64){
@@ -200,7 +198,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
     printf(" err: ");
     one_vec_print(err);
     for(int i=0; i <= w; i++){
-      printf("i=%d ",i);
+      printf("# syn[i=%d] ",i);
       one_vec_print(syn[i]);
     }
   }
@@ -220,42 +218,38 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	}
 #endif 	
 	pos = one_ordered_ins(err,col);
+	syn[w+1]->wei=0;
 	int swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);
-	if(p_swei[err->wei] > swei){
-#ifndef NDEBUG
-	  if(debug&64){
-	    printf("# swei[%d]=%d -> %d change\n# err: ",
-		   err->wei,p_swei[err->wei],swei);
-	    one_vec_print(err);
-	    printf("# syn: ");
-	    one_vec_print(syn[w+1]);
-	  }
-#endif 	  
-	  p_swei[err->wei]=swei;
-	}
 	int result = 0;
 	if (err->wei < wmax){
 	  if (swei){ /** go up */
-	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
+//	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
 	      result = start_CC_recurs(err,urr,syn,wmax,max_col_wt,
-				       mH,mHT,mL,p_swei,debug);
+				       mH,mHT,mL,p_swei,smax,debug);
 	      if(result == 1)
 		return 1;
-	    }
+//	    }
 	  }
 	  // swei == 0 means it is a degenerate vector
 	  // do not go up in this case 
 	}
 	else{ // wei == wmax
+	  assert(err->wei == w+1);
 	  if(!swei){
 	    if((!mL) ||  /** classical code */
 	       (sparse_syndrome_non_zero(mL, err->wei, err->vec))){
 	      if(debug&32){
 		printf("swei=%d *** success ***\n",swei);
+		one_vec_print(err);
 		one_vec_print(syn[w+1]);
 	      }
+//	      errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
 	      return 1; /** success, just get out fast */
 	    }
+	  }
+	  else if(swei <= smax){/** update p_swei if not in hash yet */
+	    //	    printf("try ewei=%d swei=%d smax=%d\n",err->wei,swei,smax);
+	    errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
 	  }
 	}
 	urr->wei--;
@@ -276,7 +270,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 //! try recursive version first
 //! p_swei[]: min syndrome weight distribution to return (`confinement`).
 int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmin, const int wmax, const int start, int p_swei[], const int debug){
+	       const int wmax, const int start, int p_swei[], const int smax, const int debug){
 
   const int nchk = mH->rows, nvar = mH->cols;
   if((start<-1) || (start>=nvar))
@@ -294,14 +288,14 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   one_vec_t **syn = calloc(wmax+1, sizeof(one_vec_t *));
   if((!syn) || (!err) || (!urr))
     ERROR("memory allocation");
-  err->max = wmax;
+  //  err->max = wmax;
   for(int i=0; i <= wmax; i++){
     syn[i]=calloc(1, sizeof(one_vec_t)+sizeof(int)*mH->rows);
     if(!syn[i]) ERROR("i=%d memory allocation",i);
-    syn[i]->max = mH->rows;    
+    //    syn[i]->max = mH->rows;    
   }
   int result = 0;
-  for(int w=wmin; w <= wmax; w++){ /* cluster weight */
+  for(int w=1; w <= wmax; w++){ /* cluster weight */
     int beg = 0, end = nvar - wmax ;
     if (start >= 0)
       beg = end = start;
@@ -311,12 +305,11 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
       /** prepare the 1st error vector and the syndrome */
       err->vec[0] = urr->vec[0] = i;
       err->wei = urr->wei = 1;
+      syn[1]->wei=0;
       int swei = one_csr_row_combine(syn[1], syn[0], mHT, i);
-      if(p_swei[1] > swei)
-	p_swei[1]=swei;
-      if (1<w){
+      if (w>1){
 	if (swei){ /** go up */
-	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,debug);
+	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,smax,debug);
 	  if(result == 1)
 	    break;
 	}
@@ -329,6 +322,8 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
 	    break;
 	  }
 	}
+	else if(swei < smax) /** update p_swei if not in hash yet */
+	  errors = hash_add_maybe(syn[1],err,errors,p_swei, debug);
       }
       err->wei = urr->wei = 0;
     }
@@ -338,6 +333,10 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   
   if(result==1){
     result = err->wei; /** codeword weight found */
+#ifndef NDEBUG
+    assert(  0 == sparse_syndrome_non_zero(mH, err->wei, err->vec)); 
+    if(mL) assert(sparse_syndrome_non_zero(mL, err->wei, err->vec)); 
+#endif     
     if(debug&16){
       printf("# wmax=%d found cw of weight %d: [",wmax,result);
       int max = ((result<50) || (debug&2048)) ? result : 50 ;
@@ -348,10 +347,10 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   else
     result = -wmax; /** not found a codeword up to wmax */
 
-  if(debug&2){
+  if(smax){
     for(int i=1;i<=wmax; i++)
       if(p_swei[i] <= mH->rows)
-	printf("# w=%d min syndrome weight %d\n",i,p_swei[i]);
+	printf("# w=%d min non-zero syndrome weight %d\n",i,p_swei[i]);
   }
   
   for(int i=0; i<= wmax; i++)
@@ -360,6 +359,15 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   free(err);
   free(urr);
   csr_free(mHT);
+
+  /** prescribed way to clean the hashing table */
+  two_vec_t *terr, *tmp;
+  HASH_ITER(hh, errors, terr, tmp) {
+    //    two_vec_print(terr);
+    HASH_DEL(errors, terr);
+    free(terr);
+  }
+  
   return result;
 }
 

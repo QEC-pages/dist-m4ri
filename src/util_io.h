@@ -16,6 +16,8 @@
 #include <m4ri/m4ri.h>
 
 #include "mmio.h"
+#include "uthash.h"
+#include "util_hash.h"
 #include "util_m4ri.h"
 
 #define _maybe_unused __attribute__((unused))
@@ -29,6 +31,10 @@ typedef struct{
   int css; /* 1: css, 0: non-css -- currently not supported */
   int method; /* bitmap. 1: random window; 2: cluster; 3: both */
   int steps; /* how many RW decoding steps */
+  int smax; /** max syndrome weight of interest for `confinement`
+		calculation.  When `wmax=0` (default), do not
+		calculate confinement or use hashing storage.
+	     */
   int wmax; /** max cluster size to try for `CC`; 
 		only look for errors of weight < wmax for `RW` */
   int wmin; /** min distance below which we are not interested 
@@ -69,17 +75,20 @@ void var_kill(params_t * const p);
   "%s: distance of a classical or quantum CSS code\n"			\
   "\tusage: %s parameter=value [...]\n\n"				\
   "   Required parameter:\n"						\
-  "\tmethod=[int]: bitmap for method used (required, default 0: none): \n" \
+  "\tmethod=[int]: bitmap for method used (no default): \n" \
+  "\n"									\
   "\t\t1: random window (RW) algorithm. Options:\n"			\
   "\t\t   steps=[int]: how many information sets to use (1)\n"		\
   "\t\t   wmin=[int]:  minimum distance of interest (1)\n"		\
   "\t\t   wmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)\n" \
+  "\n"									\
   "\t\t2: connected cluster (CC) algorithm.  Options:\n"		\
-  "\t\t   wmin=[int]:  min cluster weight to check (1)\n"		\
   "\t\t   wmax=[int]:  maximum cluster weight, exclusive (0)\n"		\
   "\t\t\t must be non-zero for CC only, otherwise use upper bound from RW\n" \
-  "   General parameters:\n"						\
-  "\t\t   start=[int]: use only this position to start (-1)\n\n"	\
+  "\t\t   smax=[int]:  maximum syndrome weight, inclusive (0)\n"	\
+  "\t\t\t must be non-zero to calculate confinement\n"			\
+  "\t\t   start=[int]: use only this position to start (-1)\n"		\
+  "\n"									\
   "   General parameters:\n"						\
   "\tfinH=[str]: parity check matrix Hx (NULL)\n"			\
   "\tfinG=[str]: matrix Hz (quantum CSS code only) (NULL)\n"		\
