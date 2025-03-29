@@ -216,7 +216,8 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 #ifdef STANDALONE
 
 int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmin, const int wmax, const int start, int p_swei[], const int debug);
+	       const int wmin, const int wmax, const int start, int p_swei[],
+	       const int smax, const int debug);
 
 
 int main(int argc, char **argv){
@@ -241,7 +242,7 @@ int main(int argc, char **argv){
   }
 
   if (prm.method & 2){ /* cluster method */
-    int dmin=do_CC_dist(p->spaH,p->spaL,p->wmin,p->wmax,p->start,p->swei,p->debug);
+    int dmin=do_CC_dist(p->spaH,p->spaL,p->wmin,p->wmax,p->start,p->swei,p->smax, p->debug);
 
     if (dmin>0){ 
       if (prm.debug&1)

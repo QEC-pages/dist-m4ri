@@ -220,9 +220,6 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 #endif 	
 	pos = one_ordered_ins(err,col);
 	int swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);
-	if(swei < smax)/** update p_swei if not in hash yet */
-	  errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
-	
 	int result = 0;
 	if (err->wei < wmax){
 	  if (swei){ /** go up */
@@ -246,6 +243,10 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	      }
 	      return 1; /** success, just get out fast */
 	    }
+	  }
+	  else if(swei <= smax){/** update p_swei if not in hash yet */
+	    //	    printf("try ewei=%d swei=%d smax=%d\n",err->wei,swei,smax);
+	    errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
 	  }
 	}
 	urr->wei--;
