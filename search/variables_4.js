@@ -1,7 +1,6 @@
 var searchData=
 [
-  ['fin_0',['fin',['../structparams__t.html#a955e8b9d37a7dd87ce2b43dc34f51ff5',1,'params_t']]],
-  ['fing_1',['finG',['../structparams__t.html#a784ac56cc7097b61176da3ac379b8e46',1,'params_t']]],
-  ['finh_2',['finH',['../structparams__t.html#a29c580219768d9851f7efbbffb5193ad',1,'params_t']]],
-  ['finl_3',['finL',['../structparams__t.html#a83e6f05b6a4e4c4b0e51133c6a33ae40',1,'params_t']]]
+  ['err_0',['err',['../structTWO__VEC__T.html#ac73ebf2a295199179dce84b3948f549c',1,'TWO_VEC_T']]],
+  ['errors_1',['errors',['../dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f',1,'dist_cc.c']]],
+  ['expand_5fmult_2',['expand_mult',['../structUT__hash__bucket.html#a9b739c1b69c141e8198c0c64af643b2b',1,'UT_hash_bucket']]]
 ];

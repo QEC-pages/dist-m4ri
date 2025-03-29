@@ -84,50 +84,19 @@ $(function() {
 </div><!--header-->
 <div class="contents">
 
-<p>distance of a classical or quantum CSS code  
- <a href="structONE__VEC__T.html#details">More...</a></p>
+<p><code>#include &lt;<a class="el" href="util__hash_8h_source.html">util_hash.h</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-attribs" name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
 <tr class="memitem:a0cfa83aed86beb493292e7fe72fcaac5" id="r_a0cfa83aed86beb493292e7fe72fcaac5"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a></td></tr>
 <tr class="separator:a0cfa83aed86beb493292e7fe72fcaac5"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aeea993cf05d63555c29f336d6ed2802d" id="r_aeea993cf05d63555c29f336d6ed2802d"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structONE__VEC__T.html#aeea993cf05d63555c29f336d6ed2802d">max</a></td></tr>
-<tr class="separator:aeea993cf05d63555c29f336d6ed2802d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ad75feb7ea4213bbb78604796855aad0a" id="r_ad75feb7ea4213bbb78604796855aad0a"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a> [0]</td></tr>
 <tr class="separator:ad75feb7ea4213bbb78604796855aad0a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
-<div class="textblock"><p>distance of a classical or quantum CSS code </p>
-<hr  />
- <p>The program implements two methods:</p><ol type="1">
-<li>Random information set (random window) algorithm (upper bound). <br  />
- This works with any code (LDPC or not). (2) depth-first codeword enumeration (connected cluster) algorithm (Lower bound or actual distance if a codeword is found.) <br  />
-</li>
-</ol>
-<p>A. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..." in IEEE Trans. Inf. Th., vol. 63, p. 4675 (2017). doi: 10.1109/TIT.2017.2690381</p>
-<p>author: Leonid Pryadko <a href="#" onclick="location.href='mai'+'lto:'+'leo'+'ni'+'d.p'+'ry'+'adk'+'o@'+'ucr'+'.e'+'du'; return false;">leoni<span class="obfuscator">.nosp@m.</span>d.pr<span class="obfuscator">.nosp@m.</span>yadko<span class="obfuscator">.nosp@m.</span>@ucr<span class="obfuscator">.nosp@m.</span>.edu</a>, Weilei Zeng </p>
-
-<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00030">30</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
+<div class="textblock">
+<p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00036">36</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 </div><h2 class="groupheader">Member Data Documentation</h2>
-<a id="aeea993cf05d63555c29f336d6ed2802d" name="aeea993cf05d63555c29f336d6ed2802d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aeea993cf05d63555c29f336d6ed2802d">&#9670;&#160;</a></span>max</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">int ONE_VEC_T::max</td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-<p>current weight </p>
-
-<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00032">32</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
-
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00278">do_CC_dist()</a>.</p>
-
-</div>
-</div>
 <a id="ad75feb7ea4213bbb78604796855aad0a" name="ad75feb7ea4213bbb78604796855aad0a"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#ad75feb7ea4213bbb78604796855aad0a">&#9670;&#160;</a></span>vec</h2>
 
@@ -139,11 +108,11 @@ Public Attributes</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>allocated </p>
+<p>current weight </p>
 
-<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00033">33</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00039">39</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00278">do_CC_dist()</a>, <a class="el" href="dist__cc_8c_source.html#l00037">one_vec_print()</a>, and <a class="el" href="dist__cc_8c_source.html#l00190">start_CC_recurs()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00272">do_CC_dist()</a>, <a class="el" href="dist__cc_8c_source.html#l00033">one_vec_print()</a>, and <a class="el" href="dist__cc_8c_source.html#l00186">start_CC_recurs()</a>.</p>
 
 </div>
 </div>
@@ -159,14 +128,14 @@ Public Attributes</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__cc_8c_source.html#l00031">31</a> of file <a class="el" href="dist__cc_8c_source.html">dist_cc.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00037">37</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00278">do_CC_dist()</a>, <a class="el" href="dist__cc_8c_source.html#l00037">one_vec_print()</a>, and <a class="el" href="dist__cc_8c_source.html#l00190">start_CC_recurs()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00272">do_CC_dist()</a>, <a class="el" href="dist__cc_8c_source.html#l00033">one_vec_print()</a>, and <a class="el" href="dist__cc_8c_source.html#l00186">start_CC_recurs()</a>.</p>
 
 </div>
 </div>
 <hr/>The documentation for this struct was generated from the following file:<ul>
-<li>src/<a class="el" href="dist__cc_8c_source.html">dist_cc.c</a></li>
+<li>src/<a class="el" href="util__hash_8h_source.html">util_hash.h</a></li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->

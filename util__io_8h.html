@@ -96,29 +96,44 @@ $(function() {
 <code>#include &lt;stdio.h&gt;</code><br />
 <code>#include &lt;m4ri/m4ri.h&gt;</code><br />
 <code>#include &quot;<a class="el" href="mmio_8h_source.html">mmio.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="uthash_8h_source.html">uthash.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="util__hash_8h_source.html">util_hash.h</a>&quot;</code><br />
 <code>#include &quot;<a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>&quot;</code><br />
 </div><div class="textblock"><div class="dynheader">
 Include dependency graph for util_io.h:</div>
 <div class="dyncontent">
 <div class="center"><img src="util__io_8h__incl.png" border="0" usemap="#asrc_2util__io_8h" alt=""/></div>
 <map name="asrc_2util__io_8h" id="asrc_2util__io_8h">
-<area shape="rect" title=" " alt="" coords="341,5,439,31"/>
+<area shape="rect" title=" " alt="" coords="449,5,547,31"/>
 <area shape="rect" title=" " alt="" coords="5,79,92,104"/>
-<area shape="poly" title=" " alt="" coords="342,32,106,81,105,76,341,27"/>
+<area shape="poly" title=" " alt="" coords="450,28,300,50,106,81,105,76,299,44,449,23"/>
 <area shape="rect" title=" " alt="" coords="116,79,195,104"/>
-<area shape="poly" title=" " alt="" coords="353,33,207,77,206,72,352,28"/>
-<area shape="rect" title=" " alt="" coords="219,79,289,104"/>
-<area shape="poly" title=" " alt="" coords="369,33,289,75,287,70,367,28"/>
-<area shape="rect" title=" " alt="" coords="314,79,378,104"/>
-<area shape="poly" title=" " alt="" coords="385,32,363,68,358,66,380,30"/>
-<area shape="rect" title=" " alt="" coords="402,79,469,104"/>
-<area shape="poly" title=" " alt="" coords="400,30,423,66,418,69,395,32"/>
-<area shape="rect" title=" " alt="" coords="493,79,591,104"/>
-<area shape="poly" title=" " alt="" coords="416,28,506,70,504,75,413,33"/>
-<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="615,79,687,104"/>
-<area shape="poly" title=" " alt="" coords="433,28,602,74,601,79,431,33"/>
-<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="712,79,804,104"/>
-<area shape="poly" title=" " alt="" coords="439,26,699,76,698,81,438,31"/>
+<area shape="poly" title=" " alt="" coords="450,32,209,82,208,76,449,27"/>
+<area shape="rect" title=" " alt="" coords="335,152,405,177"/>
+<area shape="poly" title=" " alt="" coords="450,27,339,46,290,61,272,70,260,80,255,90,255,99,268,117,293,133,323,146,321,151,290,138,264,121,250,101,250,89,256,77,269,66,288,56,338,41,449,22"/>
+<area shape="rect" title=" " alt="" coords="270,79,334,104"/>
+<area shape="poly" title=" " alt="" coords="467,33,348,76,346,71,466,28"/>
+<area shape="rect" title=" " alt="" coords="358,79,425,104"/>
+<area shape="poly" title=" " alt="" coords="482,33,422,73,419,69,479,28"/>
+<area shape="rect" title=" " alt="" coords="449,79,547,104"/>
+<area shape="poly" title=" " alt="" coords="501,31,501,65,495,65,495,31"/>
+<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="571,79,643,104"/>
+<area shape="poly" title=" " alt="" coords="517,28,579,69,576,73,514,33"/>
+<area shape="rect" href="uthash_8h.html" title=" " alt="" coords="668,79,747,104"/>
+<area shape="poly" title=" " alt="" coords="532,28,661,72,659,77,531,33"/>
+<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="771,79,865,104"/>
+<area shape="poly" title=" " alt="" coords="543,28,758,76,757,81,542,33"/>
+<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="856,152,948,177"/>
+<area shape="poly" title=" " alt="" coords="547,18,630,23,728,32,818,50,853,62,878,77,890,90,897,106,904,137,899,138,892,107,885,93,875,81,851,67,817,55,727,38,630,28,547,23"/>
+<area shape="poly" title=" " alt="" coords="668,104,656,107,419,156,418,151,655,101,667,99"/>
+<area shape="rect" title=" " alt="" coords="567,152,637,177"/>
+<area shape="poly" title=" " alt="" coords="692,106,632,147,629,142,689,102"/>
+<area shape="rect" title=" " alt="" coords="662,152,737,177"/>
+<area shape="poly" title=" " alt="" coords="709,105,705,139,699,138,703,104"/>
+<area shape="rect" title=" " alt="" coords="761,152,832,177"/>
+<area shape="poly" title=" " alt="" coords="723,102,773,141,770,145,720,106"/>
+<area shape="poly" title=" " alt="" coords="773,81,559,34,561,29,774,76"/>
+<area shape="poly" title=" " alt="" coords="833,102,879,141,876,145,830,106"/>
 </map>
 </div>
 </div><div class="textblock"><div class="dynheader">
@@ -126,13 +141,17 @@ This graph shows which files directly or indirectly include this file:</div>
 <div class="dyncontent">
 <div class="center"><img src="util__io_8h__dep__incl.png" border="0" usemap="#asrc_2util__io_8hdep" alt=""/></div>
 <map name="asrc_2util__io_8hdep" id="asrc_2util__io_8hdep">
-<area shape="rect" title=" " alt="" coords="141,5,238,31"/>
-<area shape="rect" href="dist__cc_8c.html" title=" " alt="" coords="5,79,107,104"/>
-<area shape="poly" title=" " alt="" coords="157,39,79,81,77,76,155,35"/>
-<area shape="rect" href="dist__m4ri_8c.html" title=" " alt="" coords="131,79,248,104"/>
-<area shape="poly" title=" " alt="" coords="192,44,192,79,187,79,187,44"/>
-<area shape="rect" href="util__io_8c.html" title=" " alt="" coords="272,79,368,104"/>
-<area shape="poly" title=" " alt="" coords="224,35,300,76,297,81,221,40"/>
+<area shape="rect" title=" " alt="" coords="175,5,272,31"/>
+<area shape="rect" href="dist__cc_8c.html" title=" " alt="" coords="54,152,155,177"/>
+<area shape="poly" title=" " alt="" coords="162,31,73,51,36,64,13,80,9,90,9,100,23,119,48,136,76,150,73,154,45,141,19,123,4,102,3,89,9,77,33,60,71,46,160,26"/>
+<area shape="rect" href="dist__m4ri_8c.html" title=" " alt="" coords="23,79,141,104"/>
+<area shape="poly" title=" " alt="" coords="190,39,106,81,104,76,188,34"/>
+<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="165,79,281,104"/>
+<area shape="poly" title=" " alt="" coords="217,44,219,78,214,79,212,45"/>
+<area shape="rect" href="util__io_8c.html" title=" " alt="" coords="306,79,402,104"/>
+<area shape="poly" title=" " alt="" coords="258,35,334,76,331,81,255,40"/>
+<area shape="poly" title=" " alt="" coords="229,65,228,31,233,31,235,65"/>
+<area shape="poly" title=" " alt="" coords="194,113,125,154,123,149,191,109"/>
 </map>
 </div>
 </div>
@@ -181,7 +200,7 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00021">21</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00023">23</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -197,7 +216,7 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00111">111</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00120">120</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -213,7 +232,7 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00025">25</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00027">27</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -229,7 +248,7 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00068">68</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00074">74</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -293,9 +312,9 @@ Variables</h2></td></tr>
 <p>create <code>Lx</code></p>
 <p>WARNING: this does not necessarily have minimal row weights</p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00034">34</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00035">35</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00111">BRIEF_HELP</a>, <a class="el" href="util__io_8h_source.html#l00028">params_t::classical</a>, <a class="el" href="util__m4ri_8h_source.html#l00104">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00311">csr_csr_mul_non_zero()</a>, <a class="el" href="util__m4ri_8c_source.html#l00117">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00579">csr_mm_read()</a>, <a class="el" href="util__m4ri_8c_source.html#l00562">csr_print()</a>, <a class="el" href="util__io_8h_source.html#l00029">params_t::css</a>, <a class="el" href="util__io_8h_source.html#l00027">params_t::debug</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00055">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00053">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00052">params_t::finH</a>, <a class="el" href="util__io_8h_source.html#l00054">params_t::finL</a>, <a class="el" href="util__m4ri_8c_source.html#l00770">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00042">params_t::max_row_wgt_H</a>, <a class="el" href="util__io_8h_source.html#l00025">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00030">params_t::method</a>, <a class="el" href="util__io_8h_source.html#l00048">params_t::n0</a>, <a class="el" href="util__io_8h_source.html#l00050">params_t::nchk</a>, <a class="el" href="util__io_8h_source.html#l00049">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l00032">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00103">csr_t::rows</a>, <a class="el" href="util__io_8h_source.html#l00038">params_t::seed</a>, <a class="el" href="util__io_8h_source.html#l00057">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00056">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00058">params_t::spaL</a>, <a class="el" href="util__io_8h_source.html#l00046">params_t::start</a>, <a class="el" href="util__io_8h_source.html#l00031">params_t::steps</a>, <a class="el" href="util__io_8h_source.html#l00045">params_t::swei</a>, <a class="el" href="util__io_8h_source.html#l00068">USAGE</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00034">params_t::wmin</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00120">BRIEF_HELP</a>, <a class="el" href="util__io_8h_source.html#l00030">params_t::classical</a>, <a class="el" href="util__m4ri_8h_source.html#l00104">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00311">csr_csr_mul_non_zero()</a>, <a class="el" href="util__m4ri_8c_source.html#l00117">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00579">csr_mm_read()</a>, <a class="el" href="util__m4ri_8c_source.html#l00562">csr_print()</a>, <a class="el" href="util__io_8h_source.html#l00031">params_t::css</a>, <a class="el" href="util__io_8h_source.html#l00029">params_t::debug</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00061">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00059">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00058">params_t::finH</a>, <a class="el" href="util__io_8h_source.html#l00060">params_t::finL</a>, <a class="el" href="util__m4ri_8c_source.html#l00770">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00048">params_t::max_row_wgt_H</a>, <a class="el" href="util__io_8h_source.html#l00027">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::method</a>, <a class="el" href="util__io_8h_source.html#l00054">params_t::n0</a>, <a class="el" href="util__io_8h_source.html#l00056">params_t::nchk</a>, <a class="el" href="util__io_8h_source.html#l00055">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l00033">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00103">csr_t::rows</a>, <a class="el" href="util__io_8h_source.html#l00044">params_t::seed</a>, <a class="el" href="util__io_8h_source.html#l00034">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00063">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00064">params_t::spaL</a>, <a class="el" href="util__io_8h_source.html#l00052">params_t::start</a>, <a class="el" href="util__io_8h_source.html#l00033">params_t::steps</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::swei</a>, <a class="el" href="util__io_8h_source.html#l00074">USAGE</a>, <a class="el" href="util__io_8h_source.html#l00038">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00040">params_t::wmin</a>.</p>
 
 </div>
 </div>
@@ -315,9 +334,9 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00266">266</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00272">272</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00461">csr_free()</a>, <a class="el" href="util__io_8h_source.html#l00055">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00053">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00052">params_t::finH</a>, <a class="el" href="util__io_8c_source.html#l00032">p</a>, <a class="el" href="util__io_8h_source.html#l00057">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00056">params_t::spaH</a>, and <a class="el" href="util__io_8h_source.html#l00058">params_t::spaL</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00461">csr_free()</a>, <a class="el" href="util__io_8h_source.html#l00061">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00059">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00058">params_t::finH</a>, <a class="el" href="util__io_8c_source.html#l00033">p</a>, <a class="el" href="util__io_8h_source.html#l00063">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::spaH</a>, and <a class="el" href="util__io_8h_source.html#l00064">params_t::spaL</a>.</p>
 
 </div>
 </div>

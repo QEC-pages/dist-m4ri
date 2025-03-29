@@ -1,10 +1,15 @@
 var searchData=
 [
-  ['p_0',['p',['../structcsr__t.html#a969fc3d4a88acf579ef26170645cbb6c',1,'csr_t::p'],['../util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f',1,'p:&#160;util_io.c']]],
-  ['page_20md_5freadme_20readme_1',['@page md_README README',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md9',1,'']]],
-  ['params_5ft_2',['params_t',['../structparams__t.html',1,'']]],
-  ['perm_5fp_3',['perm_p',['../util__m4ri_8c.html#ad6effe03482dab5432463782b1312d11',1,'perm_p(mzp_t *q, const mzp_t *p, rci_t start):&#160;util_m4ri.c'],['../util__m4ri_8h.html#ad6effe03482dab5432463782b1312d11',1,'perm_p(mzp_t *q, const mzp_t *p, rci_t start):&#160;util_m4ri.c']]],
-  ['perm_5fp_5ftrans_4',['perm_p_trans',['../util__m4ri_8c.html#aa1a86f0cab9ff0b1d4e3ace6c90af696',1,'perm_p_trans(mzp_t *q, const mzp_t *p, const rci_t start):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aa1a86f0cab9ff0b1d4e3ace6c90af696',1,'perm_p_trans(mzp_t *q, const mzp_t *p, const rci_t start):&#160;util_m4ri.c']]],
-  ['prm_5',['prm',['../util__io_8c.html#ae188785995f4e3b54b93fee1e5eb7f90',1,'prm:&#160;util_io.c'],['../util__io_8h.html#ae188785995f4e3b54b93fee1e5eb7f90',1,'prm:&#160;util_io.c']]],
-  ['product_5fweight_5fcsr_5fmzd_6',['product_weight_csr_mzd',['../util__m4ri_8c.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c']]]
+  ['n0_0',['n0',['../structparams__t.html#a25f587c153f763af776bd21f89f4d029',1,'params_t']]],
+  ['nchk_1',['nchk',['../structparams__t.html#a2a380c61241b18a605719b406c1435fb',1,'params_t']]],
+  ['new_2',['NEW',['../dist__m4ri_8c.html#ab6bca16ed021b1e211fde8669758f199',1,'dist_m4ri.c']]],
+  ['next_3',['next',['../structUT__hash__handle.html#a93bc88ffe97f85ea0d9e0056b7118942',1,'UT_hash_handle']]],
+  ['noexpand_4',['noexpand',['../structUT__hash__table.html#a635661789933752e7b83dac84430eae1',1,'UT_hash_table']]],
+  ['nonideal_5fitems_5',['nonideal_items',['../structUT__hash__table.html#a8cb66cfb259a204cda59a815e4db664f',1,'UT_hash_table']]],
+  ['notes_20for_20tt_20dist_5fm4ri_20tt_20program_6',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]],
+  ['num_5fbuckets_7',['num_buckets',['../structUT__hash__table.html#a3ed04b6233facaedf910672578d86339',1,'UT_hash_table']]],
+  ['num_5fitems_8',['num_items',['../structUT__hash__table.html#a74534cc14f080c96f94d8f5da83d9d76',1,'UT_hash_table']]],
+  ['nvar_9',['nvar',['../structparams__t.html#a691cc572781a2b35351e846ebcb8e6ba',1,'params_t']]],
+  ['nz_10',['nz',['../structcsr__t.html#a8165d5f059150d9602c5329ebe415197',1,'csr_t']]],
+  ['nzmax_11',['nzmax',['../structcsr__t.html#a91d6a7baf1505544be123a48d2400291',1,'csr_t']]]
 ];

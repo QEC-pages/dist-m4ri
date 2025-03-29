@@ -1,9 +1,6 @@
 var searchData=
 [
-  ['n0_0',['n0',['../structparams__t.html#a25f587c153f763af776bd21f89f4d029',1,'params_t']]],
-  ['nchk_1',['nchk',['../structparams__t.html#a2a380c61241b18a605719b406c1435fb',1,'params_t']]],
-  ['new_2',['NEW',['../dist__m4ri_8c.html#ab6bca16ed021b1e211fde8669758f199',1,'dist_m4ri.c']]],
-  ['nvar_3',['nvar',['../structparams__t.html#a691cc572781a2b35351e846ebcb8e6ba',1,'params_t']]],
-  ['nz_4',['nz',['../structcsr__t.html#a8165d5f059150d9602c5329ebe415197',1,'csr_t']]],
-  ['nzmax_5',['nzmax',['../structcsr__t.html#a91d6a7baf1505544be123a48d2400291',1,'csr_t']]]
+  ['list_0',['Todo List',['../todo.html',1,'']]],
+  ['log2_5fnum_5fbuckets_1',['log2_num_buckets',['../structUT__hash__table.html#ae376a7f3fac525f3a9d03b6beec8d12f',1,'UT_hash_table']]],
+  ['lx_5ffor_5fcss_5fcode_2',['lx_for_css_code',['../util__m4ri_8c.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c']]]
 ];

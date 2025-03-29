@@ -1,8 +1,6 @@
 var searchData=
 [
-  ['n0_0',['n0',['../structparams__t.html#a25f587c153f763af776bd21f89f4d029',1,'params_t']]],
-  ['nchk_1',['nchk',['../structparams__t.html#a2a380c61241b18a605719b406c1435fb',1,'params_t']]],
-  ['nvar_2',['nvar',['../structparams__t.html#a691cc572781a2b35351e846ebcb8e6ba',1,'params_t']]],
-  ['nz_3',['nz',['../structcsr__t.html#a8165d5f059150d9602c5329ebe415197',1,'csr_t']]],
-  ['nzmax_4',['nzmax',['../structcsr__t.html#a91d6a7baf1505544be123a48d2400291',1,'csr_t']]]
+  ['i_0',['i',['../structcsr__t.html#ab165a0c4e2331fe00e4be153e13d309e',1,'csr_t']]],
+  ['ideal_5fchain_5fmaxlen_1',['ideal_chain_maxlen',['../structUT__hash__table.html#a5f1cec93d5d753ba02097c797e4d67ad',1,'UT_hash_table']]],
+  ['ineff_5fexpands_2',['ineff_expands',['../structUT__hash__table.html#a216c7d98cf40a0064bee94aa8a5bf1b7',1,'UT_hash_table']]]
 ];
