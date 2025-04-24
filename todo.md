@@ -32,6 +32,8 @@
       different method, so that full enumeration can be done.
 - [ ] see if the constructed hash can be used to find minimum code
       distance better (using half-weight vectors).
+- [ ] see if a sparse-matrix Gauss elimination would work faster
+      (using rows? -- or try the 2D matrix structure?)
 ## operation mode: distance verification.
 
 We believe we know the distance (in reality, an upper bound), and we
