@@ -32,6 +32,15 @@ dist_cc.o: dist_cc.c util_io.h util_m4ri.h mmio.h util_hash.h makefile
 mmio.o: mmio.c mmio.h makefile
 	${CC} ${CFLAGS} -c $< 
 
+test: test.c dist_m4ri.c dist_m4ri.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
+	${CC} ${CFLAGS} -DSTANDALONE -o test $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm
+
+run-test:
+	echo "start test"
+	./dist_m4ri method=1
+	./dist_m4ri method=2
+	./test method=1 debug=0
+	echo "finish test"
 
 clean:
 	rm -f *~ *.tmp *.out *.o ../input/*~ ../examples/*~ TAGS 
@@ -63,4 +72,5 @@ give_help:
 	@echo  "    Please see '../README.md' for installation instructions."
 	@echo  "  - On a Mac, you may want to disable '\e[32m-march=native\e[0m' compiler switch by running" 
 	@echo  "\t\e[36m make dist_m4ri OPT='-g -mtune=native -O3'\e[0m" 
+
 
