@@ -275,159 +275,166 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00220" name="l00220"></a><span class="lineno">  220</span>    pos = one_ordered_ins(err,col);</div>
 <div class="line"><a id="l00221" name="l00221"></a><span class="lineno">  221</span>    syn[w+1]-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>=0;</div>
 <div class="line"><a id="l00222" name="l00222"></a><span class="lineno">  222</span>    <span class="keywordtype">int</span> swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);</div>
-<div class="line"><a id="l00223" name="l00223"></a><span class="lineno">  223</span>    <span class="keywordtype">int</span> result = 0;</div>
-<div class="line"><a id="l00224" name="l00224"></a><span class="lineno">  224</span>    <span class="keywordflow">if</span> (err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> &lt; wmax){</div>
-<div class="line"><a id="l00225" name="l00225"></a><span class="lineno">  225</span>      <span class="keywordflow">if</span> (swei){ </div>
-<div class="line"><a id="l00226" name="l00226"></a><span class="lineno">  226</span><span class="comment">//      if(swei &lt;= (wmax - err-&gt;wei)*max_col_wt){ /** reachable goal? */</span></div>
-<div class="line"><a id="l00227" name="l00227"></a><span class="lineno">  227</span>          result = <a class="code hl_function" href="dist__cc_8c.html#a4c4252076d1bfc6d07f9f15d21a302ab">start_CC_recurs</a>(err,urr,syn,wmax,max_col_wt,</div>
-<div class="line"><a id="l00228" name="l00228"></a><span class="lineno">  228</span>                       mH,mHT,mL,p_swei,smax,debug);</div>
-<div class="line"><a id="l00229" name="l00229"></a><span class="lineno">  229</span>          <span class="keywordflow">if</span>(result == 1)</div>
-<div class="line"><a id="l00230" name="l00230"></a><span class="lineno">  230</span>        <span class="keywordflow">return</span> 1;</div>
-<div class="line"><a id="l00231" name="l00231"></a><span class="lineno">  231</span><span class="comment">//      }</span></div>
-<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span>      }</div>
-<div class="line"><a id="l00233" name="l00233"></a><span class="lineno">  233</span>      <span class="comment">// swei == 0 means it is a degenerate vector</span></div>
-<div class="line"><a id="l00234" name="l00234"></a><span class="lineno">  234</span>      <span class="comment">// do not go up in this case </span></div>
-<div class="line"><a id="l00235" name="l00235"></a><span class="lineno">  235</span>    }</div>
-<div class="line"><a id="l00236" name="l00236"></a><span class="lineno">  236</span>    <span class="keywordflow">else</span>{ <span class="comment">// wei == wmax</span></div>
-<div class="line"><a id="l00237" name="l00237"></a><span class="lineno">  237</span>      assert(err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> == w+1);</div>
-<div class="line"><a id="l00238" name="l00238"></a><span class="lineno">  238</span>      <span class="keywordflow">if</span>(!swei){</div>
-<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span>        <span class="keywordflow">if</span>((!mL) ||  </div>
-<div class="line"><a id="l00240" name="l00240"></a><span class="lineno">  240</span>           (sparse_syndrome_non_zero(mL, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>))){</div>
-<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span>          <span class="keywordflow">if</span>(debug&amp;32){</div>
-<div class="line"><a id="l00242" name="l00242"></a><span class="lineno">  242</span>        printf(<span class="stringliteral">&quot;swei=%d *** success ***\n&quot;</span>,swei);</div>
-<div class="line"><a id="l00243" name="l00243"></a><span class="lineno">  243</span>        <a class="code hl_function" href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(err);</div>
-<div class="line"><a id="l00244" name="l00244"></a><span class="lineno">  244</span>        <a class="code hl_function" href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(syn[w+1]);</div>
-<div class="line"><a id="l00245" name="l00245"></a><span class="lineno">  245</span>          }</div>
-<div class="line"><a id="l00246" name="l00246"></a><span class="lineno">  246</span><span class="comment">//        errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);</span></div>
-<div class="line"><a id="l00247" name="l00247"></a><span class="lineno">  247</span>          <span class="keywordflow">return</span> 1; </div>
-<div class="line"><a id="l00248" name="l00248"></a><span class="lineno">  248</span>        }</div>
-<div class="line"><a id="l00249" name="l00249"></a><span class="lineno">  249</span>      }</div>
-<div class="line"><a id="l00250" name="l00250"></a><span class="lineno">  250</span>      <span class="keywordflow">else</span> <span class="keywordflow">if</span>(swei &lt;= smax){</div>
-<div class="line"><a id="l00251" name="l00251"></a><span class="lineno">  251</span>        <span class="comment">//      printf(&quot;try ewei=%d swei=%d smax=%d\n&quot;,err-&gt;wei,swei,smax);</span></div>
-<div class="line"><a id="l00252" name="l00252"></a><span class="lineno">  252</span>        <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a> = hash_add_maybe(syn[w+1],err,<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, p_swei, debug);</div>
+<div class="line"><a id="l00223" name="l00223"></a><span class="lineno">  223</span>    <span class="keywordflow">if</span>(debug&amp;64){</div>
+<div class="line"><a id="l00224" name="l00224"></a><span class="lineno">  224</span>      printf(<span class="stringliteral">&quot; syn: &quot;</span>);</div>
+<div class="line"><a id="l00225" name="l00225"></a><span class="lineno">  225</span>      <a class="code hl_function" href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(syn[w+1]);</div>
+<div class="line"><a id="l00226" name="l00226"></a><span class="lineno">  226</span>    }</div>
+<div class="line"><a id="l00227" name="l00227"></a><span class="lineno">  227</span>    <span class="keywordtype">int</span> result = 0;</div>
+<div class="line"><a id="l00228" name="l00228"></a><span class="lineno">  228</span>    <span class="keywordflow">if</span> (err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> &lt; wmax){</div>
+<div class="line"><a id="l00229" name="l00229"></a><span class="lineno">  229</span>      <span class="keywordflow">if</span> (swei){ </div>
+<div class="line"><a id="l00230" name="l00230"></a><span class="lineno">  230</span><span class="comment">//      if(swei &lt;= (wmax - err-&gt;wei)*max_col_wt){ /** reachable goal? */</span></div>
+<div class="line"><a id="l00231" name="l00231"></a><span class="lineno">  231</span>          result = <a class="code hl_function" href="dist__cc_8c.html#a4c4252076d1bfc6d07f9f15d21a302ab">start_CC_recurs</a>(err,urr,syn,wmax,max_col_wt,</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span>                       mH,mHT,mL,p_swei,smax,debug);</div>
+<div class="line"><a id="l00233" name="l00233"></a><span class="lineno">  233</span>          <span class="keywordflow">if</span>(result == 1)</div>
+<div class="line"><a id="l00234" name="l00234"></a><span class="lineno">  234</span>        <span class="keywordflow">return</span> 1;</div>
+<div class="line"><a id="l00235" name="l00235"></a><span class="lineno">  235</span><span class="comment">//      }</span></div>
+<div class="line"><a id="l00236" name="l00236"></a><span class="lineno">  236</span>      }</div>
+<div class="line"><a id="l00237" name="l00237"></a><span class="lineno">  237</span>      <span class="comment">// swei == 0 means it is a degenerate vector</span></div>
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno">  238</span>      <span class="comment">// do not go up in this case </span></div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span>    }</div>
+<div class="line"><a id="l00240" name="l00240"></a><span class="lineno">  240</span>    <span class="keywordflow">else</span>{ <span class="comment">// wei == wmax</span></div>
+<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span>      assert(err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> == w+1);</div>
+<div class="line"><a id="l00242" name="l00242"></a><span class="lineno">  242</span>      <span class="keywordflow">if</span>(!swei){</div>
+<div class="line"><a id="l00243" name="l00243"></a><span class="lineno">  243</span>        <span class="keywordflow">if</span>((!mL) ||  </div>
+<div class="line"><a id="l00244" name="l00244"></a><span class="lineno">  244</span>           (sparse_syndrome_non_zero(mL, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>))){</div>
+<div class="line"><a id="l00245" name="l00245"></a><span class="lineno">  245</span>          <span class="keywordflow">if</span>(debug&amp;32){</div>
+<div class="line"><a id="l00246" name="l00246"></a><span class="lineno">  246</span>        printf(<span class="stringliteral">&quot;swei=%d *** success ***\n&quot;</span>,swei);</div>
+<div class="line"><a id="l00247" name="l00247"></a><span class="lineno">  247</span>        <a class="code hl_function" href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(err);</div>
+<div class="line"><a id="l00248" name="l00248"></a><span class="lineno">  248</span>        <a class="code hl_function" href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(syn[w+1]);</div>
+<div class="line"><a id="l00249" name="l00249"></a><span class="lineno">  249</span>          }</div>
+<div class="line"><a id="l00250" name="l00250"></a><span class="lineno">  250</span><span class="comment">//        errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);</span></div>
+<div class="line"><a id="l00251" name="l00251"></a><span class="lineno">  251</span>          <span class="keywordflow">return</span> 1; </div>
+<div class="line"><a id="l00252" name="l00252"></a><span class="lineno">  252</span>        }</div>
 <div class="line"><a id="l00253" name="l00253"></a><span class="lineno">  253</span>      }</div>
-<div class="line"><a id="l00254" name="l00254"></a><span class="lineno">  254</span>    }</div>
-<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span>    urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>--;</div>
-<div class="line"><a id="l00256" name="l00256"></a><span class="lineno">  256</span>    one_ordered_pos_del(err,col,pos);</div>
-<div class="line"><a id="l00257" name="l00257"></a><span class="lineno">  257</span>    <span class="keywordflow">if</span>(debug&amp;32){</div>
-<div class="line"><a id="l00258" name="l00258"></a><span class="lineno">  258</span>      printf(<span class="stringliteral">&quot;xerr: &quot;</span>);</div>
-<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>      <a class="code hl_function" href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(err);</div>
-<div class="line"><a id="l00260" name="l00260"></a><span class="lineno">  260</span>    }</div>
-<div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span>      }</div>
-<div class="line"><a id="l00262" name="l00262"></a><span class="lineno">  262</span>    }</div>
-<div class="line"><a id="l00263" name="l00263"></a><span class="lineno">  263</span>  }</div>
-<div class="line"><a id="l00264" name="l00264"></a><span class="lineno">  264</span>  <span class="keywordflow">if</span>(debug&amp;32)</div>
-<div class="line"><a id="l00265" name="l00265"></a><span class="lineno">  265</span>    printf(<span class="stringliteral">&quot;exiting CC recurs\n\n&quot;</span>);</div>
-<div class="line"><a id="l00266" name="l00266"></a><span class="lineno">  266</span>  <span class="keywordflow">return</span> 0; </div>
-<div class="line"><a id="l00267" name="l00267"></a><span class="lineno">  267</span>}</div>
+<div class="line"><a id="l00254" name="l00254"></a><span class="lineno">  254</span>      <span class="keywordflow">else</span> <span class="keywordflow">if</span>(swei &lt;= smax){</div>
+<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span>        <span class="keywordflow">if</span>(debug&amp;64){</div>
+<div class="line"><a id="l00256" name="l00256"></a><span class="lineno">  256</span>          printf(<span class="stringliteral">&quot;# try adding to the hash ewei=%d swei=%d smax=%d p_swei[%d]=%d\n&quot;</span>,err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>,swei,smax,w+1,p_swei[w+1]);</div>
+<div class="line"><a id="l00257" name="l00257"></a><span class="lineno">  257</span>        }</div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno">  258</span>        <span class="comment">//      </span></div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>        <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a> = hash_add_maybe(syn[w+1],err,<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, p_swei, debug);</div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno">  260</span>      }</div>
+<div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span>    }</div>
+<div class="line"><a id="l00262" name="l00262"></a><span class="lineno">  262</span>    urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>--;</div>
+<div class="line"><a id="l00263" name="l00263"></a><span class="lineno">  263</span>    one_ordered_pos_del(err,col,pos);</div>
+<div class="line"><a id="l00264" name="l00264"></a><span class="lineno">  264</span>    <span class="keywordflow">if</span>(debug&amp;32){</div>
+<div class="line"><a id="l00265" name="l00265"></a><span class="lineno">  265</span>      printf(<span class="stringliteral">&quot;xerr: &quot;</span>);</div>
+<div class="line"><a id="l00266" name="l00266"></a><span class="lineno">  266</span>      <a class="code hl_function" href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(err);</div>
+<div class="line"><a id="l00267" name="l00267"></a><span class="lineno">  267</span>    }</div>
+<div class="line"><a id="l00268" name="l00268"></a><span class="lineno">  268</span>      }</div>
+<div class="line"><a id="l00269" name="l00269"></a><span class="lineno">  269</span>    }</div>
+<div class="line"><a id="l00270" name="l00270"></a><span class="lineno">  270</span>  }</div>
+<div class="line"><a id="l00271" name="l00271"></a><span class="lineno">  271</span>  <span class="keywordflow">if</span>(debug&amp;32)</div>
+<div class="line"><a id="l00272" name="l00272"></a><span class="lineno">  272</span>    printf(<span class="stringliteral">&quot;exiting CC recurs\n\n&quot;</span>);</div>
+<div class="line"><a id="l00273" name="l00273"></a><span class="lineno">  273</span>  <span class="keywordflow">return</span> 0; </div>
+<div class="line"><a id="l00274" name="l00274"></a><span class="lineno">  274</span>}</div>
 </div>
-<div class="line"><a id="l00268" name="l00268"></a><span class="lineno">  268</span> </div>
-<div class="foldopen" id="foldopen00272" data-start="{" data-end="}">
-<div class="line"><a id="l00272" name="l00272"></a><span class="lineno"><a class="line" href="dist__cc_8c.html#ab67a3351d0d1c6c20e829cac3e8e5374">  272</a></span><span class="keywordtype">int</span> <a class="code hl_function" href="dist__cc_8c.html#ab67a3351d0d1c6c20e829cac3e8e5374">do_CC_dist</a>(<span class="keyword">const</span> <a class="code hl_struct" href="structcsr__t.html">csr_t</a> * <span class="keyword">const</span> mH, <span class="keyword">const</span> <a class="code hl_struct" href="structcsr__t.html">csr_t</a> * mL,</div>
-<div class="line"><a id="l00273" name="l00273"></a><span class="lineno">  273</span>           <span class="keyword">const</span> <span class="keywordtype">int</span> wmax, <span class="keyword">const</span> <span class="keywordtype">int</span> start, <span class="keywordtype">int</span> p_swei[], <span class="keyword">const</span> <span class="keywordtype">int</span> smax, <span class="keyword">const</span> <span class="keywordtype">int</span> debug){</div>
-<div class="line"><a id="l00274" name="l00274"></a><span class="lineno">  274</span> </div>
-<div class="line"><a id="l00275" name="l00275"></a><span class="lineno">  275</span>  <span class="keyword">const</span> <span class="keywordtype">int</span> nchk = mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>, nvar = mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ae4ec2876423b9af903dfa139afbfbf34">cols</a>;</div>
-<div class="line"><a id="l00276" name="l00276"></a><span class="lineno">  276</span>  <span class="keywordflow">if</span>((start&lt;-1) || (start&gt;=nvar))</div>
-<div class="line"><a id="l00277" name="l00277"></a><span class="lineno">  277</span>    <a class="code hl_define" href="util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa">ERROR</a>(<span class="stringliteral">&quot;invalid start=%d for H[%d,%d]\n&quot;</span>,start, nchk, nvar);</div>
-<div class="line"><a id="l00278" name="l00278"></a><span class="lineno">  278</span> </div>
-<div class="line"><a id="l00279" name="l00279"></a><span class="lineno">  279</span>  <a class="code hl_struct" href="structcsr__t.html">csr_t</a> * <span class="keyword">const</span> mHT = <a class="code hl_function" href="util__m4ri_8c.html#a7c4cabed8df7c4b70e6bfe7eef0fa909">csr_transpose</a>(NULL,mH);</div>
-<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>  <span class="keywordflow">if</span>(debug&amp;32){</div>
-<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span>    <span class="keywordflow">if</span>((mHT-&gt;<a class="code hl_variable" href="structcsr__t.html#ae4ec2876423b9af903dfa139afbfbf34">cols</a>&lt;150)||(debug&amp;2048))</div>
-<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span>      <a class="code hl_function" href="util__m4ri_8c.html#aab27309885fceebf023cdea42249ca3d">csr_print</a>(mHT,<span class="stringliteral">&quot;HT&quot;</span>);</div>
-<div class="line"><a id="l00283" name="l00283"></a><span class="lineno">  283</span>  }</div>
-<div class="line"><a id="l00284" name="l00284"></a><span class="lineno">  284</span>  <span class="keywordtype">int</span> max_col_W = <a class="code hl_function" href="util__m4ri_8c.html#ac01548e83e406d08c13487fdf152b884">csr_max_row_wght</a>(mHT);</div>
-<div class="line"><a id="l00285" name="l00285"></a><span class="lineno">  285</span>  </div>
-<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span>  <a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> *err = calloc(1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a>)+<span class="keyword">sizeof</span>(<span class="keywordtype">int</span>)*wmax);  </div>
-<div class="line"><a id="l00287" name="l00287"></a><span class="lineno">  287</span>  <a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> *urr = calloc(1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a>)+<span class="keyword">sizeof</span>(<span class="keywordtype">int</span>)*wmax);  </div>
-<div class="line"><a id="l00288" name="l00288"></a><span class="lineno">  288</span>  <a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> **syn = calloc(wmax+1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> *));</div>
-<div class="line"><a id="l00289" name="l00289"></a><span class="lineno">  289</span>  <span class="keywordflow">if</span>((!syn) || (!err) || (!urr))</div>
-<div class="line"><a id="l00290" name="l00290"></a><span class="lineno">  290</span>    <a class="code hl_define" href="util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa">ERROR</a>(<span class="stringliteral">&quot;memory allocation&quot;</span>);</div>
-<div class="line"><a id="l00291" name="l00291"></a><span class="lineno">  291</span>  <span class="comment">//  err-&gt;max = wmax;</span></div>
-<div class="line"><a id="l00292" name="l00292"></a><span class="lineno">  292</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i &lt;= wmax; i++){</div>
-<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span>    syn[i]=calloc(1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a>)+<span class="keyword">sizeof</span>(<span class="keywordtype">int</span>)*mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>);</div>
-<div class="line"><a id="l00294" name="l00294"></a><span class="lineno">  294</span>    <span class="keywordflow">if</span>(!syn[i]) <a class="code hl_define" href="util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa">ERROR</a>(<span class="stringliteral">&quot;i=%d memory allocation&quot;</span>,i);</div>
-<div class="line"><a id="l00295" name="l00295"></a><span class="lineno">  295</span>    <span class="comment">//    syn[i]-&gt;max = mH-&gt;rows;    </span></div>
-<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span>  }</div>
-<div class="line"><a id="l00297" name="l00297"></a><span class="lineno">  297</span>  <span class="keywordtype">int</span> result = 0;</div>
-<div class="line"><a id="l00298" name="l00298"></a><span class="lineno">  298</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> w=1; w &lt;= wmax; w++){ <span class="comment">/* cluster weight */</span></div>
-<div class="line"><a id="l00299" name="l00299"></a><span class="lineno">  299</span>    <span class="keywordtype">int</span> beg = 0, end = nvar - wmax ;</div>
-<div class="line"><a id="l00300" name="l00300"></a><span class="lineno">  300</span>    <span class="keywordflow">if</span> (start &gt;= 0)</div>
-<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span>      beg = end = start;</div>
-<div class="line"><a id="l00302" name="l00302"></a><span class="lineno">  302</span>    <span class="keywordflow">if</span>(debug&amp;2)</div>
-<div class="line"><a id="l00303" name="l00303"></a><span class="lineno">  303</span>      printf(<span class="stringliteral">&quot;# recursively searching for w=%d codewords wmax=%d beg=%d end=%d\n&quot;</span>,w,wmax,beg,end);</div>
-<div class="line"><a id="l00304" name="l00304"></a><span class="lineno">  304</span>    <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i = beg; i &lt;= end; i++){ <span class="comment">/* start column position */</span></div>
-<div class="line"><a id="l00306" name="l00306"></a><span class="lineno">  306</span>      err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>[0] = urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>[0] = i;</div>
-<div class="line"><a id="l00307" name="l00307"></a><span class="lineno">  307</span>      err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = 1;</div>
-<div class="line"><a id="l00308" name="l00308"></a><span class="lineno">  308</span>      syn[1]-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>=0;</div>
-<div class="line"><a id="l00309" name="l00309"></a><span class="lineno">  309</span>      <span class="keywordtype">int</span> swei = one_csr_row_combine(syn[1], syn[0], mHT, i);</div>
-<div class="line"><a id="l00310" name="l00310"></a><span class="lineno">  310</span>      <span class="keywordflow">if</span> (w&gt;1){</div>
-<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>    <span class="keywordflow">if</span> (swei){ </div>
-<div class="line"><a id="l00312" name="l00312"></a><span class="lineno">  312</span>      result = <a class="code hl_function" href="dist__cc_8c.html#a4c4252076d1bfc6d07f9f15d21a302ab">start_CC_recurs</a>(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,smax,debug);</div>
-<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span>      <span class="keywordflow">if</span>(result == 1)</div>
-<div class="line"><a id="l00314" name="l00314"></a><span class="lineno">  314</span>        <span class="keywordflow">break</span>;</div>
-<div class="line"><a id="l00315" name="l00315"></a><span class="lineno">  315</span>    }</div>
-<div class="line"><a id="l00316" name="l00316"></a><span class="lineno">  316</span>      }</div>
-<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span>      <span class="keywordflow">else</span>{ <span class="comment">// w==1</span></div>
-<div class="line"><a id="l00318" name="l00318"></a><span class="lineno">  318</span>    <span class="keywordflow">if</span>(!swei){  </div>
-<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span>      <span class="keywordflow">if</span>((!mL) ||  </div>
-<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span>         (sparse_syndrome_non_zero(mL, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>))){</div>
-<div class="line"><a id="l00321" name="l00321"></a><span class="lineno">  321</span>        result = 1; </div>
-<div class="line"><a id="l00322" name="l00322"></a><span class="lineno">  322</span>        <span class="keywordflow">break</span>;</div>
+<div class="line"><a id="l00275" name="l00275"></a><span class="lineno">  275</span> </div>
+<div class="foldopen" id="foldopen00279" data-start="{" data-end="}">
+<div class="line"><a id="l00279" name="l00279"></a><span class="lineno"><a class="line" href="dist__cc_8c.html#ab67a3351d0d1c6c20e829cac3e8e5374">  279</a></span><span class="keywordtype">int</span> <a class="code hl_function" href="dist__cc_8c.html#ab67a3351d0d1c6c20e829cac3e8e5374">do_CC_dist</a>(<span class="keyword">const</span> <a class="code hl_struct" href="structcsr__t.html">csr_t</a> * <span class="keyword">const</span> mH, <span class="keyword">const</span> <a class="code hl_struct" href="structcsr__t.html">csr_t</a> * mL,</div>
+<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>           <span class="keyword">const</span> <span class="keywordtype">int</span> wmax, <span class="keyword">const</span> <span class="keywordtype">int</span> start, <span class="keywordtype">int</span> p_swei[], <span class="keyword">const</span> <span class="keywordtype">int</span> smax, <span class="keyword">const</span> <span class="keywordtype">int</span> debug){</div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span> </div>
+<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span>  <span class="keyword">const</span> <span class="keywordtype">int</span> nchk = mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>, nvar = mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ae4ec2876423b9af903dfa139afbfbf34">cols</a>;</div>
+<div class="line"><a id="l00283" name="l00283"></a><span class="lineno">  283</span>  <span class="keywordflow">if</span>((start&lt;-1) || (start&gt;=nvar))</div>
+<div class="line"><a id="l00284" name="l00284"></a><span class="lineno">  284</span>    <a class="code hl_define" href="util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa">ERROR</a>(<span class="stringliteral">&quot;invalid start=%d for H[%d,%d]\n&quot;</span>,start, nchk, nvar);</div>
+<div class="line"><a id="l00285" name="l00285"></a><span class="lineno">  285</span> </div>
+<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span>  <a class="code hl_struct" href="structcsr__t.html">csr_t</a> * <span class="keyword">const</span> mHT = <a class="code hl_function" href="util__m4ri_8c.html#a7c4cabed8df7c4b70e6bfe7eef0fa909">csr_transpose</a>(NULL,mH);</div>
+<div class="line"><a id="l00287" name="l00287"></a><span class="lineno">  287</span>  <span class="keywordflow">if</span>(debug&amp;32){</div>
+<div class="line"><a id="l00288" name="l00288"></a><span class="lineno">  288</span>    <span class="keywordflow">if</span>((mHT-&gt;<a class="code hl_variable" href="structcsr__t.html#ae4ec2876423b9af903dfa139afbfbf34">cols</a>&lt;150)||(debug&amp;2048))</div>
+<div class="line"><a id="l00289" name="l00289"></a><span class="lineno">  289</span>      <a class="code hl_function" href="util__m4ri_8c.html#aab27309885fceebf023cdea42249ca3d">csr_print</a>(mHT,<span class="stringliteral">&quot;HT&quot;</span>);</div>
+<div class="line"><a id="l00290" name="l00290"></a><span class="lineno">  290</span>  }</div>
+<div class="line"><a id="l00291" name="l00291"></a><span class="lineno">  291</span>  <span class="keywordtype">int</span> max_col_W = <a class="code hl_function" href="util__m4ri_8c.html#ac01548e83e406d08c13487fdf152b884">csr_max_row_wght</a>(mHT);</div>
+<div class="line"><a id="l00292" name="l00292"></a><span class="lineno">  292</span>  </div>
+<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span>  <a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> *err = calloc(1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a>)+<span class="keyword">sizeof</span>(<span class="keywordtype">int</span>)*wmax);  </div>
+<div class="line"><a id="l00294" name="l00294"></a><span class="lineno">  294</span>  <a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> *urr = calloc(1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a>)+<span class="keyword">sizeof</span>(<span class="keywordtype">int</span>)*wmax);  </div>
+<div class="line"><a id="l00295" name="l00295"></a><span class="lineno">  295</span>  <a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> **syn = calloc(wmax+1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a> *));</div>
+<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span>  <span class="keywordflow">if</span>((!syn) || (!err) || (!urr))</div>
+<div class="line"><a id="l00297" name="l00297"></a><span class="lineno">  297</span>    <a class="code hl_define" href="util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa">ERROR</a>(<span class="stringliteral">&quot;memory allocation&quot;</span>);</div>
+<div class="line"><a id="l00298" name="l00298"></a><span class="lineno">  298</span>  <span class="comment">//  err-&gt;max = wmax;</span></div>
+<div class="line"><a id="l00299" name="l00299"></a><span class="lineno">  299</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i &lt;= wmax; i++){</div>
+<div class="line"><a id="l00300" name="l00300"></a><span class="lineno">  300</span>    syn[i]=calloc(1, <span class="keyword">sizeof</span>(<a class="code hl_struct" href="structONE__VEC__T.html">one_vec_t</a>)+<span class="keyword">sizeof</span>(<span class="keywordtype">int</span>)*mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>);</div>
+<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span>    <span class="keywordflow">if</span>(!syn[i]) <a class="code hl_define" href="util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa">ERROR</a>(<span class="stringliteral">&quot;i=%d memory allocation&quot;</span>,i);</div>
+<div class="line"><a id="l00302" name="l00302"></a><span class="lineno">  302</span>    <span class="comment">//    syn[i]-&gt;max = mH-&gt;rows;    </span></div>
+<div class="line"><a id="l00303" name="l00303"></a><span class="lineno">  303</span>  }</div>
+<div class="line"><a id="l00304" name="l00304"></a><span class="lineno">  304</span>  <span class="keywordtype">int</span> result = 0;</div>
+<div class="line"><a id="l00305" name="l00305"></a><span class="lineno">  305</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> w=1; w &lt;= wmax; w++){ <span class="comment">/* cluster weight */</span></div>
+<div class="line"><a id="l00306" name="l00306"></a><span class="lineno">  306</span>    <span class="keywordtype">int</span> beg = 0, end = nvar - w ;</div>
+<div class="line"><a id="l00307" name="l00307"></a><span class="lineno">  307</span>    <span class="keywordflow">if</span> (start &gt;= 0)</div>
+<div class="line"><a id="l00308" name="l00308"></a><span class="lineno">  308</span>      beg = end = start;</div>
+<div class="line"><a id="l00309" name="l00309"></a><span class="lineno">  309</span>    <span class="keywordflow">if</span>(debug&amp;2)</div>
+<div class="line"><a id="l00310" name="l00310"></a><span class="lineno">  310</span>      printf(<span class="stringliteral">&quot;# recursively searching for w=%d codewords wmax=%d beg=%d end=%d\n&quot;</span>,w,wmax,beg,end);</div>
+<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>    <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i = beg; i &lt;= end; i++){ <span class="comment">/* start column position */</span></div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span>      err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>[0] = urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>[0] = i;</div>
+<div class="line"><a id="l00314" name="l00314"></a><span class="lineno">  314</span>      err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = 1;</div>
+<div class="line"><a id="l00315" name="l00315"></a><span class="lineno">  315</span>      syn[1]-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>=0;</div>
+<div class="line"><a id="l00316" name="l00316"></a><span class="lineno">  316</span>      <span class="keywordtype">int</span> swei = one_csr_row_combine(syn[1], syn[0], mHT, i);</div>
+<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span>      <span class="keywordflow">if</span> (w&gt;1){</div>
+<div class="line"><a id="l00318" name="l00318"></a><span class="lineno">  318</span>    <span class="keywordflow">if</span> (swei){ </div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span>      result = <a class="code hl_function" href="dist__cc_8c.html#a4c4252076d1bfc6d07f9f15d21a302ab">start_CC_recurs</a>(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,smax,debug);</div>
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span>      <span class="keywordflow">if</span>(result == 1)</div>
+<div class="line"><a id="l00321" name="l00321"></a><span class="lineno">  321</span>        <span class="keywordflow">break</span>;</div>
+<div class="line"><a id="l00322" name="l00322"></a><span class="lineno">  322</span>    }</div>
 <div class="line"><a id="l00323" name="l00323"></a><span class="lineno">  323</span>      }</div>
-<div class="line"><a id="l00324" name="l00324"></a><span class="lineno">  324</span>    }</div>
-<div class="line"><a id="l00325" name="l00325"></a><span class="lineno">  325</span>    <span class="keywordflow">else</span> <span class="keywordflow">if</span>(swei &lt; smax) </div>
-<div class="line"><a id="l00326" name="l00326"></a><span class="lineno">  326</span>      <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a> = hash_add_maybe(syn[1],err,<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>,p_swei, debug);</div>
-<div class="line"><a id="l00327" name="l00327"></a><span class="lineno">  327</span>      }</div>
-<div class="line"><a id="l00328" name="l00328"></a><span class="lineno">  328</span>      err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = 0;</div>
-<div class="line"><a id="l00329" name="l00329"></a><span class="lineno">  329</span>    }</div>
-<div class="line"><a id="l00330" name="l00330"></a><span class="lineno">  330</span>    <span class="keywordflow">if</span>(result == 1)</div>
-<div class="line"><a id="l00331" name="l00331"></a><span class="lineno">  331</span>      <span class="keywordflow">break</span>;</div>
-<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span>  }</div>
-<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span>  </div>
-<div class="line"><a id="l00334" name="l00334"></a><span class="lineno">  334</span>  <span class="keywordflow">if</span>(result==1){</div>
-<div class="line"><a id="l00335" name="l00335"></a><span class="lineno">  335</span>    result = err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>; </div>
-<div class="line"><a id="l00336" name="l00336"></a><span class="lineno">  336</span><span class="preprocessor">#ifndef NDEBUG</span></div>
-<div class="line"><a id="l00337" name="l00337"></a><span class="lineno">  337</span>    assert(  0 == sparse_syndrome_non_zero(mH, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>)); </div>
-<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span>    <span class="keywordflow">if</span>(mL) assert(sparse_syndrome_non_zero(mL, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>)); </div>
-<div class="line"><a id="l00339" name="l00339"></a><span class="lineno">  339</span><span class="preprocessor">#endif     </span></div>
-<div class="line"><a id="l00340" name="l00340"></a><span class="lineno">  340</span>    <span class="keywordflow">if</span>(debug&amp;16){</div>
-<div class="line"><a id="l00341" name="l00341"></a><span class="lineno">  341</span>      printf(<span class="stringliteral">&quot;# wmax=%d found cw of weight %d: [&quot;</span>,wmax,result);</div>
-<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span>      <span class="keywordtype">int</span> max = ((result&lt;50) || (debug&amp;2048)) ? result : 50 ;</div>
-<div class="line"><a id="l00343" name="l00343"></a><span class="lineno">  343</span>      <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt; max; i++)</div>
-<div class="line"><a id="l00344" name="l00344"></a><span class="lineno">  344</span>    printf(<span class="stringliteral">&quot;%d%s&quot;</span>,err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>[i], i+1!=max?<span class="stringliteral">&quot; &quot;</span>: (result==max ? <span class="stringliteral">&quot;]\n&quot;</span> : <span class="stringliteral">&quot;...]\n&quot;</span>));</div>
-<div class="line"><a id="l00345" name="l00345"></a><span class="lineno">  345</span>    }</div>
-<div class="line"><a id="l00346" name="l00346"></a><span class="lineno">  346</span>  }</div>
-<div class="line"><a id="l00347" name="l00347"></a><span class="lineno">  347</span>  <span class="keywordflow">else</span></div>
-<div class="line"><a id="l00348" name="l00348"></a><span class="lineno">  348</span>    result = -wmax; </div>
-<div class="line"><a id="l00350" name="l00350"></a><span class="lineno">  350</span>  <span class="keywordflow">if</span>(smax){</div>
-<div class="line"><a id="l00351" name="l00351"></a><span class="lineno">  351</span>    <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=1;i&lt;=wmax; i++)</div>
-<div class="line"><a id="l00352" name="l00352"></a><span class="lineno">  352</span>      <span class="keywordflow">if</span>(p_swei[i] &lt;= mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>)</div>
-<div class="line"><a id="l00353" name="l00353"></a><span class="lineno">  353</span>    printf(<span class="stringliteral">&quot;# w=%d min non-zero syndrome weight %d\n&quot;</span>,i,p_swei[i]);</div>
-<div class="line"><a id="l00354" name="l00354"></a><span class="lineno">  354</span>  }</div>
-<div class="line"><a id="l00355" name="l00355"></a><span class="lineno">  355</span>  </div>
-<div class="line"><a id="l00356" name="l00356"></a><span class="lineno">  356</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt;= wmax; i++)</div>
-<div class="line"><a id="l00357" name="l00357"></a><span class="lineno">  357</span>    free(syn[i]);</div>
-<div class="line"><a id="l00358" name="l00358"></a><span class="lineno">  358</span>  free(syn);</div>
-<div class="line"><a id="l00359" name="l00359"></a><span class="lineno">  359</span>  free(err);</div>
-<div class="line"><a id="l00360" name="l00360"></a><span class="lineno">  360</span>  free(urr);</div>
-<div class="line"><a id="l00361" name="l00361"></a><span class="lineno">  361</span>  <a class="code hl_function" href="util__m4ri_8c.html#aacf88d130004488b0918905925f74479">csr_free</a>(mHT);</div>
-<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span> </div>
-<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>  <a class="code hl_struct" href="structTWO__VEC__T.html">two_vec_t</a> *terr, *tmp;</div>
-<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span>  <a class="code hl_define" href="uthash_8h.html#a4d524042f1fcb976d8bccae9e4cc63d6">HASH_ITER</a>(hh, <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr, tmp) {</div>
-<div class="line"><a id="l00366" name="l00366"></a><span class="lineno">  366</span>    <span class="comment">//    two_vec_print(terr);</span></div>
-<div class="line"><a id="l00367" name="l00367"></a><span class="lineno">  367</span>    <a class="code hl_define" href="uthash_8h.html#a48b7ed374602dcb236501aa23a971f05">HASH_DEL</a>(<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr);</div>
-<div class="line"><a id="l00368" name="l00368"></a><span class="lineno">  368</span>    free(terr);</div>
-<div class="line"><a id="l00369" name="l00369"></a><span class="lineno">  369</span>  }</div>
-<div class="line"><a id="l00370" name="l00370"></a><span class="lineno">  370</span>  </div>
-<div class="line"><a id="l00371" name="l00371"></a><span class="lineno">  371</span>  <span class="keywordflow">return</span> result;</div>
-<div class="line"><a id="l00372" name="l00372"></a><span class="lineno">  372</span>}</div>
+<div class="line"><a id="l00324" name="l00324"></a><span class="lineno">  324</span>      <span class="keywordflow">else</span>{ <span class="comment">// w==1</span></div>
+<div class="line"><a id="l00325" name="l00325"></a><span class="lineno">  325</span>    <span class="keywordflow">if</span>(!swei){  </div>
+<div class="line"><a id="l00326" name="l00326"></a><span class="lineno">  326</span>      <span class="keywordflow">if</span>((!mL) ||  </div>
+<div class="line"><a id="l00327" name="l00327"></a><span class="lineno">  327</span>         (sparse_syndrome_non_zero(mL, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>))){</div>
+<div class="line"><a id="l00328" name="l00328"></a><span class="lineno">  328</span>        result = 1; </div>
+<div class="line"><a id="l00329" name="l00329"></a><span class="lineno">  329</span>        <span class="keywordflow">break</span>;</div>
+<div class="line"><a id="l00330" name="l00330"></a><span class="lineno">  330</span>      }</div>
+<div class="line"><a id="l00331" name="l00331"></a><span class="lineno">  331</span>    }</div>
+<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span>    <span class="keywordflow">else</span> <span class="keywordflow">if</span>(swei &lt; smax) </div>
+<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span>      <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a> = hash_add_maybe(syn[1],err,<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>,p_swei, debug);</div>
+<div class="line"><a id="l00334" name="l00334"></a><span class="lineno">  334</span>      }</div>
+<div class="line"><a id="l00335" name="l00335"></a><span class="lineno">  335</span>      err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = urr-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> = 0;</div>
+<div class="line"><a id="l00336" name="l00336"></a><span class="lineno">  336</span>    }</div>
+<div class="line"><a id="l00337" name="l00337"></a><span class="lineno">  337</span>    <span class="keywordflow">if</span>(result == 1)</div>
+<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span>      <span class="keywordflow">break</span>;</div>
+<div class="line"><a id="l00339" name="l00339"></a><span class="lineno">  339</span>  }</div>
+<div class="line"><a id="l00340" name="l00340"></a><span class="lineno">  340</span>  </div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno">  341</span>  <span class="keywordflow">if</span>(result==1){</div>
+<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span>    result = err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>; </div>
+<div class="line"><a id="l00343" name="l00343"></a><span class="lineno">  343</span><span class="preprocessor">#ifndef NDEBUG</span></div>
+<div class="line"><a id="l00344" name="l00344"></a><span class="lineno">  344</span>    assert(  0 == sparse_syndrome_non_zero(mH, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>)); </div>
+<div class="line"><a id="l00345" name="l00345"></a><span class="lineno">  345</span>    <span class="keywordflow">if</span>(mL) assert(sparse_syndrome_non_zero(mL, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>, err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>)); </div>
+<div class="line"><a id="l00346" name="l00346"></a><span class="lineno">  346</span><span class="preprocessor">#endif     </span></div>
+<div class="line"><a id="l00347" name="l00347"></a><span class="lineno">  347</span>    <span class="keywordflow">if</span>(debug&amp;16){</div>
+<div class="line"><a id="l00348" name="l00348"></a><span class="lineno">  348</span>      printf(<span class="stringliteral">&quot;# wmax=%d found cw of weight %d: [&quot;</span>,wmax,result);</div>
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno">  349</span>      <span class="keywordtype">int</span> max = ((result&lt;50) || (debug&amp;2048)) ? result : 50 ;</div>
+<div class="line"><a id="l00350" name="l00350"></a><span class="lineno">  350</span>      <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt; max; i++)</div>
+<div class="line"><a id="l00351" name="l00351"></a><span class="lineno">  351</span>    printf(<span class="stringliteral">&quot;%d%s&quot;</span>,err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#ad75feb7ea4213bbb78604796855aad0a">vec</a>[i], i+1!=max?<span class="stringliteral">&quot; &quot;</span>: (result==max ? <span class="stringliteral">&quot;]\n&quot;</span> : <span class="stringliteral">&quot;...]\n&quot;</span>));</div>
+<div class="line"><a id="l00352" name="l00352"></a><span class="lineno">  352</span>    }</div>
+<div class="line"><a id="l00353" name="l00353"></a><span class="lineno">  353</span>  }</div>
+<div class="line"><a id="l00354" name="l00354"></a><span class="lineno">  354</span>  <span class="keywordflow">else</span></div>
+<div class="line"><a id="l00355" name="l00355"></a><span class="lineno">  355</span>    result = -wmax; </div>
+<div class="line"><a id="l00357" name="l00357"></a><span class="lineno">  357</span>  <span class="keywordflow">if</span>(smax){</div>
+<div class="line"><a id="l00358" name="l00358"></a><span class="lineno">  358</span>    <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=1;i&lt;=wmax; i++)</div>
+<div class="line"><a id="l00359" name="l00359"></a><span class="lineno">  359</span>      <span class="keywordflow">if</span>(p_swei[i] &lt;= mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>)</div>
+<div class="line"><a id="l00360" name="l00360"></a><span class="lineno">  360</span>    printf(<span class="stringliteral">&quot;# w=%d min non-zero syndrome weight %d\n&quot;</span>,i,p_swei[i]);</div>
+<div class="line"><a id="l00361" name="l00361"></a><span class="lineno">  361</span>  }</div>
+<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span>  </div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno">  363</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt;= wmax; i++)</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>    free(syn[i]);</div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span>  free(syn);</div>
+<div class="line"><a id="l00366" name="l00366"></a><span class="lineno">  366</span>  free(err);</div>
+<div class="line"><a id="l00367" name="l00367"></a><span class="lineno">  367</span>  free(urr);</div>
+<div class="line"><a id="l00368" name="l00368"></a><span class="lineno">  368</span>  <a class="code hl_function" href="util__m4ri_8c.html#aacf88d130004488b0918905925f74479">csr_free</a>(mHT);</div>
+<div class="line"><a id="l00369" name="l00369"></a><span class="lineno">  369</span> </div>
+<div class="line"><a id="l00371" name="l00371"></a><span class="lineno">  371</span>  <a class="code hl_struct" href="structTWO__VEC__T.html">two_vec_t</a> *terr, *tmp;</div>
+<div class="line"><a id="l00372" name="l00372"></a><span class="lineno">  372</span>  <a class="code hl_define" href="uthash_8h.html#a4d524042f1fcb976d8bccae9e4cc63d6">HASH_ITER</a>(hh, <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr, tmp) {</div>
+<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span>    <span class="comment">//    two_vec_print(terr);</span></div>
+<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span>    <a class="code hl_define" href="uthash_8h.html#a48b7ed374602dcb236501aa23a971f05">HASH_DEL</a>(<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr);</div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span>    free(terr);</div>
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span>  }</div>
+<div class="line"><a id="l00377" name="l00377"></a><span class="lineno">  377</span>  </div>
+<div class="line"><a id="l00378" name="l00378"></a><span class="lineno">  378</span>  <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l00379" name="l00379"></a><span class="lineno">  379</span>}</div>
 </div>
-<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span> </div>
-<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span> </div>
+<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span> </div>
+<div class="line"><a id="l00381" name="l00381"></a><span class="lineno">  381</span> </div>
 <div class="ttc" id="adist__cc_8c_html_a2b2c5bddd99de4744a30a91c803c885e"><div class="ttname"><a href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a></div><div class="ttdeci">void one_vec_print(const one_vec_t *const pvec)</div><div class="ttdoc">distance of a classical or quantum CSS code</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00033">dist_cc.c:33</a></div></div>
 <div class="ttc" id="adist__cc_8c_html_a4c4252076d1bfc6d07f9f15d21a302ab"><div class="ttname"><a href="dist__cc_8c.html#a4c4252076d1bfc6d07f9f15d21a302ab">start_CC_recurs</a></div><div class="ttdeci">int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t *const syn[], const int wmax, const int max_col_wt, const csr_t *const mH, const csr_t *const mHT, const csr_t *const mL, int p_swei[], const int smax, const int debug)</div><div class="ttdoc">recursively construct codewords</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00186">dist_cc.c:186</a></div></div>
 <div class="ttc" id="adist__cc_8c_html_a7275784c83d6539fa52a69376a994d0f"><div class="ttname"><a href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a></div><div class="ttdeci">two_vec_t * errors</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00171">dist_cc.c:171</a></div></div>
-<div class="ttc" id="adist__cc_8c_html_ab67a3351d0d1c6c20e829cac3e8e5374"><div class="ttname"><a href="dist__cc_8c.html#ab67a3351d0d1c6c20e829cac3e8e5374">do_CC_dist</a></div><div class="ttdeci">int do_CC_dist(const csr_t *const mH, const csr_t *mL, const int wmax, const int start, int p_swei[], const int smax, const int debug)</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00272">dist_cc.c:272</a></div></div>
+<div class="ttc" id="adist__cc_8c_html_ab67a3351d0d1c6c20e829cac3e8e5374"><div class="ttname"><a href="dist__cc_8c.html#ab67a3351d0d1c6c20e829cac3e8e5374">do_CC_dist</a></div><div class="ttdeci">int do_CC_dist(const csr_t *const mH, const csr_t *mL, const int wmax, const int start, int p_swei[], const int smax, const int debug)</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00279">dist_cc.c:279</a></div></div>
 <div class="ttc" id="ammio_8c_html_a2e7a5d6297b074e7b1499afaaa7af841"><div class="ttname"><a href="mmio_8c.html#a2e7a5d6297b074e7b1499afaaa7af841">_maybe_unused</a></div><div class="ttdeci">#define _maybe_unused</div><div class="ttdef"><b>Definition</b> <a href="mmio_8c_source.html#l00017">mmio.c:17</a></div></div>
 <div class="ttc" id="ammio_8h_html"><div class="ttname"><a href="mmio_8h.html">mmio.h</a></div></div>
 <div class="ttc" id="astructONE__VEC__T_html"><div class="ttname"><a href="structONE__VEC__T.html">ONE_VEC_T</a></div><div class="ttdef"><b>Definition</b> <a href="util__hash_8h_source.html#l00036">util_hash.h:36</a></div></div>
