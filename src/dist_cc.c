@@ -220,6 +220,10 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	pos = one_ordered_ins(err,col);
 	syn[w+1]->wei=0;
 	int swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);
+	if(debug&64){
+	  printf(" syn: ");
+	  one_vec_print(syn[w+1]);
+	}
 	int result = 0;
 	if (err->wei < wmax){
 	  if (swei){ /** go up */
@@ -248,7 +252,10 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	    }
 	  }
 	  else if(swei <= smax){/** update p_swei if not in hash yet */
-	    //	    printf("try ewei=%d swei=%d smax=%d\n",err->wei,swei,smax);
+	    if(debug&64){
+	      printf("# try adding to the hash ewei=%d swei=%d smax=%d p_swei[%d]=%d\n",err->wei,swei,smax,w+1,p_swei[w+1]);
+	    }
+	    //	    
 	    errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
 	  }
 	}
@@ -296,7 +303,7 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
   }
   int result = 0;
   for(int w=1; w <= wmax; w++){ /* cluster weight */
-    int beg = 0, end = nvar - wmax ;
+    int beg = 0, end = nvar - w ;
     if (start >= 0)
       beg = end = start;
     if(debug&2)

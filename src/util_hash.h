@@ -122,26 +122,36 @@ static inline int by_syndrome(void *a, void *b){
 					   __attribute__ ((unused)) const int debug){
     two_vec_t *pvec, *entry;
     const size_t keylen = syn->wei * sizeof(int);
+    if(p_swei[err->wei] > syn->wei){
+      //#ifndef NDEBUG
+      if(debug&64){
+	printf("# swei[%d]=%d -> %d change\n# err: ",
+	       err->wei,p_swei[err->wei],syn->wei);
+	one_vec_print(err);
+	printf("# syn: ");
+	one_vec_print(syn);
+      }
+      //#endif
+      p_swei[err->wei]=syn->wei;      
+    }
+#ifndef NDEBUG      
+    else{	
+      if(debug&64){
+	printf("p_swei[%d]=%d swei=%d not small enough\n",err->wei,p_swei[err->wei],syn->wei);
+	one_vec_print(err);
+	one_vec_print(syn);
+      }
+    }
+#endif      
+
     HASH_FIND(hh, errors, syn->vec, keylen, pvec);
     if(!pvec){ /** syndrome not found, inserting */
       entry = two_vec_init(syn, err);		
       HASH_ADD(hh, errors, syn, keylen, entry); /** add to `hash` */
-      if(p_swei[err->wei] > syn->wei){
-	//#ifndef NDEBUG
-	if(debug&64){
-	  printf("# swei[%d]=%d -> %d change\n# err: ",
-		 err->wei,p_swei[err->wei],syn->wei);
-	  one_vec_print(err);
-	  printf("# syn: ");
-	  one_vec_print(syn);
-	}
-	//#endif
-	p_swei[err->wei]=syn->wei;      
-      }
     }
     else{  /** we construct small-weight vectors first, thus should not
 	       worry about replacing error vectors already in the hash */
-    //#ifndef NDEBUG  
+#ifndef NDEBUG  
       if(debug&128){
 	printf("err: ");
 	one_vec_print(err);
@@ -150,7 +160,7 @@ static inline int by_syndrome(void *a, void *b){
 	printf("already in the hash:\n");
 	two_vec_print(pvec);
       }
-    //#endif   
+#endif   
     }
     return errors;
   }
