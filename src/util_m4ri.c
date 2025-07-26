@@ -22,20 +22,18 @@ size_t mzd_weight_naive(const mzd_t *A){
   return (count);
 }
 
-size_t mzd_weight_row(const mzd_t *A, rci_t i){
+size_t mzd_weight_row(const mzd_t * const A, const rci_t i){
   size_t count = 0;
-  //  assert(i < A->nrows);
+  assert(i >=0 && i < A->nrows);
   if(A->width == 1) {
     for(rci_t j = 0; j < A->ncols; ++j)
       if(mzd_read_bit(A, i, j))
 	++count;
     return (count);
   }
-  word *truerow = A->rows[i];
+  const word * const truerow = mzd_row_cons(A,i);
   for(wi_t j = 0; j < A->width - 1; j ++){
     count += m4ri_bitcount(truerow[j]);
-	  //  count += std_bitcount(truerow[j]);
-      //      printf(" %d",std_bitcount(truerow[j]));
   }
   for(rci_t j = m4ri_radix * (A-> width - 1) ; j < A->ncols ; ++j)
     if(mzd_read_bit(A, i,  j))
@@ -53,7 +51,7 @@ size_t mzd_weight(const mzd_t *A){
     return (count);
   }
   for(rci_t i = 0; i < A->nrows; ++i) {
-    word *truerow = A->rows[i];
+    const word * const truerow = mzd_row_cons(A,i);
     for(wi_t j = 0; j < A->width - 1; j ++){
       count += m4ri_bitcount(truerow[j]);
 	  //  count += std_bitcount(truerow[j]);
@@ -292,7 +290,7 @@ mzd_t * syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear){
       mzd_set_ui(syndrome,0); 
   }
   for (rci_t i=0; i< row->nrows; i++){
-    word * rawrow = row->rows[i];  
+    const word * const rawrow = mzd_row_cons(row,i);  
     rci_t j=-1;
     rci_t n=row->ncols;
     do{
@@ -666,7 +664,7 @@ csr_t *csr_apply_perm(csr_t *dst, const csr_t * const src, const mzp_t * const p
  */
 
 int do_reduce(mzd_t *row, const mzd_t *matG0, const rci_t rankG0){
-  word * rawrow = row->rows[0];  
+  word * const rawrow = mzd_row(row,0);  
   rci_t j=-1;
   rci_t n=row->ncols;
   do{
@@ -740,7 +738,7 @@ csr_t * csr_from_mzd(csr_t *mat, const mzd_t * const orig){
     mat->p[i]=j;
 #if 1 /** optimized version */
     int idx=0;
-    const word * const rawrow = orig->rows[i];
+    const word * const rawrow = mzd_row_cons(orig,i);
     while(((idx=nextelement(rawrow,orig->width,idx))!=-1)&&(idx<orig->ncols)){
       mat->i[j++]=idx++;
     }
