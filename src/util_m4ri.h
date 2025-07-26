@@ -318,11 +318,10 @@ extern "C" {
    *
    */
 
-  static inline void mzd_flip_bit(mzd_t const *M, rci_t const row, rci_t const col ) {
+static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const col ) {
   word * const rawrow = mzd_row(M,row);
   __M4RI_FLIP_BIT(rawrow[col/m4ri_radix], col%m4ri_radix);
-  }
-
+}
 
 /**
  * @brief one step of gauss on column `idx` of matrix `M`

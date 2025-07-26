@@ -143,7 +143,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	  break;
       }
 #else /** NEW==1, use transposed `H` -- the `fastest` version of the code*/
-      word * rawrow = mHT->rows[col];  
+      word * rawrow = mzd_row(mHT,col);  
       rci_t j=-1;
       while(cnt < minW){/** `cw` of no interest */
 	j=nextelement(rawrow,mHT->width,j);
