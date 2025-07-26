@@ -18,6 +18,14 @@
   }                                                                    \
   while(0)
 
+/** `kludge` to work around the differences between old and new m4ri libraries */
+static inline word const * mzd_row_cons(const mzd_t * mat, const int row){
+  //  return mat->rows[row] ;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+  return mzd_row(mat,row);
+#pragma GCC diagnostic pop
+}
 
 
 /**
@@ -310,10 +318,10 @@ extern "C" {
    *
    */
 
-  static inline void mzd_flip_bit(mzd_t const *M, rci_t const row, rci_t const col ) {
-    __M4RI_FLIP_BIT(M->rows[row][col/m4ri_radix], col%m4ri_radix);
-  }
-
+static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const col ) {
+  word * const rawrow = mzd_row(M,row);
+  __M4RI_FLIP_BIT(rawrow[col/m4ri_radix], col%m4ri_radix);
+}
 
 /**
  * @brief one step of gauss on column `idx` of matrix `M`
