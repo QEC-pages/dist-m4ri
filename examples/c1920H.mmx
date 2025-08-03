@@ -1,8 +1,8 @@
 %%MatrixMarket matrix coordinate integer general
-% H matrix from DEM file (null)
+% check matrix
 % converted from 1920.1280.3.303 alist file from David MacKay's collection
 % (https://www.inference.org.uk/mackay/codes/data.html)
-% [1920,640,300] code
+% [1920,640,<=288] code
 1280 1920 5116
 2 329 1
 2 634 1
