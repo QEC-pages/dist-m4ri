@@ -407,30 +407,38 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00354" name="l00354"></a><span class="lineno">  354</span>  <span class="keywordflow">else</span></div>
 <div class="line"><a id="l00355" name="l00355"></a><span class="lineno">  355</span>    result = -wmax; </div>
 <div class="line"><a id="l00357" name="l00357"></a><span class="lineno">  357</span>  <span class="keywordflow">if</span>(smax){</div>
-<div class="line"><a id="l00358" name="l00358"></a><span class="lineno">  358</span>    <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=1;i&lt;=wmax; i++)</div>
-<div class="line"><a id="l00359" name="l00359"></a><span class="lineno">  359</span>      <span class="keywordflow">if</span>(p_swei[i] &lt;= mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>)</div>
-<div class="line"><a id="l00360" name="l00360"></a><span class="lineno">  360</span>    printf(<span class="stringliteral">&quot;# w=%d min non-zero syndrome weight %d\n&quot;</span>,i,p_swei[i]);</div>
-<div class="line"><a id="l00361" name="l00361"></a><span class="lineno">  361</span>  }</div>
-<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span>  </div>
-<div class="line"><a id="l00363" name="l00363"></a><span class="lineno">  363</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt;= wmax; i++)</div>
-<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>    free(syn[i]);</div>
-<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span>  free(syn);</div>
-<div class="line"><a id="l00366" name="l00366"></a><span class="lineno">  366</span>  free(err);</div>
-<div class="line"><a id="l00367" name="l00367"></a><span class="lineno">  367</span>  free(urr);</div>
-<div class="line"><a id="l00368" name="l00368"></a><span class="lineno">  368</span>  <a class="code hl_function" href="util__m4ri_8c.html#aacf88d130004488b0918905925f74479">csr_free</a>(mHT);</div>
-<div class="line"><a id="l00369" name="l00369"></a><span class="lineno">  369</span> </div>
-<div class="line"><a id="l00371" name="l00371"></a><span class="lineno">  371</span>  <a class="code hl_struct" href="structTWO__VEC__T.html">two_vec_t</a> *terr, *tmp;</div>
-<div class="line"><a id="l00372" name="l00372"></a><span class="lineno">  372</span>  <a class="code hl_define" href="uthash_8h.html#a4d524042f1fcb976d8bccae9e4cc63d6">HASH_ITER</a>(hh, <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr, tmp) {</div>
-<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span>    <span class="comment">//    two_vec_print(terr);</span></div>
-<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span>    <a class="code hl_define" href="uthash_8h.html#a48b7ed374602dcb236501aa23a971f05">HASH_DEL</a>(<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr);</div>
-<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span>    free(terr);</div>
-<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span>  }</div>
-<div class="line"><a id="l00377" name="l00377"></a><span class="lineno">  377</span>  </div>
-<div class="line"><a id="l00378" name="l00378"></a><span class="lineno">  378</span>  <span class="keywordflow">return</span> result;</div>
-<div class="line"><a id="l00379" name="l00379"></a><span class="lineno">  379</span>}</div>
+<div class="line"><a id="l00358" name="l00358"></a><span class="lineno">  358</span>    <span class="keywordflow">if</span>(debug){</div>
+<div class="line"><a id="l00359" name="l00359"></a><span class="lineno">  359</span>      <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=1;i&lt;=wmax; i++)</div>
+<div class="line"><a id="l00360" name="l00360"></a><span class="lineno">  360</span>        <span class="keywordflow">if</span>(p_swei[i] &lt;= mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>)</div>
+<div class="line"><a id="l00361" name="l00361"></a><span class="lineno">  361</span>          printf(<span class="stringliteral">&quot;# w=%d min non-zero syndrome weight %d\n&quot;</span>,i,p_swei[i]);</div>
+<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span>    }</div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno">  363</span>    <span class="keywordflow">else</span>{</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>      <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=1;i&lt;=wmax; i++)</div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span>        <span class="keywordflow">if</span>(p_swei[i] &lt;= mH-&gt;<a class="code hl_variable" href="structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d">rows</a>)</div>
+<div class="line"><a id="l00366" name="l00366"></a><span class="lineno">  366</span>          printf(<span class="stringliteral">&quot;%s%d%s&quot;</span>,i==1?<span class="stringliteral">&quot;# confinement: &quot;</span>:<span class="stringliteral">&quot;&quot;</span>,p_swei[i],i&lt;wmax?<span class="stringliteral">&quot;,&quot;</span>:<span class="stringliteral">&quot;&quot;</span>);</div>
+<div class="line"><a id="l00367" name="l00367"></a><span class="lineno">  367</span>      printf(<span class="stringliteral">&quot;\n&quot;</span>);</div>
+<div class="line"><a id="l00368" name="l00368"></a><span class="lineno">  368</span>    }</div>
+<div class="line"><a id="l00369" name="l00369"></a><span class="lineno">  369</span>  }</div>
+<div class="line"><a id="l00370" name="l00370"></a><span class="lineno">  370</span>  </div>
+<div class="line"><a id="l00371" name="l00371"></a><span class="lineno">  371</span>  <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i=0; i&lt;= wmax; i++)</div>
+<div class="line"><a id="l00372" name="l00372"></a><span class="lineno">  372</span>    free(syn[i]);</div>
+<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span>  free(syn);</div>
+<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span>  free(err);</div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span>  free(urr);</div>
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span>  <a class="code hl_function" href="util__m4ri_8c.html#aacf88d130004488b0918905925f74479">csr_free</a>(mHT);</div>
+<div class="line"><a id="l00377" name="l00377"></a><span class="lineno">  377</span> </div>
+<div class="line"><a id="l00379" name="l00379"></a><span class="lineno">  379</span>  <a class="code hl_struct" href="structTWO__VEC__T.html">two_vec_t</a> *terr, *tmp;</div>
+<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span>  <a class="code hl_define" href="uthash_8h.html#a4d524042f1fcb976d8bccae9e4cc63d6">HASH_ITER</a>(hh, <a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr, tmp) {</div>
+<div class="line"><a id="l00381" name="l00381"></a><span class="lineno">  381</span>    <span class="comment">//    two_vec_print(terr);</span></div>
+<div class="line"><a id="l00382" name="l00382"></a><span class="lineno">  382</span>    <a class="code hl_define" href="uthash_8h.html#a48b7ed374602dcb236501aa23a971f05">HASH_DEL</a>(<a class="code hl_variable" href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a>, terr);</div>
+<div class="line"><a id="l00383" name="l00383"></a><span class="lineno">  383</span>    free(terr);</div>
+<div class="line"><a id="l00384" name="l00384"></a><span class="lineno">  384</span>  }</div>
+<div class="line"><a id="l00385" name="l00385"></a><span class="lineno">  385</span>  </div>
+<div class="line"><a id="l00386" name="l00386"></a><span class="lineno">  386</span>  <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l00387" name="l00387"></a><span class="lineno">  387</span>}</div>
 </div>
-<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span> </div>
-<div class="line"><a id="l00381" name="l00381"></a><span class="lineno">  381</span> </div>
+<div class="line"><a id="l00388" name="l00388"></a><span class="lineno">  388</span> </div>
+<div class="line"><a id="l00389" name="l00389"></a><span class="lineno">  389</span> </div>
 <div class="ttc" id="adist__cc_8c_html_a2b2c5bddd99de4744a30a91c803c885e"><div class="ttname"><a href="dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a></div><div class="ttdeci">void one_vec_print(const one_vec_t *const pvec)</div><div class="ttdoc">distance of a classical or quantum CSS code</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00033">dist_cc.c:33</a></div></div>
 <div class="ttc" id="adist__cc_8c_html_a4c4252076d1bfc6d07f9f15d21a302ab"><div class="ttname"><a href="dist__cc_8c.html#a4c4252076d1bfc6d07f9f15d21a302ab">start_CC_recurs</a></div><div class="ttdeci">int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t *const syn[], const int wmax, const int max_col_wt, const csr_t *const mH, const csr_t *const mHT, const csr_t *const mL, int p_swei[], const int smax, const int debug)</div><div class="ttdoc">recursively construct codewords</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00186">dist_cc.c:186</a></div></div>
 <div class="ttc" id="adist__cc_8c_html_a7275784c83d6539fa52a69376a994d0f"><div class="ttname"><a href="dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f">errors</a></div><div class="ttdeci">two_vec_t * errors</div><div class="ttdef"><b>Definition</b> <a href="dist__cc_8c_source.html#l00171">dist_cc.c:171</a></div></div>
