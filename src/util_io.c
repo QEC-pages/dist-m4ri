@@ -7,8 +7,9 @@ params_t prm={
   .classical=0,
   .steps=1,
   .css=1,
-  .smax=0,
+  .smax=20,
   .wmax=0,
+  .dmax=0,
   .wmin=1,
   .start=-1, 
   .seed=0,
@@ -123,6 +124,11 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	printf("# read %s, wmax=%d\n",argv[i],p->wmax);
     }
+    else if (sscanf(argv[i],"dmax=%d",&dbg)==1){
+      p->dmax=dbg;
+      if (p->debug&4)
+	printf("# read %s, dmax=%d\n",argv[i],p->dmax);
+    }
     else if (sscanf(argv[i],"start=%d",&dbg)==1){
       p->start=dbg;
       if (p->debug&4)
@@ -188,11 +194,11 @@ void var_init(int argc, char **argv, params_t * const p){
     ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
 
   if(p->method &2 ){ /* CC */
-    if (p->wmax<=0)
+    if ((p->wmax<=0) && ((p->method & 1 )==0))
       ERROR("parameter wmax=%d should be positive for CC method=%d", p->wmax,p->method);
     if(p->wmax>=MAX_W)
       ERROR("increase MAX_W=%d defined in 'util_io.h'",MAX_W);
-    for(int i=0; i<=p->wmax; i++)
+    for(int i=0; i<=p->smax; i++)
       p->swei[i]=p->spaH->rows +1; 
   }
   

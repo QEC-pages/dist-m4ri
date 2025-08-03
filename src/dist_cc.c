@@ -355,9 +355,17 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
     result = -wmax; /** not found a codeword up to wmax */
 
   if(smax){
-    for(int i=1;i<=wmax; i++)
-      if(p_swei[i] <= mH->rows)
-	printf("# w=%d min non-zero syndrome weight %d\n",i,p_swei[i]);
+    if(debug){
+      for(int i=1;i<=wmax; i++)
+        if(p_swei[i] <= mH->rows)
+          printf("# w=%d min non-zero syndrome weight %d\n",i,p_swei[i]);
+    }
+    else{
+      for(int i=1;i<=wmax; i++)
+        if(p_swei[i] <= mH->rows)
+          printf("%s%d%s",i==1?"# confinement: ":"",p_swei[i],i<wmax?",":"");
+      printf("\n");
+    }
   }
   
   for(int i=0; i<= wmax; i++)

@@ -32,11 +32,15 @@ typedef struct{
   int method; /* bitmap. 1: random window; 2: cluster; 3: both */
   int steps; /* how many RW decoding steps */
   int smax; /** max syndrome weight of interest for `confinement`
-		calculation.  When `wmax=0` (default), do not
+		calculation.  When `smax=0` (default), do not
 		calculate confinement or use hashing storage.
 	     */
-  int wmax; /** max cluster size to try for `CC`; 
-		only look for errors of weight < wmax for `RW` */
+  int wmax; /** max cluster size to try for `CC`; */
+  int dmax; /** only look for errors of weight < dmax for `RW` warning: do not
+              set this up unless you know what you are doing!  This should only
+              be an actual upper bound on the distance from a previous
+              calculation!  Setting it will speed things up a little, but may
+              make results invalid! */
   int wmin; /** min distance below which we are not interested 
 		if w <= wmin found in RW, terminate immediately 
 		start clusters with `wmin` for `CC`
@@ -80,13 +84,16 @@ void var_kill(params_t * const p);
   "\t\t1: random window (RW) algorithm. Options:\n"			\
   "\t\t   steps=[int]: how many information sets to use (1)\n"		\
   "\t\t   wmin=[int]:  minimum distance of interest (1)\n"		\
-  "\t\t   wmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)\n" \
+  "\t\t\t immediately stop and return '-w' on a cw of weight w<=wmin\n" \
+  "\t\t\t use this option to quickly scan over a large number of codes\n" \
+  "\t\t   dmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)\n" \
+  "\t\t\t this option accelerates the search somewhat\n" \
   "\n"									\
   "\t\t2: connected cluster (CC) algorithm.  Options:\n"		\
-  "\t\t   wmax=[int]:  maximum cluster weight, exclusive (0)\n"		\
+  "\t\t   wmax=[int]:  maximum cluster weight to construct, inclusive (0)\n" \
   "\t\t\t must be non-zero for CC only, otherwise use upper bound from RW\n" \
-  "\t\t   smax=[int]:  maximum syndrome weight, inclusive (0)\n"	\
-  "\t\t\t must be non-zero to calculate confinement\n"			\
+  "\t\t   smax=[int]:  maximum syndrome weight of interest, inclusive (20)\n" \
+  "\t\t\t must be non-zero to calculate confinement profile\n"          \
   "\t\t   start=[int]: use only this position to start (-1)\n"		\
   "\n"									\
   "   General parameters:\n"						\
