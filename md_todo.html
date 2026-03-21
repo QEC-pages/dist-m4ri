@@ -80,7 +80,7 @@ $(function() {
   <div class="headertitle"><div class="title">todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md17"></a></p><ul>
+<div class="textblock"><p><a class="anchor" id="autotoc_md18"></a></p><ul>
 <li>[x] Enable <code>wmax</code> for <code>method=1</code> to speed things up:<ul>
 <li>For quantum codes, only check for degeneracy the codewords of weight smaller than <code>wmax</code> (suppose we already have a codeword of weight <code>wmax</code>).</li>
 <li>Second, when recording indices, stop at <code>wmax</code> (as it currently done with <code>minW</code>).</li>
@@ -99,10 +99,10 @@ $(function() {
 <li>[ ] see if the constructed hash can be used to find minimum code distance better (using half-weight vectors).</li>
 <li>[ ] see if a sparse-matrix Gauss elimination would work faster (using rows? &ndash; or try the 2D matrix structure?) </li>
 </ul>
-<h1><a class="anchor" id="autotoc_md18"></a>
+<h1><a class="anchor" id="autotoc_md19"></a>
 operation mode: distance verification.</h1>
 <p>We believe we know the distance (in reality, an upper bound), and we just would like to verify this to be the case. Say, we believe the distance is <code>d=10</code>, and we are not interested in codes with smaller distances. Run with <code>method=1 wmax=10 wmin=9</code>; the program will not bother to verify any codewords of weight 10 and above, and will terminate immediately after finding a valid (non-degenerate in the case of a quantum code) codeword of weight <code>9</code> or below. For example, if a codeword of weight <code>9</code> has been found, it will print out the result as <code>-9</code>. If no codewords have been found below <code>wmax</code>, the program would output <code>0</code>.</p>
-<h1><a class="anchor" id="autotoc_md19"></a>
+<h1><a class="anchor" id="autotoc_md20"></a>
 operation mode: find upper bound on the distance.</h1>
 <p>Use hash to count the codewords found in the range <code>wmin &lt; w &lt; wmax</code> (do we also need <code>dw</code>?) </p>
 </div></div><!-- contents -->

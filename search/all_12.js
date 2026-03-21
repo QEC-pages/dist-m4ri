@@ -8,5 +8,6 @@ var searchData=
   ['prev_5',['prev',['../structUT__hash__handle.html#abaf54a69367933df2d45575f48ca6a58',1,'UT_hash_handle']]],
   ['prm_6',['prm',['../util__io_8c.html#ae188785995f4e3b54b93fee1e5eb7f90',1,'prm:&#160;util_io.c'],['../util__io_8h.html#ae188785995f4e3b54b93fee1e5eb7f90',1,'prm:&#160;util_io.c']]],
   ['product_5fweight_5fcsr_5fmzd_7',['product_weight_csr_mzd',['../util__m4ri_8c.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c']]],
-  ['program_8',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]]
+  ['profile_8',['Calculating confinement profile',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md15',1,'']]],
+  ['program_9',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]]
 ];
