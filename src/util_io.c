@@ -10,7 +10,7 @@ params_t prm={
   .classical=0,
   .steps=1,
   .css=1,
-  .smax=20,
+  .smax=5,
   .wmax=0,
   .dmax=0,
   .wmin=1,
@@ -280,7 +280,7 @@ void var_init(int argc, char **argv, params_t * const p){
       ERROR("parameter wmax=%d should be positive for CC method=%d", p->wmax,p->method);
     if(p->wmax>=MAX_W)
       ERROR("increase MAX_W=%d defined in 'util_io.h'",MAX_W);
-    for(int i=0; i<=p->smax; i++)
+    for(int i=0; i<MAX_W; i++)
       p->swei[i]=p->spaH->rows +1; 
   }
 

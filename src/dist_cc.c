@@ -330,7 +330,7 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
 	    break;
 	  }
 	}
-	else if(swei < smax) /** update p_swei if not in hash yet */
+	else if(swei <= smax) /** update p_swei if not in hash yet */
 	  errors = hash_add_maybe(syn[1],err,errors,p_swei, debug);
       }
       err->wei = urr->wei = 0;
@@ -356,16 +356,30 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
     result = -wmax; /** not found a codeword up to wmax */
 
   if(smax){
+    int skipped = 0;
     if(debug){
-      for(int i=1;i<=wmax; i++)
-        if(p_swei[i] <= mH->rows)
+      for(int i=1;i<=wmax; i++) {
+        if(p_swei[i] <= mH->rows) {
           printf("# w=%d min non-zero syndrome weight %d\n",i,p_swei[i]);
+        } else {
+          skipped = 1;
+        }
+      }
     }
     else{
-      for(int i=1;i<=wmax; i++)
-        if(p_swei[i] <= mH->rows)
-          printf("%s%d%s",i==1?"# confinement: ":"",p_swei[i],i<wmax?",":"");
+      printf("# confinement: ");
+      for(int i=1;i<=wmax; i++) {
+        if(p_swei[i] <= mH->rows) {
+          printf("%d%s",p_swei[i],i<wmax?",":"");
+        } else {
+          skipped = 1;
+          printf("?%s",i<wmax?",":"");
+        }
+      }
       printf("\n");
+    }
+    if (skipped) {
+      printf("# Note: Some weights were skipped in confinement profile. Try increasing smax (current: %d)\n", smax);
     }
   }
   
