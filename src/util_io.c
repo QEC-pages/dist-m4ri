@@ -1,4 +1,7 @@
 #include <unistd.h>
+#include <ctype.h>
+#include <errno.h>
+#include <string.h>
 #include "util_io.h"
 
 params_t prm={
@@ -11,6 +14,9 @@ params_t prm={
   .wmax=0,
   .dmax=0,
   .wmin=1,
+  .noscan=0,
+  .fdem=NULL,
+  .pmin=0.0,
   .start=-1, 
   .seed=0,
   .dist=0,
@@ -25,7 +31,7 @@ params_t prm={
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
-  .fin="../examples/try", 
+  .fin="", 
   .spaH=NULL,
   .spaG=NULL,
   .spaL=NULL
@@ -36,6 +42,7 @@ params_t * const p = &prm;
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
+  double prob=0.0;
 
   if(argc <= 1)
     ERROR("no command-line arguments given, " BRIEF_HELP,argv[0]);
@@ -149,11 +156,46 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	printf("# read %s, seed=%d\n",argv[i],p->seed);      
     }    
+    else if (sscanf(argv[i],"noscan=%d",&dbg)==1){
+      p->noscan=dbg;
+      if (p->debug&4)
+	printf("# read %s, noscan=%d\n",argv[i],p->noscan);
+    }
+    else if (0==strncmp(argv[i],"fdem=",5)){
+      if(strlen(argv[i])>5)
+        p->fdem = argv[i]+5;
+      else
+        p->fdem = argv[++i];
+      if (p->debug&4)
+	printf("# read %s, fdem=%s\n",argv[i],p->fdem);
+    }
+    else if (sscanf(argv[i],"pmin=%lg",&prob)==1){
+      p->pmin=prob;
+      if (p->debug&4)
+	printf("# read %s, pmin=%g\n",argv[i],p->pmin);
+    }
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
       ERROR("try \"%s -h\" for options",argv[0]);
     }
   } /* end parameter scan cycle */
+
+  if (p->noscan && p->method != 2) {
+    ERROR("noscan=1 only works with method=2");
+  }
+
+  if (!p->fdem && strlen(p->fin) == 0 && !p->finH && !p->finG && !p->finL) {
+    p->fin = "../examples/try";
+  }
+
+  if (p->fdem) {
+    if (p->finH || p->finG || p->finL || strlen(p->fin) > 0) {
+      ERROR("Cannot specify matrix files (fin, finH, finG, finL) along with fdem");
+    }
+  }
+  if (p->pmin != 0.0 && !p->fdem) {
+    ERROR("pmin can only be used when fdem is specified");
+  }
 
   if(p->method &1 ){ /* RW */
     if (p->steps<=0)
@@ -181,17 +223,57 @@ void var_init(int argc, char **argv, params_t * const p){
 	     p->finH,p->finG);
   }
   
-  if (p->finH){
-    p->spaH=csr_mm_read(p->finH,p->spaH,0);
-    if(p->debug&1)
-      printf("# read H <- file '%s'\n",p->finH);
-    if(p->debug&32){
-      if((p->spaH->cols<150)||(p->debug&2048))
-	csr_print(p->spaH,"H");
+  if (p->fdem) {
+    read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
+    p->classical = 0;
+    p->nvar = p->spaH->cols;
+    p->n0 = p->nvar;
+    p->nchk = p->spaL->rows;
+  } else {
+    if (p->finH){
+      p->spaH=csr_mm_read(p->finH,p->spaH,0);
+      if(p->debug&1)
+	printf("# read H <- file '%s'\n",p->finH);
+      if(p->debug&32){
+	if((p->spaH->cols<150)||(p->debug&2048))
+	  csr_print(p->spaH,"H");
+      }
+    }
+    else
+      ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
+
+    if((p->finG) && (p->finL))
+      ERROR("either G=Hz or L=Lx matrix should be specified but not both! finG='%s' finL='%s'\n",
+	    p->finG, p->finL);
+
+    if(p->finG){
+      p->classical=0;
+      p->spaG=csr_mm_read(p->finG,p->spaG,0);
+      if(p->debug&1)
+	printf("# read G <- file '%s'\n",p->finG);
+      if(csr_csr_mul_non_zero(p->spaH, p->spaG))
+	 ERROR("rows of H and G matrices are not orthogonal");
+      if(p->debug&32){
+	if((p->spaG->cols<150)||(p->debug&2048))
+	  csr_print(p->spaG,"G");
+      }
+    } 
+    else if (p->finL){
+      p->classical=0;
+      p->spaL=csr_mm_read(p->finL,p->spaL,0);
+      if(p->debug&1)
+	printf("# read L <- file '%s'\n",p->finL);
+      if(p->debug&32){
+	if((p->spaL->cols<150)||(p->debug&2048))
+	  csr_print(p->spaL,"L");
+      }
+      p->nchk = p->spaL->rows;
+    } 
+    else{
+      p->classical=1;
+      p->spaG=NULL;
     }
   }
-  else
-    ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
 
   if(p->method &2 ){ /* CC */
     if ((p->wmax<=0) && ((p->method & 1 )==0))
@@ -200,46 +282,6 @@ void var_init(int argc, char **argv, params_t * const p){
       ERROR("increase MAX_W=%d defined in 'util_io.h'",MAX_W);
     for(int i=0; i<=p->smax; i++)
       p->swei[i]=p->spaH->rows +1; 
-  }
-  
-#if 0
-  if (p->method&2){ /* cluster */
-    p->max_row_wgt_H = csr_max_row_wght(p->spaH);
-    if(p->max_row_wgt_H > max_row_wt)
-      ERROR("increase max_row_wt=%d to %d",max_row_wt,p->max_row_wgt_H);
-  }
-#endif
-
-
-  if((p->finG) && (p->finL))
-    ERROR("either G=Hz or L=Lx matrix should be specified but not both! finG='%s' finL='%s'\n",
-	  p->finG, p->finL);
-
-  if(p->finG){
-    p->classical=0;
-    p->spaG=csr_mm_read(p->finG,p->spaG,0);
-    if(p->debug&1)
-      printf("# read G <- file '%s'\n",p->finG);
-    if(csr_csr_mul_non_zero(p->spaH, p->spaG))
-       ERROR("rows of H and G matrices are not orthogonal");
-    if(p->debug&32){
-      if((p->spaG->cols<150)||(p->debug&2048))
-	csr_print(p->spaG,"G");
-    }
-  } 
-  else if (p->finL){
-    p->classical=0;
-    p->spaL=csr_mm_read(p->finL,p->spaL,0);
-    if(p->debug&1)
-      printf("# read L <- file '%s'\n",p->finL);
-    if(p->debug&32){
-      if((p->spaL->cols<150)||(p->debug&2048))
-	csr_print(p->spaL,"L");
-    }
-  } 
-  else{
-    p->classical=1;
-    p->spaG=NULL;
   }
 
   if (p->seed<=0){
@@ -294,4 +336,113 @@ void var_kill(params_t * const p){
 #endif
 
 
+}
+
+void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug){
+  ssize_t linelen, col=0;
+  size_t lineno=0, bufsiz=0; /**< buffer size for `readline` */
+  char *buf = NULL;          /** actual buffer for `readline` */
+  int maxH=100, maxL=100; 
+  int_pair * inH = malloc(maxH*sizeof(int_pair));
+  int_pair * inL = malloc(maxL*sizeof(int_pair));
+  if ((!inH)||(!inL))
+    ERROR("memory allocation failed\n");
+
+  if(debug & 1)
+    printf("# opening DEM file %s\n",fnam);
+  FILE *f = fopen(fnam, "r");
+  if(f==NULL){
+    printf("FILE I/O ERROR: %s\n", strerror(errno));     
+    ERROR("can't open the (DEM) file %s for reading\n",fnam);
+  }
+
+  int r=-1, k=-1, n=0;
+  int iD=0, iL=0; /** numbers of `D` and `L` entries */
+  do{ /** read lines one-by-one until end of file is found *************/
+    lineno++; col=0; linelen = getline(&buf, &bufsiz, f);
+    if(linelen<0)
+      break;
+    if(debug & 32) printf("# %s",buf);
+    char *c=buf;
+    double prob;
+    int num=0, val;
+    while(isspace(*c)){ c++; col++; } /** `skip` white space */
+    if((*c != '\0')&& (*c != '#') &&(col < linelen)){
+      if(sscanf(c,"error( %lg ) %n",&prob,&num)){
+        if((prob<=0)||(prob>=1))
+          ERROR("probability should be in (0,1) exclusive p=%g\n"
+                "%s:%zu:%zu: '%s'\n", prob,fnam,lineno,col+1,buf);
+        c+=num; col+=num;
+        
+        if (prob < pmin) {
+          if (debug & 32) printf("skipping error with prob %g < pmin %g\n", prob, pmin);
+          continue; // Skip this error line
+        }
+        
+        do{/** deal with the rest of the line */
+          num=0;
+          if(sscanf(c," D%d %n",&val, &num)){/** `D` entry */
+            c+=num; col+=num;
+            assert(val>=0);
+            if(val>=r)
+              r=val+1;  /** update the number of `D` pairs */
+            if(iD>=maxH){
+              maxH=2*maxH;
+              inH=realloc(inH,maxH*sizeof(*inH));
+            }
+            inH[iD].a   = val;   /** add a pair */
+            inH[iD++].b = n;
+            if(debug & 32) printf("n=%d iD=%d val=%d r=%d\n",n,iD,val, r);
+          }
+          else if(sscanf(c," L%d %n",&val, &num)){/** `L` entry */
+            c+=num; col+=num;
+            assert(val>=0);
+            if(val>=k)
+              k=val+1;  /** update the number of `L` pairs */
+            if(iL>=maxL){
+              maxL=2*maxL;
+              inL=realloc(inL,maxL*sizeof(*inL));
+            }
+            inL[iL].a   = val;   /** add a pair */
+            inL[iL++].b = n;
+            if(debug & 32) printf("n=%d iL=%d val=%d k=%d\n",n,iD,val,k);
+          }
+	  else if (c[0]=='^') /** entry added by `--decompose_errors` switch in `stim` */
+	    c++;            /** just ignore */
+          else
+            ERROR("unrecognized entry %s"
+		  "%s:%zu:%zu: '%s'\n",c,fnam,lineno,col+1,buf);
+        }
+        while((c[0]!='#')&&(c[0]!='\n')&&(c[0]!='\0')&&(col<linelen));
+        n++;
+      }
+      else if (sscanf(c,"detector( %d %n",&val,&num)){
+        /** do nothing */
+      }
+      else if (sscanf(c,"shift_detectors( %d %n",&val,&num)){
+        /** do nothing */
+      }
+      else
+        ERROR("unrecognized DEM entry %s"
+              "%s:%zu:%zu: '%s'\n",c,fnam,lineno,col+1,buf);
+
+    }
+    /** otherwise just go to next row */
+  }
+  while(!feof(f));
+
+  if(debug &1)
+    printf("# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
+  if((r<=0)||(k<=0)||(n<=0))
+    ERROR("invalid DEM file %s at line=%zu: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
+	  fnam,lineno,r,k,n,iD,iL);
+  
+  *p_spaH = csr_from_pairs(*p_spaH, iD, inH, r, n);
+  *p_spaL = csr_from_pairs(*p_spaL, iL, inL, k, n);
+  
+  if (buf)
+    free(buf);
+  free(inH);
+  free(inL);
+  fclose(f);
 }

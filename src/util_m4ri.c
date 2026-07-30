@@ -532,6 +532,22 @@ void csr_compress(csr_t *mat){
   free(pairs);
 }
 
+csr_t * csr_from_pairs(csr_t *mat, const int nz, int_pair * const prs, const int nrows, const int ncols){
+  mat = csr_init(mat, nrows, ncols, nz);
+  qsort(prs, nz, sizeof(int_pair), cmp_int_pairs);
+  int i, j=0;
+  for(i=0; i < nrows; i++){
+    mat->p[i]=j;
+    while ((j<nz) && (prs[j].a == i)){
+      mat->i[j]=prs[j].b;
+      j++;
+    }
+  }
+  mat->p[i]=j; /* final value */
+  mat->nz=-1; /* indicate compressed form */
+  return mat;
+}
+
 /**
  *  output a CSR matrix  
  */ 

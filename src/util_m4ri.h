@@ -288,6 +288,7 @@ extern "C" {
    *  compress a CSR matrix  
    */ 
   void csr_compress(csr_t *mat);
+  csr_t * csr_from_pairs(csr_t *mat, const int nz, int_pair * const prs, const int nrows, const int ncols);
 
   /**
    *  output a CSR matrix  

@@ -18,6 +18,10 @@ parity-check matrix, should be specified.
 For a quantum CSS code, matrix `H=Hx` and either `G=Hz` or `L=Lx`
 matrices are needed.
 
+Alternatively, a detector error model (DEM) file from `stim` can be specified
+using `fdem=[str]`. This file contains both detector and logical error
+associations, which are used to reconstruct `Hx` and `Lx` matrices.
+
 All matrices with entries in `GF(2)` should have the same number of columns,
 `n`, and obey the following orthogonality conditions: $$H_XH_Z^T=0,\ \ \ \
 H_XL_Z^T=0,\ \ \ \ L_XH_Z^T=0,\ \ \ \ L_XL_Z^T=I,$$ where \f$I\f$ is an identity
@@ -73,6 +77,9 @@ Additional command-line parameters relevant for this method:
 - `start` the position to start the cluster.  In this case only one
   starting position `i=start` will be used.  This is useful, e.g., if
   the code is symmetric (as, e.g., for cyclic codes).
+
+- `noscan` if set to 1, start the recursion directly with `w=wmax`,
+  without scanning smaller weights.  Only works with `method=2`.
   
 With `debug&2` non-zero, the program in this mode also displays the minimum
 weight of the syndrome found for each error weight `w`.  Example (run from
@@ -119,8 +126,11 @@ $ ./dist_m4ri --help
 		2: connected cluster (CC) algorithm.  Options:
 		   wmax=[int]:  maximum cluster weight (5) 
 		   start=[int]: use only this position to start (-1)
+		   noscan=[int]: start CC directly with wmax (0)
 
    General parameters:
+	fdem=[str]: detector error model (DEM) file from stim (NULL)
+	pmin=[float]: minimum error probability to keep for DEM (0.0)
 	finH=[str]: parity check matrix Hx (NULL)
 	finG=[str]: matrix Hz (quantum CSS code only) (NULL)
 	finL=[str]: matrix Lx (quantum CSS code only) (NULL)

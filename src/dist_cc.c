@@ -277,7 +277,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 //! try recursive version first
 //! p_swei[]: min syndrome weight distribution to return (`confinement`).
 int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmax, const int start, int p_swei[], const int smax, const int debug){
+	       const int wmax, const int noscan, const int start, int p_swei[], const int smax, const int debug){
 
   const int nchk = mH->rows, nvar = mH->cols;
   if((start<-1) || (start>=nvar))
@@ -302,7 +302,8 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
     //    syn[i]->max = mH->rows;    
   }
   int result = 0;
-  for(int w=1; w <= wmax; w++){ /* cluster weight */
+  const int w_start = noscan ? wmax : 1;
+  for(int w=w_start; w <= wmax; w++){ /* cluster weight */
     int beg = 0, end = nvar - w ;
     if (start >= 0)
       beg = end = start;

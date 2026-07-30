@@ -45,6 +45,7 @@ typedef struct{
 		if w <= wmin found in RW, terminate immediately 
 		start clusters with `wmin` for `CC`
 	     */
+  int noscan; /** 1: start CC directly with wmax (no scan over w) */
   int seed;/* rng seed, set=0 for automatic */
   int dist; /* target distance of the code */
   int dist_max; /* distance actually checked */
@@ -59,6 +60,8 @@ typedef struct{
   int nvar; /* actual n = matrix size */
   int nchk; /* actual k = number of codewords */
   int maxC;
+  char *fdem;
+  double pmin;
   char *finH;
   char *finG;
   char *finL;
@@ -74,6 +77,7 @@ static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
 extern params_t prm;
 void var_init(int argc, char **argv, params_t * const p);
 void var_kill(params_t * const p);
+void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug);
 
 #define USAGE								\
   "%s: distance of a classical or quantum CSS code\n"			\
@@ -95,8 +99,11 @@ void var_kill(params_t * const p);
   "\t\t   smax=[int]:  maximum syndrome weight of interest, inclusive (20)\n" \
   "\t\t\t must be non-zero to calculate confinement profile\n"          \
   "\t\t   start=[int]: use only this position to start (-1)\n"		\
+  "\t\t   noscan=[int]: start CC directly with wmax (0)\n" \
   "\n"									\
   "   General parameters:\n"						\
+  "\tfdem=[str]: detector error model (DEM) file from stim (NULL)\n" \
+  "\tpmin=[float]: minimum error probability to keep for DEM (0.0)\n" \
   "\tfinH=[str]: parity check matrix Hx (NULL)\n"			\
   "\tfinG=[str]: matrix Hz (quantum CSS code only) (NULL)\n"		\
   "\tfinL=[str]: matrix Lx (quantum CSS code only) (NULL)\n"		\
