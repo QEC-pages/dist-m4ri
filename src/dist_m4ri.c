@@ -160,7 +160,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	if(sparse_syndrome_non_zero(spaH0, cnt, ee)){
 	  printf("# cw of weight %d: [",cnt);
 	  for(int i=0; i<cnt;i++)
-	    printf("%d%s",1+ee[i],i+1==cnt?" ":"]\n");
+	    printf("%d%s",ee[i],i+1==cnt?" ":"]\n");
 	  ERROR("this should not happen: cw not orthogonal to H");
 	}
 #endif /* NDEBUG */
@@ -178,7 +178,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	    printf("# step=%d row=%d minW=%d found cw of W=%d: [",ii,ir,minW,cnt);
 	    const int max = ((cnt<25) || (debug&2048)) ?  cnt : 25 ;
 	    for(int i=0; i< max; i++)
-	      printf("%d%s", 1+ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
+	      printf("%d%s", ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
 	  }
 	  minW=cnt;
 	  if (minW <= wmin){ /** early termination condition */
