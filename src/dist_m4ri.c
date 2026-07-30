@@ -51,6 +51,9 @@ int do_RW_dist(params_t * const p){
   }
 
   int minW = wmax > 0 ? wmax : nvar+1;
+  if (p->min_w != INT_MAX && p->min_w < minW) {
+    minW = p->min_w;
+  }
 
   if(debug&2)
     printf("# running do_RW_dist() with steps=%d wmin=%d wmax=%d classical=%d nvar=%d\n",
@@ -122,11 +125,18 @@ int do_RW_dist(params_t * const p){
     for (int ir=0; ir< k; ir++){ /** each row in the dual matrix */
       int cnt=0; /** how many non-zero elements */
       const int col = ee[cnt++] = skip_pivs->values[ir];
+      int limit = nvar + 1;
+      if (p->wmax > 0) {
+        limit = p->wmax + 1;
+      }
+      if (p->min_w != INT_MAX && p->dW >= 0) {
+        limit = minint(limit, p->min_w + p->dW + 1);
+      }
 #if (NEW==0) /** older version going over columns of `H` */
       for(int ix=0; ix<rank; ix++){
         if(mzd_read_bit(mH,ix,col))
           ee[cnt++] = pivs->values[ix];
-	if (cnt >= minW) /** `cw` of no interest */
+	if (cnt >= limit) /** `cw` of no interest */
 	  break;
       }
 #elif (NEW==2) /** 
@@ -141,7 +151,7 @@ int do_RW_dist(params_t * const p){
 	if((res)&&(ic==col)){
 	  ee[cnt++] = pivs->values[ix++];
 	  //	  printf("cnt=%d j=%d\n",cnt,ix); 
-	  if (cnt >= minW) /** `cw` of no interest */
+	  if (cnt >= limit) /** `cw` of no interest */
 	    break;
 	}
 	else
@@ -150,14 +160,14 @@ int do_RW_dist(params_t * const p){
 #else /** NEW==1, use transposed `H` -- the `fastest` version of the code*/
       word * rawrow = mzd_row(mHT,col);  
       rci_t j=-1;
-      while(cnt < minW){/** `cw` of no interest */
+      while(cnt < limit){/** `cw` of no interest */
 	j=nextelement(rawrow,mHT->width,j);
 	if(j==-1) // empty line after simplification
 	  break; 
 	ee[cnt++] = pivs->values[j++];
       }
 #endif /* NEW */              
-      if (cnt < minW){
+      if (cnt < limit){
 	/** sort the column indices */
 	qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
 #ifndef NDEBUG
@@ -186,7 +196,9 @@ int do_RW_dist(params_t * const p){
 	    for(int i=0; i< max; i++)
 	      printf("%d%s", ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
 	  }
-	  minW=cnt;
+          if (cnt < minW) {
+            minW = cnt;
+          }
           if (p->maxC && p->num_cws >= p->maxC) {
             goto alldone;
           }
