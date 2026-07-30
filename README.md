@@ -193,3 +193,19 @@ sudo apt-get update -y
 sudo apt-get install -y libm4ri-dev
 ```
 
+## References
+
+If you use this program, please cite:
+
+*   A. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes," *IEEE Transactions on Information Theory*, vol. 63, no. 7, pp. 4675-4690, 2017. [doi:10.1109/TIT.2017.2690381](https://doi.org/10.1109/TIT.2017.2690381).
+
+Other related papers and software:
+
+*   **vecdec Repository** (implements the Random Information Set (RW) algorithm and can handle different error weights/probabilities):
+    [QEC-pages/vecdec](https://github.com/QEC-pages/vecdec).
+
+*   **QDistRnd GAP Package** (describing the Random Information Set algorithm for quantum codes over arbitrary finite fields):
+    L. P. Pryadko, V. A. Shabashov, and V. K. Kozin, "QDistRnd: A GAP package for computing the distance of quantum error-correcting codes," *Journal of Open Source Software*, vol. 7, no. 71, p. 4120, 2022. [doi:10.21105/joss.04120](https://doi.org/10.21105/joss.04120).
+
+*   **Performance Comparison** (comparing the performance of this program with other available distance-finding programs):
+    M. Webster, A. Jacob, and O. Higgott, "Distance-Finding Algorithms for Quantum Codes and Circuits," arXiv:2603.22532 [quant-ph], 2026. [arXiv:2603.22532](https://arxiv.org/abs/2603.22532).

@@ -628,7 +628,7 @@ FILE * nzlist_r_open(const char fnam[], long long int *lineno){
   if(!f)
     return(NULL);
   *lineno=1;
-  char c=fgetc(f);
+  int c=fgetc(f);
   while(c=='%'){
     do{
       c=fgetc(f);
@@ -649,7 +649,7 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
     return NULL;
   int w;
 
-  char c=fgetc(f);
+  int c=fgetc(f);
   while(c=='%'){
     do{
       c=fgetc(f);     
