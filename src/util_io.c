@@ -7,7 +7,7 @@
 params_t prm={
   .debug=3,
   .method=0,
-  .classical=0,
+  .classical=-1,
   .steps=1,
   .css=1,
   .smax=5,
@@ -207,6 +207,11 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	printf("# read %s, dW=%d\n",argv[i],p->dW);
     }
+    else if (sscanf(argv[i],"classical=%d",&dbg)==1){
+      p->classical=dbg;
+      if (p->debug&4)
+	printf("# read %s, classical=%d\n",argv[i],p->classical);
+    }
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
       ERROR("try \"%s -h\" for options",argv[0]);
@@ -258,7 +263,7 @@ void var_init(int argc, char **argv, params_t * const p){
   
   if (p->fdem) {
     read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
-    p->classical = 0;
+    if (p->classical == -1) p->classical = 0;
     p->nvar = p->spaH->cols;
     p->n0 = p->nvar;
     p->nchk = p->spaL->rows;
@@ -280,7 +285,7 @@ void var_init(int argc, char **argv, params_t * const p){
 	    p->finG, p->finL);
 
     if(p->finG){
-      p->classical=0;
+      if (p->classical == -1) p->classical = 0;
       p->spaG=csr_mm_read(p->finG,p->spaG,0);
       if(p->debug&1)
 	printf("# read G <- file '%s'\n",p->finG);
@@ -292,7 +297,7 @@ void var_init(int argc, char **argv, params_t * const p){
       }
     } 
     else if (p->finL){
-      p->classical=0;
+      if (p->classical == -1) p->classical = 0;
       p->spaL=csr_mm_read(p->finL,p->spaL,0);
       if(p->debug&1)
 	printf("# read L <- file '%s'\n",p->finL);
@@ -303,7 +308,7 @@ void var_init(int argc, char **argv, params_t * const p){
       p->nchk = p->spaL->rows;
     } 
     else{
-      p->classical=1;
+      if (p->classical == -1) p->classical = 1;
       p->spaG=NULL;
     }
   }
@@ -341,6 +346,23 @@ void var_init(int argc, char **argv, params_t * const p){
     /** WARNING: this does not necessarily have minimal row weights */
     p->spaL = Lx_for_CSS_code(p->spaH,p->spaG);
     p->nchk = p->spaL->rows;
+  }
+
+  if (p->classical) {
+    if (p->finL != NULL || p->finG != NULL) {
+      ERROR("Conflict: classical=1 specified, but finL or finG was also provided.");
+    }
+    if (p->spaL != NULL) {
+      if (p->debug & 1) {
+        printf("# Warning: classical=1 specified, discarding L matrix (logical operators)\n");
+      }
+      p->spaL = csr_free(p->spaL);
+    }
+  } else {
+    if (p->spaL == NULL) {
+      ERROR("L matrix (logical operators) is required for quantum code (classical=0).\n"
+            "Provide finL, fdem, or finG to construct it. Alternatively, set classical=1 to find the distance of the stabilizer code as a classical code.");
+    }
   }
 
   if ((p->method <= 0) || (p->method > 3)){

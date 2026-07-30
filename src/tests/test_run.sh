@@ -160,6 +160,18 @@ fi
 
 rm -f "$INVALID_CWS" "$STDOUT_FILE"
 
+# Test 15: Classical mode auto-detection (H only)
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0" 0 "^2$" ""
+
+# Test 16: Conflict detection (classical=0 with only H)
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 classical=0 debug=0" 255 "L matrix.*is required for quantum code" "ERROR in function"
+
+# Test 17: Conflict detection (classical=1 with finL)
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=3 classical=1 debug=0" 255 "Conflict: classical=1 specified" "ERROR in function"
+
+# Test 18: Discarding L with fdem and classical=1
+assert_output "$BIN debug=1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 classical=1" 0 "discarding L matrix" ""
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1
