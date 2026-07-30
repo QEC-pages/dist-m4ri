@@ -98,6 +98,12 @@ assert_output "$BIN method=2 fdem=$TEMP_DEM wmax=2 debug=0" 0 "^2$" ""
 
 rm -f "$TEMP_DEM"
 
+# Test 12: Regression test for nextelement out-of-bounds read / segfault
+SEGFAULT_H=$(mktemp --suffix=.mmx)
+python3 "$SCRIPT_DIR/gen_segfault_matrix.py" > "$SEGFAULT_H"
+assert_output "$BIN method=1 finH=$SEGFAULT_H steps=1 debug=0" 0 "^65$" ""
+rm -f "$SEGFAULT_H"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1
