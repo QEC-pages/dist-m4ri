@@ -25,6 +25,8 @@
 //static const int max_row_wt=10; 
 
 #define MAX_W 100 
+struct CW_VEC_T;
+typedef struct CW_VEC_T cw_vec_t;
 typedef struct{
   int debug; /* debug information */ 
   int classical; /* 1 for a classical code, i.e., no `G=Hz` matrix*/
@@ -59,7 +61,12 @@ typedef struct{
   int n0;  /* code length, =nvar for css, (nvar/2) for non-css */
   int nvar; /* actual n = matrix size */
   int nchk; /* actual k = number of codewords */
-  int maxC;
+  long long int maxC;
+  int dW;
+  char *finC;
+  char *outC;
+  cw_vec_t *codewords;
+  long long int num_cws;
   char *fdem;
   double pmin;
   char *finH;
@@ -78,6 +85,9 @@ extern params_t prm;
 void var_init(int argc, char **argv, params_t * const p);
 void var_kill(params_t * const p);
 void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug);
+long long int nzlist_read(const char fnam[], params_t *p);
+long long int nzlist_write(const char fnam[], const char comment[], params_t *p);
+cw_vec_t * codeword_add_maybe(cw_vec_t *codewords, const int arr[], int weight, long long int *p_num_cws, long long int maxC);
 
 #define USAGE								\
   "%s: distance of a classical or quantum CSS code\n"			\

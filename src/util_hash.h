@@ -33,6 +33,13 @@ extern "C"{
     int syn[0]; /** array of `w_e+w_s` integers, the actual key  */
   } two_vec_t;
 
+  struct CW_VEC_T {
+    UT_hash_handle hh;
+    int weight;
+    int cnt;
+    int arr[0];
+  };
+
   typedef struct ONE_VEC_T{
     int wei; /** current weight */
     //    int max; /** allocated */

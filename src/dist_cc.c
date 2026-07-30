@@ -184,13 +184,16 @@ two_vec_t *errors=NULL;
  * @param debug bitmap 
  */
 int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
-		    const int wmax, const int max_col_wt, 
-		    const csr_t * const mH, const csr_t * const mHT, const csr_t * const mL,
-		    int p_swei[],
-		    const int smax, const int debug){
+		    const int w_limit, const int max_col_wt, 
+		    const csr_t * const mH, const csr_t * const mHT,
+                    params_t * const p){
   const int w=err->wei;
   assert(urr->wei == err->wei);
   int row = syn[w]->vec[0]; /** row with the first non-zero syndrome bit */
+  const csr_t * const mL = p->spaL;
+  int *p_swei = p->swei;
+  const int smax = p->smax;
+  const int debug = p->debug;
 #ifndef NDEBUG  
   if(debug&64){
     printf("starting CC recurs w=%d row=%d:\n urr: ",w,row);
@@ -225,11 +228,11 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	  one_vec_print(syn[w+1]);
 	}
 	int result = 0;
-	if (err->wei < wmax){
+	if (err->wei < w_limit){
 	  if (swei){ /** go up */
-//	    if(swei <= (wmax - err->wei)*max_col_wt){ /** reachable goal? */
-	      result = start_CC_recurs(err,urr,syn,wmax,max_col_wt,
-				       mH,mHT,mL,p_swei,smax,debug);
+//	    if(swei <= (w_limit - err->wei)*max_col_wt){ /** reachable goal? */
+	      result = start_CC_recurs(err,urr,syn,w_limit,max_col_wt,
+				       mH,mHT,p);
 	      if(result == 1)
 		return 1;
 //	    }
@@ -237,7 +240,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	  // swei == 0 means it is a degenerate vector
 	  // do not go up in this case 
 	}
-	else{ // wei == wmax
+	else{ // wei == w_limit
 	  assert(err->wei == w+1);
 	  if(!swei){
 	    if((!mL) ||  /** classical code */
@@ -247,8 +250,13 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		one_vec_print(err);
 		one_vec_print(syn[w+1]);
 	      }
-//	      errors = hash_add_maybe(syn[w+1],err,errors, p_swei, debug);
-	      return 1; /** success, just get out fast */
+              p->codewords = codeword_add_maybe(p->codewords, err->vec, err->wei, &(p->num_cws), p->maxC);
+              if (p->maxC && p->num_cws >= p->maxC) {
+                return 1;
+              }
+              if (!p->outC && p->maxC == 0) {
+                return 1;
+              }
 	    }
 	  }
 	  else if(swei <= smax){/** update p_swei if not in hash yet */
@@ -276,8 +284,15 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 //! rewrite of the cluster method function using only sparse matrices
 //! try recursive version first
 //! p_swei[]: min syndrome weight distribution to return (`confinement`).
-int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmax, const int noscan, const int start, int p_swei[], const int smax, const int debug){
+int do_CC_dist(params_t * const p){
+  const csr_t * const mH = p->spaH;
+  const csr_t * const mL = p->spaL;
+  const int wmax = p->wmax;
+  const int noscan = p->noscan;
+  const int start = p->start;
+  int *p_swei = p->swei;
+  const int smax = p->smax;
+  const int debug = p->debug;
 
   const int nchk = mH->rows, nvar = mH->cols;
   if((start<-1) || (start>=nvar))
@@ -317,7 +332,7 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
       int swei = one_csr_row_combine(syn[1], syn[0], mHT, i);
       if (w>1){
 	if (swei){ /** go up */
-	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,mL,p_swei,smax,debug);
+	  result = start_CC_recurs(err,urr,syn,w,max_col_W,mH,mHT,p);
 	  if(result == 1)
 	    break;
 	}
@@ -326,8 +341,15 @@ int do_CC_dist(const csr_t * const mH, const csr_t * mL,
 	if(!swei){	/** verify the vector */
 	  if((!mL) ||  /** classical code */
 	     (sparse_syndrome_non_zero(mL, err->wei, err->vec))){
-	    result = 1; /** success */
-	    break;
+            p->codewords = codeword_add_maybe(p->codewords, err->vec, err->wei, &(p->num_cws), p->maxC);
+            if (p->maxC && p->num_cws >= p->maxC) {
+              result = 1;
+              break;
+            }
+            if (!p->outC && p->maxC == 0) {
+              result = 1;
+              break;
+            }
 	  }
 	}
 	else if(swei <= smax) /** update p_swei if not in hash yet */

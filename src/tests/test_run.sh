@@ -104,6 +104,62 @@ python3 "$SCRIPT_DIR/gen_segfault_matrix.py" > "$SEGFAULT_H"
 assert_output "$BIN method=1 finH=$SEGFAULT_H steps=1 debug=0" 0 "^65$" ""
 rm -f "$SEGFAULT_H"
 
+# Test 13: CC codeword saving and loading
+TEMP_CWS1=$(mktemp --suffix=.nz)
+TEMP_CWS2=$(mktemp --suffix=.nz)
+
+# Step 1: Run and save
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 outC=$TEMP_CWS1 debug=0" 0 "^-3$" ""
+
+# Step 2: Verify file 1 is not empty
+if [ ! -s "$TEMP_CWS1" ]; then
+    echo "  [FAIL] Codewords file is empty"
+    FAILED=1
+fi
+
+# Step 3: Run again loading file 1 and saving to file 2, check for read message
+assert_output "$BIN debug=33 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$TEMP_CWS1 outC=$TEMP_CWS2" 0 "read 128 codewords from" ""
+
+# Step 4: Verify files are identical
+if ! diff -q "$TEMP_CWS1" "$TEMP_CWS2" >/dev/null; then
+    echo "  [FAIL] Codewords files differ"
+    FAILED=1
+fi
+
+rm -f "$TEMP_CWS1" "$TEMP_CWS2"
+
+# Test 14: Codeword verification (orthogonality checks)
+INVALID_CWS=$(mktemp --suffix=.nz)
+cat << 'EOF' > "$INVALID_CWS"
+%% NZLIST
+% valid
+3 1 3 23
+% invalid (not orthogonal to H)
+1 1
+% trivial (orthogonal to H and L)
+5 1 2 7 17 28
+EOF
+
+echo "Running Test 14: Codeword verification"
+STDOUT_FILE=$(mktemp)
+$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$INVALID_CWS debug=0 > "$STDOUT_FILE"
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "  [FAIL] Expected exit code 0, got $EXIT_CODE"
+    FAILED=1
+fi
+if ! grep -q "skipped 2 invalid codewords" "$STDOUT_FILE"; then
+    echo "  [FAIL] Warning message missing"
+    FAILED=1
+fi
+if ! grep -q -E "^3$" "$STDOUT_FILE"; then
+    echo "  [FAIL] Expected distance 3 output missing"
+    FAILED=1
+fi
+
+rm -f "$INVALID_CWS" "$STDOUT_FILE"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

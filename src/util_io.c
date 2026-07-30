@@ -28,6 +28,11 @@ params_t prm={
   .nvar=0,
   .nchk=0,
   .maxC=0,
+  .dW=0,
+  .finC=NULL,
+  .outC=NULL,
+  .codewords=NULL,
+  .num_cws=0,
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
@@ -43,6 +48,7 @@ void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
   double prob=0.0;
+  long long int dbg_ll=0;
 
   if(argc <= 1)
     ERROR("no command-line arguments given, " BRIEF_HELP,argv[0]);
@@ -173,6 +179,32 @@ void var_init(int argc, char **argv, params_t * const p){
       p->pmin=prob;
       if (p->debug&4)
 	printf("# read %s, pmin=%g\n",argv[i],p->pmin);
+    }
+    else if (0==strncmp(argv[i],"finC=",5)){
+      if(strlen(argv[i])>5)
+        p->finC = argv[i]+5;
+      else
+        p->finC = argv[++i];
+      if (p->debug&4)
+	printf("# read %s, finC=%s\n",argv[i],p->finC);
+    }
+    else if (0==strncmp(argv[i],"outC=",5)){
+      if(strlen(argv[i])>5)
+        p->outC = argv[i]+5;
+      else
+        p->outC = argv[++i];
+      if (p->debug&4)
+	printf("# read %s, outC=%s\n",argv[i],p->outC);
+    }
+    else if (sscanf(argv[i],"maxC=%lld",&dbg_ll)==1){
+      p->maxC=dbg_ll;
+      if (p->debug&4)
+	printf("# read %s, maxC=%lld\n",argv[i],p->maxC);
+    }
+    else if (sscanf(argv[i],"dW=%d",&dbg)==1){
+      p->dW=dbg;
+      if (p->debug&4)
+	printf("# read %s, dW=%d\n",argv[i],p->dW);
     }
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
@@ -335,7 +367,11 @@ void var_kill(params_t * const p){
   }
 #endif
 
-
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    HASH_DEL(p->codewords, cw);
+    free(cw);
+  }
 }
 
 typedef struct {
@@ -538,4 +574,193 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
   free(inH);
   free(inL);
   free_dem_program(prog);
+}
+
+FILE * nzlist_w_new(const char fnam[], const char comment[]){
+  FILE *f=fopen(fnam,"w");
+  if(!f){
+    printf("FILE I/O ERROR: %s\n", strerror(errno));
+    ERROR("can't open file %s for writing",fnam);
+  }
+  fprintf(f,"%%%% NZLIST\n");
+  if(comment)
+    fprintf(f,"%% %s\n",comment);
+  return f;
+}
+
+int nzlist_w_append(FILE *f, const cw_vec_t * const vec){
+  assert(vec && vec->weight >0 );
+  assert(f!=NULL);
+  const int w=vec->weight;
+  if(fprintf(f,"%d ",w)<=0)
+    ERROR("can't write to `NZLIST` file");
+  for(int i=0; i < w; i++)
+    if(fprintf(f," %d%s", 1 + vec->arr[i], i+1 < w ? "" :"\n")<=0)
+      ERROR("can't write to `NZLIST` file");
+  return 0;
+}
+
+FILE * nzlist_r_open(const char fnam[], long long int *lineno){
+  FILE *f=fopen(fnam,"r");
+  if(!f)
+    return(NULL);
+  *lineno=1;
+  char c=fgetc(f);
+  while(c=='%'){
+    do{
+      c=fgetc(f);
+      if(feof(f))
+	return NULL;
+    }
+    while(c!='\n');
+    (*lineno)++;
+    c=fgetc(f);
+  }
+  ungetc(c,f); 
+  return f;
+}
+
+cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long int *lineno){
+  assert(f!=NULL);
+  if ( ferror (f)|| feof(f) )
+    return NULL;
+  int w;
+
+  char c=fgetc(f);
+  while(c=='%'){
+    do{
+      c=fgetc(f);     
+      if(feof(f))
+	return NULL;
+    }
+    while(c!='\n');
+    (*lineno)++;
+    c=fgetc(f);
+  }
+  ungetc(c,f); 
+  
+  if(fscanf(f," %d",&w) != 1){
+    if (feof(f)) return NULL;
+    printf("%s:%lld: invalid NZLIST entry\n", fnam, *lineno);
+    ERROR("expected an integer");
+  }
+  if ((vec!=NULL) && (vec->weight<w)){
+    free(vec);
+    vec=NULL;
+  }
+  if(vec==NULL){
+    vec = calloc(sizeof(cw_vec_t)+w*sizeof(int), sizeof(char));
+    if(!vec)
+      ERROR("memory allocation");
+  }
+  vec->weight = w;
+  vec->cnt = 1;
+  for(int i=0; i<w; i++){
+    if(fscanf(f," %d ",vec->arr + i) != 1){
+      printf("%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
+      ERROR("expected an integer i=%d of %d",i,w);
+    }    
+    vec->arr[i]--;
+  }
+
+  for(int i=1; i<w; i++){
+    if((vec->arr[i-1] < 0) || (vec->arr[i-1] >= vec->arr[i])){
+      printf("%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
+      ERROR("expected strictly increasing positive entries");
+    }   
+  }
+  (*lineno)++;
+  return vec;
+}
+
+cw_vec_t * codeword_add_maybe(cw_vec_t *codewords, const int arr[], int weight, long long int *p_num_cws, long long int maxC) {
+  if (maxC && *p_num_cws >= maxC) {
+    return codewords;
+  }
+  const size_t keylen = weight * sizeof(int);
+  cw_vec_t *pvec = NULL;
+  HASH_FIND(hh, codewords, arr, keylen, pvec);
+  if (!pvec) {
+    cw_vec_t *entry = malloc(sizeof(cw_vec_t) + keylen);
+    if (!entry) ERROR("memory allocation");
+    entry->weight = weight;
+    entry->cnt = 1;
+    for (int i = 0; i < weight; i++) {
+      entry->arr[i] = arr[i];
+    }
+    HASH_ADD(hh, codewords, arr, keylen, entry);
+    (*p_num_cws)++;
+  } else {
+    pvec->cnt++;
+  }
+  return codewords;
+}
+
+long long int nzlist_read(const char fnam[], params_t *p){
+  long long int count = 0, lineno;
+  long long int skipped_invalid = 0;
+  assert(fnam);
+  FILE * f=nzlist_r_open(fnam, &lineno);
+  if(!f){
+    if ((p->outC ==NULL) || (strcmp(fnam,p->outC)!=0)){      
+      printf("codeword input file I/O ERROR: %s, outC=%s\n", strerror(errno),p->outC);
+      ERROR("can't open file %s for reading",fnam);
+    }
+    else
+      return 0;
+  }
+  cw_vec_t *entry=NULL;
+  while((entry=nzlist_r_one(f,NULL, fnam, &lineno))){
+    if((p->maxC) && (p->num_cws >= p->maxC)) {
+      free(entry);
+      break;
+    }
+    int valid = 1;
+    if (p->spaH) {
+      if (sparse_syndrome_non_zero(p->spaH, entry->weight, entry->arr)) {
+        valid = 0;
+      }
+    }
+    if (valid && p->spaL) {
+      if (!sparse_syndrome_non_zero(p->spaL, entry->weight, entry->arr)) {
+        valid = 0;
+      }
+    }
+    if (!valid) {
+      skipped_invalid++;
+      free(entry);
+      continue;
+    }
+    if((p->wmax==0) ||((p->wmax) && (entry->weight <= p->wmax))){
+      long long int old_num = p->num_cws;
+      p->codewords = codeword_add_maybe(p->codewords, entry->arr, entry->weight, &(p->num_cws), p->maxC);
+      if (p->num_cws > old_num) {
+        count++;
+      }
+    }
+    free(entry);
+  }
+  fclose(f);
+  if (skipped_invalid > 0) {
+    printf("# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n", skipped_invalid);
+  }
+  if(p->debug&1)
+    printf("# read %lld codewords from %s, total %lld\n",count, fnam, p->num_cws);
+  return count; 
+}
+
+long long int nzlist_write(const char fnam[], const char comment[], params_t *p){
+  long long int count=0;
+  assert(fnam);
+  FILE * f = nzlist_w_new(fnam, comment);
+  cw_vec_t *pvec;
+  
+  for(pvec = p->codewords; pvec != NULL; pvec = (cw_vec_t *)(pvec->hh.next)){
+    if((p->wmax==0) ||((p->wmax) && (pvec->weight <= p->wmax))){
+      count ++;
+      nzlist_w_append(f,pvec);
+    }
+  }
+  fclose(f);
+  return count;
 }
