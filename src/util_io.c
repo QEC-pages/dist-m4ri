@@ -338,111 +338,204 @@ void var_kill(params_t * const p){
 
 }
 
+typedef struct {
+    char **lines;
+    int size;
+    int capacity;
+} dem_program_t;
+
+static dem_program_t *read_dem_to_program(const char *fnam) {
+  FILE *f = fopen(fnam, "r");
+  if (f == NULL) {
+    printf("FILE I/O ERROR: %s\n", strerror(errno));
+    ERROR("can't open the (DEM) file %s for reading\n", fnam);
+  }
+
+  dem_program_t *prog = malloc(sizeof(dem_program_t));
+  prog->size = 0;
+  prog->capacity = 100;
+  prog->lines = malloc(prog->capacity * sizeof(char *));
+
+  char *buf = NULL;
+  size_t bufsiz = 0;
+  ssize_t linelen;
+
+  while ((linelen = getline(&buf, &bufsiz, f)) >= 0) {
+    if (linelen > 0 && buf[linelen - 1] == '\n') {
+      buf[linelen - 1] = '\0';
+    }
+    if (prog->size >= prog->capacity) {
+      prog->capacity *= 2;
+      prog->lines = realloc(prog->lines, prog->capacity * sizeof(char *));
+    }
+    prog->lines[prog->size++] = strdup(buf);
+  }
+  if (buf) free(buf);
+  fclose(f);
+  return prog;
+}
+
+static void free_dem_program(dem_program_t *prog) {
+  for (int i = 0; i < prog->size; i++) {
+    free(prog->lines[i]);
+  }
+  free(prog->lines);
+  free(prog);
+}
+
+static void parse_instructions(dem_program_t *prog, int *p_line_idx, 
+                        int *p_iD, int_pair **p_inH, int *p_maxH, int *p_r,
+                        int *p_iL, int_pair **p_inL, int *p_maxL, int *p_k,
+                        int *p_n, double pmin, int *p_detector_shift, int debug) {
+    while (*p_line_idx < prog->size) {
+        char *line = prog->lines[*p_line_idx];
+        (*p_line_idx)++;
+        
+        char *c = line;
+        while (isspace(*c)) c++;
+        
+        if (*c == '\0' || *c == '#') continue;
+        
+        if (*c == '}') {
+            return;
+        }
+        
+        int num = 0;
+        int val = 0;
+        double prob = 0.0;
+        
+        // Parse repeat
+        if (sscanf(c, "repeat %d { %n", &val, &num) == 1) {
+            int start_idx = *p_line_idx;
+            int temp_idx = start_idx;
+            for (int r = 0; r < val; r++) {
+                temp_idx = start_idx;
+                parse_instructions(prog, &temp_idx, 
+                                   p_iD, p_inH, p_maxH, p_r,
+                                   p_iL, p_inL, p_maxL, p_k,
+                                   p_n, pmin, p_detector_shift, debug);
+            }
+            if (val > 0) {
+                *p_line_idx = temp_idx;
+            } else {
+                int depth = 1;
+                while (*p_line_idx < prog->size && depth > 0) {
+                    char *s = prog->lines[*p_line_idx];
+                    (*p_line_idx)++;
+                    while (isspace(*s)) s++;
+                    if (strncmp(s, "repeat", 6) == 0 && strchr(s, '{')) depth++;
+                    if (*s == '}') depth--;
+                }
+            }
+            continue;
+        }
+        
+        // Parse shift_detectors
+        int shift_val = 0;
+        if (sscanf(c, "shift_detectors ( %*[^)] ) %d %n", &shift_val, &num) == 1) {
+            *p_detector_shift += shift_val;
+            continue;
+        } else if (sscanf(c, "shift_detectors %d %n", &shift_val, &num) == 1) {
+            *p_detector_shift += shift_val;
+            continue;
+        }
+        
+        // Parse error
+        if (sscanf(c, "error( %lg ) %n", &prob, &num) == 1) {
+            if ((prob <= 0) || (prob >= 1))
+                ERROR("probability should be in (0,1) exclusive p=%g\n"
+                      "line %d: '%s'\n", prob, *p_line_idx, line);
+            c += num;
+            
+            if (prob < pmin) {
+                continue;
+            }
+            
+            while (1) {
+                while (isspace(c[0])) c++;
+                if (c[0] == '\0' || c[0] == '#' || c[0] == '\n') break;
+                
+                num = 0;
+                if (sscanf(c, "D%d%n", &val, &num) == 1) {
+                    c += num;
+                    assert(val >= 0);
+                    int shifted_val = val + *p_detector_shift;
+                    if (shifted_val >= *p_r)
+                        *p_r = shifted_val + 1;
+                    if (*p_iD >= *p_maxH) {
+                        *p_maxH = 2 * (*p_maxH);
+                        *p_inH = realloc(*p_inH, (*p_maxH) * sizeof(**p_inH));
+                    }
+                    (*p_inH)[*p_iD].a = shifted_val;
+                    (*p_inH)[*p_iD].b = *p_n;
+                    (*p_iD)++;
+                } else if (sscanf(c, "L%d%n", &val, &num) == 1) {
+                    c += num;
+                    assert(val >= 0);
+                    if (val >= *p_k)
+                        *p_k = val + 1;
+                    if (*p_iL >= *p_maxL) {
+                        *p_maxL = 2 * (*p_maxL);
+                        *p_inL = realloc(*p_inL, (*p_maxL) * sizeof(**p_inL));
+                    }
+                    (*p_inL)[*p_iL].a = val;
+                    (*p_inL)[*p_iL].b = *p_n;
+                    (*p_iL)++;
+                } else if (c[0] == '^') {
+                    c++;
+                } else {
+                    ERROR("unrecognized entry %s in error line %d: '%s'\n", c, *p_line_idx, line);
+                }
+            }
+            (*p_n)++;
+            continue;
+        }
+        
+        if (strncmp(c, "detector", 8) == 0) {
+            continue;
+        }
+        
+        if (strncmp(c, "logical_observable", 18) == 0) {
+            continue;
+        }
+        
+        ERROR("unrecognized DEM entry in line %d: '%s'\n", *p_line_idx, line);
+    }
+}
+
 void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug){
-  ssize_t linelen, col=0;
-  size_t lineno=0, bufsiz=0; /**< buffer size for `readline` */
-  char *buf = NULL;          /** actual buffer for `readline` */
+  dem_program_t *prog = read_dem_to_program(fnam);
+  
   int maxH=100, maxL=100; 
   int_pair * inH = malloc(maxH*sizeof(int_pair));
   int_pair * inL = malloc(maxL*sizeof(int_pair));
   if ((!inH)||(!inL))
     ERROR("memory allocation failed\n");
 
-  if(debug & 1)
-    printf("# opening DEM file %s\n",fnam);
-  FILE *f = fopen(fnam, "r");
-  if(f==NULL){
-    printf("FILE I/O ERROR: %s\n", strerror(errno));     
-    ERROR("can't open the (DEM) file %s for reading\n",fnam);
-  }
-
   int r=-1, k=-1, n=0;
-  int iD=0, iL=0; /** numbers of `D` and `L` entries */
-  do{ /** read lines one-by-one until end of file is found *************/
-    lineno++; col=0; linelen = getline(&buf, &bufsiz, f);
-    if(linelen<0)
-      break;
-    if(debug & 32) printf("# %s",buf);
-    char *c=buf;
-    double prob;
-    int num=0, val;
-    while(isspace(*c)){ c++; col++; } /** `skip` white space */
-    if((*c != '\0')&& (*c != '#') &&(col < linelen)){
-      if(sscanf(c,"error( %lg ) %n",&prob,&num)){
-        if((prob<=0)||(prob>=1))
-          ERROR("probability should be in (0,1) exclusive p=%g\n"
-                "%s:%zu:%zu: '%s'\n", prob,fnam,lineno,col+1,buf);
-        c+=num; col+=num;
-        
-        if (prob < pmin) {
-          if (debug & 32) printf("skipping error with prob %g < pmin %g\n", prob, pmin);
-          continue; // Skip this error line
-        }
-        
-        do{/** deal with the rest of the line */
-          num=0;
-          if(sscanf(c," D%d %n",&val, &num)){/** `D` entry */
-            c+=num; col+=num;
-            assert(val>=0);
-            if(val>=r)
-              r=val+1;  /** update the number of `D` pairs */
-            if(iD>=maxH){
-              maxH=2*maxH;
-              inH=realloc(inH,maxH*sizeof(*inH));
-            }
-            inH[iD].a   = val;   /** add a pair */
-            inH[iD++].b = n;
-            if(debug & 32) printf("n=%d iD=%d val=%d r=%d\n",n,iD,val, r);
-          }
-          else if(sscanf(c," L%d %n",&val, &num)){/** `L` entry */
-            c+=num; col+=num;
-            assert(val>=0);
-            if(val>=k)
-              k=val+1;  /** update the number of `L` pairs */
-            if(iL>=maxL){
-              maxL=2*maxL;
-              inL=realloc(inL,maxL*sizeof(*inL));
-            }
-            inL[iL].a   = val;   /** add a pair */
-            inL[iL++].b = n;
-            if(debug & 32) printf("n=%d iL=%d val=%d k=%d\n",n,iD,val,k);
-          }
-	  else if (c[0]=='^') /** entry added by `--decompose_errors` switch in `stim` */
-	    c++;            /** just ignore */
-          else
-            ERROR("unrecognized entry %s"
-		  "%s:%zu:%zu: '%s'\n",c,fnam,lineno,col+1,buf);
-        }
-        while((c[0]!='#')&&(c[0]!='\n')&&(c[0]!='\0')&&(col<linelen));
-        n++;
-      }
-      else if (sscanf(c,"detector( %d %n",&val,&num)){
-        /** do nothing */
-      }
-      else if (sscanf(c,"shift_detectors( %d %n",&val,&num)){
-        /** do nothing */
-      }
-      else
-        ERROR("unrecognized DEM entry %s"
-              "%s:%zu:%zu: '%s'\n",c,fnam,lineno,col+1,buf);
+  int iD=0, iL=0;
+  int detector_shift = 0;
+  int line_idx = 0;
 
-    }
-    /** otherwise just go to next row */
+  parse_instructions(prog, &line_idx, 
+                     &iD, &inH, &maxH, &r,
+                     &iL, &inL, &maxL, &k,
+                     &n, pmin, &detector_shift, debug);
+
+  if (line_idx < prog->size) {
+      ERROR("Unmatched '}' in DEM file %s at line %d\n", fnam, line_idx);
   }
-  while(!feof(f));
 
-  if(debug &1)
+  if(debug & 1)
     printf("# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
   if((r<=0)||(k<=0)||(n<=0))
-    ERROR("invalid DEM file %s at line=%zu: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
-	  fnam,lineno,r,k,n,iD,iL);
+    ERROR("invalid DEM file %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
+	  fnam,r,k,n,iD,iL);
   
   *p_spaH = csr_from_pairs(*p_spaH, iD, inH, r, n);
   *p_spaL = csr_from_pairs(*p_spaL, iL, inL, k, n);
   
-  if (buf)
-    free(buf);
   free(inH);
   free(inL);
-  fclose(f);
+  free_dem_program(prog);
 }
