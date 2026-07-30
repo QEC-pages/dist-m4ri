@@ -179,7 +179,7 @@ int do_RW_dist(params_t * const p){
 	if(nz){ /** we got non-trivial codeword! */
 	  /** TODO: try local search to `lerr` (if 2 or larger) */
 	  /** at this point we have `cnt` codeword indices in `ee` */
-          p->codewords = codeword_add_maybe(p->codewords, ee, cnt, &(p->num_cws), p->maxC);
+          p->codewords = codeword_add_maybe(p, ee, cnt);
 	  if(debug&16){
 	    printf("# step=%d row=%d minW=%d found cw of W=%d: [",ii,ir,minW,cnt);
 	    const int max = ((cnt<25) || (debug&2048)) ?  cnt : 25 ;

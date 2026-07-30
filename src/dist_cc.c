@@ -228,7 +228,11 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	  one_vec_print(syn[w+1]);
 	}
 	int result = 0;
-	if (err->wei < w_limit){
+        int current_limit = w_limit;
+        if (p->min_w != INT_MAX && p->dW >= 0) {
+          current_limit = minint(w_limit, p->min_w + p->dW);
+        }
+	if (err->wei < current_limit){
 	  if (swei){ /** go up */
 //	    if(swei <= (w_limit - err->wei)*max_col_wt){ /** reachable goal? */
 	      result = start_CC_recurs(err,urr,syn,w_limit,max_col_wt,
@@ -240,8 +244,8 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	  // swei == 0 means it is a degenerate vector
 	  // do not go up in this case 
 	}
-	else{ // wei == w_limit
-	  assert(err->wei == w+1);
+	else{ // wei >= current_limit
+	  assert(err->wei == current_limit);
 	  if(!swei){
 	    if((!mL) ||  /** classical code */
 	       (sparse_syndrome_non_zero(mL, err->wei, err->vec))){
@@ -250,7 +254,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		one_vec_print(err);
 		one_vec_print(syn[w+1]);
 	      }
-              p->codewords = codeword_add_maybe(p->codewords, err->vec, err->wei, &(p->num_cws), p->maxC);
+              p->codewords = codeword_add_maybe(p, err->vec, err->wei);
               if (p->maxC && p->num_cws >= p->maxC) {
                 return 1;
               }
@@ -318,7 +322,14 @@ int do_CC_dist(params_t * const p){
   }
   int result = 0;
   const int w_start = noscan ? wmax : 1;
-  for(int w=w_start; w <= wmax; w++){ /* cluster weight */
+  int w_limit_dynamic = wmax;
+  for(int w=w_start; w <= w_limit_dynamic; w++){ /* cluster weight */
+    if (p->min_w != INT_MAX && p->dW >= 0) {
+      w_limit_dynamic = minint(wmax, p->min_w + p->dW);
+    }
+    if (w > w_limit_dynamic) {
+      break;
+    }
     int beg = 0, end = nvar - w ;
     if (start >= 0)
       beg = end = start;
@@ -341,7 +352,7 @@ int do_CC_dist(params_t * const p){
 	if(!swei){	/** verify the vector */
 	  if((!mL) ||  /** classical code */
 	     (sparse_syndrome_non_zero(mL, err->wei, err->vec))){
-            p->codewords = codeword_add_maybe(p->codewords, err->vec, err->wei, &(p->num_cws), p->maxC);
+            p->codewords = codeword_add_maybe(p, err->vec, err->wei);
             if (p->maxC && p->num_cws >= p->maxC) {
               result = 1;
               break;

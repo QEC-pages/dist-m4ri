@@ -33,6 +33,7 @@ params_t prm={
   .outC=NULL,
   .codewords=NULL,
   .num_cws=0,
+  .min_w=INT_MAX,
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
@@ -673,13 +674,18 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
   return vec;
 }
 
-cw_vec_t * codeword_add_maybe(cw_vec_t *codewords, const int arr[], int weight, long long int *p_num_cws, long long int maxC) {
-  if (maxC && *p_num_cws >= maxC) {
-    return codewords;
+cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
+  if (p->maxC && p->num_cws >= p->maxC) {
+    return p->codewords;
   }
+  // Check if weight is within the current limit: min_w + dW
+  if (p->min_w != INT_MAX && p->dW >= 0 && weight > p->min_w + p->dW) {
+    return p->codewords;
+  }
+
   const size_t keylen = weight * sizeof(int);
   cw_vec_t *pvec = NULL;
-  HASH_FIND(hh, codewords, arr, keylen, pvec);
+  HASH_FIND(hh, p->codewords, arr, keylen, pvec);
   if (!pvec) {
     cw_vec_t *entry = malloc(sizeof(cw_vec_t) + keylen);
     if (!entry) ERROR("memory allocation");
@@ -688,12 +694,27 @@ cw_vec_t * codeword_add_maybe(cw_vec_t *codewords, const int arr[], int weight, 
     for (int i = 0; i < weight; i++) {
       entry->arr[i] = arr[i];
     }
-    HASH_ADD(hh, codewords, arr, keylen, entry);
-    (*p_num_cws)++;
+    HASH_ADD(hh, p->codewords, arr, keylen, entry);
+    p->num_cws++;
+    
+    // Update min_w
+    if (weight < p->min_w) {
+      p->min_w = weight;
+      if (p->dW >= 0) {
+        cw_vec_t *cw, *tmp;
+        HASH_ITER(hh, p->codewords, cw, tmp) {
+          if (cw->weight > p->min_w + p->dW) {
+            HASH_DEL(p->codewords, cw);
+            free(cw);
+            p->num_cws--;
+          }
+        }
+      }
+    }
   } else {
     pvec->cnt++;
   }
-  return codewords;
+  return p->codewords;
 }
 
 long long int nzlist_read(const char fnam[], params_t *p){
@@ -733,7 +754,7 @@ long long int nzlist_read(const char fnam[], params_t *p){
     }
     if((p->wmax==0) ||((p->wmax) && (entry->weight <= p->wmax))){
       long long int old_num = p->num_cws;
-      p->codewords = codeword_add_maybe(p->codewords, entry->arr, entry->weight, &(p->num_cws), p->maxC);
+      p->codewords = codeword_add_maybe(p, entry->arr, entry->weight);
       if (p->num_cws > old_num) {
         count++;
       }

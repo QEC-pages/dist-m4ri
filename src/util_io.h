@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
+#include <limits.h>
 #include <m4ri/m4ri.h>
 
 #include "mmio.h"
@@ -67,6 +68,7 @@ typedef struct{
   char *outC;
   cw_vec_t *codewords;
   long long int num_cws;
+  int min_w;
   char *fdem;
   double pmin;
   char *finH;
@@ -87,7 +89,7 @@ void var_kill(params_t * const p);
 void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug);
 long long int nzlist_read(const char fnam[], params_t *p);
 long long int nzlist_write(const char fnam[], const char comment[], params_t *p);
-cw_vec_t * codeword_add_maybe(cw_vec_t *codewords, const int arr[], int weight, long long int *p_num_cws, long long int maxC);
+cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
 
 #define USAGE								\
   "%s: distance of a classical or quantum CSS code\n"			\
