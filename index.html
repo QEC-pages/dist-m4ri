@@ -139,12 +139,21 @@ How to run it</h2>
 <div class="line">    usage: ./dist_m4ri parameter=value [...]</div>
 <div class="line"> </div>
 <div class="line">   Required parameter:</div>
-<div class="line">    method=[int]: bitmap for method used (required, default 0: none): </div>
+<div class="line">    method=[int]: bitmap for method used (no default): </div>
+<div class="line"> </div>
 <div class="line">        1: random window (RW) algorithm. Options:</div>
 <div class="line">           steps=[int]: how many information sets to use (1)</div>
 <div class="line">           wmin=[int]:  minimum distance of interest (1)</div>
+<div class="line">             immediately stop and return &#39;-w&#39; on a cw of weight w&lt;=wmin</div>
+<div class="line">             use this option to quickly scan over a large number of codes</div>
+<div class="line">           dmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)</div>
+<div class="line">             this option accelerates the search somewhat</div>
+<div class="line"> </div>
 <div class="line">        2: connected cluster (CC) algorithm.  Options:</div>
-<div class="line">           wmax=[int]:  maximum cluster weight (5) </div>
+<div class="line">           wmax=[int]:  maximum cluster weight to construct, inclusive (0)</div>
+<div class="line">             must be non-zero for CC only, otherwise use upper bound from RW</div>
+<div class="line">           smax=[int]:  maximum syndrome weight of interest, inclusive (5)</div>
+<div class="line">             must be non-zero to calculate confinement profile</div>
 <div class="line">           start=[int]: use only this position to start (-1)</div>
 <div class="line">           noscan=[int]: start CC directly with wmax (0)</div>
 <div class="line"> </div>
