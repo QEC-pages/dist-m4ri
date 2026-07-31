@@ -156,11 +156,11 @@ $ ./dist_m4ri --help
 		8: output progress reports every 1000 steps
 		16: output new min-weight codewords found (cut large vectors)
 		32: output matrices (unless n is large)
-		64: reserved
-		128: reserved
-		256: print out neighbor lists
-		512: print out vectors/syndrome weights during recursion
-		1024: print piv/skip_pivs/reserved
+		64: debug confinement hash updates (swei changes)
+		128: debug duplicate syndromes in confinement hash (debug build only)
+		256: reserved
+		512: reserved
+		1024: reserved
 		2048: allow big matrix / large vector output
 		   see the source code for more options
 	  Multiple 'debug' parameters are XOR combined except for 0.
