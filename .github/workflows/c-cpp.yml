@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     # ubuntu-20.04
     # ubuntu-latest
-
+    
     steps:
     - uses: actions/checkout@v3
     - name: Install dependencies
@@ -21,4 +21,4 @@ jobs:
       run: cd src && make -j dist_m4ri
     - name: Run Tests
       run: cd src && make test
-    
+
