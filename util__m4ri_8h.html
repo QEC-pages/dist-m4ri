@@ -141,65 +141,94 @@ Macros</h2></td></tr>
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
 <tr class="memitem:ad5ff5a9e71b08773b094eea558daaac2" id="r_ad5ff5a9e71b08773b094eea558daaac2"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#ad5ff5a9e71b08773b094eea558daaac2">mzd_weight</a> (const mzd_t *A)</td></tr>
+<tr class="memdesc:ad5ff5a9e71b08773b094eea558daaac2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the number of set bits (Hamming weight) in a dense matrix A.  <br /></td></tr>
 <tr class="separator:ad5ff5a9e71b08773b094eea558daaac2"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:add5e1cc2337470d296404503a1d3613d" id="r_add5e1cc2337470d296404503a1d3613d"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#add5e1cc2337470d296404503a1d3613d">mzd_weight_naive</a> (const mzd_t *A)</td></tr>
+<tr class="memdesc:add5e1cc2337470d296404503a1d3613d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Naive implementation to compute the Hamming weight of a dense matrix A.  <br /></td></tr>
 <tr class="separator:add5e1cc2337470d296404503a1d3613d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a78a27b4d6a4fc8b6576c2477a1073f24" id="r_a78a27b4d6a4fc8b6576c2477a1073f24"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a78a27b4d6a4fc8b6576c2477a1073f24">mzd_weight_row</a> (const mzd_t *A, rci_t i)</td></tr>
+<tr class="memdesc:a78a27b4d6a4fc8b6576c2477a1073f24"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the Hamming weight of a specific row in a dense matrix.  <br /></td></tr>
 <tr class="separator:a78a27b4d6a4fc8b6576c2477a1073f24"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac0e29b254c5f41540e7ce9824228f92c" id="r_ac0e29b254c5f41540e7ce9824228f92c"><td class="memItemLeft" align="right" valign="top">rci_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#ac0e29b254c5f41540e7ce9824228f92c">mzd_gauss_naive</a> (mzd_t *M, mzp_t *q, int full)</td></tr>
+<tr class="memdesc:ac0e29b254c5f41540e7ce9824228f92c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Perform Gaussian elimination (naive) and return pivot column list.  <br /></td></tr>
 <tr class="separator:ac0e29b254c5f41540e7ce9824228f92c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac01548e83e406d08c13487fdf152b884" id="r_ac01548e83e406d08c13487fdf152b884"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#ac01548e83e406d08c13487fdf152b884">csr_max_row_wght</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
-<tr class="memdesc:ac01548e83e406d08c13487fdf152b884"><td class="mdescLeft">&#160;</td><td class="mdescRight">return max row weight of CSR matrix p TODO: add code for List of Pairs  <br /></td></tr>
+<tr class="memdesc:ac01548e83e406d08c13487fdf152b884"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the maximum row weight of a CSR sparse matrix.  <br /></td></tr>
 <tr class="separator:ac01548e83e406d08c13487fdf152b884"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a7c4cabed8df7c4b70e6bfe7eef0fa909" id="r_a7c4cabed8df7c4b70e6bfe7eef0fa909"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a7c4cabed8df7c4b70e6bfe7eef0fa909">csr_transpose</a> (<a class="el" href="structcsr__t.html">csr_t</a> *dst, const <a class="el" href="structcsr__t.html">csr_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a7c4cabed8df7c4b70e6bfe7eef0fa909"><td class="mdescLeft">&#160;</td><td class="mdescRight">Transpose a compressed CSR sparse matrix.  <br /></td></tr>
 <tr class="separator:a7c4cabed8df7c4b70e6bfe7eef0fa909"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a90d5576852b3288481e88abb1e2aa8db" id="r_a90d5576852b3288481e88abb1e2aa8db"><td class="memItemLeft" align="right" valign="top">mzd_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a90d5576852b3288481e88abb1e2aa8db">mzd_from_csr</a> (mzd_t *dst, const <a class="el" href="structcsr__t.html">csr_t</a> *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a90d5576852b3288481e88abb1e2aa8db"><td class="mdescLeft">&#160;</td><td class="mdescRight">Convert a CSR sparse matrix to an MZD dense matrix.  <br /></td></tr>
 <tr class="separator:a90d5576852b3288481e88abb1e2aa8db"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a7c2c7b20c70437f1cd2ae14d5809f165" id="r_a7c2c7b20c70437f1cd2ae14d5809f165"><td class="memItemLeft" align="right" valign="top">mzd_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a7c2c7b20c70437f1cd2ae14d5809f165">mzd_generator_from_csr</a> (mzd_t *G, const <a class="el" href="structcsr__t.html">csr_t</a> *const H)</td></tr>
+<tr class="memdesc:a7c2c7b20c70437f1cd2ae14d5809f165"><td class="mdescLeft">&#160;</td><td class="mdescRight">Construct the generator matrix from a parity check matrix in CSR form.  <br /></td></tr>
 <tr class="separator:a7c2c7b20c70437f1cd2ae14d5809f165"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae37daeeb3fddaf45b4a773caa94080bf" id="r_ae37daeeb3fddaf45b4a773caa94080bf"><td class="memItemLeft" align="right" valign="top">mzd_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#ae37daeeb3fddaf45b4a773caa94080bf">csr_mzd_mul</a> (mzd_t *C, const <a class="el" href="structcsr__t.html">csr_t</a> *S, const mzd_t *B, int clear)</td></tr>
+<tr class="memdesc:ae37daeeb3fddaf45b4a773caa94080bf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Multiply a sparse matrix by a dense matrix.  <br /></td></tr>
 <tr class="separator:ae37daeeb3fddaf45b4a773caa94080bf"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a6b0a24643adfae36946a998aafa5f00f" id="r_a6b0a24643adfae36946a998aafa5f00f"><td class="memItemLeft" align="right" valign="top">mzd_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a6b0a24643adfae36946a998aafa5f00f">syndrome_vector</a> (mzd_t *syndrome, mzd_t *row, <a class="el" href="structcsr__t.html">csr_t</a> *spaQ, int clear)</td></tr>
+<tr class="memdesc:a6b0a24643adfae36946a998aafa5f00f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Calculate syndrome vector change.  <br /></td></tr>
 <tr class="separator:a6b0a24643adfae36946a998aafa5f00f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aefd306e4326e9b4fb57478642f64fb3b" id="r_aefd306e4326e9b4fb57478642f64fb3b"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#aefd306e4326e9b4fb57478642f64fb3b">product_weight_csr_mzd</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *A, const mzd_t *B, int transpose)</td></tr>
+<tr class="memdesc:aefd306e4326e9b4fb57478642f64fb3b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the weight of the product of a sparse matrix and a dense matrix.  <br /></td></tr>
 <tr class="separator:aefd306e4326e9b4fb57478642f64fb3b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:af1ce91e890a6c392f0ff3b1791ac8490" id="r_af1ce91e890a6c392f0ff3b1791ac8490"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#af1ce91e890a6c392f0ff3b1791ac8490">rand_uniform</a> (const int max)</td></tr>
+<tr class="memdesc:af1ce91e890a6c392f0ff3b1791ac8490"><td class="mdescLeft">&#160;</td><td class="mdescRight">Return a uniformly distributed random integer in the range [0, max-1].  <br /></td></tr>
 <tr class="separator:af1ce91e890a6c392f0ff3b1791ac8490"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a26d87b0a24d65622452688c9afb68196" id="r_a26d87b0a24d65622452688c9afb68196"><td class="memItemLeft" align="right" valign="top">mzp_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a26d87b0a24d65622452688c9afb68196">mzp_rand_len</a> (mzp_t *q, rci_t length)</td></tr>
+<tr class="memdesc:a26d87b0a24d65622452688c9afb68196"><td class="mdescLeft">&#160;</td><td class="mdescRight">Generate a random permutation of a given length in-place.  <br /></td></tr>
 <tr class="separator:a26d87b0a24d65622452688c9afb68196"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:add165948f4d560a27c955a216e6bf504" id="r_add165948f4d560a27c955a216e6bf504"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#add165948f4d560a27c955a216e6bf504">mzp_out</a> (mzp_t const *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:add165948f4d560a27c955a216e6bf504"><td class="mdescLeft">&#160;</td><td class="mdescRight">Print the permutation to stdout.  <br /></td></tr>
 <tr class="separator:add165948f4d560a27c955a216e6bf504"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ad6effe03482dab5432463782b1312d11" id="r_ad6effe03482dab5432463782b1312d11"><td class="memItemLeft" align="right" valign="top">mzp_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#ad6effe03482dab5432463782b1312d11">perm_p</a> (mzp_t *q, const mzp_t *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>, rci_t start)</td></tr>
+<tr class="memdesc:ad6effe03482dab5432463782b1312d11"><td class="mdescLeft">&#160;</td><td class="mdescRight">Apply pivot permutation p to permutation q in-place starting from index.  <br /></td></tr>
 <tr class="separator:ad6effe03482dab5432463782b1312d11"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aa1a86f0cab9ff0b1d4e3ace6c90af696" id="r_aa1a86f0cab9ff0b1d4e3ace6c90af696"><td class="memItemLeft" align="right" valign="top">mzp_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#aa1a86f0cab9ff0b1d4e3ace6c90af696">perm_p_trans</a> (mzp_t *q, const mzp_t *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>, const rci_t start)</td></tr>
+<tr class="memdesc:aa1a86f0cab9ff0b1d4e3ace6c90af696"><td class="mdescLeft">&#160;</td><td class="mdescRight">Apply transposed pivot permutation p to permutation q in-place.  <br /></td></tr>
 <tr class="separator:aa1a86f0cab9ff0b1d4e3ace6c90af696"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aacf88d130004488b0918905925f74479" id="r_aacf88d130004488b0918905925f74479"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#aacf88d130004488b0918905925f74479">csr_free</a> (<a class="el" href="structcsr__t.html">csr_t</a> *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:aacf88d130004488b0918905925f74479"><td class="mdescLeft">&#160;</td><td class="mdescRight">Free memory allocated for a CSR sparse matrix.  <br /></td></tr>
 <tr class="separator:aacf88d130004488b0918905925f74479"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a8c9459d03c16afecd7a420964da2c1a0" id="r_a8c9459d03c16afecd7a420964da2c1a0"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a8c9459d03c16afecd7a420964da2c1a0">csr_init</a> (<a class="el" href="structcsr__t.html">csr_t</a> *mat, int rows, int cols, int nzmax)</td></tr>
+<tr class="memdesc:a8c9459d03c16afecd7a420964da2c1a0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize or reallocate a CSR sparse matrix to target size.  <br /></td></tr>
 <tr class="separator:a8c9459d03c16afecd7a420964da2c1a0"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:abd05b2966513b66d20a452237037c05a" id="r_abd05b2966513b66d20a452237037c05a"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#abd05b2966513b66d20a452237037c05a">csr_compress</a> (<a class="el" href="structcsr__t.html">csr_t</a> *mat)</td></tr>
+<tr class="memdesc:abd05b2966513b66d20a452237037c05a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress CSR matrix (sort indices and remove duplicates/zeros).  <br /></td></tr>
 <tr class="separator:abd05b2966513b66d20a452237037c05a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7b5d0d21538eb3ba596fe55981ab425b" id="r_a7b5d0d21538eb3ba596fe55981ab425b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a7b5d0d21538eb3ba596fe55981ab425b">csr_from_pairs</a> (<a class="el" href="structcsr__t.html">csr_t</a> *mat, const int nz, <a class="el" href="structint__pair.html">int_pair</a> *const prs, const int nrows, const int ncols)</td></tr>
+<tr class="memdesc:a7b5d0d21538eb3ba596fe55981ab425b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Construct a CSR sparse matrix from an array of coordinate pairs.  <br /></td></tr>
+<tr class="separator:a7b5d0d21538eb3ba596fe55981ab425b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aa6b0935fd6b4b8cd5c23c1c36a75ca37" id="r_aa6b0935fd6b4b8cd5c23c1c36a75ca37"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#aa6b0935fd6b4b8cd5c23c1c36a75ca37">csr_out</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *mat)</td></tr>
+<tr class="memdesc:aa6b0935fd6b4b8cd5c23c1c36a75ca37"><td class="mdescLeft">&#160;</td><td class="mdescRight">Print raw contents of a CSR matrix to stdout.  <br /></td></tr>
 <tr class="separator:aa6b0935fd6b4b8cd5c23c1c36a75ca37"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aab27309885fceebf023cdea42249ca3d" id="r_aab27309885fceebf023cdea42249ca3d"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#aab27309885fceebf023cdea42249ca3d">csr_print</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const smat, const char str[])</td></tr>
+<tr class="memdesc:aab27309885fceebf023cdea42249ca3d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Print a CSR matrix with a label string (formatted output).  <br /></td></tr>
 <tr class="separator:aab27309885fceebf023cdea42249ca3d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a7eb417c4f0d4c4a14320f3b1de4da4c7" id="r_a7eb417c4f0d4c4a14320f3b1de4da4c7"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a7eb417c4f0d4c4a14320f3b1de4da4c7">csr_mm_read</a> (char *fin, <a class="el" href="structcsr__t.html">csr_t</a> *mat, int transpose)</td></tr>
+<tr class="memdesc:a7eb417c4f0d4c4a14320f3b1de4da4c7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read a sparse matrix from a Matrix Market (.mtx) file into CSR format.  <br /></td></tr>
 <tr class="separator:a7eb417c4f0d4c4a14320f3b1de4da4c7"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:af12e9bf80c70823f805f2fdd5f8b1301" id="r_af12e9bf80c70823f805f2fdd5f8b1301"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#af12e9bf80c70823f805f2fdd5f8b1301">csr_apply_perm</a> (<a class="el" href="structcsr__t.html">csr_t</a> *dst, const <a class="el" href="structcsr__t.html">csr_t</a> *const src, const mzp_t *const perm)</td></tr>
+<tr class="memdesc:af12e9bf80c70823f805f2fdd5f8b1301"><td class="mdescLeft">&#160;</td><td class="mdescRight">Permute columns of a CSR sparse matrix.  <br /></td></tr>
 <tr class="separator:af12e9bf80c70823f805f2fdd5f8b1301"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a37d92aeb782dbdff88a9715bcce884ed" id="r_a37d92aeb782dbdff88a9715bcce884ed"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a37d92aeb782dbdff88a9715bcce884ed">csr_csr_mul_non_zero</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const A, const <a class="el" href="structcsr__t.html">csr_t</a> *const B)</td></tr>
-<tr class="memdesc:a37d92aeb782dbdff88a9715bcce884ed"><td class="mdescLeft">&#160;</td><td class="mdescRight">return 1 if matrix product A*B^T is non-zero  <br /></td></tr>
+<tr class="memdesc:a37d92aeb782dbdff88a9715bcce884ed"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if the product of two sparse matrices A * B^T is non-zero.  <br /></td></tr>
 <tr class="separator:a37d92aeb782dbdff88a9715bcce884ed"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a1b61da7b7a49ccd8fefef388c9130412" id="r_a1b61da7b7a49ccd8fefef388c9130412"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a1b61da7b7a49ccd8fefef388c9130412">syndrome_bit_count</a> (const mzd_t *const row, const <a class="el" href="structcsr__t.html">csr_t</a> *const spaQ)</td></tr>
+<tr class="memdesc:a1b61da7b7a49ccd8fefef388c9130412"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the Hamming weight of the syndrome of a dense row vector against spaQ.  <br /></td></tr>
 <tr class="separator:a1b61da7b7a49ccd8fefef388c9130412"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a28bb122363dc1e068f508ebf67da5df7" id="r_a28bb122363dc1e068f508ebf67da5df7"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a28bb122363dc1e068f508ebf67da5df7">do_reduce</a> (mzd_t *row, const mzd_t *matP0, const rci_t rankP0)</td></tr>
+<tr class="memdesc:a28bb122363dc1e068f508ebf67da5df7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reduce a row vector against a matrix in standard form.  <br /></td></tr>
 <tr class="separator:a28bb122363dc1e068f508ebf67da5df7"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4d3957a054d540421e92af1d714211f6" id="r_a4d3957a054d540421e92af1d714211f6"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a4d3957a054d540421e92af1d714211f6">make_err</a> (mzd_t *row, double <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a4d3957a054d540421e92af1d714211f6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Generate a random binary error vector with error probability p.  <br /></td></tr>
 <tr class="separator:a4d3957a054d540421e92af1d714211f6"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a63e16fae6732551ceefdb0cee6238b27" id="r_a63e16fae6732551ceefdb0cee6238b27"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a63e16fae6732551ceefdb0cee6238b27">do_dist_clus</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const P, const mzd_t *const G, int debug, int wmax, int start, const int rankG)</td></tr>
+<tr class="memdesc:a63e16fae6732551ceefdb0cee6238b27"><td class="mdescLeft">&#160;</td><td class="mdescRight">(Internal) Run cluster distance algorithm on matrices.  <br /></td></tr>
 <tr class="separator:a63e16fae6732551ceefdb0cee6238b27"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a81ab8de6973b5d23a36f35251cd1d97f" id="r_a81ab8de6973b5d23a36f35251cd1d97f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8h.html#a81ab8de6973b5d23a36f35251cd1d97f">Lx_for_CSS_code</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const Hx, const <a class="el" href="structcsr__t.html">csr_t</a> *const Hz)</td></tr>
-<tr class="memdesc:a81ab8de6973b5d23a36f35251cd1d97f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute logical generator matrix Lx for a CSS code.  <br /></td></tr>
+<tr class="memdesc:a81ab8de6973b5d23a36f35251cd1d97f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Construct the logical matrix Lx for a quantum CSS code given Hx and Hz.  <br /></td></tr>
 <tr class="separator:a81ab8de6973b5d23a36f35251cd1d97f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Macro Definition Documentation</h2>
@@ -382,13 +411,24 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Permute columns of a CSR sparse matrix. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dst</td><td>Destination sparse matrix (can be NULL). </td></tr>
+    <tr><td class="paramname">src</td><td>Source sparse matrix. </td></tr>
+    <tr><td class="paramname">perm</td><td>Column permutation to apply. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the permuted sparse matrix.</dd></dl>
 <p>Permute columns of a CSR matrix with permutation perm. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00632">632</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00736">736</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -407,6 +447,15 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Compress CSR matrix (sort indices and remove duplicates/zeros). </p>
+<p>Compresses the representation of the sparse matrix and sorts column indices within each row to ensure consistency (critical for binary search / merging).</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">mat</td><td>Pointer to the CSR matrix to compress in-place.</td></tr>
+  </table>
+  </dd>
+</dl>
 <p>compress a CSR matrix <br  />
  </p>
 
@@ -414,7 +463,7 @@ Functions</h2></td></tr>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00120">int_pair::a</a>, <a class="el" href="util__m4ri_8h_source.html#l00120">int_pair::b</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00632">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00577">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00736">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00593">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
 
 </div>
 </div>
@@ -444,20 +493,21 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p>return 1 if matrix product A*B^T is non-zero </p>
+<p>Check if the product of two sparse matrices A * B^T is non-zero. </p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
-    <tr><td class="paramname">A</td><td>first matrix </td></tr>
-    <tr><td class="paramname">B</td><td>second matrix </td></tr>
+    <tr><td class="paramname">A</td><td>First sparse matrix. </td></tr>
+    <tr><td class="paramname">B</td><td>Second sparse matrix. </td></tr>
   </table>
   </dd>
 </dl>
+<dl class="section return"><dt>Returns</dt><dd>1 if the product is non-zero (matrices are not orthogonal), 0 otherwise. </dd></dl>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00309">309</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00036">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00048">var_init()</a>.</p>
 
 </div>
 </div>
@@ -476,13 +526,87 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Free memory allocated for a CSR sparse matrix. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">p</td><td>Pointer to the CSR sparse matrix to free. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Always returns NULL.</dd></dl>
 <p>kill a CSR matrix </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00459">459</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00034">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00046">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00279">do_CC_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>, and <a class="el" href="util__io_8c_source.html#l00278">var_kill()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00291">do_CC_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8c_source.html#l00048">var_init()</a>, and <a class="el" href="util__io_8c_source.html#l00375">var_kill()</a>.</p>
+
+</div>
+</div>
+<a id="a7b5d0d21538eb3ba596fe55981ab425b" name="a7b5d0d21538eb3ba596fe55981ab425b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7b5d0d21538eb3ba596fe55981ab425b">&#9670;&#160;</a></span>csr_from_pairs()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcsr__t.html">csr_t</a> * csr_from_pairs </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td>
+          <td class="paramname"><em>mat</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int&#160;</td>
+          <td class="paramname"><em>nz</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structint__pair.html">int_pair</a> *const&#160;</td>
+          <td class="paramname"><em>prs</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int&#160;</td>
+          <td class="paramname"><em>nrows</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int&#160;</td>
+          <td class="paramname"><em>ncols</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Construct a CSR sparse matrix from an array of coordinate pairs. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">mat</td><td>Destination CSR matrix (can be NULL). </td></tr>
+    <tr><td class="paramname">nz</td><td>Number of coordinate pairs. </td></tr>
+    <tr><td class="paramname">prs</td><td>Array of row-column index pairs. </td></tr>
+    <tr><td class="paramname">nrows</td><td>Number of rows in the matrix. </td></tr>
+    <tr><td class="paramname">ncols</td><td>Number of columns in the matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the constructed CSR matrix. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00535">535</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00120">int_pair::b</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, and <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00565">read_dem_file()</a>.</p>
 
 </div>
 </div>
@@ -523,6 +647,19 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Initialize or reallocate a CSR sparse matrix to target size. </p>
+<p>Checks dimensions and nzmax of mat, reallocating arrays if they are too small.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">mat</td><td>Existing matrix structure (can be NULL, in which case it is allocated). </td></tr>
+    <tr><td class="paramname">rows</td><td>Target number of rows. </td></tr>
+    <tr><td class="paramname">cols</td><td>Target number of columns. </td></tr>
+    <tr><td class="paramname">nzmax</td><td>Target capacity (number of non-zero entries). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the initialized/reallocated CSR matrix.</dd></dl>
 <p>initialize a CSR matrix check existing size and (re)allocate if needded </p>
 <p>keep allocated <code>mat</code></p>
 
@@ -530,7 +667,7 @@ Functions</h2></td></tr>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00632">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00733">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8c_source.html#l00577">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00736">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00837">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8c_source.html#l00535">csr_from_pairs()</a>, <a class="el" href="util__m4ri_8c_source.html#l00593">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
 
 </div>
 </div>
@@ -550,14 +687,21 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p>return max row weight of CSR matrix p TODO: add code for List of Pairs </p>
-<p>return max row weight of CSR matrix p TODO: add code for List of Pairs </p>
+<p>Get the maximum row weight of a CSR sparse matrix. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">p</td><td>Pointer to the CSR sparse matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Maximum row weight.</dd></dl>
+<p>Get the maximum row weight of a CSR sparse matrix. </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00115">115</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00034">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00046">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00279">do_CC_dist()</a>, and <a class="el" href="util__io_8c_source.html#l00036">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00291">do_CC_dist()</a>.</p>
 
 </div>
 </div>
@@ -592,13 +736,24 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Read a sparse matrix from a Matrix Market (.mtx) file into CSR format. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">fin</td><td>Path to the Matrix Market file. </td></tr>
+    <tr><td class="paramname">mat</td><td>Destination CSR matrix (can be NULL). </td></tr>
+    <tr><td class="paramname">transpose</td><td>Set to 1 to transpose the matrix while reading. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the loaded CSR matrix.</dd></dl>
 <p>read sparse matrix into a (binary) CSR (all entries default to 1) (re)allocate mat if needed use transpose=1 to transpose. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00577">577</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00593">593</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="mmio_8h_source.html#l00052">mm_is_general</a>, <a class="el" href="mmio_8h_source.html#l00049">mm_is_integer</a>, <a class="el" href="mmio_8h_source.html#l00039">mm_is_matrix</a>, <a class="el" href="mmio_8h_source.html#l00041">mm_is_sparse</a>, <a class="el" href="mmio_8c_source.html#l00105">mm_read_banner()</a>, <a class="el" href="mmio_8c_source.html#l00198">mm_read_mtx_crd_size()</a>, <a class="el" href="mmio_8c_source.html#l00464">mm_typecode_to_str()</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, and <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="mmio_8h_source.html#l00093">mm_is_coordinate</a>, <a class="el" href="mmio_8h_source.html#l00103">mm_is_general</a>, <a class="el" href="mmio_8h_source.html#l00100">mm_is_integer</a>, <a class="el" href="mmio_8h_source.html#l00090">mm_is_matrix</a>, <a class="el" href="mmio_8h_source.html#l00099">mm_is_pattern</a>, <a class="el" href="mmio_8h_source.html#l00102">mm_is_symmetric</a>, <a class="el" href="mmio_8c_source.html#l00105">mm_read_banner()</a>, <a class="el" href="mmio_8c_source.html#l00229">mm_read_mtx_array_size()</a>, <a class="el" href="mmio_8c_source.html#l00198">mm_read_mtx_crd_size()</a>, <a class="el" href="mmio_8c_source.html#l00464">mm_typecode_to_str()</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, and <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00036">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00048">var_init()</a>.</p>
 
 </div>
 </div>
@@ -639,6 +794,19 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Multiply a sparse matrix by a dense matrix. </p>
+<p>Computes C = S * B (if clear is 1) or C = C + S * B (if clear is 0).</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">C</td><td>Destination dense matrix (can be NULL). </td></tr>
+    <tr><td class="paramname">S</td><td>Source sparse matrix. </td></tr>
+    <tr><td class="paramname">B</td><td>Source dense matrix. </td></tr>
+    <tr><td class="paramname">clear</td><td>Flag to clear C before adding the product. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the resulting dense matrix C.</dd></dl>
 <p>sparse-S by dense B multiplication C=C+S*B; allocate C if needed. </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00224">224</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
@@ -662,10 +830,18 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Print raw contents of a CSR matrix to stdout. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">mat</td><td>Pointer to the CSR matrix.</td></tr>
+  </table>
+  </dd>
+</dl>
 <p>output a CSR matrix <br  />
  </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00538">538</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00554">554</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
@@ -697,11 +873,20 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00560">560</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p>Print a CSR matrix with a label string (formatted output). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">smat</td><td>Pointer to the CSR matrix. </td></tr>
+    <tr><td class="paramname">str</td><td>Label/name of the matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00576">576</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00279">do_CC_dist()</a>, and <a class="el" href="util__io_8c_source.html#l00036">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00291">do_CC_dist()</a>, and <a class="el" href="util__io_8c_source.html#l00048">var_init()</a>.</p>
 
 </div>
 </div>
@@ -730,13 +915,24 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Transpose a compressed CSR sparse matrix. </p>
+<p>Transposes matrix p and stores the result in dst. (Re)allocates dst if needed.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dst</td><td>Destination sparse matrix (can be NULL, in which case it is allocated). </td></tr>
+    <tr><td class="paramname">p</td><td>Source sparse matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the transposed sparse matrix (dst or newly allocated).</dd></dl>
 <p>transpose compressed CSR matrix, (re) allocate if needed return resulting matrix TODO: add code for List of Pairs </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00133">133</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__io_8c_source.html#l00034">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00279">do_CC_dist()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00291">do_CC_dist()</a>.</p>
 
 </div>
 </div>
@@ -790,6 +986,8 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
+<p>(Internal) Run cluster distance algorithm on matrices. </p>
+
 </div>
 </div>
 <a id="a28bb122363dc1e068f508ebf67da5df7" name="a28bb122363dc1e068f508ebf67da5df7"></a>
@@ -823,10 +1021,21 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>Check if row is linearly dependent with the rows of matP0 which is assumed to be in standard form. rankP0 is the number of non-zero rows in rankP0.</p>
+
+<p>Reduce a row vector against a matrix in standard form. </p>
+<p>Checks if row is linearly dependent on the rows of matP0 (using rankP0 rows). Modifies row in place.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">row</td><td>Dense row vector to reduce (modified in place). </td></tr>
+    <tr><td class="paramname">matP0</td><td>Dense matrix in standard form. </td></tr>
+    <tr><td class="paramname">rankP0</td><td>Rank of matP0 (number of active rows). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>1 if row was reduced to zero (linearly dependent), 0 otherwise.</dd></dl>
 <p>Check if row is linearly dependent with the rows of matG0 which is assumed to be in standard form. rankG0 is the number of non-zero rows in rankG0. return: -1 if empty line after simplification otherwise position of the first non-zero bit in the simplified vector </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00666">666</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00770">770</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -856,16 +1065,25 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p>Compute logical generator matrix Lx for a CSS code. </p>
+<p>Construct the logical matrix Lx for a quantum CSS code given Hx and Hz. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">Hx</td><td>Sparse X-check matrix. </td></tr>
+    <tr><td class="paramname">Hz</td><td>Sparse Z-check matrix (passed as Hz). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the constructed sparse logical matrix Lx.</dd></dl>
+<p>Construct the logical matrix Lx for a quantum CSS code given Hx and Hz.</p>
 <p>Given a pair of binary CSS generator matrices in CSR format, <code>Hx*Hz^T=0</code>, compute a sparse matrix <code>Lx</code> s.t. <code>Lx*Hz^T=0</code> and rows of <code>Lx</code> be linearly independent from those of <code>Hx</code>. TODO: see if sparsity of Lx can be improved. </p>
 <p>permute columns to make std form [ I C ]</p>
 <p><code>verify</code> orthogonality</p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00768">768</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00872">872</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00632">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00733">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00424">perm_p()</a>, <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>, <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00736">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00837">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00424">perm_p()</a>, <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>, <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00036">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00048">var_init()</a>.</p>
 
 </div>
 </div>
@@ -894,11 +1112,19 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>generate binary error vector with error probability p </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00704">704</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p>Generate a random binary error vector with error probability p. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">row</td><td>Dense row vector to store the error (modified in place). </td></tr>
+    <tr><td class="paramname">p</td><td>Bit-flip probability. </td></tr>
+  </table>
+  </dd>
+</dl>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00034">p</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00808">808</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00046">p</a>.</p>
 
 </div>
 </div>
@@ -927,13 +1153,23 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Convert a CSR sparse matrix to an MZD dense matrix. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dst</td><td>Destination dense matrix (can be NULL or must have correct dimensions). </td></tr>
+    <tr><td class="paramname">p</td><td>Source sparse matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the dense matrix.</dd></dl>
 <p>Convert CSR sparse binary matrix to MZD allocate dst if needed (must be correct size or NULL) </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00156">156</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00034">p</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00046">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00560">csr_print()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00037">do_RW_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00576">csr_print()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00037">do_RW_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
 
 </div>
 </div>
@@ -968,12 +1204,23 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>Copy of mzd_gauss_delayed from mzd.c (m4ri package) except additionally returns the list of pivot columns in second argument</p>
+
+<p>Perform Gaussian elimination (naive) and return pivot column list. </p>
+<p>Performs row reduction on M. If full is 1, performs full row reduction (RREF), otherwise only upper triangular. Stores the pivot column indices in q.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">M</td><td>Matrix to reduce (modified in place). </td></tr>
+    <tr><td class="paramname">q</td><td>Permutation structure to store pivot columns. </td></tr>
+    <tr><td class="paramname">full</td><td>Flag for full reduction (1) or triangular (0). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Rank of the matrix.</dd></dl>
 <p>Copy of mzd_gauss_delayed from mzd.c (m4ri package) except additionally returns the list of pivot columns in second argument permutation q must be initialized! </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00074">74</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>.</p>
 
 </div>
 </div>
@@ -1002,14 +1249,25 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Construct the generator matrix from a parity check matrix in CSR form. </p>
+<p>Permutes columns of H to bring it to standard form [ I C ], computes the generator matrix G = [ C^T I ], and permutes columns of G back to align with the original H.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">G</td><td>Destination dense matrix for generator (can be NULL). </td></tr>
+    <tr><td class="paramname">H</td><td>Parity check matrix in CSR format. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the generator matrix G.</dd></dl>
 <p>Convert a sparse binary matrix CSR into a standard form [ I C ], with some col permutations if needed, create the dense generator [ CT I ], and permute the cols back. <br  />
  (re)allocate G if needed. </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00183">183</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__io_8h_source.html#l00029">params_t::debug</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00412">mzp_out()</a>, and <a class="el" href="util__io_8c_source.html#l00004">prm</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::debug</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00412">mzp_out()</a>, and <a class="el" href="util__io_8c_source.html#l00007">prm</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -1028,12 +1286,19 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>number of set bits in a matrix. <br  />
- TODO: use the built-in version for the entire matrix </p>
+
+<p>Compute the number of set bits (Hamming weight) in a dense matrix A. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">A</td><td>Pointer to the dense matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Hamming weight of the matrix. </dd></dl>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00044">44</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00733">csr_from_mzd()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00837">csr_from_mzd()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
 
 </div>
 </div>
@@ -1052,6 +1317,15 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Naive implementation to compute the Hamming weight of a dense matrix A. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">A</td><td>Pointer to the dense matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Hamming weight of the matrix. </dd></dl>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00016">16</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
@@ -1082,7 +1356,16 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>number of set bits in the row i of a matrix </p>
+
+<p>Compute the Hamming weight of a specific row in a dense matrix. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">A</td><td>Pointer to the dense matrix. </td></tr>
+    <tr><td class="paramname">i</td><td>Index of the row. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Hamming weight of row i. </dd></dl>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00025">25</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
@@ -1103,11 +1386,19 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Print the permutation to stdout. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">p</td><td>Pointer to the permutation structure.</td></tr>
+  </table>
+  </dd>
+</dl>
 <p>print out the permutation (only needed under windows) </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00412">412</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00034">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00046">p</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>.</p>
 
@@ -1138,6 +1429,17 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Generate a random permutation of a given length in-place. </p>
+<p>Modifies the permutation q by randomizing the first 'length' positions. Uses LAPACK style pivot permutations.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">q</td><td>Permutation structure to modify. </td></tr>
+    <tr><td class="paramname">length</td><td>Number of positions to permute. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the modified permutation q.</dd></dl>
 <p>replace pivot q with a random pivot smaller or equal length (second parameter); remaining positions in place, *** note: LAPACK style pivot permutations! *** return pointer to q. input: perm &ndash; existing permutation </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00396">396</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
@@ -1177,13 +1479,24 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Apply pivot permutation p to permutation q in-place starting from index. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">q</td><td>Destination permutation (initialized to identity if NULL). </td></tr>
+    <tr><td class="paramname">p</td><td>Source pivot permutation. </td></tr>
+    <tr><td class="paramname">start</td><td>Index to start applying the permutation from. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the updated permutation q.</dd></dl>
 <p>apply pivot p to permutation q in place from start; initialize q to identity permutation if NULL return q </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00424">424</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00034">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -1218,13 +1531,24 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Apply transposed pivot permutation p to permutation q in-place. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">q</td><td>Destination permutation (initialized to identity if NULL). </td></tr>
+    <tr><td class="paramname">p</td><td>Source pivot permutation. </td></tr>
+    <tr><td class="paramname">start</td><td>Index to start applying the permutation from. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the updated permutation q.</dd></dl>
 <p>apply pivot p (transposed) to permutation q in place from start; initialize q to identity permutation if NULL return q </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00442">442</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00034">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l00037">do_RW_dist()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l00037">do_RW_dist()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -1259,13 +1583,25 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Compute the weight of the product of a sparse matrix and a dense matrix. </p>
+<p>Computes Hamming weight of A * B (if transpose is 0) or A * B^T (if transpose is 1).</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">A</td><td>Source sparse matrix. </td></tr>
+    <tr><td class="paramname">B</td><td>Source dense matrix. </td></tr>
+    <tr><td class="paramname">transpose</td><td>Flag to transpose B. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Hamming weight of the product.</dd></dl>
 <p>helper function to compute the weight of the product A*B (transpose == 0) or A*B^T (transpose == 1) with A sparse, B dense binary matrices </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00356">356</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00044">mzd_weight()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -1284,7 +1620,15 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>return uniformly distributed random number in the range [0,...,max-1] uses RAND internally </p><dl class="todo"><dt><b><a class="el" href="todo.html#_todo000001">Todo:</a></b></dt><dd>Replace by a better generator </dd></dl>
+
+<p>Return a uniformly distributed random integer in the range [0, max-1]. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">max</td><td>Upper bound (exclusive). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Random integer.</dd></dl>
 <p>return uniformly distributed random number in the range [0,...,max-1] </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00376">376</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
@@ -1318,7 +1662,16 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>Check whether syndrome is zero or not</p>
+
+<p>Compute the Hamming weight of the syndrome of a dense row vector against spaQ. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">row</td><td>Dense row vector (1 row). </td></tr>
+    <tr><td class="paramname">spaQ</td><td>Sparse check matrix. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Hamming weight of the syndrome.</dd></dl>
 <p>just check whether syndrome is zero or not </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00333">333</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
@@ -1364,6 +1717,19 @@ Functions</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Calculate syndrome vector change. </p>
+<p>Computes syndrome = syndrome + row * spaQ (or sets it if clear is 1).</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">syndrome</td><td>Destination syndrome vector. </td></tr>
+    <tr><td class="paramname">row</td><td>Error vector (dense, 1 row). </td></tr>
+    <tr><td class="paramname">spaQ</td><td>Sparse check matrix. </td></tr>
+    <tr><td class="paramname">clear</td><td>Flag to clear syndrome before accumulation. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the updated syndrome vector.</dd></dl>
 <p>Calculate the syndrome vector change: syndrome=syndrome +row.spaQ optionally clear the destination </p>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00281">281</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>

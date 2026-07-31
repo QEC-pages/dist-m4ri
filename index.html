@@ -91,6 +91,7 @@ Overview</h2>
 </ul>
 <p>For a classical (binary linear) code, only matrix <code>H</code>, the parity-check matrix, should be specified.</p>
 <p>For a quantum CSS code, matrix <code>H=Hx</code> and either <code>G=Hz</code> or <code>L=Lx</code> matrices are needed.</p>
+<p>Alternatively, a detector error model (DEM) file from <code>stim</code> can be specified using <code>fdem=[str]</code>. This file contains both detector and logical error associations, which are used to reconstruct <code>Hx</code> and <code>Lx</code> matrices.</p>
 <p>All matrices with entries in <code>GF(2)</code> should have the same number of columns, <code>n</code>, and obey the following orthogonality conditions: $$H_XH_Z^T=0,\ \ \ \ H_XL_Z^T=0,\ \ \ \ L_XH_Z^T=0,\ \ \ \ L_XL_Z^T=I,$$ where \(I\) is an identity matrix. Notice that the latter identity is not required; it is sufficient that matrices <code>Lx</code>, <code>Lz</code>, and the product \(L_XL_Z^T\) have the same full row rank \(k\), which is also the dimension of the code (number of encoded qubits).</p>
 <h2><a class="anchor" id="autotoc_md4"></a>
 How it works: RW algorithm (method=1)</h2>
@@ -108,6 +109,7 @@ How it works: CC algorithm (method=2).</h2>
 <ul>
 <li><code>wmax</code> the maximum size of the connected cluster.</li>
 <li><code>start</code> the position to start the cluster. In this case only one starting position <code>i=start</code> will be used. This is useful, e.g., if the code is symmetric (as, e.g., for cyclic codes).</li>
+<li><code>noscan</code> if set to 1, start the recursion directly with <code>w=wmax</code>, without scanning smaller weights. Only works with <code>method=2</code>.</li>
 </ul>
 <p>With <code>debug&amp;2</code> non-zero, the program in this mode also displays the minimum weight of the syndrome found for each error weight <code>w</code>. Example (run from <code>dist-m4ri/src/</code>)</p>
 <div class="fragment"><div class="line">./dist_m4ri debug=3 finH= ../examples/c204H.mmx method=2 wmax=10</div>
@@ -144,8 +146,11 @@ How to run it</h2>
 <div class="line">        2: connected cluster (CC) algorithm.  Options:</div>
 <div class="line">           wmax=[int]:  maximum cluster weight (5) </div>
 <div class="line">           start=[int]: use only this position to start (-1)</div>
+<div class="line">           noscan=[int]: start CC directly with wmax (0)</div>
 <div class="line"> </div>
 <div class="line">   General parameters:</div>
+<div class="line">    fdem=[str]: detector error model (DEM) file from stim (NULL)</div>
+<div class="line">    pmin=[float]: minimum error probability to keep for DEM (0.0)</div>
 <div class="line">    finH=[str]: parity check matrix Hx (NULL)</div>
 <div class="line">    finG=[str]: matrix Hz (quantum CSS code only) (NULL)</div>
 <div class="line">    finL=[str]: matrix Lx (quantum CSS code only) (NULL)</div>
@@ -180,7 +185,19 @@ Compilation</h2>
 </div><!-- fragment --><h2><a class="anchor" id="autotoc_md8"></a>
 Documentation</h2>
 <p>The document for this package is available at <a href="https://qec-pages.github.io/dist-m4ri/">https://qec-pages.github.io/dist-m4ri/</a>. The package is hosted on <a href="https://github.com/QEC-pages/dist-m4ri">github</a></p>
-<p>This file (<code><a class="el" href="introduction_8md.html">introduction.md</a></code>) is used as the main page for the doxygen documentation. </p>
+<p>This file (<code><a class="el" href="introduction_8md.html">introduction.md</a></code>) is used as the main page for the doxygen documentation.</p>
+<h2><a class="anchor" id="autotoc_md9"></a>
+References</h2>
+<p>If you use this program, please cite:</p>
+<ul>
+<li>A. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes," <em>IEEE Transactions on Information Theory</em>, vol. 63, no. 7, pp. 4675-4690, 2017. <a href="https://doi.org/10.1109/TIT.2017.2690381">doi:10.1109/TIT.2017.2690381</a>.</li>
+</ul>
+<p>Other related papers and software:</p>
+<ul>
+<li><b>vecdec Repository</b> (implements the Random Information Set (RW) algorithm and can handle different error weights/probabilities): <a href="https://github.com/QEC-pages/vecdec">QEC-pages/vecdec</a>.</li>
+<li><b>QDistRnd GAP Package</b> (describing the Random Information Set algorithm for quantum codes over arbitrary finite fields): L. P. Pryadko, V. A. Shabashov, and V. K. Kozin, "QDistRnd: A GAP package for computing the distance of quantum error-correcting codes," <em>Journal of Open Source Software</em>, vol. 7, no. 71, p. 4120, 2022. <a href="https://doi.org/10.21105/joss.04120">doi:10.21105/joss.04120</a>.</li>
+<li><b>Performance Comparison</b> (comparing the performance of this program with other available distance-finding programs): M. Webster, A. Jacob, and O. Higgott, "Distance-Finding Algorithms for Quantum Codes and Circuits," arXiv:2603.22532 [quant-ph], 2026. <a href="https://arxiv.org/abs/2603.22532">arXiv:2603.22532</a>. </li>
+</ul>
 </div></div><!-- PageDoc -->
 </div><!-- contents -->
 <!-- start footer part -->

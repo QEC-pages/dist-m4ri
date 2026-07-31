@@ -69,7 +69,7 @@ var searchData=
   ['hash_5fto_5fbkt_66',['HASH_TO_BKT',['../uthash_8h.html#a4d7691544128a6ef265f3e4fa5ed3113',1,'uthash.h']]],
   ['hash_5fvalue_67',['HASH_VALUE',['../uthash_8h.html#a5bc1c6438f5d6fc56b8dcbf4bbe50271',1,'uthash.h']]],
   ['hashv_68',['hashv',['../structUT__hash__handle.html#aae5e635fa110556e5007f627089f8323',1,'UT_hash_handle']]],
-  ['hh_69',['hh',['../structTWO__VEC__T.html#a072bb447be8645cb06da05b8f87fb6bd',1,'TWO_VEC_T']]],
+  ['hh_69',['hh',['../structTWO__VEC__T.html#a072bb447be8645cb06da05b8f87fb6bd',1,'TWO_VEC_T::hh'],['../structCW__VEC__T.html#ae8e0b527c92f57572726e0137b9ec2aa',1,'CW_VEC_T::hh']]],
   ['hh_5ffrom_5felmt_70',['HH_FROM_ELMT',['../uthash_8h.html#a46261e43585c404cccf8ab0f5c6d271e',1,'uthash.h']]],
   ['hh_5fhead_71',['hh_head',['../structUT__hash__bucket.html#a785a785132212378bb28fb4341cfecaf',1,'UT_hash_bucket']]],
   ['hh_5fnext_72',['hh_next',['../structUT__hash__handle.html#a4f6989385499ba6f594b0f0facd28325',1,'UT_hash_handle']]],
@@ -77,8 +77,8 @@ var searchData=
   ['hho_74',['hho',['../structUT__hash__table.html#afd05f4d9e45354fb010367ae9e1bddb6',1,'UT_hash_table']]],
   ['how_20do_20i_20make_20a_20contribution_75',['How do I make a contribution?',['../md_CONTRIBUTING.html#autotoc_md2',1,'']]],
   ['how_20it_20works_3a_20cc_20algorithm_20method_202_76',['How it works: CC algorithm (method=2).',['../index.html#autotoc_md5',1,'']]],
-  ['how_20it_20works_3a_20cc_20algorithm_20tt_20method_202_20tt_77',['How it works: CC algorithm (&lt;tt&gt;method=2&lt;/tt&gt;).',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md14',1,'']]],
+  ['how_20it_20works_3a_20cc_20algorithm_20tt_20method_202_20tt_77',['How it works: CC algorithm (&lt;tt&gt;method=2&lt;/tt&gt;).',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md15',1,'']]],
   ['how_20it_20works_3a_20rw_20algorithm_20method_201_78',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
-  ['how_20it_20works_3a_20rw_20algorithm_20tt_20method_201_20tt_79',['How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md13',1,'']]],
-  ['how_20to_20run_20it_80',['how to run it',['../index.html#autotoc_md6',1,'How to run it'],['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md16',1,'How to run it']]]
+  ['how_20it_20works_3a_20rw_20algorithm_20tt_20method_201_20tt_79',['How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md14',1,'']]],
+  ['how_20to_20run_20it_80',['how to run it',['../index.html#autotoc_md6',1,'How to run it'],['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md17',1,'How to run it']]]
 ];

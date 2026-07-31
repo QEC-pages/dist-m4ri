@@ -82,63 +82,101 @@ $(function() {
 </div><!-- top -->
 <div class="header">
   <div class="summary">
+<a href="#nested-classes">Classes</a> &#124;
 <a href="#func-members">Functions</a> &#124;
 <a href="#var-members">Variables</a>  </div>
   <div class="headertitle"><div class="title">util_io.c File Reference</div></div>
 </div><!--header-->
 <div class="contents">
 <div class="textblock"><code>#include &lt;unistd.h&gt;</code><br />
+<code>#include &lt;ctype.h&gt;</code><br />
+<code>#include &lt;errno.h&gt;</code><br />
+<code>#include &lt;string.h&gt;</code><br />
 <code>#include &quot;<a class="el" href="util__io_8h_source.html">util_io.h</a>&quot;</code><br />
 </div><div class="textblock"><div class="dynheader">
 Include dependency graph for util_io.c:</div>
 <div class="dyncontent">
 <div class="center"><img src="util__io_8c__incl.png" border="0" usemap="#asrc_2util__io_8c" alt=""/></div>
 <map name="asrc_2util__io_8c" id="asrc_2util__io_8c">
-<area shape="rect" title=" " alt="" coords="401,5,497,31"/>
-<area shape="rect" title=" " alt="" coords="362,79,437,104"/>
-<area shape="poly" title=" " alt="" coords="443,33,417,69,413,66,438,29"/>
-<area shape="rect" href="util__io_8h.html" title=" " alt="" coords="461,79,535,104"/>
-<area shape="poly" title=" " alt="" coords="459,29,484,66,480,69,455,33"/>
-<area shape="rect" title=" " alt="" coords="5,152,92,177"/>
-<area shape="poly" title=" " alt="" coords="461,104,449,107,354,122,279,131,106,154,105,149,278,126,354,117,448,101,460,99"/>
-<area shape="rect" title=" " alt="" coords="116,152,195,177"/>
-<area shape="poly" title=" " alt="" coords="461,104,449,107,209,156,208,150,448,101,460,99"/>
-<area shape="rect" title=" " alt="" coords="335,225,405,251"/>
-<area shape="poly" title=" " alt="" coords="461,104,336,134,260,154,255,164,255,173,268,191,293,207,323,219,321,224,290,211,264,195,250,174,250,162,256,150,335,128,460,99"/>
-<area shape="rect" title=" " alt="" coords="270,152,334,177"/>
-<area shape="poly" title=" " alt="" coords="467,107,348,150,346,145,466,102"/>
-<area shape="rect" title=" " alt="" coords="358,152,425,177"/>
-<area shape="poly" title=" " alt="" coords="482,106,422,147,419,142,479,102"/>
-<area shape="rect" title=" " alt="" coords="449,152,547,177"/>
-<area shape="poly" title=" " alt="" coords="501,104,501,138,495,138,495,104"/>
-<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="571,152,643,177"/>
-<area shape="poly" title=" " alt="" coords="517,102,579,142,576,147,514,106"/>
-<area shape="rect" href="uthash_8h.html" title=" " alt="" coords="668,152,747,177"/>
-<area shape="poly" title=" " alt="" coords="532,101,661,145,659,150,531,107"/>
-<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="771,152,865,177"/>
-<area shape="poly" title=" " alt="" coords="536,100,758,149,757,154,535,105"/>
-<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="856,225,948,251"/>
-<area shape="poly" title=" " alt="" coords="536,91,618,95,720,105,815,122,852,135,878,150,890,163,897,179,904,210,899,212,892,181,885,166,875,154,850,139,814,127,719,110,618,100,536,96"/>
-<area shape="poly" title=" " alt="" coords="668,177,656,180,419,229,418,224,655,175,667,172"/>
-<area shape="rect" title=" " alt="" coords="567,225,637,251"/>
-<area shape="poly" title=" " alt="" coords="692,180,632,220,629,215,689,175"/>
-<area shape="rect" title=" " alt="" coords="662,225,737,251"/>
-<area shape="poly" title=" " alt="" coords="709,178,705,212,699,212,703,177"/>
-<area shape="rect" title=" " alt="" coords="761,225,832,251"/>
-<area shape="poly" title=" " alt="" coords="723,175,773,214,770,219,720,179"/>
-<area shape="poly" title=" " alt="" coords="773,155,548,105,549,100,774,149"/>
-<area shape="poly" title=" " alt="" coords="833,175,879,214,876,218,830,179"/>
+<area shape="rect" title=" " alt="" coords="185,5,281,31"/>
+<area shape="rect" title=" " alt="" coords="5,79,80,104"/>
+<area shape="poly" title=" " alt="" coords="204,33,88,76,86,71,202,28"/>
+<area shape="rect" title=" " alt="" coords="105,79,175,104"/>
+<area shape="poly" title=" " alt="" coords="220,33,168,72,164,68,217,29"/>
+<area shape="rect" title=" " alt="" coords="199,79,267,104"/>
+<area shape="poly" title=" " alt="" coords="236,31,236,65,231,65,231,31"/>
+<area shape="rect" title=" " alt="" coords="261,225,331,251"/>
+<area shape="poly" title=" " alt="" coords="247,29,265,50,281,78,292,113,298,149,300,211,295,212,292,150,287,114,276,80,261,53,243,33"/>
+<area shape="rect" href="util__io_8h.html" title=" " alt="" coords="843,79,917,104"/>
+<area shape="poly" title=" " alt="" coords="282,22,829,82,829,87,281,27"/>
+<area shape="rect" title=" " alt="" coords="451,152,538,177"/>
+<area shape="poly" title=" " alt="" coords="843,102,552,154,551,149,842,96"/>
+<area shape="rect" title=" " alt="" coords="562,152,641,177"/>
+<area shape="poly" title=" " alt="" coords="843,105,655,153,653,147,842,100"/>
+<area shape="rect" title=" " alt="" coords="858,225,929,251"/>
+<area shape="poly" title=" " alt="" coords="918,93,978,99,1047,110,1109,127,1133,137,1149,150,1157,163,1160,175,1159,186,1153,196,1131,211,1099,222,1020,235,943,239,942,234,1019,230,1098,217,1129,206,1149,192,1154,185,1155,176,1152,165,1145,154,1130,142,1107,132,1046,115,977,104,917,98"/>
+<area shape="rect" title=" " alt="" coords="665,152,729,177"/>
+<area shape="poly" title=" " alt="" coords="852,107,741,149,739,144,850,102"/>
+<area shape="rect" title=" " alt="" coords="753,152,820,177"/>
+<area shape="poly" title=" " alt="" coords="867,106,814,146,811,141,863,102"/>
+<area shape="rect" title=" " alt="" coords="845,152,915,177"/>
+<area shape="poly" title=" " alt="" coords="883,104,883,138,877,138,877,104"/>
+<area shape="rect" title=" " alt="" coords="940,152,1039,177"/>
+<area shape="poly" title=" " alt="" coords="899,102,961,142,958,147,896,106"/>
+<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="1063,152,1135,177"/>
+<area shape="poly" title=" " alt="" coords="916,101,1051,145,1049,150,914,107"/>
+<area shape="rect" href="uthash_8h.html" title=" " alt="" coords="349,152,427,177"/>
+<area shape="poly" title=" " alt="" coords="843,99,673,120,441,154,441,149,672,114,842,94"/>
+<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="1260,152,1353,177"/>
+<area shape="poly" title=" " alt="" coords="918,97,1230,149,1247,152,1246,158,1229,155,917,103"/>
+<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="1218,225,1310,251"/>
+<area shape="poly" title=" " alt="" coords="918,91,970,96,1035,105,1106,123,1173,150,1216,180,1248,213,1245,217,1212,184,1171,154,1104,128,1034,111,970,101,917,97"/>
+<area shape="poly" title=" " alt="" coords="375,179,323,219,320,215,372,175"/>
+<area shape="poly" title=" " alt="" coords="428,173,439,175,665,208,845,229,844,234,665,214,438,180,427,178"/>
+<area shape="rect" title=" " alt="" coords="356,225,431,251"/>
+<area shape="poly" title=" " alt="" coords="392,177,394,212,389,212,386,178"/>
+<area shape="rect" title=" " alt="" coords="455,225,526,251"/>
+<area shape="poly" title=" " alt="" coords="406,175,464,215,461,219,403,180"/>
+<area shape="poly" title=" " alt="" coords="1259,156,1253,155,931,102,932,97,1254,149,1260,150"/>
+<area shape="poly" title=" " alt="" coords="1302,179,1280,215,1276,212,1297,176"/>
 </map>
 </div>
 </div>
 <p><a href="util__io_8c_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structdem__program__t.html">dem_program_t</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
 <tr class="memitem:afcbd3259101211b5c4cb297016587d42" id="r_afcbd3259101211b5c4cb297016587d42"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#afcbd3259101211b5c4cb297016587d42">var_init</a> (int argc, char **argv, <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:afcbd3259101211b5c4cb297016587d42"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize parameters and load matrices from command line arguments.  <br /></td></tr>
 <tr class="separator:afcbd3259101211b5c4cb297016587d42"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a77a264684f8a4e347db2f21fc36305d7" id="r_a77a264684f8a4e347db2f21fc36305d7"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a77a264684f8a4e347db2f21fc36305d7">var_kill</a> (<a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a77a264684f8a4e347db2f21fc36305d7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clean up and free memory allocated in the <a class="el" href="structparams__t.html">params_t</a> structure.  <br /></td></tr>
 <tr class="separator:a77a264684f8a4e347db2f21fc36305d7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0d24c5677bd19ec529d6d6cbccd4ff9b" id="r_a0d24c5677bd19ec529d6d6cbccd4ff9b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a0d24c5677bd19ec529d6d6cbccd4ff9b">read_dem_file</a> (char *fnam, <a class="el" href="structcsr__t.html">csr_t</a> **p_spaH, <a class="el" href="structcsr__t.html">csr_t</a> **p_spaL, double pmin, int debug)</td></tr>
+<tr class="memdesc:a0d24c5677bd19ec529d6d6cbccd4ff9b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read a Detector Error Model (DEM) file and construct H and L matrices.  <br /></td></tr>
+<tr class="separator:a0d24c5677bd19ec529d6d6cbccd4ff9b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a71492a584cb37778cd6cc77b84a44f4f" id="r_a71492a584cb37778cd6cc77b84a44f4f"><td class="memItemLeft" align="right" valign="top">FILE *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a71492a584cb37778cd6cc77b84a44f4f">nzlist_w_new</a> (const char fnam[], const char comment[])</td></tr>
+<tr class="separator:a71492a584cb37778cd6cc77b84a44f4f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a59684f93ed2fc82a2f81b55e01016e1b" id="r_a59684f93ed2fc82a2f81b55e01016e1b"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a59684f93ed2fc82a2f81b55e01016e1b">nzlist_w_append</a> (FILE *f, const <a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> *const vec)</td></tr>
+<tr class="separator:a59684f93ed2fc82a2f81b55e01016e1b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7a995e3d2040d1ec0db163548184caf6" id="r_a7a995e3d2040d1ec0db163548184caf6"><td class="memItemLeft" align="right" valign="top">FILE *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a7a995e3d2040d1ec0db163548184caf6">nzlist_r_open</a> (const char fnam[], long long int *lineno)</td></tr>
+<tr class="separator:a7a995e3d2040d1ec0db163548184caf6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a83ee27c031c32e09bb148aba892f8cb3" id="r_a83ee27c031c32e09bb148aba892f8cb3"><td class="memItemLeft" align="right" valign="top"><a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a83ee27c031c32e09bb148aba892f8cb3">nzlist_r_one</a> (FILE *f, <a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> *vec, const char fnam[], long long int *lineno)</td></tr>
+<tr class="separator:a83ee27c031c32e09bb148aba892f8cb3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9b85379c13cfa22372bf6752dce0ee51" id="r_a9b85379c13cfa22372bf6752dce0ee51"><td class="memItemLeft" align="right" valign="top"><a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a9b85379c13cfa22372bf6752dce0ee51">codeword_add_maybe</a> (<a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>, const int arr[], int weight)</td></tr>
+<tr class="memdesc:a9b85379c13cfa22372bf6752dce0ee51"><td class="mdescLeft">&#160;</td><td class="mdescRight">Add a candidate codeword to the hash table if it meets weight limits.  <br /></td></tr>
+<tr class="separator:a9b85379c13cfa22372bf6752dce0ee51"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a81a4ac93ecba5300f65aba3583774319" id="r_a81a4ac93ecba5300f65aba3583774319"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#a81a4ac93ecba5300f65aba3583774319">nzlist_read</a> (const char fnam[], <a class="el" href="structparams__t.html">params_t</a> *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a81a4ac93ecba5300f65aba3583774319"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read codewords from a .nz list file and add them to the codeword hash.  <br /></td></tr>
+<tr class="separator:a81a4ac93ecba5300f65aba3583774319"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad58cad2a5548c79a52c08f733345a20b" id="r_ad58cad2a5548c79a52c08f733345a20b"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__io_8c.html#ad58cad2a5548c79a52c08f733345a20b">nzlist_write</a> (const char fnam[], const char comment[], <a class="el" href="structparams__t.html">params_t</a> *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:ad58cad2a5548c79a52c08f733345a20b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Write the found codewords from the hash table to a .nz file.  <br /></td></tr>
+<tr class="separator:ad58cad2a5548c79a52c08f733345a20b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="var-members" name="var-members"></a>
 Variables</h2></td></tr>
@@ -148,6 +186,362 @@ Variables</h2></td></tr>
 <tr class="separator:a7f2c4105dff7b2edaad052d06bc4001f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Function Documentation</h2>
+<a id="a9b85379c13cfa22372bf6752dce0ee51" name="a9b85379c13cfa22372bf6752dce0ee51"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9b85379c13cfa22372bf6752dce0ee51">&#9670;&#160;</a></span>codeword_add_maybe()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> * codeword_add_maybe </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structparams__t.html">params_t</a> *const&#160;</td>
+          <td class="paramname"><em>p</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int&#160;</td>
+          <td class="paramname"><em>arr</em>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>weight</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Add a candidate codeword to the hash table if it meets weight limits. </p>
+<p>Compares the candidate codeword weight with the current minimum weight and dW limit. If it is within the limits, it is added to the hash. If a new strictly smaller minimum weight is found, it updates the global minimum weight and prunes heavier codewords from the hash.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure. </td></tr>
+    <tr><td class="paramname">arr</td><td>Array of indices representing the support of the codeword. </td></tr>
+    <tr><td class="paramname">weight</td><td>Weight of the codeword (length of arr). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the added/existing codeword structure, or NULL if not added. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00699">699</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__io_8h_source.html#l00069">params_t::codewords</a>, <a class="el" href="util__io_8h_source.html#l00066">params_t::dW</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00427">HASH_ADD</a>, <a class="el" href="uthash_8h_source.html#l00507">HASH_DEL</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8h_source.html#l00065">params_t::maxC</a>, <a class="el" href="util__io_8h_source.html#l00071">params_t::min_w</a>, <a class="el" href="util__io_8h_source.html#l00070">params_t::num_cws</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00291">do_CC_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00037">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l00742">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00186">start_CC_recurs()</a>.</p>
+
+</div>
+</div>
+<a id="a83ee27c031c32e09bb148aba892f8cb3" name="a83ee27c031c32e09bb148aba892f8cb3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a83ee27c031c32e09bb148aba892f8cb3">&#9670;&#160;</a></span>nzlist_r_one()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> * nzlist_r_one </td>
+          <td>(</td>
+          <td class="paramtype">FILE *&#160;</td>
+          <td class="paramname"><em>f</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> *&#160;</td>
+          <td class="paramname"><em>vec</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char&#160;</td>
+          <td class="paramname"><em>fnam</em>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">long long int *&#160;</td>
+          <td class="paramname"><em>lineno</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00646">646</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00742">nzlist_read()</a>.</p>
+
+</div>
+</div>
+<a id="a7a995e3d2040d1ec0db163548184caf6" name="a7a995e3d2040d1ec0db163548184caf6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7a995e3d2040d1ec0db163548184caf6">&#9670;&#160;</a></span>nzlist_r_open()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">FILE * nzlist_r_open </td>
+          <td>(</td>
+          <td class="paramtype">const char&#160;</td>
+          <td class="paramname"><em>fnam</em>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">long long int *&#160;</td>
+          <td class="paramname"><em>lineno</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00626">626</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00742">nzlist_read()</a>.</p>
+
+</div>
+</div>
+<a id="a81a4ac93ecba5300f65aba3583774319" name="a81a4ac93ecba5300f65aba3583774319"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a81a4ac93ecba5300f65aba3583774319">&#9670;&#160;</a></span>nzlist_read()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long long int nzlist_read </td>
+          <td>(</td>
+          <td class="paramtype">const char&#160;</td>
+          <td class="paramname"><em>fnam</em>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structparams__t.html">params_t</a> *&#160;</td>
+          <td class="paramname"><em>p</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Read codewords from a .nz list file and add them to the codeword hash. </p>
+<p>Reads the file, verifies that each codeword satisfies the code requirements (orthogonal to H, not orthogonal to L for quantum codes), and adds valid ones to the hash table in <a class="el" href="structparams__t.html">params_t</a>.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">fnam</td><td>Path to the .nz file. </td></tr>
+    <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure containing the code matrices and hash. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of valid codewords successfully read and added, or -1 on error. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00742">742</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="util__io_8c_source.html#l00699">codeword_add_maybe()</a>, <a class="el" href="util__io_8h_source.html#l00069">params_t::codewords</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::debug</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00065">params_t::maxC</a>, <a class="el" href="util__io_8h_source.html#l00070">params_t::num_cws</a>, <a class="el" href="util__io_8c_source.html#l00646">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l00626">nzlist_r_open()</a>, <a class="el" href="util__io_8h_source.html#l00068">params_t::outC</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, <a class="el" href="util__io_8h_source.html#l00078">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00080">params_t::spaL</a>, <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>, and <a class="el" href="util__io_8h_source.html#l00041">params_t::wmax</a>.</p>
+
+</div>
+</div>
+<a id="a59684f93ed2fc82a2f81b55e01016e1b" name="a59684f93ed2fc82a2f81b55e01016e1b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a59684f93ed2fc82a2f81b55e01016e1b">&#9670;&#160;</a></span>nzlist_w_append()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int nzlist_w_append </td>
+          <td>(</td>
+          <td class="paramtype">FILE *&#160;</td>
+          <td class="paramname"><em>f</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const <a class="el" href="util__io_8h.html#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> *const&#160;</td>
+          <td class="paramname"><em>vec</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00614">614</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00795">nzlist_write()</a>.</p>
+
+</div>
+</div>
+<a id="a71492a584cb37778cd6cc77b84a44f4f" name="a71492a584cb37778cd6cc77b84a44f4f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a71492a584cb37778cd6cc77b84a44f4f">&#9670;&#160;</a></span>nzlist_w_new()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">FILE * nzlist_w_new </td>
+          <td>(</td>
+          <td class="paramtype">const char&#160;</td>
+          <td class="paramname"><em>fnam</em>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char&#160;</td>
+          <td class="paramname"><em>comment</em>[]&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00602">602</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00795">nzlist_write()</a>.</p>
+
+</div>
+</div>
+<a id="ad58cad2a5548c79a52c08f733345a20b" name="ad58cad2a5548c79a52c08f733345a20b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad58cad2a5548c79a52c08f733345a20b">&#9670;&#160;</a></span>nzlist_write()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long long int nzlist_write </td>
+          <td>(</td>
+          <td class="paramtype">const char&#160;</td>
+          <td class="paramname"><em>fnam</em>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char&#160;</td>
+          <td class="paramname"><em>comment</em>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structparams__t.html">params_t</a> *&#160;</td>
+          <td class="paramname"><em>p</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Write the found codewords from the hash table to a .nz file. </p>
+<p>Exports all codewords currently stored in the hash table to a file in NZLIST format.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">fnam</td><td>Path to the output .nz file. </td></tr>
+    <tr><td class="paramname">comment</td><td>An optional comment string to include in the file header. </td></tr>
+    <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure containing the codeword hash. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of codewords written, or -1 on error. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00795">795</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00069">params_t::codewords</a>, <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8c_source.html#l00614">nzlist_w_append()</a>, <a class="el" href="util__io_8c_source.html#l00602">nzlist_w_new()</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>, and <a class="el" href="util__io_8h_source.html#l00041">params_t::wmax</a>.</p>
+
+</div>
+</div>
+<a id="a0d24c5677bd19ec529d6d6cbccd4ff9b" name="a0d24c5677bd19ec529d6d6cbccd4ff9b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0d24c5677bd19ec529d6d6cbccd4ff9b">&#9670;&#160;</a></span>read_dem_file()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void read_dem_file </td>
+          <td>(</td>
+          <td class="paramtype">char *&#160;</td>
+          <td class="paramname"><em>fnam</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcsr__t.html">csr_t</a> **&#160;</td>
+          <td class="paramname"><em>p_spaH</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcsr__t.html">csr_t</a> **&#160;</td>
+          <td class="paramname"><em>p_spaL</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">double&#160;</td>
+          <td class="paramname"><em>pmin</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>debug</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Read a Detector Error Model (DEM) file and construct H and L matrices. </p>
+<p>Parses a DEM file (e.g. from Stim), filters error events based on pmin, and builds the corresponding sparse check matrix H and logical matrix L.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">fnam</td><td>Path to the DEM file. </td></tr>
+    <tr><td class="paramname">p_spaH</td><td>Pointer to store the constructed sparse check matrix H. </td></tr>
+    <tr><td class="paramname">p_spaL</td><td>Pointer to store the constructed sparse logical matrix L. </td></tr>
+    <tr><td class="paramname">pmin</td><td>Minimum error probability threshold to keep an error event. </td></tr>
+    <tr><td class="paramname">debug</td><td>Debug print level bitmap. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00565">565</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00535">csr_from_pairs()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00048">var_init()</a>.</p>
+
+</div>
+</div>
 <a id="afcbd3259101211b5c4cb297016587d42" name="afcbd3259101211b5c4cb297016587d42"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#afcbd3259101211b5c4cb297016587d42">&#9670;&#160;</a></span>var_init()</h2>
 
@@ -179,6 +573,17 @@ Variables</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p>Initialize parameters and load matrices from command line arguments. </p>
+<p>Parses command line arguments, sets up the parameter structure, loads matrices from specified files (Matrix Market or DEM), constructs logical matrices if needed, and performs consistency checks.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">argc</td><td>Number of command line arguments. </td></tr>
+    <tr><td class="paramname">argv</td><td>Array of command line argument strings. </td></tr>
+    <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure to initialize. </td></tr>
+  </table>
+  </dd>
+</dl>
 <p><code>debug</code></p>
 <p>just assign if in the <code>1st position</code></p>
 <p>otherwise <code>XOR</code></p>
@@ -191,9 +596,9 @@ Variables</h2></td></tr>
 <p>create <code>Lx</code></p>
 <p>WARNING: this does not necessarily have minimal row weights</p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00036">36</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00048">48</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00127">BRIEF_HELP</a>, <a class="el" href="util__io_8h_source.html#l00030">params_t::classical</a>, <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00309">csr_csr_mul_non_zero()</a>, <a class="el" href="util__m4ri_8c_source.html#l00115">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00577">csr_mm_read()</a>, <a class="el" href="util__m4ri_8c_source.html#l00560">csr_print()</a>, <a class="el" href="util__io_8h_source.html#l00031">params_t::css</a>, <a class="el" href="util__io_8h_source.html#l00029">params_t::debug</a>, <a class="el" href="util__io_8h_source.html#l00039">params_t::dmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00065">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00063">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::finH</a>, <a class="el" href="util__io_8h_source.html#l00064">params_t::finL</a>, <a class="el" href="util__m4ri_8c_source.html#l00768">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00052">params_t::max_row_wgt_H</a>, <a class="el" href="util__io_8h_source.html#l00027">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::method</a>, <a class="el" href="util__io_8h_source.html#l00058">params_t::n0</a>, <a class="el" href="util__io_8h_source.html#l00060">params_t::nchk</a>, <a class="el" href="util__io_8h_source.html#l00059">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l00034">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>, <a class="el" href="util__io_8h_source.html#l00048">params_t::seed</a>, <a class="el" href="util__io_8h_source.html#l00034">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00067">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00066">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00068">params_t::spaL</a>, <a class="el" href="util__io_8h_source.html#l00056">params_t::start</a>, <a class="el" href="util__io_8h_source.html#l00033">params_t::steps</a>, <a class="el" href="util__io_8h_source.html#l00055">params_t::swei</a>, <a class="el" href="util__io_8h_source.html#l00078">USAGE</a>, <a class="el" href="util__io_8h_source.html#l00038">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00044">params_t::wmin</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00215">BRIEF_HELP</a>, <a class="el" href="util__io_8h_source.html#l00033">params_t::classical</a>, <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00309">csr_csr_mul_non_zero()</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00593">csr_mm_read()</a>, <a class="el" href="util__m4ri_8c_source.html#l00576">csr_print()</a>, <a class="el" href="util__io_8h_source.html#l00034">params_t::css</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::debug</a>, <a class="el" href="util__io_8h_source.html#l00042">params_t::dmax</a>, <a class="el" href="util__io_8h_source.html#l00066">params_t::dW</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00072">params_t::fdem</a>, <a class="el" href="util__io_8h_source.html#l00077">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00067">params_t::finC</a>, <a class="el" href="util__io_8h_source.html#l00075">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00074">params_t::finH</a>, <a class="el" href="util__io_8h_source.html#l00076">params_t::finL</a>, <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00028">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00065">params_t::maxC</a>, <a class="el" href="util__io_8h_source.html#l00035">params_t::method</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::n0</a>, <a class="el" href="util__io_8h_source.html#l00064">params_t::nchk</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::noscan</a>, <a class="el" href="util__io_8h_source.html#l00063">params_t::nvar</a>, <a class="el" href="util__io_8h_source.html#l00068">params_t::outC</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, <a class="el" href="util__io_8h_source.html#l00073">params_t::pmin</a>, <a class="el" href="util__io_8c_source.html#l00565">read_dem_file()</a>, <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>, <a class="el" href="util__io_8h_source.html#l00052">params_t::seed</a>, <a class="el" href="util__io_8h_source.html#l00037">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00079">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00078">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00080">params_t::spaL</a>, <a class="el" href="util__io_8h_source.html#l00060">params_t::start</a>, <a class="el" href="util__io_8h_source.html#l00036">params_t::steps</a>, <a class="el" href="util__io_8h_source.html#l00059">params_t::swei</a>, <a class="el" href="util__io_8h_source.html#l00163">USAGE</a>, <a class="el" href="util__io_8h_source.html#l00041">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00047">params_t::wmin</a>.</p>
 
 </div>
 </div>
@@ -213,9 +618,18 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00278">278</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p>Clean up and free memory allocated in the <a class="el" href="structparams__t.html">params_t</a> structure. </p>
+<p>Frees sparse matrices (spaH, spaG, spaL) and codeword lists.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure to clean up. </td></tr>
+  </table>
+  </dd>
+</dl>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__io_8h_source.html#l00065">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00063">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::finH</a>, <a class="el" href="util__io_8c_source.html#l00034">p</a>, <a class="el" href="util__io_8h_source.html#l00067">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00066">params_t::spaH</a>, and <a class="el" href="util__io_8h_source.html#l00068">params_t::spaL</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00375">375</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00069">params_t::codewords</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__io_8h_source.html#l00077">params_t::fin</a>, <a class="el" href="util__io_8h_source.html#l00075">params_t::finG</a>, <a class="el" href="util__io_8h_source.html#l00074">params_t::finH</a>, <a class="el" href="uthash_8h_source.html#l00507">HASH_DEL</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l00046">p</a>, <a class="el" href="util__io_8h_source.html#l00079">params_t::spaG</a>, <a class="el" href="util__io_8h_source.html#l00078">params_t::spaH</a>, and <a class="el" href="util__io_8h_source.html#l00080">params_t::spaL</a>.</p>
 
 </div>
 </div>
@@ -232,9 +646,9 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00034">34</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00046">46</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00115">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>, <a class="el" href="util__m4ri_8c_source.html#l00704">make_err()</a>, <a class="el" href="mmio_8c_source.html#l00105">mm_read_banner()</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00412">mzp_out()</a>, <a class="el" href="util__m4ri_8c_source.html#l00424">perm_p()</a>, <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>, <a class="el" href="util__io_8c_source.html#l00036">var_init()</a>, and <a class="el" href="util__io_8c_source.html#l00278">var_kill()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00699">codeword_add_maybe()</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00115">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>, <a class="el" href="dist__cc_8c_source.html#l00291">do_CC_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00037">do_RW_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00808">make_err()</a>, <a class="el" href="mmio_8c_source.html#l00105">mm_read_banner()</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00412">mzp_out()</a>, <a class="el" href="util__io_8c_source.html#l00742">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l00795">nzlist_write()</a>, <a class="el" href="util__m4ri_8c_source.html#l00424">perm_p()</a>, <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>, <a class="el" href="dist__cc_8c_source.html#l00186">start_CC_recurs()</a>, <a class="el" href="util__io_8c_source.html#l00048">var_init()</a>, and <a class="el" href="util__io_8c_source.html#l00375">var_kill()</a>.</p>
 
 </div>
 </div>
@@ -249,37 +663,8 @@ Variables</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<b>Initial value:</b><div class="fragment"><div class="line">={</div>
-<div class="line">  .debug=3,</div>
-<div class="line">  .method=0,</div>
-<div class="line">  .classical=0,</div>
-<div class="line">  .steps=1,</div>
-<div class="line">  .css=1,</div>
-<div class="line">  .smax=20,</div>
-<div class="line">  .wmax=0,</div>
-<div class="line">  .dmax=0,</div>
-<div class="line">  .wmin=1,</div>
-<div class="line">  .start=-1, </div>
-<div class="line">  .seed=0,</div>
-<div class="line">  .dist=0,</div>
-<div class="line">  .dist_max=0,</div>
-<div class="line">  .dist_min=0,</div>
-<div class="line">  .max_row_wgt_H =0,</div>
-<div class="line">  .max_col_wgt_H =0,</div>
-<div class="line">  .n0=0,</div>
-<div class="line">  .nvar=0,</div>
-<div class="line">  .nchk=0,</div>
-<div class="line">  .maxC=0,</div>
-<div class="line">  .finH=NULL,</div>
-<div class="line">  .finG=NULL,</div>
-<div class="line">  .finL=NULL,</div>
-<div class="line">  .fin=<span class="stringliteral">&quot;../examples/try&quot;</span>, </div>
-<div class="line">  .spaH=NULL,</div>
-<div class="line">  .spaG=NULL,</div>
-<div class="line">  .spaL=NULL</div>
-<div class="line">}</div>
-</div><!-- fragment -->
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00004">4</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00007">7</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>.</p>
 
