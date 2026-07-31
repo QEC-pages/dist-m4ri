@@ -15,6 +15,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: make
-      run: cd src && sudo apt-get install libm4ri-dev && make -j dist_m4ri
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y libm4ri-dev
+    - name: Build
+      run: cd src && make -j dist_m4ri
+    - name: Run Tests
+      run: cd src && make test
     
