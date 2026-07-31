@@ -1,16 +1,22 @@
 #include <unistd.h>
+#include <ctype.h>
+#include <errno.h>
+#include <string.h>
 #include "util_io.h"
 
 params_t prm={
   .debug=3,
   .method=0,
-  .classical=0,
+  .classical=-1,
   .steps=1,
   .css=1,
-  .smax=20,
+  .smax=5,
   .wmax=0,
   .dmax=0,
   .wmin=1,
+  .noscan=0,
+  .fdem=NULL,
+  .pmin=0.0,
   .start=-1, 
   .seed=0,
   .dist=0,
@@ -22,10 +28,16 @@ params_t prm={
   .nvar=0,
   .nchk=0,
   .maxC=0,
+  .dW=0,
+  .finC=NULL,
+  .outC=NULL,
+  .codewords=NULL,
+  .num_cws=0,
+  .min_w=INT_MAX,
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
-  .fin="../examples/try", 
+  .fin="", 
   .spaH=NULL,
   .spaG=NULL,
   .spaL=NULL
@@ -36,6 +48,8 @@ params_t * const p = &prm;
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
+  double prob=0.0;
+  long long int dbg_ll=0;
 
   if(argc <= 1)
     ERROR("no command-line arguments given, " BRIEF_HELP,argv[0]);
@@ -149,11 +163,77 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	printf("# read %s, seed=%d\n",argv[i],p->seed);      
     }    
+    else if (sscanf(argv[i],"noscan=%d",&dbg)==1){
+      p->noscan=dbg;
+      if (p->debug&4)
+	printf("# read %s, noscan=%d\n",argv[i],p->noscan);
+    }
+    else if (0==strncmp(argv[i],"fdem=",5)){
+      if(strlen(argv[i])>5)
+        p->fdem = argv[i]+5;
+      else
+        p->fdem = argv[++i];
+      if (p->debug&4)
+	printf("# read %s, fdem=%s\n",argv[i],p->fdem);
+    }
+    else if (sscanf(argv[i],"pmin=%lg",&prob)==1){
+      p->pmin=prob;
+      if (p->debug&4)
+	printf("# read %s, pmin=%g\n",argv[i],p->pmin);
+    }
+    else if (0==strncmp(argv[i],"finC=",5)){
+      if(strlen(argv[i])>5)
+        p->finC = argv[i]+5;
+      else
+        p->finC = argv[++i];
+      if (p->debug&4)
+	printf("# read %s, finC=%s\n",argv[i],p->finC);
+    }
+    else if (0==strncmp(argv[i],"outC=",5)){
+      if(strlen(argv[i])>5)
+        p->outC = argv[i]+5;
+      else
+        p->outC = argv[++i];
+      if (p->debug&4)
+	printf("# read %s, outC=%s\n",argv[i],p->outC);
+    }
+    else if (sscanf(argv[i],"maxC=%lld",&dbg_ll)==1){
+      p->maxC=dbg_ll;
+      if (p->debug&4)
+	printf("# read %s, maxC=%lld\n",argv[i],p->maxC);
+    }
+    else if (sscanf(argv[i],"dW=%d",&dbg)==1){
+      p->dW=dbg;
+      if (p->debug&4)
+	printf("# read %s, dW=%d\n",argv[i],p->dW);
+    }
+    else if (sscanf(argv[i],"classical=%d",&dbg)==1){
+      p->classical=dbg;
+      if (p->debug&4)
+	printf("# read %s, classical=%d\n",argv[i],p->classical);
+    }
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
       ERROR("try \"%s -h\" for options",argv[0]);
     }
   } /* end parameter scan cycle */
+
+  if (p->noscan && p->method != 2) {
+    ERROR("noscan=1 only works with method=2");
+  }
+
+  if (!p->fdem && strlen(p->fin) == 0 && !p->finH && !p->finG && !p->finL) {
+    p->fin = "../examples/try";
+  }
+
+  if (p->fdem) {
+    if (p->finH || p->finG || p->finL || strlen(p->fin) > 0) {
+      ERROR("Cannot specify matrix files (fin, finH, finG, finL) along with fdem");
+    }
+  }
+  if (p->pmin != 0.0 && !p->fdem) {
+    ERROR("pmin can only be used when fdem is specified");
+  }
 
   if(p->method &1 ){ /* RW */
     if (p->steps<=0)
@@ -181,65 +261,65 @@ void var_init(int argc, char **argv, params_t * const p){
 	     p->finH,p->finG);
   }
   
-  if (p->finH){
-    p->spaH=csr_mm_read(p->finH,p->spaH,0);
-    if(p->debug&1)
-      printf("# read H <- file '%s'\n",p->finH);
-    if(p->debug&32){
-      if((p->spaH->cols<150)||(p->debug&2048))
-	csr_print(p->spaH,"H");
+  if (p->fdem) {
+    read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
+    if (p->classical == -1) p->classical = 0;
+    p->nvar = p->spaH->cols;
+    p->n0 = p->nvar;
+    p->nchk = p->spaL->rows;
+  } else {
+    if (p->finH){
+      p->spaH=csr_mm_read(p->finH,p->spaH,0);
+      if(p->debug&1)
+	printf("# read H <- file '%s'\n",p->finH);
+      if(p->debug&32){
+	if((p->spaH->cols<150)||(p->debug&2048))
+	  csr_print(p->spaH,"H");
+      }
+    }
+    else
+      ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
+
+    if((p->finG) && (p->finL))
+      ERROR("either G=Hz or L=Lx matrix should be specified but not both! finG='%s' finL='%s'\n",
+	    p->finG, p->finL);
+
+    if(p->finG){
+      if (p->classical == -1) p->classical = 0;
+      p->spaG=csr_mm_read(p->finG,p->spaG,0);
+      if(p->debug&1)
+	printf("# read G <- file '%s'\n",p->finG);
+      if(csr_csr_mul_non_zero(p->spaH, p->spaG))
+	 ERROR("rows of H and G matrices are not orthogonal");
+      if(p->debug&32){
+	if((p->spaG->cols<150)||(p->debug&2048))
+	  csr_print(p->spaG,"G");
+      }
+    } 
+    else if (p->finL){
+      if (p->classical == -1) p->classical = 0;
+      p->spaL=csr_mm_read(p->finL,p->spaL,0);
+      if(p->debug&1)
+	printf("# read L <- file '%s'\n",p->finL);
+      if(p->debug&32){
+	if((p->spaL->cols<150)||(p->debug&2048))
+	  csr_print(p->spaL,"L");
+      }
+      p->nchk = p->spaL->rows;
+    } 
+    else{
+      if (p->classical == -1) p->classical = 1;
+      p->spaG=NULL;
     }
   }
-  else
-    ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
 
   if(p->method &2 ){ /* CC */
     if ((p->wmax<=0) && ((p->method & 1 )==0))
       ERROR("parameter wmax=%d should be positive for CC method=%d", p->wmax,p->method);
     if(p->wmax>=MAX_W)
       ERROR("increase MAX_W=%d defined in 'util_io.h'",MAX_W);
-    for(int i=0; i<=p->smax; i++)
+    for(int i=0; i<MAX_W; i++)
       p->swei[i]=p->spaH->rows +1; 
-  }
-  
-#if 0
-  if (p->method&2){ /* cluster */
-    p->max_row_wgt_H = csr_max_row_wght(p->spaH);
-    if(p->max_row_wgt_H > max_row_wt)
-      ERROR("increase max_row_wt=%d to %d",max_row_wt,p->max_row_wgt_H);
-  }
-#endif
-
-
-  if((p->finG) && (p->finL))
-    ERROR("either G=Hz or L=Lx matrix should be specified but not both! finG='%s' finL='%s'\n",
-	  p->finG, p->finL);
-
-  if(p->finG){
-    p->classical=0;
-    p->spaG=csr_mm_read(p->finG,p->spaG,0);
-    if(p->debug&1)
-      printf("# read G <- file '%s'\n",p->finG);
-    if(csr_csr_mul_non_zero(p->spaH, p->spaG))
-       ERROR("rows of H and G matrices are not orthogonal");
-    if(p->debug&32){
-      if((p->spaG->cols<150)||(p->debug&2048))
-	csr_print(p->spaG,"G");
-    }
-  } 
-  else if (p->finL){
-    p->classical=0;
-    p->spaL=csr_mm_read(p->finL,p->spaL,0);
-    if(p->debug&1)
-      printf("# read L <- file '%s'\n",p->finL);
-    if(p->debug&32){
-      if((p->spaL->cols<150)||(p->debug&2048))
-	csr_print(p->spaL,"L");
-    }
-  } 
-  else{
-    p->classical=1;
-    p->spaG=NULL;
   }
 
   if (p->seed<=0){
@@ -268,6 +348,23 @@ void var_init(int argc, char **argv, params_t * const p){
     p->nchk = p->spaL->rows;
   }
 
+  if (p->classical) {
+    if (p->finL != NULL || p->finG != NULL) {
+      ERROR("Conflict: classical=1 specified, but finL or finG was also provided.");
+    }
+    if (p->spaL != NULL) {
+      if (p->debug & 1) {
+        printf("# Warning: classical=1 specified, discarding L matrix (logical operators)\n");
+      }
+      p->spaL = csr_free(p->spaL);
+    }
+  } else {
+    if (p->spaL == NULL) {
+      ERROR("L matrix (logical operators) is required for quantum code (classical=0).\n"
+            "Provide finL, fdem, or finG to construct it. Alternatively, set classical=1 to find the distance of the stabilizer code as a classical code.");
+    }
+  }
+
   if ((p->method <= 0) || (p->method > 3)){
       printf("invalid method=%d specified\n", p->method);
       ERROR(BRIEF_HELP,argv[0]);
@@ -293,5 +390,420 @@ void var_kill(params_t * const p){
   }
 #endif
 
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    HASH_DEL(p->codewords, cw);
+    free(cw);
+  }
+}
 
+typedef struct {
+    char **lines;
+    int size;
+    int capacity;
+} dem_program_t;
+
+static dem_program_t *read_dem_to_program(const char *fnam) {
+  FILE *f = fopen(fnam, "r");
+  if (f == NULL) {
+    printf("FILE I/O ERROR: %s\n", strerror(errno));
+    ERROR("can't open the (DEM) file %s for reading\n", fnam);
+  }
+
+  dem_program_t *prog = malloc(sizeof(dem_program_t));
+  prog->size = 0;
+  prog->capacity = 100;
+  prog->lines = malloc(prog->capacity * sizeof(char *));
+
+  char *buf = NULL;
+  size_t bufsiz = 0;
+  ssize_t linelen;
+
+  while ((linelen = getline(&buf, &bufsiz, f)) >= 0) {
+    if (linelen > 0 && buf[linelen - 1] == '\n') {
+      buf[linelen - 1] = '\0';
+    }
+    if (prog->size >= prog->capacity) {
+      prog->capacity *= 2;
+      prog->lines = realloc(prog->lines, prog->capacity * sizeof(char *));
+    }
+    prog->lines[prog->size++] = strdup(buf);
+  }
+  if (buf) free(buf);
+  fclose(f);
+  return prog;
+}
+
+static void free_dem_program(dem_program_t *prog) {
+  for (int i = 0; i < prog->size; i++) {
+    free(prog->lines[i]);
+  }
+  free(prog->lines);
+  free(prog);
+}
+
+static void parse_instructions(dem_program_t *prog, int *p_line_idx, 
+                        int *p_iD, int_pair **p_inH, int *p_maxH, int *p_r,
+                        int *p_iL, int_pair **p_inL, int *p_maxL, int *p_k,
+                        int *p_n, double pmin, int *p_detector_shift, int debug) {
+    while (*p_line_idx < prog->size) {
+        char *line = prog->lines[*p_line_idx];
+        (*p_line_idx)++;
+        
+        char *c = line;
+        while (isspace(*c)) c++;
+        
+        if (*c == '\0' || *c == '#') continue;
+        
+        if (*c == '}') {
+            return;
+        }
+        
+        int num = 0;
+        int val = 0;
+        double prob = 0.0;
+        
+        // Parse repeat
+        if (sscanf(c, "repeat %d { %n", &val, &num) == 1) {
+            int start_idx = *p_line_idx;
+            int temp_idx = start_idx;
+            for (int r = 0; r < val; r++) {
+                temp_idx = start_idx;
+                parse_instructions(prog, &temp_idx, 
+                                   p_iD, p_inH, p_maxH, p_r,
+                                   p_iL, p_inL, p_maxL, p_k,
+                                   p_n, pmin, p_detector_shift, debug);
+            }
+            if (val > 0) {
+                *p_line_idx = temp_idx;
+            } else {
+                int depth = 1;
+                while (*p_line_idx < prog->size && depth > 0) {
+                    char *s = prog->lines[*p_line_idx];
+                    (*p_line_idx)++;
+                    while (isspace(*s)) s++;
+                    if (strncmp(s, "repeat", 6) == 0 && strchr(s, '{')) depth++;
+                    if (*s == '}') depth--;
+                }
+            }
+            continue;
+        }
+        
+        // Parse shift_detectors
+        int shift_val = 0;
+        if (sscanf(c, "shift_detectors ( %*[^)] ) %d %n", &shift_val, &num) == 1) {
+            *p_detector_shift += shift_val;
+            continue;
+        } else if (sscanf(c, "shift_detectors %d %n", &shift_val, &num) == 1) {
+            *p_detector_shift += shift_val;
+            continue;
+        }
+        
+        // Parse error
+        if (sscanf(c, "error( %lg ) %n", &prob, &num) == 1) {
+            if ((prob <= 0) || (prob >= 1))
+                ERROR("probability should be in (0,1) exclusive p=%g\n"
+                      "line %d: '%s'\n", prob, *p_line_idx, line);
+            c += num;
+            
+            if (prob < pmin) {
+                continue;
+            }
+            
+            while (1) {
+                while (isspace(c[0])) c++;
+                if (c[0] == '\0' || c[0] == '#' || c[0] == '\n') break;
+                
+                num = 0;
+                if (sscanf(c, "D%d%n", &val, &num) == 1) {
+                    c += num;
+                    assert(val >= 0);
+                    int shifted_val = val + *p_detector_shift;
+                    if (shifted_val >= *p_r)
+                        *p_r = shifted_val + 1;
+                    if (*p_iD >= *p_maxH) {
+                        *p_maxH = 2 * (*p_maxH);
+                        *p_inH = realloc(*p_inH, (*p_maxH) * sizeof(**p_inH));
+                    }
+                    (*p_inH)[*p_iD].a = shifted_val;
+                    (*p_inH)[*p_iD].b = *p_n;
+                    (*p_iD)++;
+                } else if (sscanf(c, "L%d%n", &val, &num) == 1) {
+                    c += num;
+                    assert(val >= 0);
+                    if (val >= *p_k)
+                        *p_k = val + 1;
+                    if (*p_iL >= *p_maxL) {
+                        *p_maxL = 2 * (*p_maxL);
+                        *p_inL = realloc(*p_inL, (*p_maxL) * sizeof(**p_inL));
+                    }
+                    (*p_inL)[*p_iL].a = val;
+                    (*p_inL)[*p_iL].b = *p_n;
+                    (*p_iL)++;
+                } else if (c[0] == '^') {
+                    c++;
+                } else {
+                    ERROR("unrecognized entry %s in error line %d: '%s'\n", c, *p_line_idx, line);
+                }
+            }
+            (*p_n)++;
+            continue;
+        }
+        
+        if (strncmp(c, "detector", 8) == 0) {
+            continue;
+        }
+        
+        if (strncmp(c, "logical_observable", 18) == 0) {
+            continue;
+        }
+        
+        ERROR("unrecognized DEM entry in line %d: '%s'\n", *p_line_idx, line);
+    }
+}
+
+void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug){
+  dem_program_t *prog = read_dem_to_program(fnam);
+  
+  int maxH=100, maxL=100; 
+  int_pair * inH = malloc(maxH*sizeof(int_pair));
+  int_pair * inL = malloc(maxL*sizeof(int_pair));
+  if ((!inH)||(!inL))
+    ERROR("memory allocation failed\n");
+
+  int r=-1, k=-1, n=0;
+  int iD=0, iL=0;
+  int detector_shift = 0;
+  int line_idx = 0;
+
+  parse_instructions(prog, &line_idx, 
+                     &iD, &inH, &maxH, &r,
+                     &iL, &inL, &maxL, &k,
+                     &n, pmin, &detector_shift, debug);
+
+  if (line_idx < prog->size) {
+      ERROR("Unmatched '}' in DEM file %s at line %d\n", fnam, line_idx);
+  }
+
+  if(debug & 1)
+    printf("# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
+  if((r<=0)||(k<=0)||(n<=0))
+    ERROR("invalid DEM file %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
+	  fnam,r,k,n,iD,iL);
+  
+  *p_spaH = csr_from_pairs(*p_spaH, iD, inH, r, n);
+  *p_spaL = csr_from_pairs(*p_spaL, iL, inL, k, n);
+  
+  free(inH);
+  free(inL);
+  free_dem_program(prog);
+}
+
+FILE * nzlist_w_new(const char fnam[], const char comment[]){
+  FILE *f=fopen(fnam,"w");
+  if(!f){
+    printf("FILE I/O ERROR: %s\n", strerror(errno));
+    ERROR("can't open file %s for writing",fnam);
+  }
+  fprintf(f,"%%%% NZLIST\n");
+  if(comment)
+    fprintf(f,"%% %s\n",comment);
+  return f;
+}
+
+int nzlist_w_append(FILE *f, const cw_vec_t * const vec){
+  assert(vec && vec->weight >0 );
+  assert(f!=NULL);
+  const int w=vec->weight;
+  if(fprintf(f,"%d ",w)<=0)
+    ERROR("can't write to `NZLIST` file");
+  for(int i=0; i < w; i++)
+    if(fprintf(f," %d%s", 1 + vec->arr[i], i+1 < w ? "" :"\n")<=0)
+      ERROR("can't write to `NZLIST` file");
+  return 0;
+}
+
+FILE * nzlist_r_open(const char fnam[], long long int *lineno){
+  FILE *f=fopen(fnam,"r");
+  if(!f)
+    return(NULL);
+  *lineno=1;
+  int c=fgetc(f);
+  while(c=='%'){
+    do{
+      c=fgetc(f);
+      if(feof(f))
+	return NULL;
+    }
+    while(c!='\n');
+    (*lineno)++;
+    c=fgetc(f);
+  }
+  ungetc(c,f); 
+  return f;
+}
+
+cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long int *lineno){
+  assert(f!=NULL);
+  if ( ferror (f)|| feof(f) )
+    return NULL;
+  int w;
+
+  int c=fgetc(f);
+  while(c=='%'){
+    do{
+      c=fgetc(f);     
+      if(feof(f))
+	return NULL;
+    }
+    while(c!='\n');
+    (*lineno)++;
+    c=fgetc(f);
+  }
+  ungetc(c,f); 
+  
+  if(fscanf(f," %d",&w) != 1){
+    if (feof(f)) return NULL;
+    printf("%s:%lld: invalid NZLIST entry\n", fnam, *lineno);
+    ERROR("expected an integer");
+  }
+  if ((vec!=NULL) && (vec->weight<w)){
+    free(vec);
+    vec=NULL;
+  }
+  if(vec==NULL){
+    vec = calloc(sizeof(cw_vec_t)+w*sizeof(int), sizeof(char));
+    if(!vec)
+      ERROR("memory allocation");
+  }
+  vec->weight = w;
+  vec->cnt = 1;
+  for(int i=0; i<w; i++){
+    if(fscanf(f," %d ",vec->arr + i) != 1){
+      printf("%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
+      ERROR("expected an integer i=%d of %d",i,w);
+    }    
+    vec->arr[i]--;
+  }
+
+  for(int i=1; i<w; i++){
+    if((vec->arr[i-1] < 0) || (vec->arr[i-1] >= vec->arr[i])){
+      printf("%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
+      ERROR("expected strictly increasing positive entries");
+    }   
+  }
+  (*lineno)++;
+  return vec;
+}
+
+cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
+  if (p->maxC && p->num_cws >= p->maxC) {
+    return p->codewords;
+  }
+  // Check if weight is within the current limit: min_w + dW
+  if (p->min_w != INT_MAX && p->dW >= 0 && weight > p->min_w + p->dW) {
+    return p->codewords;
+  }
+
+  const size_t keylen = weight * sizeof(int);
+  cw_vec_t *pvec = NULL;
+  HASH_FIND(hh, p->codewords, arr, keylen, pvec);
+  if (!pvec) {
+    cw_vec_t *entry = malloc(sizeof(cw_vec_t) + keylen);
+    if (!entry) ERROR("memory allocation");
+    entry->weight = weight;
+    entry->cnt = 1;
+    for (int i = 0; i < weight; i++) {
+      entry->arr[i] = arr[i];
+    }
+    HASH_ADD(hh, p->codewords, arr, keylen, entry);
+    p->num_cws++;
+    
+    // Update min_w
+    if (weight < p->min_w) {
+      p->min_w = weight;
+      if (p->dW >= 0) {
+        cw_vec_t *cw, *tmp;
+        HASH_ITER(hh, p->codewords, cw, tmp) {
+          if (cw->weight > p->min_w + p->dW) {
+            HASH_DEL(p->codewords, cw);
+            free(cw);
+            p->num_cws--;
+          }
+        }
+      }
+    }
+  } else {
+    pvec->cnt++;
+  }
+  return p->codewords;
+}
+
+long long int nzlist_read(const char fnam[], params_t *p){
+  long long int count = 0, lineno;
+  long long int skipped_invalid = 0;
+  assert(fnam);
+  FILE * f=nzlist_r_open(fnam, &lineno);
+  if(!f){
+    if ((p->outC ==NULL) || (strcmp(fnam,p->outC)!=0)){      
+      printf("codeword input file I/O ERROR: %s, outC=%s\n", strerror(errno),p->outC);
+      ERROR("can't open file %s for reading",fnam);
+    }
+    else
+      return 0;
+  }
+  cw_vec_t *entry=NULL;
+  while((entry=nzlist_r_one(f,NULL, fnam, &lineno))){
+    if((p->maxC) && (p->num_cws >= p->maxC)) {
+      free(entry);
+      break;
+    }
+    int valid = 1;
+    if (p->spaH) {
+      if (sparse_syndrome_non_zero(p->spaH, entry->weight, entry->arr)) {
+        valid = 0;
+      }
+    }
+    if (valid && p->spaL) {
+      if (!sparse_syndrome_non_zero(p->spaL, entry->weight, entry->arr)) {
+        valid = 0;
+      }
+    }
+    if (!valid) {
+      skipped_invalid++;
+      free(entry);
+      continue;
+    }
+    if((p->wmax==0) ||((p->wmax) && (entry->weight <= p->wmax))){
+      long long int old_num = p->num_cws;
+      p->codewords = codeword_add_maybe(p, entry->arr, entry->weight);
+      if (p->num_cws > old_num) {
+        count++;
+      }
+    }
+    free(entry);
+  }
+  fclose(f);
+  if (skipped_invalid > 0) {
+    printf("# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n", skipped_invalid);
+  }
+  if(p->debug&1)
+    printf("# read %lld codewords from %s, total %lld\n",count, fnam, p->num_cws);
+  return count; 
+}
+
+long long int nzlist_write(const char fnam[], const char comment[], params_t *p){
+  long long int count=0;
+  assert(fnam);
+  FILE * f = nzlist_w_new(fnam, comment);
+  cw_vec_t *pvec;
+  
+  for(pvec = p->codewords; pvec != NULL; pvec = (cw_vec_t *)(pvec->hh.next)){
+    if((p->wmax==0) ||((p->wmax) && (pvec->weight <= p->wmax))){
+      count ++;
+      nzlist_w_append(f,pvec);
+    }
+  }
+  fclose(f);
+  return count;
 }

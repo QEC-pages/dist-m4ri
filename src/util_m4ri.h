@@ -125,30 +125,36 @@ extern "C" {
 #endif
 
   /** 
-   * number of set bits in a matrix.  
-   * TODO: use the built-in version for the entire matrix
+   * @brief Compute the number of set bits (Hamming weight) in a dense matrix A.
+   * @param A Pointer to the dense matrix.
+   * @return Hamming weight of the matrix.
    */
   size_t mzd_weight(const mzd_t *A);
+
+  /** 
+   * @brief Naive implementation to compute the Hamming weight of a dense matrix A.
+   * @param A Pointer to the dense matrix.
+   * @return Hamming weight of the matrix.
+   */
   size_t mzd_weight_naive(const mzd_t *A);
+
   /**
-   * number of set bits in the row i of a matrix 
+   * @brief Compute the Hamming weight of a specific row in a dense matrix.
+   * @param A Pointer to the dense matrix.
+   * @param i Index of the row.
+   * @return Hamming weight of row i.
    */  
   size_t mzd_weight_row(const mzd_t *A, rci_t i);
 
-  /**
-   * nextelement(set1,m,pos) = the position of the first element in set set1   
-   * which occupies a position greater or equal than pos.  If no such element exists,   
-   * the value is -1.  pos can have any value less than n, including negative  
-   * values.                                                                   
-   *  
-   * near verbatim copy from naututil.c (Nauty library by Brendan McKay)
-   */
-  //  int nextelement(word *set1, int m, int pos);
-
   /** 
-   * return first non-zero bit in raw set-word vector set1 
-   * of length m, starting with position pos.
-   * with all zero bits, return -1 or number outside the range
+   * @brief Find the position of the next non-zero bit in a raw word vector.
+   * 
+   * Searches the word array set1 of length m for the first set bit at or after pos.
+   *
+   * @param set1 Pointer to the array of words representing the bit vector.
+   * @param m Length of the set1 array in words.
+   * @param pos Bit position to start searching from.
+   * @return Position of the next set bit, or -1 if none found.
    */
   static inline int nextelement(const word * const set1, const int m, const int pos){
     word setwd;
@@ -159,6 +165,7 @@ extern "C" {
     }
     else{
 	w = SETWD(pos);
+	if (w >= m) return -1;
 	setwd = set1[w] & (m4ri_ffff<< SETBT(pos));
       }
 
@@ -173,77 +180,122 @@ extern "C" {
 
 
   /**
-   * Copy of mzd_gauss_delayed from mzd.c (m4ri package) except additionally 
-   * returns the list of pivot columns in second argument 
+   * @brief Perform Gaussian elimination (naive) and return pivot column list.
+   * 
+   * Performs row reduction on M. If full is 1, performs full row reduction (RREF),
+   * otherwise only upper triangular. Stores the pivot column indices in q.
+   *
+   * @param M Matrix to reduce (modified in place).
+   * @param q Permutation structure to store pivot columns.
+   * @param full Flag for full reduction (1) or triangular (0).
+   * @return Rank of the matrix.
    */
   rci_t mzd_gauss_naive(mzd_t *M, mzp_t *q, int full);
 
   /** 
-   * return max row weight of CSR matrix p
-   * TODO: add code for List of Pairs 
+   * @brief Get the maximum row weight of a CSR sparse matrix.
+   * @param p Pointer to the CSR sparse matrix.
+   * @return Maximum row weight.
    */
   int csr_max_row_wght(const csr_t * const p);
   
   /** 
-   * transpose compressed CSR matrix, 
-   * (re) allocate if needed 
-   * return resulting matrix
-   * TODO: add code for List of Pairs 
+   * @brief Transpose a compressed CSR sparse matrix.
+   * 
+   * Transposes matrix p and stores the result in dst. (Re)allocates dst if needed.
+   *
+   * @param dst Destination sparse matrix (can be NULL, in which case it is allocated).
+   * @param p Source sparse matrix.
+   * @return Pointer to the transposed sparse matrix (dst or newly allocated).
    */
   csr_t * csr_transpose(csr_t *dst, const csr_t * const p);
 
   
   /**
-   * Convert CSR sparse binary matrix to MZD
-   * allocate dst if needed (must be correct size or NULL)
+   * @brief Convert a CSR sparse matrix to an MZD dense matrix.
+   * 
+   * @param dst Destination dense matrix (can be NULL or must have correct dimensions).
+   * @param p Source sparse matrix.
+   * @return Pointer to the dense matrix.
    */
   mzd_t *mzd_from_csr(mzd_t *dst, const csr_t *p);
 
   /**
-   * Convert a sparse binary matrix CSR into a standard form [ I C ],
-   * with some col permutations if needed, create the dense generator
-   * [ CT I ], and permute the cols back.  
-   * (re)allocate G if needed.
+   * @brief Construct the generator matrix from a parity check matrix in CSR form.
+   * 
+   * Permutes columns of H to bring it to standard form [ I C ], computes
+   * the generator matrix G = [ C^T I ], and permutes columns of G back to align
+   * with the original H.
+   *
+   * @param G Destination dense matrix for generator (can be NULL).
+   * @param H Parity check matrix in CSR format.
+   * @return Pointer to the generator matrix G.
    */
   mzd_t *mzd_generator_from_csr(mzd_t *G, const csr_t * const H);
 
   /**
-   * sparse-S by dense B multiplication
-   * C=C+S*B; allocate C if needed.
+   * @brief Multiply a sparse matrix by a dense matrix.
+   * 
+   * Computes C = S * B (if clear is 1) or C = C + S * B (if clear is 0).
+   *
+   * @param C Destination dense matrix (can be NULL).
+   * @param S Source sparse matrix.
+   * @param B Source dense matrix.
+   * @param clear Flag to clear C before adding the product.
+   * @return Pointer to the resulting dense matrix C.
    */
   mzd_t * csr_mzd_mul(mzd_t *C, const csr_t *S, const mzd_t *B, int clear);
 
   /** 
-   * Calculate the syndrome vector change: syndrome=syndrome +row.spaQ
-   * optionally clear the destination 
+   * @brief Calculate syndrome vector change.
+   * 
+   * Computes syndrome = syndrome + row * spaQ (or sets it if clear is 1).
+   *
+   * @param syndrome Destination syndrome vector.
+   * @param row Error vector (dense, 1 row).
+   * @param spaQ Sparse check matrix.
+   * @param clear Flag to clear syndrome before accumulation.
+   * @return Pointer to the updated syndrome vector.
    */ 
   mzd_t * syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear);
 
 
   /**
-   * helper function to compute the weight of the product 
-   * A*B (transpose == 0) or A*B^T (transpose == 1)
-   * with A sparse, B dense binary matrices
+   * @brief Compute the weight of the product of a sparse matrix and a dense matrix.
+   * 
+   * Computes Hamming weight of A * B (if transpose is 0) or A * B^T (if transpose is 1).
+   *
+   * @param A Source sparse matrix.
+   * @param B Source dense matrix.
+   * @param transpose Flag to transpose B.
+   * @return Hamming weight of the product.
    */
   size_t product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose);
 
   /**
-   * return uniformly distributed random number in the range [0,...,max-1] 
-   * uses RAND internally 
-   * \todo Replace by a better generator 
+   * @brief Return a uniformly distributed random integer in the range [0, max-1].
+   * @param max Upper bound (exclusive).
+   * @return Random integer.
    */
   int rand_uniform(const int max);
 
   /**
-   * replace pivot q with a random pivot smaller or equal length 
-   * (second parameter); remaining positions in place, 
-   * *** note: LAPACK style pivot permutations! ***
-   * return pointer to q.
-   * input: perm -- existing permutation
+   * @brief Generate a random permutation of a given length in-place.
+   * 
+   * Modifies the permutation q by randomizing the first 'length' positions.
+   * Uses LAPACK style pivot permutations.
+   *
+   * @param q Permutation structure to modify.
+   * @param length Number of positions to permute.
+   * @return Pointer to the modified permutation q.
    */ 
   mzp_t * mzp_rand_len(mzp_t *q, rci_t length);
 
-  /* same as above but of equal length */
+  /**
+   * @brief Generate a random permutation of the full length of q in-place.
+   * @param q Permutation structure to modify.
+   * @return Pointer to the modified permutation q.
+   */
   static inline mzp_t * mzp_rand(mzp_t *q){
     if (q==NULL){
       printf("mzp_rand: permutation must be initialized!");
@@ -252,70 +304,114 @@ extern "C" {
     return mzp_rand_len(q,q->length);
   }
 
-
   /**
-   * print out the permutation (only needed under windows)
+   * @brief Print the permutation to stdout.
+   * @param p Pointer to the permutation structure.
    */
   void mzp_out(mzp_t const *p);
 
   /**
-   * apply pivot p to permutation q in place from start; 
-   * initialize q to identity permutation if NULL
-   * return q 
+   * @brief Apply pivot permutation p to permutation q in-place starting from index.
+   * 
+   * @param q Destination permutation (initialized to identity if NULL).
+   * @param p Source pivot permutation.
+   * @param start Index to start applying the permutation from.
+   * @return Pointer to the updated permutation q.
    */
   mzp_t *perm_p(mzp_t *q, const mzp_t *p,rci_t start);
 
   /**
-   * apply pivot p (transposed) to permutation q in place from start; 
-   * initialize q to identity permutation if NULL
-   * return q 
+   * @brief Apply transposed pivot permutation p to permutation q in-place.
+   * 
+   * @param q Destination permutation (initialized to identity if NULL).
+   * @param p Source pivot permutation.
+   * @param start Index to start applying the permutation from.
+   * @return Pointer to the updated permutation q.
    */
   mzp_t *perm_p_trans(mzp_t *q, const mzp_t *p,const rci_t start);
 
-
   /**
-   * kill a CSR matrix 
+   * @brief Free memory allocated for a CSR sparse matrix.
+   * @param p Pointer to the CSR sparse matrix to free.
+   * @return Always returns NULL.
    */
   csr_t *csr_free(csr_t *p);
 
   /**
-   * initialize a CSR matrix 
-   * check existing size and (re)allocate if  needded 
+   * @brief Initialize or reallocate a CSR sparse matrix to target size.
+   * 
+   * Checks dimensions and nzmax of mat, reallocating arrays if they are too small.
+   *
+   * @param mat Existing matrix structure (can be NULL, in which case it is allocated).
+   * @param rows Target number of rows.
+   * @param cols Target number of columns.
+   * @param nzmax Target capacity (number of non-zero entries).
+   * @return Pointer to the initialized/reallocated CSR matrix.
    */
   csr_t *csr_init(csr_t *mat, int rows, int cols, int nzmax);
 
   /**
-   *  compress a CSR matrix  
+   * @brief Compress CSR matrix (sort indices and remove duplicates/zeros).
+   * 
+   * Compresses the representation of the sparse matrix and sorts column indices
+   * within each row to ensure consistency (critical for binary search / merging).
+   *
+   * @param mat Pointer to the CSR matrix to compress in-place.
    */ 
   void csr_compress(csr_t *mat);
 
   /**
-   *  output a CSR matrix  
+   * @brief Construct a CSR sparse matrix from an array of coordinate pairs.
+   * 
+   * @param mat Destination CSR matrix (can be NULL).
+   * @param nz Number of coordinate pairs.
+   * @param prs Array of row-column index pairs.
+   * @param nrows Number of rows in the matrix.
+   * @param ncols Number of columns in the matrix.
+   * @return Pointer to the constructed CSR matrix.
+   */
+  csr_t * csr_from_pairs(csr_t *mat, const int nz, int_pair * const prs, const int nrows, const int ncols);
+
+  /**
+   * @brief Print raw contents of a CSR matrix to stdout.
+   * @param mat Pointer to the CSR matrix.
    */ 
   void csr_out(const csr_t *mat);
-  void csr_print(const csr_t * const smat, const char str[]);
+
   /**
-   * read sparse matrix into a (binary) CSR (all entries default to 1)
-   * (re)allocate mat if needed
-   * use transpose=1 to transpose.
+   * @brief Print a CSR matrix with a label string (formatted output).
+   * @param smat Pointer to the CSR matrix.
+   * @param str Label/name of the matrix.
+   */
+  void csr_print(const csr_t * const smat, const char str[]);
+
+  /**
+   * @brief Read a sparse matrix from a Matrix Market (.mtx) file into CSR format.
+   * 
+   * @param fin Path to the Matrix Market file.
+   * @param mat Destination CSR matrix (can be NULL).
+   * @param transpose Set to 1 to transpose the matrix while reading.
+   * @return Pointer to the loaded CSR matrix.
    */
   csr_t *csr_mm_read(char *fin, csr_t *mat, int transpose);
 
   /** 
-   * Permute columns of a CSR matrix with permutation perm.
+   * @brief Permute columns of a CSR sparse matrix.
+   * 
+   * @param dst Destination sparse matrix (can be NULL).
+   * @param src Source sparse matrix.
+   * @param perm Column permutation to apply.
+   * @return Pointer to the permuted sparse matrix.
    */
   csr_t *csr_apply_perm(csr_t *dst, const csr_t * const src, const mzp_t * const perm);
 
 
   /**
-   * \brief Flip the bit at position M[row,col].
-   *
-   * \param M Matrix
-   * \param row Row index
-   * \param col Column index
-   *
-   * \note No bounds checks whatsoever are performed.
-   *
+   * @brief Flip the bit at position M[row,col] in a dense matrix.
+   * @param M Dense matrix.
+   * @param row Row index.
+   * @param col Column index.
+   * @note No bounds checks are performed.
    */
 
 static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const col ) {
@@ -324,11 +420,11 @@ static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const co
 }
 
 /**
- * @brief one step of gauss on column `idx` of matrix `M`
- * @param M the matrix
- * @param idx index of the column of `M` to deal with
- * @param begrow row to start with
- * @return number of pivot points found, `0` or `1` only
+ * @brief Perform one step of Gaussian elimination on column idx of M.
+ * @param M Dense matrix.
+ * @param idx Column index to eliminate.
+ * @param begrow Starting row index.
+ * @return Number of pivots found (0 or 1).
  */
 static inline int gauss_one(mzd_t *M, const int idx, const int begrow){
   /** note: force-inlining actually slows it down (`???`) */
@@ -357,9 +453,14 @@ static inline int gauss_one(mzd_t *M, const int idx, const int begrow){
 }
 
 /**
- * @brief return 1 if syndrome is non-zero
+ * @brief Compute the syndrome of a sparse error vector against H and check if non-zero.
  * 
- * @param ee vector with `cnt` ordered set bit coordinates 
+ * Relies on sorted column indices in H (must be compressed).
+ *
+ * @param H Parity check matrix (CSR format).
+ * @param cnt Weight of the error vector.
+ * @param ee Array of sorted indices representing the error support.
+ * @return 1 if the syndrome is non-zero, 0 if it is zero.
  */
 
 static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt, const int ee[]){
@@ -380,32 +481,54 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
   return 0;
 }
 
-  /** @brief return 1 if matrix product A*B^T is non-zero 
-   * @param A first matrix
-   * @param B second matrix 
-   * */  
+  /** 
+   * @brief Check if the product of two sparse matrices A * B^T is non-zero.
+   * @param A First sparse matrix.
+   * @param B Second sparse matrix.
+   * @return 1 if the product is non-zero (matrices are not orthogonal), 0 otherwise.
+   */  
   int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B);
   
   /** 
-   * Check whether syndrome is zero or not 
+   * @brief Compute the Hamming weight of the syndrome of a dense row vector against spaQ.
+   * @param row Dense row vector (1 row).
+   * @param spaQ Sparse check matrix.
+   * @return Hamming weight of the syndrome.
    */ 
   int syndrome_bit_count(const mzd_t * const row, const csr_t * const spaQ);
 
   /** 
-   * Check if row is linearly dependent with the rows of matP0
-   * which is assumed to be in standard form.
-   * rankP0 is the number of non-zero rows in rankP0.
+   * @brief Reduce a row vector against a matrix in standard form.
+   * 
+   * Checks if row is linearly dependent on the rows of matP0 (using rankP0 rows).
+   * Modifies row in place.
+   *
+   * @param row Dense row vector to reduce (modified in place).
+   * @param matP0 Dense matrix in standard form.
+   * @param rankP0 Rank of matP0 (number of active rows).
+   * @return 1 if row was reduced to zero (linearly dependent), 0 otherwise.
    */
 
   int do_reduce(mzd_t *row, const mzd_t *matP0, const rci_t rankP0);
 
   /**
-   * generate binary error vector with error probability p 
+   * @brief Generate a random binary error vector with error probability p.
+   * @param row Dense row vector to store the error (modified in place).
+   * @param p Bit-flip probability.
    */
   void make_err(mzd_t *row, double p);
 
+  /**
+   * @brief (Internal) Run cluster distance algorithm on matrices.
+   */
   int do_dist_clus(const csr_t * const P, const mzd_t * const G, int debug, int wmax, int start, const int rankG);
 
+  /**
+   * @brief Construct the logical matrix Lx for a quantum CSS code given Hx and Hz.
+   * @param Hx Sparse X-check matrix.
+   * @param Hz Sparse Z-check matrix (passed as Hz).
+   * @return Pointer to the constructed sparse logical matrix Lx.
+   */
   csr_t * Lx_for_CSS_code(const csr_t * const Hx, const csr_t *const Hz);
   
 #if defined(__cplusplus) && !defined (_MSC_VER)

@@ -23,6 +23,10 @@ parity-check matrix, should be specified.
 For a quantum CSS code, matrix `H=Hx` and either `G=Hz` or `L=Lx`
 matrices are needed.
 
+Alternatively, a detector error model (DEM) file from `stim` can be specified
+using `fdem=[str]`. This file contains both detector and logical error
+associations, which are used to reconstruct `Hx` and `Lx` matrices.
+
 All matrices with entries in `GF(2)` should have the same number of
 columns, `n`, and obey the following orthogonality conditions:
 $$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$
@@ -77,6 +81,9 @@ Additional command-line parameters relevant for this method:
 - `start` the position to start the cluster.  In this case only one
   starting position `i=start` will be used.  This is useful, e.g., if
   the code is symmetric (as, e.g., for cyclic codes).
+
+- `noscan` if set to 1, start the recursion directly with `w=wmax`,
+  without scanning smaller weights.  Only works with `method=2`.
   
 ### Calculating confinement profile 
 
@@ -139,8 +146,11 @@ src/dist_m4ri: distance of a classical or quantum CSS code
 		   smax=[int]:  maximum syndrome weight of interest, inclusive (20)
 			 must be non-zero to calculate confinement profile
 		   start=[int]: use only this position to start (-1)
+		   noscan=[int]: start CC directly with wmax (0)
 
    General parameters:
+	fdem=[str]: detector error model (DEM) file from stim (NULL)
+	pmin=[float]: minimum error probability to keep for DEM (0.0)
 	finH=[str]: parity check matrix Hx (NULL)
 	finG=[str]: matrix Hz (quantum CSS code only) (NULL)
 	finL=[str]: matrix Lx (quantum CSS code only) (NULL)
@@ -183,3 +193,19 @@ sudo apt-get update -y
 sudo apt-get install -y libm4ri-dev
 ```
 
+## References
+
+If you use this program, please cite:
+
+*   A. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes," *IEEE Transactions on Information Theory*, vol. 63, no. 7, pp. 4675-4690, 2017. [doi:10.1109/TIT.2017.2690381](https://doi.org/10.1109/TIT.2017.2690381).
+
+Other related papers and software:
+
+*   **vecdec Repository** (implements the Random Information Set (RW) algorithm and can handle different error weights/probabilities):
+    [QEC-pages/vecdec](https://github.com/QEC-pages/vecdec).
+
+*   **QDistRnd GAP Package** (describing the Random Information Set algorithm for quantum codes over arbitrary finite fields):
+    L. P. Pryadko, V. A. Shabashov, and V. K. Kozin, "QDistRnd: A GAP package for computing the distance of quantum error-correcting codes," *Journal of Open Source Software*, vol. 7, no. 71, p. 4120, 2022. [doi:10.21105/joss.04120](https://doi.org/10.21105/joss.04120).
+
+*   **Performance Comparison** (comparing the performance of this program with other available distance-finding programs):
+    M. Webster, A. Jacob, and O. Higgott, "Distance-Finding Algorithms for Quantum Codes and Circuits," arXiv:2603.22532 [quant-ph], 2026. [arXiv:2603.22532](https://arxiv.org/abs/2603.22532).

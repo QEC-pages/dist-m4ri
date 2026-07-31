@@ -33,6 +33,13 @@ extern "C"{
     int syn[0]; /** array of `w_e+w_s` integers, the actual key  */
   } two_vec_t;
 
+  struct CW_VEC_T {
+    UT_hash_handle hh;
+    int weight;
+    int cnt;
+    int arr[0];
+  };
+
   typedef struct ONE_VEC_T{
     int wei; /** current weight */
     //    int max; /** allocated */
@@ -40,9 +47,21 @@ extern "C"{
   } one_vec_t;
 
 
-  /** @brief print entire `one_vec_t` structure by pointer */
+  /**
+   * @brief Print a one_vec_t structure (indices and weight) to stdout.
+   * @param pvec Pointer to the one_vec_t structure.
+   */
   void one_vec_print(const one_vec_t * const pvec);
   
+  /**
+   * @brief Initialize and allocate a two_vec_t structure.
+   * 
+   * Copies syndrome and error vectors into a single allocated two_vec_t structure.
+   *
+   * @param syn Pointer to the syndrome vector (one_vec_t).
+   * @param err Pointer to the error vector (one_vec_t).
+   * @return Pointer to the allocated and initialized two_vec_t structure.
+   */
   static inline two_vec_t * two_vec_init(const one_vec_t * const syn, const one_vec_t * const err){
     two_vec_t * ans = malloc(sizeof(two_vec_t)+sizeof(int)*(syn->wei + err->wei));
     if(!ans)
@@ -58,6 +77,10 @@ extern "C"{
     return ans;
   } 
   
+  /**
+   * @brief Print a two_vec_t structure (error and syndrome) to stdout.
+   * @param it Pointer to the two_vec_t structure.
+   */
   static inline void two_vec_print(const two_vec_t * const it){
     if(!it){
       printf("two_vec_print(): null structure!\n");
@@ -72,8 +95,16 @@ extern "C"{
     printf(" ]\n");
   }
 
-  /** @brief compare two `two_vec_t` structures by syndrome */
-static inline int by_syndrome(void *a, void *b){
+  /**
+   * @brief Compare two two_vec_t structures by their syndromes.
+   * 
+   * Used for sorting or hash operations. Compares weight first, then lexicographically.
+   *
+   * @param a Pointer to the first two_vec_t structure.
+   * @param b Pointer to the second two_vec_t structure.
+   * @return -1 if a < b, 1 if a > b, 0 if equal.
+   */
+  static inline int by_syndrome(void *a, void *b){
   const two_vec_t * const pa = (two_vec_t *) a;
   const two_vec_t * const pb = (two_vec_t *) b;
   if (pa->w_s < pb->w_s)
@@ -91,7 +122,15 @@ static inline int by_syndrome(void *a, void *b){
   return 0;
 }
 
-  /** @brief compare two `two_vec_t` structures by error vectors */
+  /**
+   * @brief Compare two two_vec_t structures by their error vectors.
+   * 
+   * Compares weight first, then lexicographically.
+   *
+   * @param a Pointer to the first two_vec_t structure.
+   * @param b Pointer to the second two_vec_t structure.
+   * @return -1 if a < b, 1 if a > b, 0 if equal.
+   */
   static inline int by_error(void *a, void *b){
     const two_vec_t * const pa = (two_vec_t *) a;
     const two_vec_t * const pb = (two_vec_t *) b;
@@ -110,16 +149,21 @@ static inline int by_syndrome(void *a, void *b){
     return 0;
   }
 
-  /** @brief search hash `errors` for `syn` and, if not found, insert `syn`,`err` 
-   * @param syn input syndrome, must be ordered
-   * @param err input error vector, must be ordered
-   * @param errors input/output hash
-   * @param p_swei[] array to store error weights 
-   * @return errors (updated hash)
+  /** 
+   * @brief Search hash table for a syndrome, and insert the (syndrome, error) pair if not found.
+   * 
+   * Also updates the minimum syndrome weight profile (p_swei) for the given error weight.
+   *
+   * @param syn Input syndrome vector (must be ordered).
+   * @param err Input error vector (must be ordered).
+   * @param errors Head of the hash table.
+   * @param p_swei Array storing the minimum syndrome weight for each error weight.
+   * @param debug Debug print level bitmap.
+   * @return Updated head of the hash table.
    */
   static inline two_vec_t * hash_add_maybe(one_vec_t * syn, const one_vec_t * const err,
 			     two_vec_t * errors, int p_swei[],
-					   __attribute__ ((unused)) const int debug){
+			     __attribute__ ((unused)) const int debug){
     two_vec_t *pvec, *entry;
     const size_t keylen = syn->wei * sizeof(int);
     if(p_swei[err->wei] > syn->wei){

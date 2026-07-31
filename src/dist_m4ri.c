@@ -34,9 +34,14 @@
  * @param classical set to `1` for classical code (do not use `L` matrix), `0` otherwise  
  * @return minimum `weight` of a CW found (or `-weigt` if early termination condition is reached). Or `0` if no codewords wit `w<wmax` have been found.
  */
-int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
-	       const int steps, const int wmin, const int wmax,
-	       const int classical, const int debug){
+int do_RW_dist(params_t * const p){
+  const csr_t * const spaH0 = p->spaH;
+  const csr_t * const spaL0 = p->spaL;
+  const int steps = p->steps;
+  const int wmin = p->wmin;
+  const int wmax = p->wmax;
+  const int classical = p->classical;
+  const int debug = p->debug;
   /** whether to verify logical ops as a vector or individually */
   const int nvar = spaH0->cols;
   if(((!classical)&&(spaL0==NULL)) ||
@@ -46,6 +51,9 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
   }
 
   int minW = wmax > 0 ? wmax : nvar+1;
+  if (p->min_w != INT_MAX && p->min_w < minW) {
+    minW = p->min_w;
+  }
 
   if(debug&2)
     printf("# running do_RW_dist() with steps=%d wmin=%d wmax=%d classical=%d nvar=%d\n",
@@ -117,11 +125,18 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
     for (int ir=0; ir< k; ir++){ /** each row in the dual matrix */
       int cnt=0; /** how many non-zero elements */
       const int col = ee[cnt++] = skip_pivs->values[ir];
+      int limit = nvar + 1;
+      if (p->wmax > 0) {
+        limit = p->wmax + 1;
+      }
+      if (p->min_w != INT_MAX && p->dW >= 0) {
+        limit = minint(limit, p->min_w + p->dW + 1);
+      }
 #if (NEW==0) /** older version going over columns of `H` */
       for(int ix=0; ix<rank; ix++){
         if(mzd_read_bit(mH,ix,col))
           ee[cnt++] = pivs->values[ix];
-	if (cnt >= minW) /** `cw` of no interest */
+	if (cnt >= limit) /** `cw` of no interest */
 	  break;
       }
 #elif (NEW==2) /** 
@@ -136,7 +151,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	if((res)&&(ic==col)){
 	  ee[cnt++] = pivs->values[ix++];
 	  //	  printf("cnt=%d j=%d\n",cnt,ix); 
-	  if (cnt >= minW) /** `cw` of no interest */
+	  if (cnt >= limit) /** `cw` of no interest */
 	    break;
 	}
 	else
@@ -145,14 +160,14 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 #else /** NEW==1, use transposed `H` -- the `fastest` version of the code*/
       word * rawrow = mzd_row(mHT,col);  
       rci_t j=-1;
-      while(cnt < minW){/** `cw` of no interest */
+      while(cnt < limit){/** `cw` of no interest */
 	j=nextelement(rawrow,mHT->width,j);
 	if(j==-1) // empty line after simplification
 	  break; 
 	ee[cnt++] = pivs->values[j++];
       }
 #endif /* NEW */              
-      if (cnt < minW){
+      if (cnt < limit){
 	/** sort the column indices */
 	qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
 #ifndef NDEBUG
@@ -160,7 +175,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	if(sparse_syndrome_non_zero(spaH0, cnt, ee)){
 	  printf("# cw of weight %d: [",cnt);
 	  for(int i=0; i<cnt;i++)
-	    printf("%d%s",1+ee[i],i+1==cnt?" ":"]\n");
+	    printf("%d%s",ee[i],i+1==cnt?" ":"]\n");
 	  ERROR("this should not happen: cw not orthogonal to H");
 	}
 #endif /* NDEBUG */
@@ -174,13 +189,19 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 	if(nz){ /** we got non-trivial codeword! */
 	  /** TODO: try local search to `lerr` (if 2 or larger) */
 	  /** at this point we have `cnt` codeword indices in `ee` */
+          p->codewords = codeword_add_maybe(p, ee, cnt);
 	  if(debug&16){
 	    printf("# step=%d row=%d minW=%d found cw of W=%d: [",ii,ir,minW,cnt);
 	    const int max = ((cnt<25) || (debug&2048)) ?  cnt : 25 ;
 	    for(int i=0; i< max; i++)
-	      printf("%d%s", 1+ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
+	      printf("%d%s", ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
 	  }
-	  minW=cnt;
+          if (cnt < minW) {
+            minW = cnt;
+          }
+          if (p->maxC && p->num_cws >= p->maxC) {
+            goto alldone;
+          }
 	  if (minW <= wmin){ /** early termination condition */
 	    minW = - minW;   /** this distance value is of little interest; */
 	    goto alldone; /** stop right away */
@@ -215,9 +236,7 @@ int do_RW_dist(const csr_t * const spaH0, const csr_t * const spaL0,
 
 #ifdef STANDALONE
 
-int do_CC_dist(const csr_t * const mH, const csr_t * mL,
-	       const int wmax, const int start, int p_swei[],
-	       const int smax, const int debug);
+int do_CC_dist(params_t * const p);
 
 
 int main(int argc, char **argv){
@@ -225,11 +244,15 @@ int main(int argc, char **argv){
 
   var_init(argc,argv,p);
 
+  if (p->finC) {
+    nzlist_read(p->finC, p);
+  }
+
   //  const int n=p->nvar;
 
   if (prm.method & 1){ /* RW method */
     
-    prm.dist_max=do_RW_dist(p->spaH,p->spaL,p->steps, p->wmin, p->wmax, p->classical, p->debug);
+    prm.dist_max=do_RW_dist(p);
 
     if (prm.debug&1){
       printf("### RW upper bound on the distance: %d\n",prm.dist_max);
@@ -253,7 +276,7 @@ int main(int argc, char **argv){
   }
   
   if (prm.method & 2){ /* cluster method */
-    int dmin=do_CC_dist(p->spaH,p->spaL,p->wmax,p->start,p->swei,p->smax, p->debug);
+    int dmin=do_CC_dist(p);
 
     if (dmin>0){ 
       if (prm.debug&1)
@@ -294,6 +317,19 @@ int main(int argc, char **argv){
       ERROR("unexpected dmin=0\n");
   }
  end_all:
+    if (p->outC) {
+      char comment[256];
+      sprintf(comment, "generated by dist_m4ri");
+      nzlist_write(p->outC, comment, p);
+    }
+    if (p->debug & 32) {
+      cw_vec_t *cw;
+      for(cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)){
+        printf("# cw: [ ");
+        for(int i=0; i<cw->weight; i++) printf("%d ", 1 + cw->arr[i]);
+        printf("] cnt=%d\n", cw->cnt);
+      }
+    }
     var_kill(p);
     
     return 0;

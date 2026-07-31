@@ -17,6 +17,9 @@ CPP = g++
 default: give_help
 all: dist_m4ri 
 
+test: dist_m4ri
+	./tests/test_run.sh
+
 dist_m4ri: dist_m4ri.c dist_m4ri.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
 	${CC} ${CFLAGS} -DSTANDALONE -o dist_m4ri $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm
 
