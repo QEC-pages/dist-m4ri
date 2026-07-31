@@ -177,7 +177,7 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\t\t2: connected cluster (CC) algorithm.  Options:\n"		\
   "\t\t   wmax=[int]:  maximum cluster weight to construct, inclusive (0)\n" \
   "\t\t\t must be non-zero for CC only, otherwise use upper bound from RW\n" \
-  "\t\t   smax=[int]:  maximum syndrome weight of interest, inclusive (20)\n" \
+  "\t\t   smax=[int]:  maximum syndrome weight of interest, inclusive (5)\n" \
   "\t\t\t must be non-zero to calculate confinement profile\n"          \
   "\t\t   start=[int]: use only this position to start (-1)\n"		\
   "\t\t   noscan=[int]: start CC directly with wmax (0)\n" \

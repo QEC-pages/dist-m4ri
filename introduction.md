@@ -119,12 +119,21 @@ $ ./dist_m4ri --help
 	usage: ./dist_m4ri parameter=value [...]
 
    Required parameter:
-	method=[int]: bitmap for method used (required, default 0: none): 
+	method=[int]: bitmap for method used (no default): 
+
 		1: random window (RW) algorithm. Options:
 		   steps=[int]: how many information sets to use (1)
 		   wmin=[int]:  minimum distance of interest (1)
+			 immediately stop and return '-w' on a cw of weight w<=wmin
+			 use this option to quickly scan over a large number of codes
+		   dmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)
+			 this option accelerates the search somewhat
+
 		2: connected cluster (CC) algorithm.  Options:
-		   wmax=[int]:  maximum cluster weight (5) 
+		   wmax=[int]:  maximum cluster weight to construct, inclusive (0)
+			 must be non-zero for CC only, otherwise use upper bound from RW
+		   smax=[int]:  maximum syndrome weight of interest, inclusive (5)
+			 must be non-zero to calculate confinement profile
 		   start=[int]: use only this position to start (-1)
 		   noscan=[int]: start CC directly with wmax (0)
 
@@ -157,6 +166,7 @@ $ ./dist_m4ri --help
 	  Multiple 'debug' parameters are XOR combined except for 0.
 	  Use debug=0 as the 1st argument to suppress all debug messages.
    -h gives this help (also '--help')
+
 ```
 
 ## Compilation
