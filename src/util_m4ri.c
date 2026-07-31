@@ -602,45 +602,133 @@ csr_t *csr_mm_read(char *fin, csr_t *mat, int transpose){
   if (mm_read_banner(f, &matcode) != 0)
     ERROR("Could not process Matrix Market banner.");
 
-  if (!(mm_is_matrix(matcode) && mm_is_sparse(matcode) && 
-	mm_is_integer(matcode) && mm_is_general(matcode) )){
-    printf("Sorry, this application does not support ");
-    printf("Market Market type: [%s]\n", mm_typecode_to_str(matcode));
-    ERROR("input file %s",fin);
-    exit(1);
+  if (!mm_is_matrix(matcode))
+    ERROR("Only Matrix Market 'matrix' object is supported.");
+
+  if (!mm_is_integer(matcode) && !mm_is_pattern(matcode)) {
+    ERROR("Only integer or pattern matrices are supported. Found: %s", mm_typecode_to_str(matcode));
   }
 
-  /* find out size of sparse matrix .... */
-  if ((ret_code = mm_read_mtx_crd_size(f, &M, &N, &nz)) !=0)
-    ERROR("Cannot read size in input file %s",fin);
+  if (!mm_is_general(matcode) && !mm_is_symmetric(matcode)) {
+    ERROR("Only general or symmetric matrices are supported. Found: %s", mm_typecode_to_str(matcode));
+  }
 
-  if(transpose) {int tmp=M;M=N;N=tmp;} /* swap M and N */
-  mat=csr_init(mat,M,N,nz); /* at this point mat will fit the data */  
-
-  if(transpose)
-    for (int i=0;i<nz;i++){
-      int ir,ic,iv; 
-      ret_code = fscanf(f, "%d %d %d\n", &ir , &ic, &iv); 
-      if((ret_code != 3)||(iv!=1))
-	ERROR("at i=%d: %d %d -> %d",i,ir,ic,iv);
-      mat->p[i]=ic-1; 
-      mat->i[i]=ir-1; 
+  /* find out size of matrix .... */
+  if (mm_is_coordinate(matcode)) {
+    if ((ret_code = mm_read_mtx_crd_size(f, &M, &N, &nz)) != 0)
+      ERROR("Cannot read coordinate size in input file %s", fin);
+  } else { // array (dense)
+    if ((ret_code = mm_read_mtx_array_size(f, &M, &N)) != 0)
+      ERROR("Cannot read array size in input file %s", fin);
+    if (mm_is_symmetric(matcode)) {
+      nz = M * M;
+    } else {
+      nz = M * N;
     }
-  else 
-    for (int i=0;i<nz;i++){
-      int ir,ic,iv; 
-      ret_code = fscanf(f, "%d %d %d\n", &ir , &ic, &iv); 
-      if((ret_code != 3)||(iv!=1))
-	ERROR("at i=%d: %d %d -> %d",i,ir,ic,iv);
-      mat->p[i]=ir-1; 
-      mat->i[i]=ic-1; 
-    }    
-  mat->nz=nz;  // csr_out(mat);
-  csr_compress(mat); /* sort entries by row */
-  // csr_out(mat);
+  }
+
+  int nzmax;
+  if (mm_is_coordinate(matcode)) {
+    if (mm_is_symmetric(matcode)) {
+      nzmax = 2 * nz;
+    } else {
+      nzmax = nz;
+    }
+  } else { // array
+    if (mm_is_symmetric(matcode)) {
+      nzmax = M * M;
+    } else {
+      nzmax = M * N;
+    }
+  }
+
+  int rows = M;
+  int cols = N;
+  if (transpose) {
+    rows = N;
+    cols = M;
+  }
+
+  mat = csr_init(mat, rows, cols, nzmax);
+  int k = 0;
+
+  if (mm_is_coordinate(matcode)) {
+    for (int i = 0; i < nz; i++) {
+      int r, c;
+      int v = 1; // default for pattern
+      if (mm_is_integer(matcode)) {
+        if (fscanf(f, "%d %d %d\n", &r, &c, &v) != 3) {
+          ERROR("Failed to read coordinate entry %d in %s", i, fin);
+        }
+      } else { // pattern
+        if (fscanf(f, "%d %d\n", &r, &c) != 2) {
+          ERROR("Failed to read pattern entry %d in %s", i, fin);
+        }
+      }
+      r--; c--; // 1-based to 0-based
+
+      if (v % 2 != 0) {
+        int r_store = transpose ? c : r;
+        int c_store = transpose ? r : c;
+        mat->p[k] = r_store;
+        mat->i[k] = c_store;
+        k++;
+
+        if (mm_is_symmetric(matcode) && r != c) {
+          mat->p[k] = c_store;
+          mat->i[k] = r_store;
+          k++;
+        }
+      }
+    }
+  } else { // array (dense)
+    if (mm_is_general(matcode)) {
+      for (int c = 0; c < N; c++) {
+        for (int r = 0; r < M; r++) {
+          int v;
+          if (fscanf(f, "%d\n", &v) != 1) {
+            ERROR("Failed to read dense general entry at r=%d, c=%d in %s", r, c, fin);
+          }
+          if (v % 2 != 0) {
+            int r_store = transpose ? c : r;
+            int c_store = transpose ? r : c;
+            mat->p[k] = r_store;
+            mat->i[k] = c_store;
+            k++;
+          }
+        }
+      }
+    } else if (mm_is_symmetric(matcode)) {
+      for (int c = 0; c < N; c++) {
+        for (int r = c; r < M; r++) {
+          int v;
+          if (fscanf(f, "%d\n", &v) != 1) {
+            ERROR("Failed to read dense symmetric entry at r=%d, c=%d in %s", r, c, fin);
+          }
+          if (v % 2 != 0) {
+            int r_store = transpose ? c : r;
+            int c_store = transpose ? r : c;
+            mat->p[k] = r_store;
+            mat->i[k] = c_store;
+            k++;
+
+            if (r != c) {
+              mat->p[k] = c_store;
+              mat->i[k] = r_store;
+              k++;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  mat->nz = k;
+  csr_compress(mat); /* sort entries by row and remove duplicates */
   fclose(f);
   return mat;
 }
+
 
 /** 
  * Permute columns of a CSR matrix with permutation perm.

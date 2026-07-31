@@ -84,11 +84,80 @@ static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
 // #define MININT(a,b) do{ int t1=(a); int t2=(b); t1<t2? t1 :t2; } while(0)
 
 extern params_t prm;
+/**
+ * @brief Initialize parameters and load matrices from command line arguments.
+ * 
+ * Parses command line arguments, sets up the parameter structure,
+ * loads matrices from specified files (Matrix Market or DEM), 
+ * constructs logical matrices if needed, and performs consistency checks.
+ *
+ * @param argc Number of command line arguments.
+ * @param argv Array of command line argument strings.
+ * @param p Pointer to the params_t structure to initialize.
+ */
 void var_init(int argc, char **argv, params_t * const p);
+
+/**
+ * @brief Clean up and free memory allocated in the params_t structure.
+ * 
+ * Frees sparse matrices (spaH, spaG, spaL) and codeword lists.
+ *
+ * @param p Pointer to the params_t structure to clean up.
+ */
 void var_kill(params_t * const p);
+
+/**
+ * @brief Read a Detector Error Model (DEM) file and construct H and L matrices.
+ * 
+ * Parses a DEM file (e.g. from Stim), filters error events based on pmin,
+ * and builds the corresponding sparse check matrix H and logical matrix L.
+ *
+ * @param fnam Path to the DEM file.
+ * @param p_spaH Pointer to store the constructed sparse check matrix H.
+ * @param p_spaL Pointer to store the constructed sparse logical matrix L.
+ * @param pmin Minimum error probability threshold to keep an error event.
+ * @param debug Debug print level bitmap.
+ */
 void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug);
+
+/**
+ * @brief Read codewords from a .nz list file and add them to the codeword hash.
+ * 
+ * Reads the file, verifies that each codeword satisfies the code requirements
+ * (orthogonal to H, not orthogonal to L for quantum codes), and adds valid ones
+ * to the hash table in params_t.
+ *
+ * @param fnam Path to the .nz file.
+ * @param p Pointer to the params_t structure containing the code matrices and hash.
+ * @return Number of valid codewords successfully read and added, or -1 on error.
+ */
 long long int nzlist_read(const char fnam[], params_t *p);
+
+/**
+ * @brief Write the found codewords from the hash table to a .nz file.
+ * 
+ * Exports all codewords currently stored in the hash table to a file in NZLIST format.
+ *
+ * @param fnam Path to the output .nz file.
+ * @param comment An optional comment string to include in the file header.
+ * @param p Pointer to the params_t structure containing the codeword hash.
+ * @return Number of codewords written, or -1 on error.
+ */
 long long int nzlist_write(const char fnam[], const char comment[], params_t *p);
+
+/**
+ * @brief Add a candidate codeword to the hash table if it meets weight limits.
+ * 
+ * Compares the candidate codeword weight with the current minimum weight and dW limit.
+ * If it is within the limits, it is added to the hash. If a new strictly smaller minimum
+ * weight is found, it updates the global minimum weight and prunes heavier codewords
+ * from the hash.
+ *
+ * @param p Pointer to the params_t structure.
+ * @param arr Array of indices representing the support of the codeword.
+ * @param weight Weight of the codeword (length of arr).
+ * @return Pointer to the added/existing codeword structure, or NULL if not added.
+ */
 cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
 
 #define USAGE								\

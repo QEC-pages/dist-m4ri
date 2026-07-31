@@ -172,6 +172,26 @@ assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR
 # Test 18: Discarding L with fdem and classical=1
 assert_output "$BIN debug=1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 classical=1" 0 "discarding L matrix" ""
 
+# Test 19: Coordinate general integer matrix format
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_crd_gen_int.mmx wmax=2 debug=0" 0 "^2$" ""
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_crd_gen_int.mmx wmax=1 debug=0" 0 "^-1$" ""
+
+# Test 20: Coordinate symmetric integer matrix format (doubling off-diagonal)
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_crd_sym_int.mmx wmax=2 debug=0" 0 "^2$" ""
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_crd_sym_int.mmx wmax=1 debug=0" 0 "^-1$" ""
+
+# Test 21: Coordinate general pattern matrix format (no values)
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_crd_gen_pat.mmx wmax=2 debug=0" 0 "^2$" ""
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_crd_gen_pat.mmx wmax=1 debug=0" 0 "^-1$" ""
+
+# Test 22: Array general integer matrix format (dense general)
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_arr_gen_int.mmx wmax=2 debug=0" 0 "^2$" ""
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_arr_gen_int.mmx wmax=1 debug=0" 0 "^-1$" ""
+
+# Test 23: Array symmetric integer matrix format (dense symmetric, doubling off-diagonal)
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_arr_sym_int.mmx wmax=2 debug=0" 0 "^2$" ""
+assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_arr_sym_int.mmx wmax=1 debug=0" 0 "^-1$" ""
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

@@ -19,14 +19,65 @@ typedef char MM_typecode[4];
 extern "C" {
 #endif
 
+/**
+ * @brief Convert a Matrix Market typecode to a human-readable string.
+ * @param matcode The Matrix Market typecode.
+ * @return Dynamically allocated string describing the typecode.
+ */
 char *mm_typecode_to_str(MM_typecode matcode);
 
+/**
+ * @brief Read the Matrix Market banner from a file.
+ * @param f File pointer.
+ * @param matcode Pointer to store the read typecode.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_read_banner(FILE *f, MM_typecode *matcode);
+
+/**
+ * @brief Read dimensions and number of non-zero entries for a coordinate matrix.
+ * @param f File pointer.
+ * @param M Pointer to store the number of rows.
+ * @param N Pointer to store the number of columns.
+ * @param nz Pointer to store the number of non-zero entries.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_read_mtx_crd_size(FILE *f, int *M, int *N, int *nz);
+
+/**
+ * @brief Read dimensions for an array (dense) matrix.
+ * @param f File pointer.
+ * @param M Pointer to store the number of rows.
+ * @param N Pointer to store the number of columns.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_read_mtx_array_size(FILE *f, int *M, int *N);
 
+/**
+ * @brief Write the Matrix Market banner to a file.
+ * @param f File pointer.
+ * @param matcode The typecode to write.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_write_banner(FILE *f, MM_typecode matcode);
+
+/**
+ * @brief Write dimensions and number of non-zero entries for a coordinate matrix.
+ * @param f File pointer.
+ * @param M Number of rows.
+ * @param N Number of columns.
+ * @param nz Number of non-zero entries.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_write_mtx_crd_size(FILE *f, int M, int N, int nz);
+
+/**
+ * @brief Write dimensions for an array (dense) matrix.
+ * @param f File pointer.
+ * @param M Number of rows.
+ * @param N Number of columns.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_write_mtx_array_size(FILE *f, int M, int N);
 
 
@@ -130,13 +181,60 @@ extern "C" {
 #endif
 
 
+/**
+ * @brief Write a coordinate matrix to a file.
+ * @param fname File name.
+ * @param M Number of rows.
+ * @param N Number of columns.
+ * @param nz Number of non-zero entries.
+ * @param I Array of row indices.
+ * @param J Array of column indices.
+ * @param val Array of values (can be NULL for pattern matrices).
+ * @param matcode Matrix Market typecode.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_write_mtx_crd(char fname[], int M, int N, int nz, int I[], int J[],
 		 double val[], MM_typecode matcode);
+
+/**
+ * @brief Read coordinate matrix data from a file into arrays.
+ * @param f File pointer.
+ * @param M Number of rows.
+ * @param N Number of columns.
+ * @param nz Number of non-zero entries.
+ * @param I Array to store row indices.
+ * @param J Array to store column indices.
+ * @param val Array to store values.
+ * @param matcode Matrix Market typecode.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_read_mtx_crd_data(FILE *f, int M, int N, int nz, int I[], int J[],
 		double val[], MM_typecode matcode);
+
+/**
+ * @brief Read a single coordinate entry from a file.
+ * @param f File pointer.
+ * @param I Pointer to store row index.
+ * @param J Pointer to store column index.
+ * @param real Pointer to store real part of the value.
+ * @param img Pointer to store imaginary part of the value.
+ * @param matcode Matrix Market typecode.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_read_mtx_crd_entry(FILE *f, int *I, int *J, double *real, double *img,
 			MM_typecode matcode);
 
+/**
+ * @brief High-level routine to read an unsymmetric sparse matrix in coordinate format.
+ * @param fname File name.
+ * @param M_ Pointer to store number of rows.
+ * @param N_ Pointer to store number of columns.
+ * @param nz_ Pointer to store number of non-zero entries.
+ * @param val_ Pointer to store allocated array of values.
+ * @param I_ Pointer to store allocated array of row indices.
+ * @param J_ Pointer to store allocated array of column indices.
+ * @return 0 on success, or an error code on failure.
+ */
 int mm_read_unsymmetric_sparse(const char *fname, int *M_, int *N_, int *nz_,
                 double **val_, int **I_, int **J_);
 
