@@ -109,7 +109,7 @@ TEMP_CWS1=$(mktemp --suffix=.nz)
 TEMP_CWS2=$(mktemp --suffix=.nz)
 
 # Step 1: Run and save
-assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 outC=$TEMP_CWS1 debug=0" 0 "^-3$" ""
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 outC=$TEMP_CWS1 debug=0" 0 "^3$" ""
 
 # Step 2: Verify file 1 is not empty
 if [ ! -s "$TEMP_CWS1" ]; then

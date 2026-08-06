@@ -264,7 +264,10 @@ int main(int argc, char **argv){
     prm.dist_max=do_RW_dist(p);
 
     if (prm.debug&1){
-      printf("### RW upper bound on the distance: %d\n",prm.dist_max);
+      if (prm.dist_max != 0)
+        printf("### RW upper bound on the distance: %d\n",prm.dist_max);
+      else
+        printf("### RW: no upper bound found up to wmax = %d\n", prm.wmax);
       if(prm.dist_max <0)
         printf("### negative distance due to wmin=%d set (early termination)\n",prm.wmin);
       else if (prm.dist_max ==0)
@@ -282,8 +285,12 @@ int main(int argc, char **argv){
       goto end_all;
     }
     if (prm.method==1){ /** just RW */
-      if(prm.debug)
-        printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
+      if(prm.debug) {
+        if (prm.dist_max > 0)
+          printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
+        else
+          printf("RW algorithm: no upper bound found up to wmax = %d\n", prm.wmax);
+      }
       printf("%d\n",prm.dist_max);
     }
     else{
