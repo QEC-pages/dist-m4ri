@@ -80,5 +80,5 @@ var searchData=
   ['how_20it_20works_3a_20cc_20algorithm_20tt_20method_202_20tt_77',['How it works: CC algorithm (&lt;tt&gt;method=2&lt;/tt&gt;).',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md15',1,'']]],
   ['how_20it_20works_3a_20rw_20algorithm_20method_201_78',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
   ['how_20it_20works_3a_20rw_20algorithm_20tt_20method_201_20tt_79',['How it works: RW algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md14',1,'']]],
-  ['how_20to_20run_20it_80',['how to run it',['../index.html#autotoc_md6',1,'How to run it'],['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md17',1,'How to run it']]]
+  ['how_20to_20run_20it_80',['how to run it',['../index.html#autotoc_md6',1,'How to run it'],['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md18',1,'How to run it']]]
 ];

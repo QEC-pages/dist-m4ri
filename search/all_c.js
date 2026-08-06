@@ -8,7 +8,7 @@ var searchData=
   ['int_5fpair_5',['int_pair',['../structint__pair.html',1,'']]],
   ['introduction_2emd_6',['introduction.md',['../introduction_8md.html',1,'']]],
   ['issue_20reporting_20and_20code_20contributions_7',['Issue reporting and code contributions',['../md_CONTRIBUTING.html#autotoc_md1',1,'']]],
-  ['it_8',['it',['../index.html#autotoc_md6',1,'How to run it'],['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md17',1,'How to run it']]],
+  ['it_8',['it',['../index.html#autotoc_md6',1,'How to run it'],['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md18',1,'How to run it']]],
   ['it_20works_3a_20cc_20algorithm_20method_202_9',['How it works: CC algorithm (method=2).',['../index.html#autotoc_md5',1,'']]],
   ['it_20works_3a_20cc_20algorithm_20tt_20method_202_20tt_10',['How it works: CC algorithm (&lt;tt&gt;method=2&lt;/tt&gt;).',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md15',1,'']]],
   ['it_20works_3a_20rw_20algorithm_20method_201_11',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
