@@ -58,6 +58,8 @@ typedef struct{
   //! int max_row_wt;  /* WARNING: this is defined in `util_io.h` as `static const int` */
   int swei[MAX_W]; /** minimum syndrome weight for each error weight */
   int start;
+  int cbeg;
+  int cend;
   //  int linear; /* not supported */
   int n0;  /* code length, =nvar for css, (nvar/2) for non-css */
   int nvar; /* actual n = matrix size */
@@ -171,15 +173,15 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\t\t   wmin=[int]:  minimum distance of interest (1)\n"		\
   "\t\t\t immediately stop and return '-w' on a cw of weight w<=wmin\n" \
   "\t\t\t use this option to quickly scan over a large number of codes\n" \
-  "\t\t   dmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)\n" \
-  "\t\t\t this option accelerates the search somewhat\n" \
   "\n"									\
   "\t\t2: connected cluster (CC) algorithm.  Options:\n"		\
   "\t\t   wmax=[int]:  maximum cluster weight to construct, inclusive (0)\n" \
   "\t\t\t must be non-zero for CC only, otherwise use upper bound from RW\n" \
   "\t\t   smax=[int]:  maximum syndrome weight of interest, inclusive (5)\n" \
   "\t\t\t must be non-zero to calculate confinement profile\n"          \
-  "\t\t   start=[int]: use only this position to start (-1)\n"		\
+  "\t\t   start=[int]: use only this position to start (equiv. to cbeg=cend=start) (-1)\n" \
+  "\t\t   cbeg=[int]:  start column to begin CC search (-1)\n"		\
+  "\t\t   cend=[int]:  end column to limit CC search (-1)\n"		\
   "\t\t   noscan=[int]: start CC directly with wmax (0)\n" \
   "\n"									\
   "   General parameters:\n"						\

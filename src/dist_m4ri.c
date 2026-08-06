@@ -230,7 +230,16 @@ int do_RW_dist(params_t * const p){
     mzd_free(mHT);
   mzd_free(mH);
   
-  return ((wmax>0) && (minW==wmax)) ? 0 :minW ;
+  if (minW < 0) {
+    return minW;
+  }
+  if (p->min_w == INT_MAX) {
+    return 0;
+  }
+  if (wmax > 0 && p->min_w > wmax) {
+    return 0;
+  }
+  return p->min_w;
 }
 
 
@@ -259,19 +268,43 @@ int main(int argc, char **argv){
       if(prm.dist_max <0)
         printf("### negative distance due to wmin=%d set (early termination)\n",prm.wmin);
       else if (prm.dist_max ==0)
-        printf("### no vectors below wmax=%d found\n",prm.wmax);
+        printf("### no codewords of weight <= %d found\n",prm.wmax);
+    }
+    if (prm.dist_max < 0) {
+      if(prm.debug) {
+        if (prm.method == 1) 
+          printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
+        else
+          printf("RW algorithm upper bound for the distance d=%d (early termination due to wmin=%d)\n", prm.dist_max, prm.wmin);
+      }
+      printf("%d\n",prm.dist_max);
+      prm.dist_min = prm.dist_max;
+      goto end_all;
     }
     if (prm.method==1){ /** just RW */
       if(prm.debug)
         printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
-      else
-        printf("%d\n",prm.dist_max);
+      printf("%d\n",prm.dist_max);
     }
     else{
-      if (prm.wmax==0)
+      if (prm.wmax==0) {
+        if (prm.dist_max == 0) {
+          ERROR("RW found no codewords, cannot run CC with wmax=0. Please specify wmax > 0.\n");
+        }
         prm.wmax=abs(prm.dist_max)-1;
-      else if (prm.dist_max != 0)
+      }
+      else if (prm.dist_max != 0) {
         prm.wmax=minint(prm.wmax, abs(prm.dist_max)-1);   
+      }
+      if (prm.wmax == 0) {
+        prm.dist_min = 1;
+        prm.dist_max = 1;
+        if (prm.debug & 1) {
+          printf("success (distance is 1) d=1\n");
+        }
+        printf("1\n");
+        goto end_all;
+      }
     }
   }
   
@@ -281,8 +314,7 @@ int main(int argc, char **argv){
     if (dmin>0){ 
       if (prm.debug&1)
 	printf("### Cluster (actual min-weight codeword found): d=%d\n",dmin);
-      else
-	printf("%d\n",dmin);
+      printf("%d\n",dmin);
       prm.dist_min = dmin; /* actual distance found */
       prm.dist_max = dmin;
       goto end_all;
@@ -290,13 +322,11 @@ int main(int argc, char **argv){
     else if (dmin<0){
       if (prm.debug&1)
 	printf("### Cluster dmin=%d  (no codewords of weight up to %d)\n",dmin,-dmin);
-      //      else        printf("%d\n",dmin);
       if (-dmin==abs(prm.dist_max)-1){
 	prm.dist_min=abs(prm.dist_max); /* OK */
         if (prm.debug&1)
           printf("success (two distance bounds coincide) d=%d\n",prm.dist_min);
-        else
-          printf("%d\n",prm.dist_min);       
+        printf("%d\n",prm.dist_min);       
         goto end_all;
       }
       else{
@@ -307,10 +337,7 @@ int main(int argc, char **argv){
           else
             printf("# cluster algorithm failed to find a codeword up to wmax=%d\n",-dmin);
         }
-        else
-          printf("%d\n",dmin);
-
-
+        printf("%d\n",dmin);
       }
     }
     else

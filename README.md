@@ -64,6 +64,8 @@ Additional command-line parameters relevant for this method:
 - `steps` the number of RW decoding steps (the number of information
   sets to be constructed).
 
+Note: The parameter `smax` is ignored in this method (confinement profile is only calculated in `method=2`).
+
 ## How it works: CC algorithm (`method=2`).
 
 The program tries to construct a codeword recursively, by starting
@@ -82,8 +84,18 @@ Additional command-line parameters relevant for this method:
   starting position `i=start` will be used.  This is useful, e.g., if
   the code is symmetric (as, e.g., for cyclic codes).
 
+- `cbeg` and `cend` to set a range of initial positions for CC.
+  Only works with `method=2` (or `method=3`).
+  This is useful to run the program in parallel on several cores by partitioning the search space.
+  `start=6` is equivalent to `cbeg=6 cend=6`.
+
+
 - `noscan` if set to 1, start the recursion directly with `w=wmax`,
   without scanning smaller weights.  Only works with `method=2`.
+
+  When `noscan` is 0 (default), the algorithm scans weights `w` from 1 to `wmax`.
+  After completing the search for each weight `w` without finding any codeword,
+  it prints `-w` to `stdout` (with flush) to indicate progress.
   
 ### Calculating confinement profile 
 
@@ -120,6 +132,31 @@ $ ./dist_m4ri method=2 finH= ../examples/QX150.mtx finG= ../examples/QZ150.mtx w
 ```
 
 
+## Return Values
+
+The program outputs the results to `stdout`. The last line of the output (regardless of the `debug` setting) is always the returned integer value:
+- **Positive value `d`**: A codeword of weight `d` was found. This represents the actual distance (for `method=2` if run to completion) or an upper bound (for `method=1`).
+- **Negative value `-wmax`** (or `-w` if early terminated):
+    - For `method=2` (or `method=3` if no codewords found): No codewords of weight up to `wmax` (inclusive) were found. The distance is at least `wmax + 1`.
+    - For `method=1` (or `method=3` early exit): A codeword of weight `w` was found, but it was `<= wmin`, so the program terminated early.
+- **Zero `0`** (for `method=1` only): No codewords of weight up to `wmax` (inclusive) were found (when `wmax > 0`), or no codewords were found at all (when `wmax=0`).
+
+If **`method=3`** (both methods) is specified, the program runs RW first to find an upper bound `d_RW`.
+- If RW finds a codeword of weight `w <= wmin`, it triggers early termination, and the program exits **immediately** returning `-w`. CC is **not** run.
+- Otherwise, it sets `wmax` for the CC run to `d_RW - 1` (or `min(wmax, d_RW - 1)`) to search for smaller codewords.
+- If CC finds nothing, the lower and upper bounds coincide, and the program reports `d_RW` as the exact distance. If debug is enabled, the second to last line will be `success (two distance bounds coincide) d=d_RW` and the last line will be `d_RW`.
+
+The parameters behave as follows when `method=3`:
+- `wmin` is used in the RW phase to stop early. If triggered, the program exits immediately.
+- `wmax` is used as the initial limit for both phases (unless RW finds a smaller codeword, which lowers the limit for CC).
+- `dmax` is not implemented and will cause an error if set.
+- `steps` is used in the RW phase.
+
+If parameters that are only relevant for RW (`wmin`, `steps`) are set when using `method=2` (CC only), a warning will be printed.
+
+If `wmin > wmax` (when `wmax > 0`), the program will exit with an error.
+
+
 ## How to run it
 
 For help, just run `./dist_m4ri -h` or `./dist_m4ri --help`.  This
@@ -137,15 +174,14 @@ src/dist_m4ri: distance of a classical or quantum CSS code
 		   wmin=[int]:  minimum distance of interest (1)
 			 immediately stop and return '-w' on a cw of weight w<=wmin
 			 use this option to quickly scan over a large number of codes
-		   dmax=[int]:  if non-zero, ignore vectors of this and larger wgt (0)
-			 this option accelerates the search somewhat
-
 		2: connected cluster (CC) algorithm.  Options:
 		   wmax=[int]:  maximum cluster weight to construct, inclusive (0)
 			 must be non-zero for CC only, otherwise use upper bound from RW
-		   smax=[int]:  maximum syndrome weight of interest, inclusive (20)
+		   smax=[int]:  maximum syndrome weight of interest, inclusive (5)
 			 must be non-zero to calculate confinement profile
-		   start=[int]: use only this position to start (-1)
+		   start=[int]: use only this position to start (equiv. to cbeg=cend=start) (-1)
+		   cbeg=[int]:  start column to begin CC search (-1)
+		   cend=[int]:  end column to limit CC search (-1)
 		   noscan=[int]: start CC directly with wmax (0)
 
    General parameters:
