@@ -293,14 +293,11 @@ int do_CC_dist(params_t * const p){
   const csr_t * const mL = p->spaL;
   const int wmax = p->wmax;
   const int noscan = p->noscan;
-  const int start = p->start;
   int *p_swei = p->swei;
   const int smax = p->smax;
   const int debug = p->debug;
 
-  const int nchk = mH->rows, nvar = mH->cols;
-  if((start<-1) || (start>=nvar))
-    ERROR("invalid start=%d for H[%d,%d]\n",start, nchk, nvar);
+  const int nvar = mH->cols;
 
   csr_t * const mHT = csr_transpose(NULL,mH);
   if(debug&32){
@@ -330,9 +327,8 @@ int do_CC_dist(params_t * const p){
     if (w > w_limit_dynamic) {
       break;
     }
-    int beg = 0, end = nvar - w ;
-    if (start >= 0)
-      beg = end = start;
+    int beg = (p->cbeg >= 0) ? p->cbeg : 0;
+    int end = (p->cend >= 0) ? minint(p->cend, nvar - w) : nvar - w;
     if(debug&2)
       printf("# recursively searching for w=%d codewords wmax=%d beg=%d end=%d\n",w,wmax,beg,end);
     for(int i = beg; i <= end; i++){ /* start column position */
@@ -370,6 +366,11 @@ int do_CC_dist(params_t * const p){
     }
     if(result == 1)
       break;
+
+    if (p->min_w > w && w < w_limit_dynamic) {
+      printf("-%d\n", w);
+      fflush(stdout);
+    }
   }
   
   if(result==1){
@@ -385,8 +386,13 @@ int do_CC_dist(params_t * const p){
 	printf("%d%s",err->vec[i], i+1!=max?" ": (result==max ? "]\n" : "...]\n"));
     }
   }
-  else
-    result = -wmax; /** not found a codeword up to wmax */
+  else {
+    if (p->min_w <= wmax) {
+      result = p->min_w;
+    } else {
+      result = -wmax; /** not found a codeword up to wmax */
+    }
+  }
 
   if(smax){
     int skipped = 0;

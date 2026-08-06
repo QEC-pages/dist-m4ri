@@ -18,6 +18,8 @@ params_t prm={
   .fdem=NULL,
   .pmin=0.0,
   .start=-1, 
+  .cbeg=-1,
+  .cend=-1,
   .seed=0,
   .dist=0,
   .dist_max=0,
@@ -148,6 +150,16 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	printf("# read %s, start=%d\n",argv[i],p->start);
     }
+    else if (sscanf(argv[i],"cbeg=%d",&dbg)==1){
+      p->cbeg=dbg;
+      if (p->debug&4)
+	printf("# read %s, cbeg=%d\n",argv[i],p->cbeg);
+    }
+    else if (sscanf(argv[i],"cend=%d",&dbg)==1){
+      p->cend=dbg;
+      if (p->debug&4)
+	printf("# read %s, cend=%d\n",argv[i],p->cend);
+    }
     else if (sscanf(argv[i],"wmin=%d",&dbg)==1){
       p->wmin=dbg;
       if (p->debug&4)
@@ -233,6 +245,39 @@ void var_init(int argc, char **argv, params_t * const p){
   }
   if (p->pmin != 0.0 && !p->fdem) {
     ERROR("pmin can only be used when fdem is specified");
+  }
+
+  if (p->dmax != 0) {
+    ERROR("parameter dmax=%d is not implemented. Please use wmax instead.\n", p->dmax);
+  }
+
+  if (p->wmax > 0 && p->wmin > p->wmax) {
+    ERROR("parameter wmin=%d cannot be larger than wmax=%d\n", p->wmin, p->wmax);
+  }
+  if (p->start >= 0) {
+    if (p->cbeg >= 0 || p->cend >= 0) {
+      ERROR("Cannot specify start along with cbeg or cend\n");
+    }
+    p->cbeg = p->start;
+    p->cend = p->start;
+  }
+
+  if (p->method == 1) {
+    if (p->cbeg >= 0 || p->cend >= 0) {
+      ERROR("Parameters start, cbeg, and cend only work with CC method (method=2 or method=3)\n");
+    }
+  }
+
+  if (p->cbeg >= 0 && p->cend >= 0 && p->cbeg > p->cend) {
+    ERROR("cbeg=%d cannot be larger than cend=%d\n", p->cbeg, p->cend);
+  }
+  if (p->method == 2) {
+    if (p->wmin != 1) {
+      printf("# WARNING: wmin=%d is ignored for CC method\n", p->wmin);
+    }
+    if (p->steps != 1) {
+      printf("# WARNING: steps=%d is ignored for CC method\n", p->steps);
+    }
   }
 
   if(p->method &1 ){ /* RW */
@@ -340,6 +385,13 @@ void var_init(int argc, char **argv, params_t * const p){
   p->n0 = n;
   if (p->css!=1)
     ERROR("Non-CSS codes are currently not supported, css=%d",p->css);
+
+  if (p->cbeg >= p->nvar) {
+    ERROR("cbeg=%d cannot be larger than nvar-1=%d\n", p->cbeg, p->nvar-1);
+  }
+  if (p->cend >= p->nvar) {
+    ERROR("cend=%d cannot be larger than nvar-1=%d\n", p->cend, p->nvar-1);
+  }
   
   if((p->spaG) && (p->spaL==NULL)){
     /** create `Lx` */
@@ -799,10 +851,8 @@ long long int nzlist_write(const char fnam[], const char comment[], params_t *p)
   cw_vec_t *pvec;
   
   for(pvec = p->codewords; pvec != NULL; pvec = (cw_vec_t *)(pvec->hh.next)){
-    if((p->wmax==0) ||((p->wmax) && (pvec->weight <= p->wmax))){
-      count ++;
-      nzlist_w_append(f,pvec);
-    }
+    count ++;
+    nzlist_w_append(f,pvec);
   }
   fclose(f);
   return count;
