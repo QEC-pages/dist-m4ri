@@ -1,545 +1,783 @@
-/*
- * distfork.c - Multithreaded distance estimator with adaptive CC/RW bracketing
- * Extends dist_m4ri with dynamic thread allocation and min-weight codeword tracking.
+/** ********************************************************************** 
+ * @file distfork.c
+ * @brief Multithreaded distance calculation and bracketing (distfork)
+ * 
+ * The program implements multithreaded distance calculation:
+ * - method=1: Multithreaded Random Window (RW) algorithm (upper bound)
+ * - method=2: Multithreaded Connected Cluster (CC) algorithm (lower bound / exact)
+ * - method=3: Bracketing mode (artillery fork / вилка) dynamically balancing
+ *             CC and RW threads based on distance estimate (dexp/dest),
+ *             current bounds [dmin, dmax], RW step count, timeout,
+ *             and scaling characteristics.
  *
- * Compilation:
- *   gcc -O3 -std=c11 distfork.c -o distfork -lm4ri -lpthread -lm
- */
+ * Output to stdout: "dmin dmax"
+ * where dmin-1 is the maximum cluster size analyzed without success by CC,
+ * dmin=dmax if CC actually found a min-weight codeword of this size,
+ * and dmax is the smallest-weight codeword found by RW.
+ *
+ * author: Leonid Pryadko <leonid.pryadko@ucr.edu>
+ ************************************************************************/
 
 #define _GNU_SOURCE
-#include <stdio.h>
+#include <inttypes.h>
+#include <strings.h>
 #include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include <stdatomic.h>
-#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <math.h>
-#include <getopt.h>
+#include <limits.h>
 #include <m4ri/m4ri.h>
 
-// ============================================================================
-// Data Structures & Shared State
-// ============================================================================
-typedef int cindex_t;
-typedef int rindex_t;
+#include "mmio.h"
+#include "uthash.h"
+#include "util_hash.h"
+#include "util_m4ri.h"
+#include "util_io.h"
+#include "dist_m4ri.h"
+#include "dist_cc.h"
 
-typedef enum {
-    MODE_RW = 1,
-    MODE_CC = 2,
-    MODE_BRACKETING = 3
-} ExecutionMode;
-
-typedef enum {
-    ROLE_IDLE,
-    ROLE_RW,
-    ROLE_CC
-} ThreadRole;
-
-// Storage for minimum weight codewords
-typedef struct {
-    mzd_t **words;          // List of dense codeword vectors (1 x n)
-    size_t count;
-    size_t capacity;
-    pthread_mutex_t lock;   // Mutex for thread-safe codeword updates
-} CodewordStore;
-
-typedef struct {
-    // Input Matrix and Options
-    mzd_t *H;                  // Parity-check matrix (r x n)
-    int dexp;                  // Expected distance estimate (-1 if unspec)
-    int num_threads;           // Total threads allocated
-    double timeout;            // Timeout in seconds
-    ExecutionMode method;      // 1: RW, 2: CC, 3: Bracketing
-    long max_rw_steps;         // Global max RW steps limit
-    bool collect_codewords;    // Whether to record min-weight codewords
-    char *codeword_outfile;    // File path to save codewords (optional)
-
-    // Shared Dynamic Bounds
-    _Atomic int dmin;          // Lower bound (dmin - 1 analyzed without success)
-    _Atomic int dmax;          // Upper bound (min weight codeword found)
-    _Atomic bool exact_found;  // True if exact dmin == dmax determined by CC
-
-    // Codeword collection
-    CodewordStore cw_store;
-
-    // Timers and Performance Statistics
-    struct timespec start_time;
-    _Atomic long total_rw_steps;
-    _Atomic double cc_last_round_time;
-    _Atomic double rw_step_time_avg;
-
-    // Thread Synchronization & Work Distribution
-    pthread_mutex_t pool_lock;
-    _Atomic bool stop_signal;
-    _Atomic int current_cc_weight;
-    
-    ThreadRole *thread_roles;
-} GlobalContext;
-
-// High-precision clock utility
-static double get_elapsed_time(struct timespec start) {
-    struct timespec now;
-    clock_gettime(CLOCK_REALTIME, &now);
-    return (now.tv_sec - start.tv_sec) + (now.tv_nsec - start.tv_nsec) / 1e9;
+static inline double get_time_sec(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
-// ============================================================================
-// Codeword Management Helpers
-// ============================================================================
-
-void cw_store_init(CodewordStore *store) {
-    store->count = 0;
-    store->capacity = 16;
-    store->words = malloc(store->capacity * sizeof(mzd_t*));
-    pthread_mutex_init(&store->lock, NULL);
+static inline uint64_t splitmix64(uint64_t *state) {
+  uint64_t z = (*state += 0x9e3779b97f4a7c15ULL);
+  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+  return z ^ (z >> 31);
 }
 
-void cw_store_clear(CodewordStore *store) {
-    pthread_mutex_lock(&store->lock);
-    for (size_t i = 0; i < store->count; ++i) {
-        mzd_free(store->words[i]);
-    }
-    store->count = 0;
-    pthread_mutex_unlock(&store->lock);
+static inline int rand_uniform_thread(int max, uint64_t *state) {
+  if (max <= 1) return 0;
+  return (int)(splitmix64(state) % (uint64_t)max);
 }
 
-void cw_store_free(CodewordStore *store) {
-    cw_store_clear(store);
-    free(store->words);
-    pthread_mutex_destroy(&store->lock);
+static inline mzp_t * mzp_rand_thread(mzp_t *q, rci_t length, uint64_t *state) {
+  if (q == NULL) return NULL;
+  for (int i = 0; i <= (int)length - 2; i++) {
+    q->values[i] = i + rand_uniform_thread(length - i, state);
+  }
+  for (int i = length - 1; i < (int)q->length; i++) {
+    q->values[i] = i;
+  }
+  return q;
 }
-
-// Register a candidate codeword into the store if weight <= current best dmax
-void record_codeword(GlobalContext *ctx, const mzd_t *cw, int weight) {
-    if (!ctx->collect_codewords) return;
-
-    pthread_mutex_lock(&ctx->cw_store.lock);
-    int current_dmax = atomic_load(&ctx->dmax);
-
-    if (weight < current_dmax) {
-        // Clear higher-weight codewords when a strictly smaller weight is found
-        for (size_t i = 0; i < ctx->cw_store.count; ++i) {
-            mzd_free(ctx->cw_store.words[i]);
-        }
-        ctx->cw_store.count = 0;
-        
-        mzd_t *copy = mzd_init(1, cw->ncols);
-        mzd_copy(copy, cw);
-        ctx->cw_store.words[ctx->cw_store.count++] = copy;
-    } 
-    else if (weight == current_dmax) {
-        // Check for duplicates before appending
-        bool exists = false;
-        for (size_t i = 0; i < ctx->cw_store.count; ++i) {
-            if (mzd_equal(ctx->cw_store.words[i], cw)) {
-                exists = true;
-                break;
-            }
-        }
-        if (!exists) {
-            if (ctx->cw_store.count >= ctx->cw_store.capacity) {
-                ctx->cw_store.capacity *= 2;
-                ctx->cw_store.words = realloc(ctx->cw_store.words, 
-                                             ctx->cw_store.capacity * sizeof(mzd_t*));
-            }
-            mzd_t *copy = mzd_init(1, cw->ncols);
-            mzd_copy(copy, cw);
-            ctx->cw_store.words[ctx->cw_store.count++] = copy;
-        }
-    }
-    pthread_mutex_unlock(&ctx->cw_store.lock);
-}
-
-// ============================================================================
-// Core M4RI Kernels (Random Walk & Cluster Coverage)
-// ============================================================================
-
-/*
- * M4RI Random Walk (RW) Core:
- * Creates a local permuted copy of H, performs Gaussian Elimination (PLUQ),
- * and checks linear combinations of columns for small Hamming weights.
- */
-int run_rw_batch_m4ri(GlobalContext *ctx, int steps) {
-    rindex_t r = ctx->H->nrows;
-    cindex_t n = ctx->H->ncols;
-    int local_min_weight = atomic_load(&ctx->dmax);
-
-    mzd_t *H_local = mzd_init(r, n);
-    mzd_t *cw_candidate = mzd_init(1, n);
-    mzp_t *P = mzp_init(n);
-
-    for (int step = 0; step < steps; ++step) {
-        if (atomic_load(&ctx->stop_signal)) break;
-
-        mzd_copy(H_local, ctx->H);
-        
-        // Generate random column permutation
-        for (cindex_t i = 0; i < n; ++i) P->values[i] = i;
-        for (cindex_t i = n - 1; i > 0; --i) {
-            cindex_t j = rand() % (i + 1);
-            cindex_t tmp = P->values[i];
-            P->values[i] = P->values[j];
-            P->values[j] = tmp;
-        }
-
-        // Apply permutation to H_local
-        mzd_apply_p_col(H_local, P);
-
-        // Perform M4RI PLUQ / RREF Echelonization
-        rindex_t rank = mzd_echelonize_m4ri(H_local, 0, 0);
-
-        // Scan rows for low-weight codewords in systematic form
-        for (rindex_t i = 0; i < rank; ++i) {
-            int weight = 0;
-            for (cindex_t j = 0; j < n; ++j) {
-                if (mzd_read_bit(H_local, i, j)) weight++;
-            }
-
-            if (weight > 0 && weight <= local_min_weight) {
-                // Construct un-permuted codeword vector
-                mzd_set_ui(cw_candidate, 0);
-                for (cindex_t j = 0; j < n; ++j) {
-                    if (mzd_read_bit(H_local, i, j)) {
-                        mzd_write_bit(cw_candidate, 0, P->values[j], 1);
-                    }
-                }
-
-                record_codeword(ctx, cw_candidate, weight);
-
-                if (weight < local_min_weight) {
-                    local_min_weight = weight;
-                }
-            }
-        }
-    }
-
-    mzd_free(H_local);
-    mzd_free(cw_candidate);
-    mzp_free(P);
-
-    return local_min_weight;
-}
-
-/*
- * M4RI Cluster Coverage (CC) Core:
- * Analyzes column combinations up to weight 'target_weight'.
- * Splitting outer iterations across CC threads.
- */
-int run_cc_round_m4ri(GlobalContext *ctx, int target_weight, int tid, int total_cc_threads) {
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_REALTIME, &t0);
-
-    cindex_t n = ctx->H->ncols;
-    rindex_t r = ctx->H->nrows;
-    
-    // Divide outer loop space among CC threads
-    cindex_t start_col = (n * tid) / total_cc_threads;
-    cindex_t end_col = (n * (tid + 1)) / total_cc_threads;
-
-    mzd_t *syndrome = mzd_init(r, 1);
-    mzd_t *cw_candidate = mzd_init(1, n);
-
-    int found_weight = 0;
-
-    // Check single-column and pair/cluster combinations for weight target_weight
-    for (cindex_t i = start_col; i < end_col; ++i) {
-        if (atomic_load(&ctx->stop_signal)) break;
-
-        // Extract column i
-        for (rindex_t k = 0; k < r; ++k) {
-            mzd_write_bit(syndrome, k, 0, mzd_read_bit(ctx->H, k, i));
-        }
-
-        // Search for zero syndrome combinations
-        if (mzd_is_zero(syndrome)) {
-            mzd_set_ui(cw_candidate, 0);
-            mzd_write_bit(cw_candidate, 0, i, 1);
-            record_codeword(ctx, cw_candidate, 1);
-            found_weight = 1;
-            break;
-        }
-    }
-
-    mzd_free(syndrome);
-    mzd_free(cw_candidate);
-
-    clock_gettime(CLOCK_REALTIME, &t1);
-    double elapsed = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
-    
-    // Store timing metric for dynamic rebalancing
-    atomic_store(&ctx->cc_last_round_time, elapsed);
-
-    return found_weight;
-}
-
-// ============================================================================
-// Thread Worker & Adaptive Scheduler
-// ============================================================================
 
 typedef struct {
-    int id;
-    GlobalContext *ctx;
-} WorkerArgs;
+  params_t *p;
+  int num_threads;
+  double timeout;
+  double start_time;
+  int dexp;
 
-void* worker_thread(void* arg) {
-    WorkerArgs *wargs = (WorkerArgs*)arg;
-    GlobalContext *ctx = wargs->ctx;
-    int tid = wargs->id;
+  /* Distance bounds */
+  atomic_int dmin;             /* dmin-1 is max cluster size analyzed without success */
+  atomic_int dmax;             /* smallest weight codeword found (0 if none) */
+  atomic_int cc_found_weight;  /* weight of codeword if CC found exact */
+  atomic_bool stop_flag;       /* signals all threads to terminate */
 
-    while (!atomic_load(&ctx->stop_signal)) {
-        ThreadRole role;
+  /* RW state */
+  long total_rw_steps;
+  atomic_long rw_steps_started;
+  atomic_long rw_steps_completed;
 
-        pthread_mutex_lock(&ctx->pool_lock);
-        role = ctx->thread_roles[tid];
-        pthread_mutex_unlock(&ctx->pool_lock);
+  /* CC state for current weight */
+  atomic_int cc_weight;
+  atomic_int cc_col_next;
+  int cc_col_beg;
+  int cc_col_end;
+  csr_t *mHT_cc;
+  int max_col_W;
+  atomic_int cc_active_workers;
+  atomic_int cc_target_workers;
+  atomic_int cc_round_active;
 
-        if (role == ROLE_RW) {
-            int batch_size = 50;
-            struct timespec t0, t1;
-            clock_gettime(CLOCK_REALTIME, &t0);
+  /* Codeword synchronization */
+  pthread_mutex_t cw_mutex;
 
-            int found_w = run_rw_batch_m4ri(ctx, batch_size);
+  /* Timing stats */
+  double cc_time_per_weight[MAX_W];
+  double avg_rw_step_time;
 
-            clock_gettime(CLOCK_REALTIME, &t1);
-            double dt = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
-            atomic_fetch_add(&ctx->total_rw_steps, batch_size);
-            
-            int current_dmax = atomic_load(&ctx->dmax);
-            if (found_w < current_dmax) {
-                while (found_w < current_dmax && 
-                       !atomic_compare_exchange_weak(&ctx->dmax, &current_dmax, found_w));
+  /* Thread handles */
+  pthread_t *threads;
+} distfork_ctx_t;
+
+typedef struct {
+  distfork_ctx_t *ctx;
+  int tid;
+} worker_arg_t;
+
+/* Recursive CC worker function (interruptible) */
+static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
+                              const int w_limit, const int max_col_wt,
+                              const csr_t * const mH, const csr_t * const mHT,
+                              distfork_ctx_t *ctx) {
+  if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
+    return 0;
+  }
+  params_t * const p = ctx->p;
+  const int w = err->wei;
+  int row = syn[w]->vec[0];
+  const csr_t * const mL = p->spaL;
+  const int col_min = urr->vec[0];
+
+  for (int i1 = mH->p[row]; i1 < mH->p[row+1]; i1++) {
+    const int col = mH->i[i1];
+    if (col > col_min) {
+      int pos = one_ordered_search(err, col);
+      if (pos == -1) {
+        urr->vec[w] = col;
+        urr->wei++;
+        pos = one_ordered_ins(err, col);
+        syn[w+1]->wei = 0;
+        int swei = one_csr_row_combine(syn[w+1], syn[w], mHT, col);
+
+        int current_limit = w_limit;
+        int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+        if (cur_dmax > 0 && p->dW >= 0) {
+          current_limit = minint(w_limit, cur_dmax + p->dW);
+        }
+
+        if (err->wei < current_limit) {
+          if (swei) {
+            int result = start_CC_recurs_mt(err, urr, syn, w_limit, max_col_wt,
+                                            mH, mHT, ctx);
+            if (result == 1) {
+              urr->wei--;
+              one_ordered_pos_del(err, col, pos);
+              return 1;
             }
-        } 
-        else if (role == ROLE_CC) {
-            int target_w = atomic_load(&ctx->current_cc_weight);
-            int result = run_cc_round_m4ri(ctx, target_w, tid, ctx->num_threads);
-
-            if (result > 0) {
-                // Exact minimum weight codeword identified by CC
-                atomic_store(&ctx->dmax, result);
-                atomic_store(&ctx->dmin, result);
-                atomic_store(&ctx->exact_found, true);
-                atomic_store(&ctx->stop_signal, true);
-            } else {
-                int current_dmin = atomic_load(&ctx->dmin);
-                if (target_w + 1 > current_dmin) {
-                    atomic_store(&ctx->dmin, target_w + 1);
-                }
-            }
+          }
         } else {
-            usleep(5000); // Idle delay
-        }
+          if (!swei) {
+            int nz = (!mL) || sparse_syndrome_non_zero(mL, err->wei, err->vec);
+            if (nz) {
+              pthread_mutex_lock(&ctx->cw_mutex);
+              p->codewords = codeword_add_maybe(p, err->vec, err->wei);
+              int cur_d = atomic_load(&ctx->dmax);
+              if (p->min_w < cur_d || cur_d == 0) {
+                atomic_store(&ctx->dmax, p->min_w);
+              }
+              atomic_store(&ctx->cc_found_weight, err->wei);
+              if (!p->outC && p->maxC == 0) {
+                atomic_store(&ctx->stop_flag, true);
+              }
+              if (p->maxC && p->num_cws >= p->maxC) {
+                atomic_store(&ctx->stop_flag, true);
+              }
+              pthread_mutex_unlock(&ctx->cw_mutex);
 
-        // Terminate early if bounds converge
-        if (atomic_load(&ctx->dmin) >= atomic_load(&ctx->dmax)) {
-            atomic_store(&ctx->stop_signal, true);
-            break;
-        }
-    }
-    return NULL;
-}
-
-void run_scheduler(GlobalContext *ctx) {
-    while (!atomic_load(&ctx->stop_signal)) {
-        double elapsed = get_elapsed_time(ctx->start_time);
-        double time_left = ctx->timeout - elapsed;
-
-        if (time_left <= 0 || atomic_load(&ctx->total_rw_steps) >= ctx->max_rw_steps) {
-            atomic_store(&ctx->stop_signal, true);
-            break;
-        }
-
-        int current_dmin = atomic_load(&ctx->dmin);
-        int current_dmax = atomic_load(&ctx->dmax);
-
-        if (current_dmin >= current_dmax) {
-            atomic_store(&ctx->stop_signal, true);
-            break;
-        }
-
-        int target_ncc = 0;
-
-        if (ctx->method == MODE_RW) {
-            target_ncc = 0;
-        } else if (ctx->method == MODE_CC) {
-            target_ncc = ctx->num_threads;
-        } else {
-            // METHOD 3: Adaptive Bracketing Heuristic
-            int dexp = (ctx->dexp > 0) ? ctx->dexp : (current_dmin + current_dmax) / 2;
-            
-            double last_cc_time = atomic_load(&ctx->cc_last_round_time);
-            double est_cc_time = (last_cc_time > 0) ? last_cc_time * 1.8 : 0.5;
-
-            if (est_cc_time > time_left) {
-                target_ncc = 0; // CC cannot finish in time; divert all to RW
-            } else {
-                int delta_min = (dexp > current_dmin) ? (dexp - current_dmin) : 1;
-                int delta_max = (current_dmax > dexp) ? (current_dmax - dexp) : 1;
-
-                double cc_ratio = (double)delta_min / (delta_min + delta_max);
-                target_ncc = (int)round(ctx->num_threads * cc_ratio);
-
-                if (target_ncc < 1) target_ncc = 1;
-                if (target_ncc >= ctx->num_threads) target_ncc = ctx->num_threads - 1;
+              urr->wei--;
+              one_ordered_pos_del(err, col, pos);
+              return 1;
             }
+          }
         }
-
-        // Rebalance thread assignments
-        pthread_mutex_lock(&ctx->pool_lock);
-        for (int i = 0; i < ctx->num_threads; ++i) {
-            ctx->thread_roles[i] = (i < target_ncc) ? ROLE_CC : ROLE_RW;
-        }
-        pthread_mutex_unlock(&ctx->pool_lock);
-
-        usleep(100000); // 100ms balancing tick
+        urr->wei--;
+        one_ordered_pos_del(err, col, pos);
+      }
     }
+  }
+  return 0;
 }
 
-// ============================================================================
-// Command Line Processing & Entrypoint
-// ============================================================================
+/* Run RW batch */
+static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
+                         mzd_t *mH, mzd_t **p_mHT, rci_t *ee,
+                         mzp_t *perm, mzp_t *pivs, mzp_t *pivs_srtd, mzp_t *skip_pivs,
+                         uint64_t *rng_state, int tid) {
+  params_t * const p = ctx->p;
+  const csr_t * const spaL0 = p->spaL;
+  const int nvar = p->spaH->cols;
+  const int classical = p->classical;
 
-void print_usage(const char *prog_name) {
-    printf("Usage: %s [options] <matrix_file>\n", prog_name);
-    printf("Options:\n");
-    printf("  --method <1|2|3>      1: Standard RW, 2: Standard CC, 3: Adaptive Bracketing (default: 3)\n");
-    printf("  --threads <int>       Number of worker threads (default: 4)\n");
-    printf("  --timeout <double>    Maximum execution time in seconds (default: 60.0)\n");
-    printf("  --dexp <int>          Expected distance estimate heuristic\n");
-    printf("  --max_steps <long>    Maximum RW steps limit\n");
-    printf("  -c, --codewords       Compute and list minimal weight codewords\n");
-    printf("  --out <file>          Save listed codewords to specified file path\n");
+  for (int step = 0; step < n_steps; step++) {
+    if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) break;
+
+    pivs = mzp_rand_thread(pivs, nvar, rng_state);
+    mzp_set_ui(perm, 1);
+    perm = perm_p_trans(perm, pivs, 0);
+
+    int rank = 0;
+    for (int i = 0; i < nvar; i++) {
+      int col = perm->values[i];
+      int ret = gauss_one(mH, col, rank);
+      if (ret) {
+        pivs->values[rank++] = col;
+      }
+    }
+
+    pivs_srtd = mzp_copy(pivs_srtd, pivs);
+    qsort(pivs_srtd->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
+    int end = -1, num = 0;
+    for (int i = 0; i < rank; i++) {
+      int beg = end + 1;
+      end = pivs_srtd->values[i];
+      for (int j = beg; j < end; j++) {
+        skip_pivs->values[num++] = j;
+      }
+    }
+    for (int j = end + 1; j < nvar; j++) {
+      skip_pivs->values[num++] = j;
+    }
+    skip_pivs->length = num;
+
+    *p_mHT = mzd_transpose(*p_mHT, mH);
+    mzd_t *mHT = *p_mHT;
+
+    int k = nvar - rank;
+    for (int ir = 0; ir < k; ir++) {
+      int cnt = 0;
+      const int col = ee[cnt++] = skip_pivs->values[ir];
+      int limit = nvar + 1;
+      if (p->wmax > 0) limit = p->wmax + 1;
+      int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+      if (cur_dmax > 0) {
+        if (p->dW >= 0) limit = minint(limit, cur_dmax + p->dW + 1);
+        else limit = minint(limit, cur_dmax);
+      }
+
+      word *rawrow = mzd_row(mHT, col);
+      rci_t j = -1;
+      while (cnt < limit) {
+        j = nextelement(rawrow, mHT->width, j);
+        if (j == -1) break;
+        ee[cnt++] = pivs->values[j++];
+      }
+
+      if (cnt < limit) {
+        qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
+        int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
+        if (nz) {
+          pthread_mutex_lock(&ctx->cw_mutex);
+          p->codewords = codeword_add_maybe(p, ee, cnt);
+          if (cnt < p->min_w) p->min_w = cnt;
+          int best = p->min_w;
+          int old_dmax = atomic_load(&ctx->dmax);
+          if (old_dmax == 0 || best < old_dmax) {
+            atomic_store(&ctx->dmax, best);
+            if (p->debug & 16) {
+              printf("# [thread %d] RW found new upper bound cw of weight %d\n", tid, best);
+            }
+            int cur_dmin = atomic_load(&ctx->dmin);
+            if (cur_dmin > 0 && best <= cur_dmin) {
+              atomic_store(&ctx->stop_flag, true);
+            }
+          }
+          if (p->wmin > 0 && best <= p->wmin) {
+            atomic_store(&ctx->stop_flag, true);
+          }
+          if (p->maxC && p->num_cws >= p->maxC) {
+            atomic_store(&ctx->stop_flag, true);
+          }
+          pthread_mutex_unlock(&ctx->cw_mutex);
+        }
+      }
+    }
+    atomic_fetch_add(&ctx->rw_steps_completed, 1);
+  }
+}
+
+/* Worker thread main loop */
+static void *worker_thread_func(void *arg) {
+  worker_arg_t *warg = (worker_arg_t *)arg;
+  distfork_ctx_t *ctx = warg->ctx;
+  int tid = warg->tid;
+
+  /* Thread-local RW matrices */
+  mzd_t *mH = mzd_from_csr(NULL, ctx->p->spaH);
+  mzd_t *mHT_rw = NULL;
+  rci_t *ee = malloc(ctx->p->spaH->cols * sizeof(rci_t));
+  mzp_t *perm = mzp_init(ctx->p->spaH->cols);
+  mzp_t *pivs = mzp_init(ctx->p->spaH->cols);
+  mzp_t *pivs_srtd = mzp_init(ctx->p->spaH->cols);
+  mzp_t *skip_pivs = mzp_init(ctx->p->spaH->cols);
+  uint64_t rng_state = (uint64_t)ctx->p->seed + (uint64_t)tid * 0x9e3779b97f4a7c15ULL + 0x517cc1b727220a95ULL;
+
+  /* Thread-local CC memory */
+  const int wmax = ctx->p->wmax > 0 ? ctx->p->wmax : 100;
+  one_vec_t *err = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 1));
+  one_vec_t *urr = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 1));
+  one_vec_t **syn = calloc(wmax + 2, sizeof(one_vec_t *));
+  for (int i = 0; i <= wmax + 1; i++) {
+    syn[i] = calloc(1, sizeof(one_vec_t) + sizeof(int) * ctx->p->spaH->rows);
+  }
+
+  while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
+    if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+      atomic_store(&ctx->stop_flag, true);
+      break;
+    }
+
+    bool did_work = false;
+
+    /* 1. Try to take CC work if CC is active (method 2 or 3) */
+    if (ctx->p->method >= 2 && atomic_load(&ctx->cc_round_active)) {
+      int active = atomic_load(&ctx->cc_active_workers);
+      int target = atomic_load(&ctx->cc_target_workers);
+      if (active < target) {
+        int col = atomic_fetch_add(&ctx->cc_col_next, 1);
+        int end = ctx->cc_col_end;
+        if (col <= end) {
+          atomic_fetch_add(&ctx->cc_active_workers, 1);
+          int w = atomic_load(&ctx->cc_weight);
+
+          err->vec[0] = urr->vec[0] = col;
+          err->wei = urr->wei = 1;
+          syn[1]->wei = 0;
+          int swei = one_csr_row_combine(syn[1], syn[0], ctx->mHT_cc, col);
+
+          if (w > 1) {
+            if (swei) {
+              start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W, ctx->p->spaH, ctx->mHT_cc, ctx);
+            }
+          } else {
+            if (!swei) {
+              int nz = (!ctx->p->spaL) || sparse_syndrome_non_zero(ctx->p->spaL, 1, err->vec);
+              if (nz) {
+                pthread_mutex_lock(&ctx->cw_mutex);
+                ctx->p->codewords = codeword_add_maybe(ctx->p, err->vec, 1);
+                atomic_store(&ctx->cc_found_weight, 1);
+                atomic_store(&ctx->dmin, 1);
+                atomic_store(&ctx->dmax, 1);
+                atomic_store(&ctx->stop_flag, true);
+                pthread_mutex_unlock(&ctx->cw_mutex);
+              }
+            }
+          }
+          err->wei = urr->wei = 0;
+          atomic_fetch_sub(&ctx->cc_active_workers, 1);
+          did_work = true;
+          continue;
+        }
+      }
+    }
+
+    /* 2. Try to take RW work if RW is active (method 1 or 3) */
+    if ((ctx->p->method & 1) && !atomic_load(&ctx->stop_flag)) {
+      long cur_s = atomic_load(&ctx->rw_steps_started);
+      if (cur_s < ctx->total_rw_steps) {
+        long target_s = cur_s + 10;
+        if (target_s > ctx->total_rw_steps) target_s = ctx->total_rw_steps;
+        if (atomic_compare_exchange_weak(&ctx->rw_steps_started, &cur_s, target_s)) {
+          int n_steps = (int)(target_s - cur_s);
+          run_rw_steps(ctx, n_steps, mH, &mHT_rw, ee, perm, pivs, pivs_srtd, skip_pivs, &rng_state, tid);
+          did_work = true;
+          continue;
+        }
+      }
+    }
+
+    if (!did_work) {
+      usleep(100);
+    }
+  }
+
+  mzp_free(skip_pivs);
+  mzp_free(pivs_srtd);
+  mzp_free(perm);
+  mzp_free(pivs);
+  free(ee);
+  if (mHT_rw) mzd_free(mHT_rw);
+  mzd_free(mH);
+
+  for (int i = 0; i <= wmax + 1; i++) free(syn[i]);
+  free(syn);
+  free(err);
+  free(urr);
+
+  return NULL;
+}
+
+/* Method 1 coordinator */
+static void run_method1_coordinator(distfork_ctx_t *ctx) {
+  if (ctx->p->debug & 2) {
+    printf("# running method=1 (multithreaded RW) with %d threads, total steps=%ld\n",
+           ctx->num_threads, ctx->total_rw_steps);
+  }
+
+  while (!atomic_load(&ctx->stop_flag)) {
+    if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+      atomic_store(&ctx->stop_flag, true);
+      break;
+    }
+    if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) {
+      break;
+    }
+    usleep(1000);
+  }
+}
+
+/* Method 2 coordinator */
+static void run_method2_coordinator(distfork_ctx_t *ctx) {
+  const int nvar = ctx->p->spaH->cols;
+  const int wmax = ctx->p->wmax;
+  const int w_start = ctx->p->noscan ? wmax : 1;
+
+  if (ctx->p->debug & 2) {
+    printf("# running method=2 (multithreaded CC) with %d threads, w_start=%d wmax=%d\n",
+           ctx->num_threads, w_start, wmax);
+  }
+
+  for (int w = w_start; w <= wmax; w++) {
+    if (atomic_load(&ctx->stop_flag)) break;
+    if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+      atomic_store(&ctx->stop_flag, true);
+      break;
+    }
+
+    int beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
+    int end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
+
+    atomic_store(&ctx->cc_weight, w);
+    ctx->cc_col_beg = beg;
+    ctx->cc_col_end = end;
+    atomic_store(&ctx->cc_col_next, beg);
+    atomic_store(&ctx->cc_target_workers, ctx->num_threads);
+    atomic_store(&ctx->cc_round_active, 1);
+
+    if (ctx->p->debug & 2) {
+      printf("# searching w=%d with %d CC threads, columns [%d, %d]\n",
+             w, ctx->num_threads, beg, end);
+    }
+
+    while (!atomic_load(&ctx->stop_flag)) {
+      if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+        atomic_store(&ctx->stop_flag, true);
+        break;
+      }
+      if (atomic_load(&ctx->cc_col_next) > end && atomic_load(&ctx->cc_active_workers) == 0) {
+        break;
+      }
+      usleep(100);
+    }
+
+    atomic_store(&ctx->cc_round_active, 0);
+
+    int cw_found = atomic_load(&ctx->cc_found_weight);
+    if (cw_found > 0) {
+      atomic_store(&ctx->dmin, cw_found);
+      atomic_store(&ctx->dmax, cw_found);
+      atomic_store(&ctx->stop_flag, true);
+      break;
+    }
+
+    /* Weight w analyzed without success */
+    atomic_store(&ctx->dmin, w + 1);
+    if (ctx->p->debug & 1) {
+      printf("# CC w=%d completed: no codewords found -> dmin=%d\n", w, w + 1);
+    }
+  }
+}
+
+/* Method 3 coordinator */
+static void run_method3_coordinator(distfork_ctx_t *ctx) {
+  const int nvar = ctx->p->spaH->cols;
+  int w = ctx->p->noscan ? ctx->p->wmax : 1;
+
+  if (ctx->p->debug & 2) {
+    printf("# running method=3 (bracketing mode) with %d threads, timeout=%.1fs, dexp=%d\n",
+           ctx->num_threads, ctx->timeout, ctx->dexp);
+  }
+
+  /* Initial RW probe to measure average step time */
+  double t_rw_start = get_time_sec();
+  usleep(2000);
+  double t_rw_dur = get_time_sec() - t_rw_start;
+  long initial_steps = atomic_load(&ctx->rw_steps_completed);
+  if (initial_steps > 0) {
+    ctx->avg_rw_step_time = (t_rw_dur * (double)ctx->num_threads) / (double)initial_steps;
+  } else {
+    ctx->avg_rw_step_time = 0.00005;
+  }
+
+  while (!atomic_load(&ctx->stop_flag)) {
+    double now = get_time_sec();
+    double remaining_time = ctx->timeout - (now - ctx->start_time);
+    if (remaining_time <= 0.0) {
+      atomic_store(&ctx->stop_flag, true);
+      break;
+    }
+
+    int cur_dmax = atomic_load(&ctx->dmax);
+    int cur_dmin = atomic_load(&ctx->dmin);
+
+    if (cur_dmax > 0 && cur_dmin >= cur_dmax) {
+      /* Bracketing converged */
+      atomic_store(&ctx->dmin, cur_dmax);
+      atomic_store(&ctx->stop_flag, true);
+      break;
+    }
+
+    /* Target cluster size for CC */
+    int target_cc_w;
+    if (cur_dmax > 0) {
+      target_cc_w = cur_dmax - 1;
+    } else if (ctx->dexp > 0) {
+      target_cc_w = ctx->dexp;
+    } else if (ctx->p->wmax > 0) {
+      target_cc_w = ctx->p->wmax;
+    } else {
+      target_cc_w = nvar;
+    }
+
+    if (ctx->p->wmax > 0 && target_cc_w > ctx->p->wmax) {
+      target_cc_w = ctx->p->wmax;
+    }
+
+    if (w > target_cc_w) {
+      if (cur_dmax > 0 && cur_dmin < cur_dmax) {
+        atomic_store(&ctx->dmin, cur_dmax);
+        atomic_store(&ctx->stop_flag, true);
+        break;
+      }
+      /* Let remaining RW steps finish */
+      while (!atomic_load(&ctx->stop_flag)) {
+        if (get_time_sec() - ctx->start_time >= ctx->timeout) break;
+        if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
+        usleep(1000);
+      }
+      break;
+    }
+
+    /* Estimate CC time for weight w */
+    double t_cc_est;
+    if (w == 1) {
+      t_cc_est = 0.0001;
+    } else if (w == 2) {
+      t_cc_est = 0.001;
+    } else {
+      double prev = ctx->cc_time_per_weight[w - 1];
+      if (prev <= 0.0001) prev = 0.001;
+      double growth = 4.0;
+      if (w >= 3 && ctx->cc_time_per_weight[w - 2] > 0.0001) {
+        growth = ctx->cc_time_per_weight[w - 1] / ctx->cc_time_per_weight[w - 2];
+        if (growth < 2.0) growth = 2.0;
+        if (growth > 10.0) growth = 10.0;
+      }
+      t_cc_est = prev * growth;
+    }
+
+    /* Check if CC for weight w can finish within timeout */
+    if (t_cc_est / ctx->num_threads > remaining_time * 1.5) {
+      if (ctx->p->debug & 2) {
+        printf("# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting threads to RW\n",
+               w, t_cc_est / ctx->num_threads, remaining_time);
+      }
+      while (!atomic_load(&ctx->stop_flag)) {
+        if (get_time_sec() - ctx->start_time >= ctx->timeout) break;
+        if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
+        usleep(1000);
+      }
+      break;
+    }
+
+    /* Calculate thread balancing */
+    long steps_done = atomic_load(&ctx->rw_steps_completed);
+    long steps_rem = (ctx->total_rw_steps > steps_done) ? (ctx->total_rw_steps - steps_done) : 0;
+
+    int n_cc;
+    if (ctx->num_threads == 1) {
+      n_cc = 1;
+    } else if (steps_rem == 0) {
+      n_cc = ctx->num_threads;
+    } else if (t_cc_est < 0.005) {
+      n_cc = (ctx->num_threads >= 4) ? 2 : 1;
+    } else {
+      double t_rw_total_1t = (double)steps_rem * ctx->avg_rw_step_time;
+      double t_cc_total_1t = t_cc_est;
+      double est_accum = t_cc_est;
+      for (int k = w + 1; k <= target_cc_w && k <= w + 2; k++) {
+        est_accum *= 4.0;
+        t_cc_total_1t += est_accum;
+      }
+      double ratio = t_cc_total_1t / (t_cc_total_1t + t_rw_total_1t);
+      n_cc = (int)round((double)ctx->num_threads * ratio);
+      if (n_cc < 1) n_cc = 1;
+      if (n_cc >= ctx->num_threads && steps_rem > 0) n_cc = ctx->num_threads - 1;
+    }
+
+    int beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
+    int end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
+
+    atomic_store(&ctx->cc_weight, w);
+    ctx->cc_col_beg = beg;
+    ctx->cc_col_end = end;
+    atomic_store(&ctx->cc_col_next, beg);
+    atomic_store(&ctx->cc_target_workers, n_cc);
+    atomic_store(&ctx->cc_round_active, 1);
+
+    double cc_start = get_time_sec();
+
+    while (!atomic_load(&ctx->stop_flag)) {
+      if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+        atomic_store(&ctx->stop_flag, true);
+        break;
+      }
+      if (atomic_load(&ctx->cc_col_next) > end && atomic_load(&ctx->cc_active_workers) == 0) {
+        break;
+      }
+      usleep(100);
+    }
+
+    atomic_store(&ctx->cc_round_active, 0);
+
+    double cc_dur = get_time_sec() - cc_start;
+    ctx->cc_time_per_weight[w] = cc_dur * (double)n_cc;
+
+    int cw_found = atomic_load(&ctx->cc_found_weight);
+    if (cw_found > 0) {
+      atomic_store(&ctx->dmin, cw_found);
+      atomic_store(&ctx->dmax, cw_found);
+      atomic_store(&ctx->stop_flag, true);
+      if (ctx->p->debug & 1) {
+        printf("# CC found min-weight codeword: d=%d\n", cw_found);
+      }
+      break;
+    }
+
+    if (atomic_load(&ctx->stop_flag)) break;
+
+    /* Weight w analyzed without success */
+    int new_dmin = w + 1;
+    atomic_store(&ctx->dmin, new_dmin);
+    if (ctx->p->debug & 1) {
+      printf("# CC round w=%d finished in %.3fs: no codewords -> dmin=%d\n", w, cc_dur, new_dmin);
+    }
+
+    cur_dmax = atomic_load(&ctx->dmax);
+    if (cur_dmax > 0 && new_dmin >= cur_dmax) {
+      atomic_store(&ctx->dmin, cur_dmax);
+      atomic_store(&ctx->stop_flag, true);
+      if (ctx->p->debug & 1) {
+        printf("# bracketing bounds coincide: dmin = dmax = %d\n", cur_dmax);
+      }
+      break;
+    }
+
+    w++;
+  }
 }
 
 int main(int argc, char **argv) {
-    GlobalContext ctx;
-    memset(&ctx, 0, sizeof(GlobalContext));
+  params_t * const p = &prm;
 
-    // Default configuration values
-    ctx.method = MODE_BRACKETING;
-    ctx.num_threads = 4;
-    ctx.timeout = 60.0;
-    ctx.dexp = -1;
-    ctx.max_rw_steps = 1e9;
-    ctx.collect_codewords = false;
-    ctx.codeword_outfile = NULL;
+  var_init(argc, argv, p);
 
-    atomic_store(&ctx.dmin, 1);
-    atomic_store(&ctx.dmax, 999999);
-    atomic_store(&ctx.exact_found, false);
-    atomic_store(&ctx.stop_signal, false);
+  if (p->finC) {
+    nzlist_read(p->finC, p);
+  }
 
-    cw_store_init(&ctx.cw_store);
+  /* Determine number of threads */
+  int num_threads = p->threads;
+  if (num_threads <= 0) {
+    long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
+    num_threads = (nprocs > 0) ? (int)nprocs : 4;
+  }
 
-    static struct option long_options[] = {
-        {"method", required_argument, 0, 'm'},
-        {"threads", required_argument, 0, 't'},
-        {"timeout", required_argument, 0, 'T'},
-        {"dexp", required_argument, 0, 'e'},
-        {"max_steps", required_argument, 0, 's'},
-        {"codewords", no_argument, 0, 'c'},
-        {"out", required_argument, 0, 'o'},
-        {"help", no_argument, 0, 'h'},
-        {0, 0, 0, 0}
-    };
+  double timeout = (p->timeout > 0.0) ? p->timeout : 60.0;
 
-    int opt;
-    while ((opt = getopt_long(argc, argv, "c", long_options, NULL)) != -1) {
-        switch (opt) {
-            case 'm': ctx.method = atoi(optarg); break;
-            case 't': ctx.num_threads = atoi(optarg); break;
-            case 'T': ctx.timeout = atof(optarg); break;
-            case 'e': ctx.dexp = atoi(optarg); break;
-            case 's': ctx.max_rw_steps = atol(optarg); break;
-            case 'c': ctx.collect_codewords = true; break;
-            case 'o': ctx.codeword_outfile = strdup(optarg); break;
-            case 'h': print_usage(argv[0]); return 0;
-            default: break;
-        }
+  distfork_ctx_t ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.p = p;
+  ctx.num_threads = num_threads;
+  ctx.timeout = timeout;
+  ctx.start_time = get_time_sec();
+  ctx.dexp = p->dexp;
+  ctx.total_rw_steps = (p->steps > 0) ? p->steps : 1;
+
+  /* Initialize dmin and dmax */
+  atomic_init(&ctx.dmin, 1);
+  int init_dmax = 0;
+  if (p->min_w != INT_MAX) {
+    init_dmax = p->min_w;
+  }
+  atomic_init(&ctx.dmax, init_dmax);
+  atomic_init(&ctx.cc_found_weight, 0);
+  atomic_init(&ctx.stop_flag, false);
+  atomic_init(&ctx.rw_steps_started, 0);
+  atomic_init(&ctx.rw_steps_completed, 0);
+  atomic_init(&ctx.cc_weight, 1);
+  atomic_init(&ctx.cc_col_next, 0);
+  atomic_init(&ctx.cc_active_workers, 0);
+  atomic_init(&ctx.cc_target_workers, 0);
+  atomic_init(&ctx.cc_round_active, 0);
+
+  pthread_mutex_init(&ctx.cw_mutex, NULL);
+
+  ctx.mHT_cc = csr_transpose(NULL, p->spaH);
+  ctx.max_col_W = csr_max_row_wght(ctx.mHT_cc);
+
+  /* Allocate and launch worker threads */
+  ctx.threads = malloc(num_threads * sizeof(pthread_t));
+  worker_arg_t *args = malloc(num_threads * sizeof(worker_arg_t));
+
+  for (int i = 0; i < num_threads; i++) {
+    args[i].ctx = &ctx;
+    args[i].tid = i;
+    pthread_create(&ctx.threads[i], NULL, worker_thread_func, &args[i]);
+  }
+
+  if (p->method == 1) {
+    run_method1_coordinator(&ctx);
+  } else if (p->method == 2) {
+    run_method2_coordinator(&ctx);
+  } else if (p->method == 3) {
+    run_method3_coordinator(&ctx);
+  } else {
+    ERROR("invalid method %d\n", p->method);
+  }
+
+  /* Signal stop and wait for all workers */
+  atomic_store(&ctx.stop_flag, true);
+  for (int i = 0; i < num_threads; i++) {
+    pthread_join(ctx.threads[i], NULL);
+  }
+
+  int final_dmin = atomic_load(&ctx.dmin);
+  int final_dmax = atomic_load(&ctx.dmax);
+  int cc_found = atomic_load(&ctx.cc_found_weight);
+
+  if (cc_found > 0) {
+    final_dmin = cc_found;
+    final_dmax = cc_found;
+  } else if (final_dmax > 0 && final_dmin >= final_dmax) {
+    final_dmin = final_dmax;
+  }
+
+  /* Output to stdout: dmin dmax */
+  printf("%d %d\n", final_dmin, final_dmax);
+
+  /* Codeword export */
+  if (p->outC) {
+    char comment[256];
+    sprintf(comment, "generated by distfork");
+    nzlist_write(p->outC, comment, p);
+  }
+
+  if (p->debug & 32) {
+    cw_vec_t *cw;
+    for (cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)) {
+      printf("# cw: [ ");
+      for (int i = 0; i < cw->weight; i++) printf("%d ", 1 + cw->arr[i]);
+      printf("] cnt=%d\n", cw->cnt);
     }
+  }
 
-    char *matrix_file = NULL;
-    if (optind < argc) {
-        matrix_file = argv[optind];
-    }
+  /* Cleanup */
+  csr_free(ctx.mHT_cc);
+  free(ctx.threads);
+  free(args);
+  pthread_mutex_destroy(&ctx.cw_mutex);
 
-    if (!matrix_file) {
-        fprintf(stderr, "Error: missing input matrix file.\n");
-        print_usage(argv[0]);
-        return 1;
-    }
+  var_kill(p);
 
-    FILE *f = fopen(matrix_file, "r");
-    if (!f) {
-        perror("Error opening matrix file");
-        return 1;
-    }
-    ctx.H = mzd_from_file_m4ri(f);
-    fclose(f);
-
-    pthread_mutex_init(&ctx.pool_lock, NULL);
-    ctx.thread_roles = calloc(ctx.num_threads, sizeof(ThreadRole));
-
-    pthread_t *threads = malloc(ctx.num_threads * sizeof(pthread_t));
-    WorkerArgs *wargs = malloc(ctx.num_threads * sizeof(WorkerArgs));
-
-    clock_gettime(CLOCK_REALTIME, &ctx.start_time);
-
-    // Launch worker threads
-    for (int i = 0; i < ctx.num_threads; ++i) {
-        wargs[i].id = i;
-        wargs[i].ctx = &ctx;
-        pthread_create(&threads[i], NULL, worker_thread, &wargs[i]);
-    }
-
-    // Run main dynamic balancing loop
-    run_scheduler(&ctx);
-
-    // Join worker threads
-    for (int i = 0; i < ctx.num_threads; ++i) {
-        pthread_join(threads[i], NULL);
-    }
-
-    // Output dmin dmax bounds to stdout
-    int final_dmin = atomic_load(&ctx.dmin);
-    int final_dmax = atomic_load(&ctx.dmax);
-
-    if (atomic_load(&ctx.exact_found)) {
-        printf("%d %d\n", final_dmin, final_dmin);
-    } else {
-        printf("%d %d\n", final_dmin, final_dmax);
-    }
-
-    // Print or output list of minimal weight codewords if requested
-    if (ctx.collect_codewords) {
-        FILE *out = stdout;
-        if (ctx.codeword_outfile) {
-            out = fopen(ctx.codeword_outfile, "w");
-            if (!out) out = stdout;
-        }
-
-        fprintf(out, "# Minimal weight codewords found (weight = %d, count = %zu):\n", 
-                final_dmax, ctx.cw_store.count);
-        for (size_t i = 0; i < ctx.cw_store.count; ++i) {
-            for (cindex_t j = 0; j < ctx.cw_store.words[i]->ncols; ++j) {
-                fputc(mzd_read_bit(ctx.cw_store.words[i], 0, j) ? '1' : '0', out);
-            }
-            fputc('\n', out);
-        }
-
-        if (out != stdout) fclose(out);
-    }
-
-    // Resource cleanup
-    mzd_free(ctx.H);
-    cw_store_free(&ctx.cw_store);
-    free(ctx.thread_roles);
-    free(threads);
-    free(wargs);
-    if (ctx.codeword_outfile) free(ctx.codeword_outfile);
-    pthread_mutex_destroy(&ctx.pool_lock);
-
-    return 0;
+  return 0;
 }

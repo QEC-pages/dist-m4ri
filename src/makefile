@@ -15,13 +15,16 @@ CFLAGS = ${OPT} ${VER} ${WARN} ${EXTRA}
 CPP = g++
 
 default: give_help
-all: dist_m4ri 
+all: dist_m4ri distfork
 
-test: dist_m4ri
+test: dist_m4ri distfork
 	./tests/test_run.sh
 
-dist_m4ri: dist_m4ri.c dist_m4ri.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
+dist_m4ri: dist_m4ri.c dist_m4ri.h dist_cc.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
 	${CC} ${CFLAGS} -DSTANDALONE -o dist_m4ri $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm
+
+distfork: distfork.c dist_m4ri.h dist_cc.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
+	${CC} ${CFLAGS} -pthread -o distfork $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm -lpthread
 
 util_m4ri.o: util_m4ri.c util_m4ri.h mmio.h util_hash.h makefile 
 	${CC} ${CFLAGS} -c -o util_m4ri.o $<  
@@ -47,7 +50,7 @@ tags:
 
 
 veryclean: clean
-	rm -f dist_m4ri *.exe 
+	rm -f dist_m4ri distfork *.exe 
 
 zip: ${src}
 	zip -9 -o dist_m4ri.zip ${src} ../Doxyfile ../README.md

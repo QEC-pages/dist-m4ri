@@ -42,7 +42,10 @@ params_t prm={
   .fin="", 
   .spaH=NULL,
   .spaG=NULL,
-  .spaL=NULL
+  .spaL=NULL,
+  .threads=0,
+  .dexp=0,
+  .timeout=60.0
 };
 
 params_t * const p = &prm;
@@ -223,6 +226,26 @@ void var_init(int argc, char **argv, params_t * const p){
       p->classical=dbg;
       if (p->debug&4)
 	printf("# read %s, classical=%d\n",argv[i],p->classical);
+    }
+    else if (sscanf(argv[i],"threads=%d",&dbg)==1){
+      p->threads=dbg;
+      if (p->debug&4)
+	printf("# read %s, threads=%d\n",argv[i],p->threads);
+    }
+    else if (sscanf(argv[i],"dexp=%d",&dbg)==1){
+      p->dexp=dbg;
+      if (p->debug&4)
+	printf("# read %s, dexp=%d\n",argv[i],p->dexp);
+    }
+    else if (sscanf(argv[i],"dest=%d",&dbg)==1){
+      p->dexp=dbg;
+      if (p->debug&4)
+	printf("# read %s, dest=%d (alias for dexp)\n",argv[i],p->dexp);
+    }
+    else if (sscanf(argv[i],"timeout=%lf",&prob)==1){
+      p->timeout=prob;
+      if (p->debug&4)
+	printf("# read %s, timeout=%g\n",argv[i],p->timeout);
     }
     else{ /* unrecognized option */
       printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
