@@ -80,6 +80,9 @@ typedef struct{
   csr_t *spaH;
   csr_t *spaG;
   csr_t *spaL;
+  int threads; /* number of threads to use (0 for auto) */
+  int dexp;    /* expected distance value (0 for auto/none) */
+  double timeout; /* timeout in seconds (default 60.0) */
 } params_t;
 
 static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
@@ -183,6 +186,12 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\t\t   cbeg=[int]:  start column to begin CC search (-1)\n"		\
   "\t\t   cend=[int]:  end column to limit CC search (-1)\n"		\
   "\t\t   noscan=[int]: start CC directly with wmax (0)\n" \
+  "\t\t3: bracketing mode (balanced concurrent RW and CC)\n" \
+  "\n"									\
+  "   Multithreading parameters (distfork):\n"				\
+  "\tthreads=[int]: number of threads to use (0 for auto) (0)\n"	\
+  "\tdexp=[int]:    expected distance value (alias: dest) (0)\n"	\
+  "\ttimeout=[sec]: timeout in seconds (60)\n"				\
   "\n"									\
   "   General parameters:\n"						\
   "\tfdem=[str]: detector error model (DEM) file from stim (NULL)\n" \

@@ -14,14 +14,20 @@ CC = gcc
 CFLAGS = ${OPT} ${VER} ${WARN} ${EXTRA}
 CPP = g++
 
-default: give_help
-all: dist_m4ri 
+default: all
+all: dist_m4ri dist_m4ri_old
 
-test: dist_m4ri
+test: all
 	./tests/test_run.sh
 
-dist_m4ri: dist_m4ri.c dist_m4ri.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
-	${CC} ${CFLAGS} -DSTANDALONE -o dist_m4ri $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm
+dist_m4ri: dist_m4ri.c dist_m4ri.h dist_cc.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
+	${CC} ${CFLAGS} -pthread -o dist_m4ri $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm -lpthread
+
+dist_m4ri_old: dist_rw.c dist_m4ri.h dist_cc.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
+	${CC} ${CFLAGS} -DSTANDALONE -o dist_m4ri_old $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm
+
+distfork: dist_m4ri
+	ln -sf dist_m4ri distfork
 
 util_m4ri.o: util_m4ri.c util_m4ri.h mmio.h util_hash.h makefile 
 	${CC} ${CFLAGS} -c -o util_m4ri.o $<  
@@ -47,13 +53,15 @@ tags:
 
 
 veryclean: clean
-	rm -f dist_m4ri *.exe 
+	rm -f dist_m4ri dist_m4ri_old distfork *.exe 
 
 zip: ${src}
 	zip -9 -o dist_m4ri.zip ${src} ../Doxyfile ../README.md
 
 give_help:
-	@echo  "\e[36m make -j dist_m4ri \e[0m" "\t\t compile \`dist_m4ri\` \e[32m\e[0m"
+	@echo  "\e[36m make all \e[0m" "\t\t compile \`dist_m4ri\` and \`dist_m4ri_old\` \e[32m\e[0m"
+	@echo  "\e[36m make dist_m4ri \e[0m" "\t\t compile multithreaded \`dist_m4ri\` \e[32m\e[0m"
+	@echo  "\e[36m make dist_m4ri_old \e[0m" "\t compile single-threaded \`dist_m4ri_old\` \e[32m\e[0m"
 	@echo  "\e[36m make -j dist_m4ri EXTRA=\"\"\e[0m" "\t compile with add'l checks / assert statements\e[32m\e[0m"
 	@echo  "\e[36m make -j dist_m4ri OPT=\"-pg -O2\"\e[0m" "\t compile for use with \`gprof\`\e[32m\e[0m"
 	@echo  "\e[36m make clean \e[0m   " "\t to\e[31m remove\e[0m object files and such"

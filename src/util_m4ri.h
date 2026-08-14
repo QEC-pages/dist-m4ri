@@ -10,12 +10,12 @@
 
 #define SWAPINT(a,b) do{ int t=a; a=b; b=t; } while(0)
 
-#define ERROR(fmt,...)                                                 \
-  do{                                                                  \
+#define ERROR(fmt,...) \
+  do{ \
     fprintf (stderr, "%s:%d: *** ERROR in function '%s()' ***\n", __FILE__, __LINE__, __FUNCTION__); \
-    printf("[31;1m " fmt "[0m\n",##__VA_ARGS__); \
-    exit(-1);                                                          \
-  }                                                                    \
+    fprintf(stderr, " [31;1m " fmt " [0m\n",##__VA_ARGS__); \
+    exit(-1); \
+  } \
   while(0)
 
 /** `kludge` to work around the differences between old and new m4ri libraries */

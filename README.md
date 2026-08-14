@@ -1,233 +1,254 @@
----
-title: README
-author: 
- - Leonid P. Pryadko
- - Weilei Zeng
-date: 2024-08-01
----
-# dist-m4ri - distance of a classical or quantum CSS code
+# dist-m4ri - Distance of a Classical or Quantum CSS Code
 
 ## Overview
 
-The program implements two algorithms for calculating the distance of
-a classical or quantum CSS binary code:
+`dist-m4ri` is a high-performance multithreaded C program and Python library for computing and bracketing the minimum distance of binary classical linear codes, quantum CSS codes, and Stim Detector Error Models (DEMs).
 
-- Random information set (also, random window, or `RW`), to calculate
-  the upper distance bound, and
-- Connected cluster (`CC`), to calculate the actual distance or lower
-  distance bound of an LDPC code (quantum or classical).
+The program implements three main methods:
 
-For a classical (binary linear) code, only matrix `H`, the
-parity-check matrix, should be specified.
+- **Method 1 (`method=1`) - Random Window (RW) Algorithm**: Multithreaded random information set search to find low-weight non-trivial codewords and establish an **upper distance bound** $d_{\max}$.
+- **Method 2 (`method=2`) - Connected Cluster (CC) Algorithm**: Multithreaded exhaustive depth-first cluster enumeration to compute **exact distance** or establish a certified **lower distance bound** $d_{\min}$.
+- **Method 3 (`method=3`) - Bracketing Mode (Artillery Fork / Вилка)**: Concurrently runs CC and RW on multiple threads, dynamically balancing CPU cores between CC and RW based on current bounds $[d_{\min}, d_{\max}]$, distance estimate (`dexp`/`dest`), remaining RW steps, timeout, and the measured scaling characteristics of CC.
 
-For a quantum CSS code, matrix `H=Hx` and either `G=Hz` or `L=Lx`
-matrices are needed.
+For a classical binary linear code, only the parity-check matrix $H$ is needed.
 
-Alternatively, a detector error model (DEM) file from `stim` can be specified
-using `fdem=[str]`. This file contains both detector and logical error
-associations, which are used to reconstruct `Hx` and `Lx` matrices.
+For a quantum CSS code, matrix $H_X$ and either $H_Z$ (as `finG`) or logical operators $L_X$ (as `finL`) are needed.
 
-All matrices with entries in `GF(2)` should have the same number of
-columns, `n`, and obey the following orthogonality conditions:
-$$H_XH_Z^T=0,\quad H_XL_Z^T=0,\quad L_XH_Z^T=0,\quad L_XL_Z^T=I,$$
-where $I$ is an identity matrix.  Notice that the latter identity is
-not required; it is sufficient that `Lx` and `Lz` matrices have the
-same full row rank `=k`, the dimension of the code, each row of `Lx`
-has a non-zero scalar product with a row of `Lz`, and vice versa.
+Alternatively, a detector error model file from `stim` can be specified using `fdem=[str]`.
 
-## How it works: RW algorithm (`method=1`)
+All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthogonality conditions:
+$$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
 
-Given the error model, i.e., the matrices $H=H_x$, $L=L_x$ ($L$ is empty
-for a classical code), the program searches for smallest-weight binary
-`codewords` $c$ such that $Hc=0$, $Lc\neq0$.
+---
 
-It repeatedly calculates reduced row echelon form of `H`, with columns
-taken in random order, which uniquely fixes the information set
-(non-pivot columns).  Generally, column permutation and row reduction
-gives $H=U\,(I|A)\,P$, where $U$ is invertible, $P$ is a permutation
-matrix, $I$ is the identity matrix of size given by the rank of $H$,
-and columns of $A$ form the information set of the corresponding
-binary code.  The corresponding codewords can be drawn as the rows of
-the matrix $(A^T|I')\,P$.  Because of the identity matrix $I'$, the
-distribution of such vectors is tilted toward smaller weight, which
-qualitatively explains why it works.
+## Output Format & Stream Separation
 
-To speed up the distance calculation, you can use the parameter `wmin` and `wmax`
-(by default, `wmin=1` and `wmax=-1`).  When non-zero, if a code word of weight `w`
-$\le$ `wmin` is found, the distance calculation is terminated
-immediately, and the result `-w` with a negative sign is returned.
-This is useful, e.g., if we need to construct a code with big enough
-distance.
+`dist-m4ri` strictly separates machine-parseable results from informational progress logs:
 
-Additional command-line parameters relevant for this method: 
+- **`stdout`**: Outputs three space-separated integers:
+  ```text
+  dmin dmax rw_steps
+  ```
+  - `dmin - 1` is the maximum cluster size analyzed without success by CC (`dmin = dmax` if CC found a minimum-weight codeword).
+  - `dmax` is the weight of the smallest non-trivial codeword found by RW (`0` if none found).
+  - `rw_steps` is the number of completed RW steps across all threads (`0` if CC found a minimum-weight codeword, or if RW did not run in `method=2`).
+  - When `dmin = dmax = d`, the exact code distance is confirmed.
 
-- `steps` the number of RW decoding steps (the number of information
-  sets to be constructed).
+> **Note on Compatibility**: This 3-number output format (`dmin dmax rw_steps`) is specific to the multithreaded `dist_m4ri` and is incompatible with the legacy single-threaded `dist_m4ri_old` (which returned a single integer `d` or `-w`).
 
-Note: The parameter `smax` is ignored in this method (confinement profile is only calculated in `method=2`).
+- **`stderr`**: Receives all status banners, thread balancing reports, CC round timings, RW discovery logs, warnings, and confinement profiles.
 
-## How it works: CC algorithm (`method=2`).
+---
 
-The program tries to construct a codeword recursively, by starting
-with a non-zero bit in a position `i` in the range from $0$ to $n-1$,
-where $n$ is the number of columns, and then recursively adding the
-additional bits in the support of unsatisfied checks starting from the
-top.  The complexity to enumerate all codewords of weight up to $w$
-can be estimated as $n\,(\Delta-1)^{w-1}$, where $\Delta$ is the
-maximum row weight.
+## How the Methods Work
 
-Additional command-line parameters relevant for this method: 
+### 1. Multithreaded RW Algorithm (`method=1`)
+Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$.
+Threads independently generate random column permutations, compute Gaussian elimination to find information sets, and extract candidate dual-row codewords. When a lighter codeword is discovered, all worker threads atomically update the global upper bound $d_{\max}$ and prune heavier entries.
 
-- `wmax` the maximum size of the connected cluster.
+Relevant parameters:
+- `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 1).
+- `wmin=[int]`: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found).
+- `threads=[int]`: Number of POSIX threads to run (default: number of CPU cores).
+- `timeout=[sec]`: Maximum execution time in seconds (default: 60.0).
 
-- `start` the position to start the cluster.  In this case only one
-  starting position `i=start` will be used.  This is useful, e.g., if
-  the code is symmetric (as, e.g., for cyclic codes).
+### 2. Multithreaded CC Algorithm (`method=2`)
+Recursively explores connected clusters starting from each column $i \in [0, n-1]$. Columns are distributed dynamically among worker threads via lock-free atomic queues.
+If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `outC` is specified, CC exhausts all columns for weight $w$ to collect all unique minimum-weight codewords.
 
-- `cbeg` and `cend` to set a range of initial positions for CC.
-  Only works with `method=2` (or `method=3`).
-  This is useful to run the program in parallel on several cores by partitioning the search space.
-  `start=6` is equivalent to `cbeg=6 cend=6`.
+Relevant parameters:
+- `wmax=[int]`: Maximum cluster weight to search.
+- `noscan=[int]`: If set to 1, start CC directly at $w_{\max}$ without scanning smaller weights.
+- `cbeg=[int]`, `cend=[int]`: Column range $[c_{\text{beg}}, c_{\text{end}}]$ to limit the CC search space.
+- `start=[int]`: Set $c_{\text{beg}} = c_{\text{end}} = \text{start}$ (useful for cyclic or symmetric codes).
+- `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 5; set 0 to disable).
 
+### 3. Bracketing Mode (`method=3`)
+Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down).
+- Measures the empirical time per RW step and the exponential growth factor of CC rounds.
+- Solves an optimal thread allocation ratio at each CC weight round to balance the expected time of CC completion against the remaining RW step budget and timeout.
+- Terminates automatically when $d_{\min} = d_{\max}$, when `timeout` is reached, or when `steps` are exhausted.
 
-- `noscan` if set to 1, start the recursion directly with `w=wmax`,
-  without scanning smaller weights.  Only works with `method=2`.
+Relevant parameters:
+- `dexp=[int]` (alias: `dest=[int]`): Expected code distance to help guide initial thread balancing.
+- `threads=[int]`: Number of worker threads.
+- `timeout=[sec]`: Maximum wall-clock time in seconds.
+- `steps=[int]`: Maximum total RW steps.
+- `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
 
-  When `noscan` is 0 (default), the algorithm scans weights `w` from 1 to `wmax`.
-  After completing the search for each weight `w` without finding any codeword,
-  it prints `-w` to `stdout` (with flush) to indicate progress.
-  
-### Calculating confinement profile 
+---
 
-With `method=2`, the program also calculates the confinement profile, minimum
-syndrome weight for a given error weight.  Notice that it should properly be
-calculated for a given `irreducible` error weight, thus the confinement profile
-may only be trusted up to the half of the distance.
+## Confinement Profile
 
-```sh
-$ ./dist_m4ri method=2 finH= ../examples/surf_d5_H.mmx finL= ../examples/surf_d5_L.mmx wmax=5 debug=0
-# confinement: 1,1,1,1,1
-5
+With `smax > 0` (default: `smax=5`), the CC algorithm tracks the minimum non-zero syndrome weight observed for each cluster weight $w$:
 
+```bash
+$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 debug=0 threads=4
+# confinement: 1,1,1,1
+5 0
 ```
 
-```sh
-$ ./dist_m4ri method=2 finH= ../examples/QX150.mtx finG= ../examples/QZ150.mtx wmax=8
-# read H <- file '../examples/QX150.mtx'
-# read G <- file '../examples/QZ150.mtx'
-# recursively searching for w=1 codewords wmax=8 beg=0 end=149
-# recursively searching for w=2 codewords wmax=8 beg=0 end=148
-# recursively searching for w=3 codewords wmax=8 beg=0 end=147
-# recursively searching for w=4 codewords wmax=8 beg=0 end=146
-# recursively searching for w=5 codewords wmax=8 beg=0 end=145
-# recursively searching for w=6 codewords wmax=8 beg=0 end=144
-# w=1 min non-zero syndrome weight 2
-# w=2 min non-zero syndrome weight 2
-# w=3 min non-zero syndrome weight 2
-# w=4 min non-zero syndrome weight 2
-# w=5 min non-zero syndrome weight 2
-# w=6 min non-zero syndrome weight 2
-### Cluster (actual min-weight codeword found): d=6
-
+With `debug=1`, detailed per-weight lines are printed to `stderr`:
+```text
+# w=1 min non-zero syndrome weight 1
+# w=2 min non-zero syndrome weight 1
+# w=3 min non-zero syndrome weight 1
+# w=4 min non-zero syndrome weight 1
 ```
 
+---
 
-## Return Values
+## Codeword Export (`outC` / `finC`)
 
-The program outputs the results to `stdout`. The last line of the output (regardless of the `debug` setting) is always the returned integer value:
-- **Positive value `d`**: A codeword of weight `d` was found. This represents the actual distance (for `method=2` if run to completion) or an upper bound (for `method=1`).
-- **Negative value `-wmax`** (or `-w` if early terminated):
-    - For `method=2` (or `method=3` if no codewords found): No codewords of weight up to `wmax` (inclusive) were found. The distance is at least `wmax + 1`.
-    - For `method=1` (or `method=3` early exit): A codeword of weight `w` was found, but it was `<= wmin`, so the program terminated early.
-- **Zero `0`** (for `method=1` only): No codewords of weight up to `wmax` (inclusive) were found (when `wmax > 0`), or no codewords were found at all (when `wmax=0`).
+- **`outC=[file.nz]`**: Saves all unique discovered codewords in standard **NZLIST** format:
+  ```text
+  %% NZLIST
+  % generated by dist_m4ri
+  <weight> <col_1> <col_2> ... <col_weight>
+  ```
+  *(Indices are 1-based).*
+- **`finC=[file.nz]`**: Reads initial codewords from a file to initialize $d_{\max}$ and the codeword hash table.
+- **`dW=[int]`**: When set (e.g. `dW=1`), preserves and exports codewords of weight up to $w \le d_{\min} + \text{dW}$.
+- **`maxC=[int]`**: Limits collection to at most `maxC` unique codewords.
 
-If **`method=3`** (both methods) is specified, the program runs RW first to find an upper bound `d_RW`.
-- If RW finds a codeword of weight `w <= wmin`, it triggers early termination, and the program exits **immediately** returning `-w`. CC is **not** run.
-- Otherwise, it sets `wmax` for the CC run to `d_RW - 1` (or `min(wmax, d_RW - 1)`) to search for smaller codewords.
-- If CC finds nothing, the lower and upper bounds coincide, and the program reports `d_RW` as the exact distance. If debug is enabled, the second to last line will be `success (two distance bounds coincide) d=d_RW` and the last line will be `d_RW`.
+---
 
-The parameters behave as follows when `method=3`:
-- `wmin` is used in the RW phase to stop early. If triggered, the program exits immediately.
-- `wmax` is used as the initial limit for both phases (unless RW finds a smaller codeword, which lowers the limit for CC).
-- `dmax` is not implemented and will cause an error if set.
-- `steps` is used in the RW phase.
+## Command-Line Usage
 
-If parameters that are only relevant for RW (`wmin`, `steps`) are set when using `method=2` (CC only), a warning will be printed.
-
-If `wmin > wmax` (when `wmax > 0`), the program will exit with an error.
-
-
-## How to run it
-
-For help, just run `./dist_m4ri -h` or `./dist_m4ri --help`.  This
-shows the following 
 ```sh
-$ ./dist_m4ri --help 
+$ ./src/dist_m4ri --help
 src/dist_m4ri: distance of a classical or quantum CSS code
 	usage: src/dist_m4ri parameter=value [...]
 
    Required parameter:
 	method=[int]: bitmap for method used (no default): 
+		1: random window (RW) algorithm
+		2: connected cluster (CC) algorithm
+		3: bracketing mode (balanced concurrent RW and CC)
 
-		1: random window (RW) algorithm. Options:
-		   steps=[int]: how many information sets to use (1)
-		   wmin=[int]:  minimum distance of interest (1)
-			 immediately stop and return '-w' on a cw of weight w<=wmin
-			 use this option to quickly scan over a large number of codes
-		2: connected cluster (CC) algorithm.  Options:
-		   wmax=[int]:  maximum cluster weight to construct, inclusive (0)
-			 must be non-zero for CC only, otherwise use upper bound from RW
-		   smax=[int]:  maximum syndrome weight of interest, inclusive (5)
-			 must be non-zero to calculate confinement profile
-		   start=[int]: use only this position to start (equiv. to cbeg=cend=start) (-1)
-		   cbeg=[int]:  start column to begin CC search (-1)
-		   cend=[int]:  end column to limit CC search (-1)
-		   noscan=[int]: start CC directly with wmax (0)
+   Multithreading parameters:
+	threads=[int]: number of threads to use (0 for auto CPU count) (0)
+	dexp=[int]:    expected distance value (alias: dest) (0)
+	timeout=[sec]: timeout in seconds (60)
 
    General parameters:
-	fdem=[str]: detector error model (DEM) file from stim (NULL)
-	pmin=[float]: minimum error probability to keep for DEM (0.0)
 	finH=[str]: parity check matrix Hx (NULL)
 	finG=[str]: matrix Hz (quantum CSS code only) (NULL)
 	finL=[str]: matrix Lx (quantum CSS code only) (NULL)
-		 Either L=Lx or G=Hz matrix is required for a quantum CSS code
-	fin=[str]:  base name for input files ("try")
-		 set finH->"${fin}X.mtx"  finG->"${fin}Z.mtx"
-	css=[int]:  reserved for future use (1)
-	seed=[int]: rng seed [use 0 for time(NULL)] (0)
-	debug=[int]:	 bitmap for aux information to output (3)
-		0: clear the entire debug bitmap to 0.
-		1: output misc general info (on by default)
-		2: output more general info (on by default)
-		4: debug command line arguments parsing
-		8: output progress reports every 1000 steps
-		16: output new min-weight codewords found (cut large vectors)
-		32: output matrices (unless n is large)
-		64: debug confinement hash updates (swei changes)
-		128: debug duplicate syndromes in confinement hash (debug build only)
-		256: reserved
-		512: reserved
-		1024: reserved
-		2048: allow big matrix / large vector output
-		   see the source code for more options
-	  Multiple 'debug' parameters are XOR combined except for 0.
-	  Use debug=0 as the 1st argument to suppress all debug messages.
-   -h gives this help (also '--help')
+	fdem=[str]: detector error model (DEM) file from stim (NULL)
+	pmin=[float]: minimum error probability to keep for DEM (0.0)
+	wmax=[int]: maximum cluster weight for CC (0)
+	wmin=[int]: minimum distance of interest for RW (1)
+	steps=[int]: number of RW information sets (1)
+	smax=[int]: maximum syndrome weight for confinement (5)
+	outC=[str]: file to output codewords in NZLIST format (NULL)
+	finC=[str]: file to read initial codewords from (NULL)
+	dW=[int]: extra weight above dmin to collect codewords (-1)
+	maxC=[int]: maximum number of codewords to collect (0)
+	classical=[0|1]: force classical (1) or quantum (0) code (-1)
+	debug=[int]: debug output bitmap (3)
 ```
 
-## Compilation
+### CLI Examples
 
-The program is intended for use with recent `gcc` compilers under
-linux.  Download the distribution from `github` then run from the
-`dist-m4ri/src` directory ```sh make -j all ``` This should compile
-the executable `dist_m4ri`.
+```bash
+# 1. Classical linear code using 8 threads in bracketing mode
+$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8
+8 8
 
-The program uses `m4ri` library for binary linear algebra.  To install
-under Ubuntu, run
+# 2. Stim Detector Error Model (DEM) with timeout and codeword export
+$ ./src/dist_m4ri method=3 fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4
+3 3
+
+# 3. Quantum CSS code (Hx and Hz) using pure CC search up to wmax=5
+$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finG=./examples/surf_d5_L.mmx wmax=5 threads=4
+5 5
 ```
-sudo apt-get update -y
-sudo apt-get install -y libm4ri-dev
+
+---
+
+## Python Wrapper (`dist_m4ri.py`)
+
+A Python module [`dist_m4ri.py`](dist_m4ri.py) is included for high-level scripting, NumPy/SciPy integration, and Stim interoperability without manual threading overhead.
+
+### Key Python Functions
+
+- `compute_classical_distance(H, ...)`: Minimum distance of a classical linear code (from NumPy 2D array, SciPy sparse matrix, or `.mtx` file).
+- `compute_css_distance(Hx, Hz, Lx=None, Lz=None, ...)`: Distance $d = \min(d_X, d_Z)$ of a CSS quantum code.
+- `compute_dem_distance(dem=None, circuit=None, ...)`: Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, or `.dem` file.
+- `read_sparse_vectors(filepath)`: Parses NZLIST files into lists of 0-based integer support indices.
+- Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`.
+- Optional solver backend: `solver="codedistance"` (uses the `codedistance` library if installed).
+
+### Python Example
+
+```python
+import numpy as np
+import stim
+import dist_m4ri
+
+# 1. Classical Code Distance
+H = np.array([
+    [1, 0, 0, 1, 1, 0, 1],
+    [0, 1, 0, 1, 0, 1, 1],
+    [0, 0, 1, 0, 1, 1, 1]
+], dtype=np.int8)
+d = dist_m4ri.compute_classical_distance(H, threads=4)
+print(f"Hamming code distance: {d}")  # 3
+
+# 2. Stim DEM / Circuit Distance with Codewords
+circuit = stim.Circuit.generated(
+    "surface_code:rotated_memory_z",
+    rounds=3,
+    distance=3,
+    after_clifford_depolarization=0.001
+)
+dist, dist_list, cws = dist_m4ri.compute_dem_distance(circuit=circuit, do_cws=True, threads=8)
+print(f"Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms")
+
+# 3. CSS Quantum Code
+dist, d_x, d_z = dist_m4ri.compute_css_distance(
+    Hx="examples/surf_d5_H.mmx",
+    Hz="examples/surf_d5_H.mmx",
+    Lz="examples/surf_d5_L.mmx",
+    Lx="examples/surf_d5_L.mmx",
+    d_exp=5,
+    threads=8
+)
+print(f"CSS distance: {dist}")  # 5
 ```
+
+---
+
+## Compilation & Testing
+
+### Prerequisites
+- Recent `gcc` with POSIX threads support (`-pthread`).
+- `libm4ri-dev` linear algebra library:
+  ```bash
+  sudo apt-get update -y
+  sudo apt-get install -y libm4ri-dev
+  ```
+
+### Build Targets
+
+```bash
+cd src
+
+# Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
+make all
+
+# Run full C test suite (34 tests)
+make test
+```
+
+### Python Unit Tests
+
+```bash
+pytest tests/test_dist_m4ri.py -v
+```
+
+---
 
 ## References
 
@@ -237,11 +258,12 @@ If you use this program, please cite:
 
 Other related papers and software:
 
-*   **vecdec Repository** (implements the Random Information Set (RW) algorithm and can handle different error weights/probabilities):
+*   **vecdec Repository** (Random Information Set (RW) algorithm with error weights/probabilities):
     [QEC-pages/vecdec](https://github.com/QEC-pages/vecdec).
 
-*   **QDistRnd GAP Package** (describing the Random Information Set algorithm for quantum codes over arbitrary finite fields):
+*   **QDistRnd GAP Package** (Random Information Set algorithm for quantum codes over arbitrary finite fields):
     L. P. Pryadko, V. A. Shabashov, and V. K. Kozin, "QDistRnd: A GAP package for computing the distance of quantum error-correcting codes," *Journal of Open Source Software*, vol. 7, no. 71, p. 4120, 2022. [doi:10.21105/joss.04120](https://doi.org/10.21105/joss.04120).
 
-*   **Performance Comparison** (comparing the performance of this program with other available distance-finding programs):
+*   **Performance Comparison**:
     M. Webster, A. Jacob, and O. Higgott, "Distance-Finding Algorithms for Quantum Codes and Circuits," arXiv:2603.22532 [quant-ph], 2026. [arXiv:2603.22532](https://arxiv.org/abs/2603.22532).
+
