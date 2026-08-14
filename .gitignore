@@ -36,7 +36,9 @@ TAGS
 
 # Executables
 src/dist_m4ri
+src/dist_m4ri_old
 dist_m4ri
+dist_m4ri_old
 *.exe
 *.out
 *.app
