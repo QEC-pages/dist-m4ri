@@ -40,6 +40,44 @@
 #include "dist_m4ri.h"
 #include "dist_cc.h"
 
+/* Mutex protecting M4RI's internal non-thread-safe MMC memory cache */
+static pthread_mutex_t m4ri_mem_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static inline mzd_t *safe_mzd_from_csr(mzd_t *dst, const csr_t *p) {
+  pthread_mutex_lock(&m4ri_mem_mutex);
+  mzd_t *res = mzd_from_csr(dst, p);
+  pthread_mutex_unlock(&m4ri_mem_mutex);
+  return res;
+}
+
+static inline mzd_t *safe_mzd_init(rci_t r, rci_t c) {
+  pthread_mutex_lock(&m4ri_mem_mutex);
+  mzd_t *res = mzd_init(r, c);
+  pthread_mutex_unlock(&m4ri_mem_mutex);
+  return res;
+}
+
+static inline void safe_mzd_free(mzd_t *M) {
+  if (!M) return;
+  pthread_mutex_lock(&m4ri_mem_mutex);
+  mzd_free(M);
+  pthread_mutex_unlock(&m4ri_mem_mutex);
+}
+
+static inline mzp_t *safe_mzp_init(rci_t length) {
+  pthread_mutex_lock(&m4ri_mem_mutex);
+  mzp_t *res = mzp_init(length);
+  pthread_mutex_unlock(&m4ri_mem_mutex);
+  return res;
+}
+
+static inline void safe_mzp_free(mzp_t *P) {
+  if (!P) return;
+  pthread_mutex_lock(&m4ri_mem_mutex);
+  mzp_free(P);
+  pthread_mutex_unlock(&m4ri_mem_mutex);
+}
+
 static inline double get_time_sec(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -190,7 +228,7 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
 
 /* Run RW batch */
 static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
-                         mzd_t *mH, mzd_t **p_mHT, rci_t *ee,
+                         mzd_t *mH, mzd_t *mHT, rci_t *ee,
                          mzp_t *perm, mzp_t *pivs, mzp_t *pivs_srtd, mzp_t *skip_pivs,
                          uint64_t *rng_state, int tid) {
   params_t * const p = ctx->p;
@@ -229,8 +267,7 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
     }
     skip_pivs->length = num;
 
-    *p_mHT = mzd_transpose(*p_mHT, mH);
-    mzd_t *mHT = *p_mHT;
+    mzd_transpose(mHT, mH);
 
     int k = nvar - rank;
     for (int ir = 0; ir < k; ir++) {
@@ -248,7 +285,7 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       rci_t j = -1;
       while (cnt < limit) {
         j = nextelement(rawrow, mHT->width, j);
-        if (j == -1) break;
+        if (j == -1 || j >= rank) break;
         ee[cnt++] = pivs->values[j++];
       }
 
@@ -290,24 +327,36 @@ static void *worker_thread_func(void *arg) {
   worker_arg_t *warg = (worker_arg_t *)arg;
   distfork_ctx_t *ctx = warg->ctx;
   int tid = warg->tid;
+  const int nvar = ctx->p->spaH->cols;
+  const bool enable_rw = (ctx->p->method & 1) != 0;
 
-  /* Thread-local RW matrices */
-  mzd_t *mH = mzd_from_csr(NULL, ctx->p->spaH);
+  /* Thread-local RW matrices (allocated safely only if RW is enabled) */
+  mzd_t *mH = NULL;
   mzd_t *mHT_rw = NULL;
-  rci_t *ee = malloc(ctx->p->spaH->cols * sizeof(rci_t));
-  mzp_t *perm = mzp_init(ctx->p->spaH->cols);
-  mzp_t *pivs = mzp_init(ctx->p->spaH->cols);
-  mzp_t *pivs_srtd = mzp_init(ctx->p->spaH->cols);
-  mzp_t *skip_pivs = mzp_init(ctx->p->spaH->cols);
+  rci_t *ee = NULL;
+  mzp_t *perm = NULL;
+  mzp_t *pivs = NULL;
+  mzp_t *pivs_srtd = NULL;
+  mzp_t *skip_pivs = NULL;
   uint64_t rng_state = (uint64_t)ctx->p->seed + (uint64_t)tid * 0x9e3779b97f4a7c15ULL + 0x517cc1b727220a95ULL;
+
+  if (enable_rw) {
+    mH = safe_mzd_from_csr(NULL, ctx->p->spaH);
+    mHT_rw = safe_mzd_init(nvar, ctx->p->spaH->rows);
+    ee = malloc((nvar + 2) * sizeof(rci_t));
+    perm = safe_mzp_init(nvar);
+    pivs = safe_mzp_init(nvar);
+    pivs_srtd = safe_mzp_init(nvar);
+    skip_pivs = safe_mzp_init(nvar);
+  }
 
   /* Thread-local CC memory */
   const int wmax = ctx->p->wmax > 0 ? ctx->p->wmax : 100;
-  one_vec_t *err = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 1));
-  one_vec_t *urr = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 1));
-  one_vec_t **syn = calloc(wmax + 2, sizeof(one_vec_t *));
-  for (int i = 0; i <= wmax + 1; i++) {
-    syn[i] = calloc(1, sizeof(one_vec_t) + sizeof(int) * ctx->p->spaH->rows);
+  one_vec_t *err = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 2));
+  one_vec_t *urr = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 2));
+  one_vec_t **syn = calloc(wmax + 3, sizeof(one_vec_t *));
+  for (int i = 0; i <= wmax + 2; i++) {
+    syn[i] = calloc(1, sizeof(one_vec_t) + sizeof(int) * (ctx->p->spaH->rows + 1));
   }
 
   while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
@@ -361,14 +410,14 @@ static void *worker_thread_func(void *arg) {
     }
 
     /* 2. Try to take RW work if RW is active (method 1 or 3) */
-    if ((ctx->p->method & 1) && !atomic_load(&ctx->stop_flag)) {
+    if (enable_rw && !atomic_load(&ctx->stop_flag)) {
       long cur_s = atomic_load(&ctx->rw_steps_started);
       if (cur_s < ctx->total_rw_steps) {
         long target_s = cur_s + 10;
         if (target_s > ctx->total_rw_steps) target_s = ctx->total_rw_steps;
         if (atomic_compare_exchange_weak(&ctx->rw_steps_started, &cur_s, target_s)) {
           int n_steps = (int)(target_s - cur_s);
-          run_rw_steps(ctx, n_steps, mH, &mHT_rw, ee, perm, pivs, pivs_srtd, skip_pivs, &rng_state, tid);
+          run_rw_steps(ctx, n_steps, mH, mHT_rw, ee, perm, pivs, pivs_srtd, skip_pivs, &rng_state, tid);
           did_work = true;
           continue;
         }
@@ -380,15 +429,17 @@ static void *worker_thread_func(void *arg) {
     }
   }
 
-  mzp_free(skip_pivs);
-  mzp_free(pivs_srtd);
-  mzp_free(perm);
-  mzp_free(pivs);
-  free(ee);
-  if (mHT_rw) mzd_free(mHT_rw);
-  mzd_free(mH);
+  if (enable_rw) {
+    safe_mzp_free(skip_pivs);
+    safe_mzp_free(pivs_srtd);
+    safe_mzp_free(perm);
+    safe_mzp_free(pivs);
+    free(ee);
+    safe_mzd_free(mHT_rw);
+    safe_mzd_free(mH);
+  }
 
-  for (int i = 0; i <= wmax + 1; i++) free(syn[i]);
+  for (int i = 0; i <= wmax + 2; i++) free(syn[i]);
   free(syn);
   free(err);
   free(urr);
