@@ -25,13 +25,17 @@ $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
 
 `dist-m4ri` strictly separates machine-parseable results from informational progress logs:
 
-- **`stdout`**: Outputs only two space-separated integers:
+- **`stdout`**: Outputs three space-separated integers:
   ```text
-  dmin dmax
+  dmin dmax rw_steps
   ```
-  - $d_{\min} - 1$ is the maximum cluster size analyzed without success by CC ($d_{\min} = d_{\max}$ if CC found a minimum-weight codeword).
-  - $d_{\max}$ is the weight of the smallest non-trivial codeword found by RW ($0$ if none found).
-  - When $d_{\min} = d_{\max} = d$, the exact code distance is confirmed.
+  - `dmin - 1` is the maximum cluster size analyzed without success by CC (`dmin = dmax` if CC found a minimum-weight codeword).
+  - `dmax` is the weight of the smallest non-trivial codeword found by RW (`0` if none found).
+  - `rw_steps` is the number of completed RW steps across all threads (`0` if CC found a minimum-weight codeword, or if RW did not run in `method=2`).
+  - When `dmin = dmax = d`, the exact code distance is confirmed.
+
+> **Note on Compatibility**: This 3-number output format (`dmin dmax rw_steps`) is specific to the multithreaded `dist_m4ri` and is incompatible with the legacy single-threaded `dist_m4ri_old` (which returned a single integer `d` or `-w`).
+
 - **`stderr`**: Receives all status banners, thread balancing reports, CC round timings, RW discovery logs, warnings, and confinement profiles.
 
 ---

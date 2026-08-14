@@ -10,10 +10,13 @@
  *             current bounds [dmin, dmax], RW step count, timeout,
  *             and scaling characteristics.
  *
- * Output to stdout: "dmin dmax"
+ * Output to stdout: "dmin dmax rw_steps"
  * where dmin-1 is the maximum cluster size analyzed without success by CC,
  * dmin=dmax if CC actually found a min-weight codeword of this size,
- * and dmax is the smallest-weight codeword found by RW.
+ * dmax is the smallest-weight codeword found by RW,
+ * and rw_steps is the number of completed RW steps (0 if CC found a min-weight codeword
+ * or if RW did not run in method=2).
+ * NOTE: This 3-number output format is incompatible with legacy single-threaded dist_m4ri_old.
  *
  * All debugging messages and confinement profile are sent to stderr.
  *
@@ -944,8 +947,13 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* Output to stdout: dmin dmax */
-  printf("%d %d\n", final_dmin, final_dmax);
+  long reported_rw_steps = 0;
+  if (p->method != 2 && cc_found == 0) {
+    reported_rw_steps = atomic_load(&ctx.rw_steps_completed);
+  }
+
+  /* Output to stdout: dmin dmax rw_steps */
+  printf("%d %d %ld\n", final_dmin, final_dmax, reported_rw_steps);
   fflush(stdout);
 
   /* Codeword export */

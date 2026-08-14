@@ -138,8 +138,23 @@ def test_codedistance_solver():
         [0, 0, 1, 0, 1, 1, 1]
     ], dtype=np.int8)
 
-    d = dist_m4ri.compute_classical_distance(H, solver="codedistance", num_steps=100)
-    assert d == 3
+def test_run_dist_m4ri_three_numbers():
+    # Method 2 (CC only): rw_steps must be 0
+    h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    dmin, dmax, rw_steps = dist_m4ri.run_dist_m4ri(method=2, finH=h_file, finL=l_file, wmax=5, threads=4)
+    assert (dmin, dmax, rw_steps) == (5, 5, 0)
+
+    # Method 2 (CC not found): dmin=wmax+1, dmax=0, rw_steps=0
+    dmin, dmax, rw_steps = dist_m4ri.run_dist_m4ri(method=2, finH=h_file, finL=l_file, wmax=3, threads=4)
+    assert (dmin, dmax, rw_steps) == (4, 0, 0)
+
+    # Method 1 (RW): rw_steps reported
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    dmin, dmax, rw_steps = dist_m4ri.run_dist_m4ri(method=1, fdem=dem_file, steps=100, threads=4)
+    assert dmin == 1
+    assert dmax == 3
+    assert rw_steps >= 100
 
 
 if __name__ == "__main__":

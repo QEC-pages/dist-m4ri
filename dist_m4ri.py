@@ -165,13 +165,13 @@ def find_dist_m4ri_binary(custom_path: Optional[str] = None) -> str:
     )
 
 
-def parse_dist_m4ri_output(stdout: str) -> Tuple[int, int]:
+def parse_dist_m4ri_output(stdout: str) -> Tuple[int, int, int]:
     """
     Parses the standard output of dist_m4ri.
-    Expected format on stdout: "dmin dmax" or a single integer.
+    Expected format on stdout: "dmin dmax rw_steps", "dmin dmax", or a single integer.
     
     Returns:
-        tuple (dmin, dmax)
+        tuple (dmin, dmax, rw_steps)
     """
     lines = stdout.strip().split('\n')
     for line in reversed(lines):
@@ -179,15 +179,20 @@ def parse_dist_m4ri_output(stdout: str) -> Tuple[int, int]:
         if not line or line.startswith('#'):
             continue
         parts = line.split()
-        if len(parts) >= 2:
+        if len(parts) >= 3:
             try:
-                return int(parts[0]), int(parts[1])
+                return int(parts[0]), int(parts[1]), int(parts[2])
+            except ValueError:
+                continue
+        elif len(parts) == 2:
+            try:
+                return int(parts[0]), int(parts[1]), 0
             except ValueError:
                 continue
         elif len(parts) == 1:
             try:
                 val = int(parts[0])
-                return val, val
+                return val, val, 0
             except ValueError:
                 continue
 
@@ -218,12 +223,12 @@ def run_dist_m4ri(
     seed: int = 0,
     debug: int = 0,
     stop_event: Optional[threading.Event] = None
-) -> Tuple[int, int]:
+) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
     
     Returns:
-        tuple (dmin, dmax)
+        tuple (dmin, dmax, rw_steps)
     """
     exec_path = find_dist_m4ri_binary(dist_m4ri_path)
     cmd = [exec_path, f"debug={debug}", f"method={method}"]
@@ -379,7 +384,7 @@ def compute_classical_distance(
             outC = create_unique_file(extension="_cws.nz")
             temp_files.append(outC)
 
-        dmin, dmax = run_dist_m4ri(
+        dmin, dmax, _ = run_dist_m4ri(
             dist_m4ri_path=dist_m4ri,
             method=method,
             finH=file_H,
@@ -560,7 +565,7 @@ def compute_css_distance(
 
         # Z-distance: Hx as finH, Hz as finG (or Lz as finL)
         if can_compute_Z:
-            dmin_z, dmax_z = run_dist_m4ri(
+            dmin_z, dmax_z, _ = run_dist_m4ri(
                 dist_m4ri_path=dist_m4ri,
                 method=method,
                 finH=file_Hx,
@@ -586,7 +591,7 @@ def compute_css_distance(
 
         # X-distance: Hz as finH, Hx as finG (or Lx as finL)
         if can_compute_X:
-            dmin_x, dmax_x = run_dist_m4ri(
+            dmin_x, dmax_x, _ = run_dist_m4ri(
                 dist_m4ri_path=dist_m4ri,
                 method=method,
                 finH=file_Hz,
@@ -738,7 +743,7 @@ def compute_dem_distance(
             outC = create_unique_file(extension="_out.nz")
             temp_files.append(outC)
 
-        dmin, dmax = run_dist_m4ri(
+        dmin, dmax, _ = run_dist_m4ri(
             dist_m4ri_path=dist_m4ri,
             method=method,
             fdem=file_dem,

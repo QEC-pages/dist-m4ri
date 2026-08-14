@@ -200,50 +200,50 @@ assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_arr_sym_int.mmx wmax=2 debug=
 assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_arr_sym_int.mmx wmax=1 debug=0" 0 "^-1$" ""
 
 # =========================================================================
-# distfork tests (multithreading, methods 1, 2, 3, dexp, timeout, outC)
+# dist_m4ri multithreading tests (methods 1, 2, 3, dexp, timeout, outC)
 # =========================================================================
 
-# Test 24: distfork method=2 (multithreaded CC exact distance)
-assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 debug=0 threads=4" 0 "^5 5$" ""
+# Test 24: dist_m4ri method=2 (multithreaded CC exact distance, rw_steps=0)
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 debug=0 threads=4" 0 "^5 5 0$" ""
 
-# Test 25: distfork method=2 (CC lower bound when distance > wmax)
-assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=3 debug=0 threads=4" 0 "^4 0$" ""
+# Test 25: dist_m4ri method=2 (CC lower bound when distance > wmax, rw_steps=0)
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=3 debug=0 threads=4" 0 "^4 0 0$" ""
 
-# Test 26: distfork method=1 (multithreaded RW)
-assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=100 debug=0 threads=4" 0 "^1 3$" ""
+# Test 26: dist_m4ri method=1 (multithreaded RW, reported rw_steps > 0)
+assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=100 debug=0 threads=4" 0 "^1 3 [0-9]+$" ""
 
-# Test 27: distfork method=3 (bracketing mode with dexp)
-assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem dexp=3 timeout=10 debug=0 threads=4" 0 "^3 3$" ""
+# Test 27: dist_m4ri method=3 (bracketing mode with dexp)
+assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem dexp=3 timeout=10 debug=0 threads=4" 0 "^3 3 [0-9]+$" ""
 
-# Test 28: distfork method=3 (bracketing mode with dest alias)
-assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem dest=3 timeout=10 debug=0 threads=4" 0 "^3 3$" ""
+# Test 28: dist_m4ri method=3 (bracketing mode with dest alias)
+assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem dest=3 timeout=10 debug=0 threads=4" 0 "^3 3 [0-9]+$" ""
 
-# Test 29: distfork method=3 on surf_d5
-assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx dexp=5 timeout=10 debug=0 threads=4 steps=500" 0 "^5 5$" ""
+# Test 29: dist_m4ri method=3 on surf_d5
+assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx dexp=5 timeout=10 debug=0 threads=4 steps=500" 0 "^5 5 [0-9]+$" ""
 
-# Test 30: distfork codeword saving and loading
+# Test 30: dist_m4ri codeword saving and loading
 TEMP_FORK_CWS1=$(mktemp --suffix=.nz)
 TEMP_FORK_CWS2=$(mktemp --suffix=.nz)
-assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 outC=$TEMP_FORK_CWS1 debug=0 threads=4" 0 "^3 3$" ""
-assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$TEMP_FORK_CWS1 outC=$TEMP_FORK_CWS2 debug=0 threads=4" 0 "^3 3$" ""
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 outC=$TEMP_FORK_CWS1 debug=0 threads=4" 0 "^3 3 0$" ""
+assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$TEMP_FORK_CWS1 outC=$TEMP_FORK_CWS2 debug=0 threads=4" 0 "^3 3 [0-9]+$" ""
 if ! diff -q "$TEMP_FORK_CWS1" "$TEMP_FORK_CWS2" >/dev/null; then
-    echo "  [FAIL] distfork codeword files differ"
+    echo "  [FAIL] dist_m4ri codeword files differ"
     FAILED=1
 fi
 rm -f "$TEMP_FORK_CWS1" "$TEMP_FORK_CWS2"
 
-# Test 31: distfork timeout graceful termination
-assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx steps=10000000 timeout=0.5 debug=0 threads=4" 0 "^1 5$" ""
+# Test 31: dist_m4ri timeout graceful termination
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx steps=10000000 timeout=0.5 debug=0 threads=4" 0 "^1 5 [0-9]+$" ""
 
-# Test 32: distfork classical mode
-assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0 threads=4" 0 "^2 2$" ""
+# Test 32: dist_m4ri classical mode
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0 threads=4" 0 "^2 2 0$" ""
 
-# Test 33: distfork method=2 with dW=1 and outC
+# Test 33: dist_m4ri method=2 with dW=1 and outC
 TEMP_DW_CWS=$(mktemp --suffix=.nz)
-assert_output "$BIN_FORK debug=15 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem dW=1 wmax=4 outC=$TEMP_DW_CWS threads=4" 0 "^3 3$" "continuing up to w=4 for dW=1"
+assert_output "$BIN_FORK debug=15 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem dW=1 wmax=4 outC=$TEMP_DW_CWS threads=4" 0 "^3 3 0$" "continuing up to w=4 for dW=1"
 rm -f "$TEMP_DW_CWS"
 
-# Test 34: dist_m4ri method=2 with dW=1 reporting
+# Test 34: dist_m4ri_old method=2 with dW=1 reporting
 TEMP_M4RI_CWS=$(mktemp --suffix=.nz)
 assert_output "$BIN debug=1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem dW=1 wmax=4 outC=$TEMP_M4RI_CWS" 0 "^3$" "CC round w=.*searched with dW=1"
 rm -f "$TEMP_M4RI_CWS"
