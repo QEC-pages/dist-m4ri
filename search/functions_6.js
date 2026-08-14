@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['one_5fvec_5fprint_0',['one_vec_print',['../dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c'],['../util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c']]]
+  ['get_5fsparse_5farray_5fstate_0',['get_sparse_array_state',['../namespacedist__m4ri.html#a2965d32f7e03bb8667abd087c90770ca',1,'dist_m4ri']]]
 ];

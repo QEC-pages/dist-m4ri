@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['todo_20notes_20for_20tt_20dist_5fm4ri_20tt_20program_0',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]],
-  ['tt_20dist_5fm4ri_20tt_20program_1',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]]
+  ['of_20a_20classical_20or_20quantum_20css_20code_0',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
+  ['or_20quantum_20css_20code_1',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]]
 ];

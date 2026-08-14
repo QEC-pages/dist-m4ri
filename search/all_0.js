@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['01_0',['date: 2024-08-01',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md11',1,'']]],
-  ['08_2001_1',['date: 2024-08-01',['..//home/runner/work/dist-m4ri/dist-m4ri/README.md#autotoc_md11',1,'']]]
+  ['1_0',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
+  ['1_20multithreaded_20rw_20algorithm_20tt_20method_201_20tt_1',['1. Multithreaded RW Algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)',['../md_README.html#autotoc_md16',1,'']]]
 ];

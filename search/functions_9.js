@@ -1,6 +1,9 @@
 var searchData=
 [
-  ['start_5fcc_5frecurs_0',['start_CC_recurs',['../dist__cc_8c.html#a309849a5dfe17a880f3ed53a5efc37aa',1,'dist_cc.c']]],
-  ['syndrome_5fbit_5fcount_1',['syndrome_bit_count',['../util__m4ri_8c.html#a1b61da7b7a49ccd8fefef388c9130412',1,'syndrome_bit_count(const mzd_t *const row, const csr_t *const spaQ):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a1b61da7b7a49ccd8fefef388c9130412',1,'syndrome_bit_count(const mzd_t *const row, const csr_t *const spaQ):&#160;util_m4ri.c']]],
-  ['syndrome_5fvector_2',['syndrome_vector',['../util__m4ri_8c.html#a6b0a24643adfae36946a998aafa5f00f',1,'syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a6b0a24643adfae36946a998aafa5f00f',1,'syndrome_vector(mzd_t *syndrome, mzd_t *row, csr_t *spaQ, int clear):&#160;util_m4ri.c']]]
+  ['nzlist_5fr_5fone_0',['nzlist_r_one',['../util__io_8c.html#a83ee27c031c32e09bb148aba892f8cb3',1,'util_io.c']]],
+  ['nzlist_5fr_5fopen_1',['nzlist_r_open',['../util__io_8c.html#a7a995e3d2040d1ec0db163548184caf6',1,'util_io.c']]],
+  ['nzlist_5fread_2',['nzlist_read',['../util__io_8c.html#a81a4ac93ecba5300f65aba3583774319',1,'nzlist_read(const char fnam[], params_t *p):&#160;util_io.c'],['../util__io_8h.html#a81a4ac93ecba5300f65aba3583774319',1,'nzlist_read(const char fnam[], params_t *p):&#160;util_io.c']]],
+  ['nzlist_5fw_5fappend_3',['nzlist_w_append',['../util__io_8c.html#a59684f93ed2fc82a2f81b55e01016e1b',1,'util_io.c']]],
+  ['nzlist_5fw_5fnew_4',['nzlist_w_new',['../util__io_8c.html#a71492a584cb37778cd6cc77b84a44f4f',1,'util_io.c']]],
+  ['nzlist_5fwrite_5',['nzlist_write',['../util__io_8c.html#ad58cad2a5548c79a52c08f733345a20b',1,'nzlist_write(const char fnam[], const char comment[], params_t *p):&#160;util_io.c'],['../util__io_8h.html#ad58cad2a5548c79a52c08f733345a20b',1,'nzlist_write(const char fnam[], const char comment[], params_t *p):&#160;util_io.c']]]
 ];

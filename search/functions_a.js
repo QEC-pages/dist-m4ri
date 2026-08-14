@@ -1,5 +1,4 @@
 var searchData=
 [
-  ['var_5finit_0',['var_init',['../util__io_8c.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c'],['../util__io_8h.html#afcbd3259101211b5c4cb297016587d42',1,'var_init(int argc, char **argv, params_t *const p):&#160;util_io.c']]],
-  ['var_5fkill_1',['var_kill',['../util__io_8c.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c'],['../util__io_8h.html#a77a264684f8a4e347db2f21fc36305d7',1,'var_kill(params_t *const p):&#160;util_io.c']]]
+  ['one_5fvec_5fprint_0',['one_vec_print',['../dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c'],['../util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c']]]
 ];

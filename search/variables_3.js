@@ -1,9 +1,24 @@
 var searchData=
 [
-  ['debug_0',['debug',['../structparams__t.html#ac71d44285373a5bfe9aec4bb8b3a8bea',1,'params_t']]],
-  ['dist_1',['dist',['../structparams__t.html#add35140e341aba1ab36244a70be29393',1,'params_t']]],
-  ['dist_5fmax_2',['dist_max',['../structparams__t.html#a23a033fd80e49ab1d7761c05a832c248',1,'params_t']]],
-  ['dist_5fmin_3',['dist_min',['../structparams__t.html#a668de621912ff858fe5a235b8b2c5345',1,'params_t']]],
-  ['dmax_4',['dmax',['../structparams__t.html#a763ac3ea80f8ea38c4ba670cf256aa38',1,'params_t']]],
-  ['dw_5',['dW',['../structparams__t.html#aac4a3fa59ee29835b0914c6e48eb13f0',1,'params_t']]]
+  ['capacity_0',['capacity',['../structdem__program__t.html#a64b699cb8d6c764075c52b0a2bac1125',1,'dem_program_t']]],
+  ['cbeg_1',['cbeg',['../structparams__t.html#a5915e7104cb3575661a52b608475d974',1,'params_t']]],
+  ['cc_5factive_5fworkers_2',['cc_active_workers',['../structdistfork__ctx__t.html#ac00ac47924cfb69c1f07ffb8052f296e',1,'distfork_ctx_t']]],
+  ['cc_5fcol_5fbeg_3',['cc_col_beg',['../structdistfork__ctx__t.html#a6864bdd52cfbad37aaa6e83b425acd4b',1,'distfork_ctx_t']]],
+  ['cc_5fcol_5fend_4',['cc_col_end',['../structdistfork__ctx__t.html#a4a61890d6fae989079710afee1ed9e3f',1,'distfork_ctx_t']]],
+  ['cc_5fcol_5fnext_5',['cc_col_next',['../structdistfork__ctx__t.html#ab59320c9dfb1d623de41ffa024645447',1,'distfork_ctx_t']]],
+  ['cc_5ffound_5fweight_6',['cc_found_weight',['../structdistfork__ctx__t.html#a7d25d5b105ae7aa4acb6d4c63a56d5f5',1,'distfork_ctx_t']]],
+  ['cc_5fround_5factive_7',['cc_round_active',['../structdistfork__ctx__t.html#aad4bf54c7569d76c72db2fbfaf5025a2',1,'distfork_ctx_t']]],
+  ['cc_5ftarget_5fworkers_8',['cc_target_workers',['../structdistfork__ctx__t.html#a966f6ffd53024466828608d89c09b1b3',1,'distfork_ctx_t']]],
+  ['cc_5ftime_5fper_5fweight_9',['cc_time_per_weight',['../structdistfork__ctx__t.html#a3db8c079679dd15d0dae3d166f30e879',1,'distfork_ctx_t']]],
+  ['cc_5fweight_10',['cc_weight',['../structdistfork__ctx__t.html#a87e00c9eb4ad8db2fed88b72d63ccc1d',1,'distfork_ctx_t']]],
+  ['cend_11',['cend',['../structparams__t.html#a96eb21ad52169867b5ccaae805b11d5c',1,'params_t']]],
+  ['classical_12',['classical',['../structparams__t.html#ae1da808c5c337d0003a85c5041541fb4',1,'params_t']]],
+  ['clear_5fcss_5fdistance_5fcache_13',['clear_css_distance_cache',['../namespacedist__m4ri.html#afccd182f387dfbdcdab449a38ed730c1',1,'dist_m4ri']]],
+  ['cnt_14',['cnt',['../structCW__VEC__T.html#ab74061fc402881847d6e68c4aa743564',1,'CW_VEC_T']]],
+  ['codewords_15',['codewords',['../structparams__t.html#ae4e4194165127a44b58a27005224054b',1,'params_t']]],
+  ['cols_16',['cols',['../structcsr__t.html#ae4ec2876423b9af903dfa139afbfbf34',1,'csr_t::cols'],['../namespacegen__segfault__matrix.html#a8de97a910522a3ffa8e2d85af5be74da',1,'gen_segfault_matrix.cols']]],
+  ['count_17',['count',['../structUT__hash__bucket.html#a5d20cc12bdcbde360398910eefb45634',1,'UT_hash_bucket']]],
+  ['css_18',['css',['../structparams__t.html#ae32a4e19b8029b1c17d2f12d20750b33',1,'params_t']]],
+  ['ctx_19',['ctx',['../structworker__arg__t.html#abe54768812f5c958183880324fadf270',1,'worker_arg_t']]],
+  ['cw_5fmutex_20',['cw_mutex',['../structdistfork__ctx__t.html#a488d5d3e7eaca1d5db12f378c0cf5de2',1,'distfork_ctx_t']]]
 ];

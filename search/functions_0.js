@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['addto_0',['addto',['../util__m4ri_8c.html#adb3cc9c7e188ca69220eefc3ef217ae8',1,'util_m4ri.c']]]
+  ['_5fmatrix_5fto_5ffile_0',['_matrix_to_file',['../namespacedist__m4ri.html#a31b20c374ff5c4bc18df5575f691a77c',1,'dist_m4ri']]]
 ];

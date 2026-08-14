@@ -1,9 +1,8 @@
 var searchData=
 [
-  ['fdem_0',['fdem',['../structparams__t.html#accf18aaf47d37dafc64688b647c23047',1,'params_t']]],
-  ['fin_1',['fin',['../structparams__t.html#a955e8b9d37a7dd87ce2b43dc34f51ff5',1,'params_t']]],
-  ['finc_2',['finC',['../structparams__t.html#a092a5b2b8c167837fa8b48a77af77a96',1,'params_t']]],
-  ['fing_3',['finG',['../structparams__t.html#a784ac56cc7097b61176da3ac379b8e46',1,'params_t']]],
-  ['finh_4',['finH',['../structparams__t.html#a29c580219768d9851f7efbbffb5193ad',1,'params_t']]],
-  ['finl_5',['finL',['../structparams__t.html#a83e6f05b6a4e4c4b0e51133c6a33ae40',1,'params_t']]]
+  ['enable_5fcss_5fdistance_5fcache_0',['enable_css_distance_cache',['../namespacedist__m4ri.html#a67856b4f61754181c73a3ad2fa96f6da',1,'dist_m4ri']]],
+  ['err_1',['err',['../structTWO__VEC__T.html#ac73ebf2a295199179dce84b3948f549c',1,'TWO_VEC_T']]],
+  ['errors_2',['errors',['../dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f',1,'dist_cc.c']]],
+  ['examples_5fdir_3',['EXAMPLES_DIR',['../namespacetest__dist__m4ri.html#afed76f6f9fe972266596664ec821c9a3',1,'test_dist_m4ri']]],
+  ['expand_5fmult_4',['expand_mult',['../structUT__hash__bucket.html#a9b739c1b69c141e8198c0c64af643b2b',1,'UT_hash_bucket']]]
 ];

@@ -82,176 +82,191 @@ $(function() {
 </div><!-- top -->
 <div class="header">
   <div class="summary">
+<a href="#nested-classes">Classes</a> &#124;
 <a href="#define-members">Macros</a> &#124;
 <a href="#func-members">Functions</a>  </div>
   <div class="headertitle"><div class="title">dist_m4ri.c File Reference</div></div>
 </div><!--header-->
 <div class="contents">
+
+<p>Multithreaded distance calculation and bracketing (<a class="el" href="namespacedist__m4ri.html">dist_m4ri</a>)  
+<a href="#details">More...</a></p>
 <div class="textblock"><code>#include &lt;inttypes.h&gt;</code><br />
 <code>#include &lt;strings.h&gt;</code><br />
 <code>#include &lt;stdlib.h&gt;</code><br />
+<code>#include &lt;stdio.h&gt;</code><br />
+<code>#include &lt;stdbool.h&gt;</code><br />
+<code>#include &lt;stdatomic.h&gt;</code><br />
 <code>#include &lt;time.h&gt;</code><br />
+<code>#include &lt;unistd.h&gt;</code><br />
+<code>#include &lt;pthread.h&gt;</code><br />
+<code>#include &lt;math.h&gt;</code><br />
+<code>#include &lt;limits.h&gt;</code><br />
 <code>#include &lt;m4ri/m4ri.h&gt;</code><br />
 <code>#include &quot;<a class="el" href="mmio_8h_source.html">mmio.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="uthash_8h_source.html">uthash.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="util__hash_8h_source.html">util_hash.h</a>&quot;</code><br />
 <code>#include &quot;<a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>&quot;</code><br />
 <code>#include &quot;<a class="el" href="util__io_8h_source.html">util_io.h</a>&quot;</code><br />
 <code>#include &quot;<a class="el" href="dist__m4ri_8h_source.html">dist_m4ri.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="dist__cc_8h_source.html">dist_cc.h</a>&quot;</code><br />
 </div><div class="textblock"><div class="dynheader">
 Include dependency graph for dist_m4ri.c:</div>
 <div class="dyncontent">
 <div class="center"><img src="dist__m4ri_8c__incl.png" border="0" usemap="#asrc_2dist__m4ri_8c" alt=""/></div>
 <map name="asrc_2dist__m4ri_8c" id="asrc_2dist__m4ri_8c">
-<area shape="rect" title=" " alt="" coords="349,5,466,31"/>
-<area shape="rect" title=" " alt="" coords="5,152,92,177"/>
-<area shape="poly" title=" " alt="" coords="349,33,271,52,187,81,126,113,76,146,74,142,124,108,185,76,269,47,348,28"/>
-<area shape="rect" title=" " alt="" coords="116,152,195,177"/>
-<area shape="poly" title=" " alt="" coords="349,30,282,47,247,62,216,81,188,109,169,141,164,138,184,106,212,77,245,57,280,42,348,24"/>
-<area shape="rect" title=" " alt="" coords="344,225,415,251"/>
-<area shape="poly" title=" " alt="" coords="387,33,356,52,320,79,286,113,260,153,257,165,259,176,275,195,301,211,332,222,330,227,299,216,271,199,254,178,252,165,256,151,282,109,317,75,353,48,384,29"/>
-<area shape="rect" title=" " alt="" coords="270,152,334,177"/>
-<area shape="poly" title=" " alt="" coords="401,33,321,142,316,139,397,30"/>
-<area shape="rect" title=" " alt="" coords="358,152,457,177"/>
-<area shape="poly" title=" " alt="" coords="410,31,410,138,405,138,405,31"/>
-<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="990,152,1062,177"/>
-<area shape="poly" title=" " alt="" coords="457,28,977,149,976,154,456,33"/>
-<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="728,225,820,251"/>
-<area shape="poly" title=" " alt="" coords="466,19,613,29,797,52,888,69,969,90,1033,117,1058,133,1076,150,1082,165,1076,179,1060,192,1036,203,973,220,901,230,834,236,833,231,900,225,972,214,1034,198,1057,188,1072,176,1077,165,1072,154,1055,137,1031,122,967,95,887,74,797,57,613,35,466,24"/>
-<area shape="rect" href="util__io_8h.html" title=" " alt="" coords="534,79,609,104"/>
-<area shape="poly" title=" " alt="" coords="435,28,533,71,531,76,433,33"/>
-<area shape="rect" href="dist__m4ri_8h.html" title=" " alt="" coords="1137,79,1232,104"/>
-<area shape="poly" title=" " alt="" coords="466,20,748,39,932,55,1118,76,1124,77,1123,82,1118,81,931,61,747,44,466,25"/>
-<area shape="poly" title=" " alt="" coords="534,99,353,119,106,154,105,149,353,114,533,94"/>
-<area shape="poly" title=" " alt="" coords="534,102,209,157,208,152,533,96"/>
-<area shape="poly" title=" " alt="" coords="560,106,470,179,411,220,408,216,467,175,557,102"/>
-<area shape="poly" title=" " alt="" coords="535,105,348,154,347,149,533,100"/>
-<area shape="poly" title=" " alt="" coords="546,106,448,149,445,144,544,102"/>
-<area shape="poly" title=" " alt="" coords="609,94,766,115,977,149,976,155,765,120,609,100"/>
-<area shape="poly" title=" " alt="" coords="586,102,625,136,676,175,742,216,739,221,672,180,622,140,582,106"/>
-<area shape="rect" title=" " alt="" coords="803,152,870,177"/>
-<area shape="poly" title=" " alt="" coords="609,100,791,148,789,154,608,105"/>
-<area shape="rect" title=" " alt="" coords="895,152,965,177"/>
-<area shape="poly" title=" " alt="" coords="609,97,881,149,880,154,608,102"/>
-<area shape="rect" href="uthash_8h.html" title=" " alt="" coords="532,152,611,177"/>
-<area shape="poly" title=" " alt="" coords="574,104,574,138,569,138,569,104"/>
-<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="686,152,779,177"/>
-<area shape="poly" title=" " alt="" coords="592,102,688,144,686,149,589,106"/>
-<area shape="poly" title=" " alt="" coords="541,180,425,223,423,218,540,175"/>
-<area shape="rect" title=" " alt="" coords="439,225,509,251"/>
-<area shape="poly" title=" " alt="" coords="557,180,503,219,500,215,554,175"/>
-<area shape="rect" title=" " alt="" coords="534,225,609,251"/>
-<area shape="poly" title=" " alt="" coords="574,178,574,212,569,212,569,178"/>
-<area shape="rect" title=" " alt="" coords="633,225,704,251"/>
-<area shape="poly" title=" " alt="" coords="589,175,643,215,640,219,585,180"/>
-<area shape="poly" title=" " alt="" coords="742,176,763,212,758,215,737,179"/>
-<area shape="poly" title=" " alt="" coords="712,154,616,112,618,107,714,149"/>
+<area shape="rect" title="Multithreaded distance calculation and bracketing (dist_m4ri)" alt="" coords="925,5,1043,31"/>
+<area shape="rect" title=" " alt="" coords="539,299,626,324"/>
+<area shape="poly" title=" " alt="" coords="925,21,834,23,717,31,588,49,523,63,461,81,388,104,361,122,337,153,328,181,335,206,353,228,381,247,415,263,453,277,526,297,525,302,451,282,413,268,378,251,350,232,330,208,323,181,332,151,357,118,385,100,459,76,522,58,587,44,716,25,834,17,925,15"/>
+<area shape="rect" title=" " alt="" coords="385,299,463,324"/>
+<area shape="poly" title=" " alt="" coords="925,22,796,24,636,32,484,50,423,64,379,81,349,100,329,121,320,146,324,177,339,209,360,240,403,288,399,291,355,243,334,212,319,178,314,145,324,118,346,96,376,76,421,59,483,45,636,27,796,19,925,17"/>
+<area shape="rect" title=" " alt="" coords="583,372,654,397"/>
+<area shape="poly" title=" " alt="" coords="925,24,692,37,386,64,241,83,120,106,73,119,37,133,15,148,8,164,8,239,12,259,26,277,46,293,74,307,146,332,233,350,327,363,420,372,570,380,569,385,420,377,327,368,232,355,145,337,72,312,43,297,22,280,8,261,3,240,3,163,11,145,35,128,71,114,119,101,240,77,386,58,692,32,925,19"/>
+<area shape="rect" title=" " alt="" coords="1097,299,1164,324"/>
+<area shape="poly" title=" " alt="" coords="1001,29,1024,50,1046,77,1076,132,1100,190,1128,284,1123,286,1095,192,1071,135,1042,80,1020,54,997,33"/>
+<area shape="rect" title=" " alt="" coords="1173,79,1256,104"/>
+<area shape="poly" title=" " alt="" coords="1022,28,1165,72,1164,77,1020,33"/>
+<area shape="rect" title=" " alt="" coords="1280,79,1379,104"/>
+<area shape="poly" title=" " alt="" coords="1040,28,1267,74,1266,80,1039,33"/>
+<area shape="rect" title=" " alt="" coords="651,299,715,324"/>
+<area shape="poly" title=" " alt="" coords="972,33,919,81,706,290,702,287,916,77,969,29"/>
+<area shape="rect" title=" " alt="" coords="1403,79,1477,104"/>
+<area shape="poly" title=" " alt="" coords="1043,24,1196,44,1389,76,1388,81,1195,50,1042,29"/>
+<area shape="rect" title=" " alt="" coords="1502,79,1586,104"/>
+<area shape="poly" title=" " alt="" coords="1043,22,1237,42,1489,76,1488,81,1236,47,1043,27"/>
+<area shape="rect" title=" " alt="" coords="1610,79,1678,104"/>
+<area shape="poly" title=" " alt="" coords="1043,19,1282,37,1437,53,1597,76,1596,81,1436,58,1281,42,1043,25"/>
+<area shape="rect" title=" " alt="" coords="1002,299,1073,324"/>
+<area shape="poly" title=" " alt="" coords="996,30,1012,51,1025,78,1039,135,1044,192,1042,285,1037,285,1039,193,1033,136,1020,80,1007,54,992,33"/>
+<area shape="rect" title=" " alt="" coords="260,299,359,324"/>
+<area shape="poly" title=" " alt="" coords="925,24,776,30,591,41,426,58,369,69,337,81,319,101,306,126,298,153,295,182,297,239,305,285,300,286,292,239,289,182,293,152,301,124,314,98,335,76,367,63,426,52,591,35,776,24,925,18"/>
+<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="739,299,811,324"/>
+<area shape="poly" title=" " alt="" coords="978,32,793,289,789,286,974,29"/>
+<area shape="rect" href="uthash_8h.html" title=" " alt="" coords="899,299,978,324"/>
+<area shape="poly" title=" " alt="" coords="991,30,1005,78,1011,128,1005,178,983,239,956,289,951,286,978,237,1000,177,1006,128,1000,79,986,32"/>
+<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="347,152,440,177"/>
+<area shape="poly" title=" " alt="" coords="925,26,704,45,591,61,545,71,510,81,484,94,458,111,417,144,413,140,455,106,481,90,508,76,543,66,590,56,704,40,925,20"/>
+<area shape="rect" href="util__io_8h.html" title=" " alt="" coords="516,225,591,251"/>
+<area shape="poly" title=" " alt="" coords="925,24,842,29,746,39,660,56,627,67,604,81,581,110,567,145,559,181,556,211,551,211,554,180,562,143,577,107,601,77,625,62,659,50,746,33,841,23,925,18"/>
+<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="127,299,219,324"/>
+<area shape="poly" title=" " alt="" coords="925,24,579,43,406,59,345,70,311,81,284,101,261,126,223,183,198,240,182,286,177,284,193,238,219,180,257,123,281,97,308,76,344,65,405,54,578,37,925,19"/>
+<area shape="rect" href="dist__m4ri_8h.html" title=" " alt="" coords="1702,79,1797,104"/>
+<area shape="poly" title=" " alt="" coords="1043,19,1318,37,1500,54,1688,76,1687,81,1500,59,1317,43,1043,25"/>
+<area shape="rect" href="dist__cc_8h.html" title=" " alt="" coords="615,79,694,104"/>
+<area shape="poly" title=" " alt="" coords="932,33,708,81,707,76,931,28"/>
+<area shape="poly" title=" " alt="" coords="899,324,668,375,667,370,898,319"/>
+<area shape="rect" title=" " alt="" coords="806,372,877,397"/>
+<area shape="poly" title=" " alt="" coords="925,326,870,366,867,361,921,322"/>
+<area shape="rect" title=" " alt="" coords="901,372,976,397"/>
+<area shape="poly" title=" " alt="" coords="941,324,941,358,936,358,936,324"/>
+<area shape="rect" title=" " alt="" coords="1001,372,1071,397"/>
+<area shape="poly" title=" " alt="" coords="956,322,1010,361,1007,366,953,326"/>
+<area shape="poly" title=" " alt="" coords="413,175,509,218,507,222,411,180"/>
+<area shape="poly" title=" " alt="" coords="377,180,204,293,201,289,374,175"/>
+<area shape="poly" title=" " alt="" coords="561,250,575,285,570,287,556,252"/>
+<area shape="poly" title=" " alt="" coords="534,253,459,294,456,289,531,248"/>
+<area shape="poly" title=" " alt="" coords="547,252,528,285,525,305,529,323,549,346,575,364,572,368,546,350,524,325,519,305,523,284,542,250"/>
+<area shape="poly" title=" " alt="" coords="591,239,798,257,938,274,1084,296,1083,301,937,279,797,262,591,244"/>
+<area shape="poly" title=" " alt="" coords="575,248,650,289,648,294,573,253"/>
+<area shape="poly" title=" " alt="" coords="591,240,760,260,989,296,988,301,759,266,591,246"/>
+<area shape="poly" title=" " alt="" coords="516,253,362,297,361,292,515,248"/>
+<area shape="poly" title=" " alt="" coords="590,248,727,292,725,297,588,253"/>
+<area shape="poly" title=" " alt="" coords="591,244,886,298,885,303,591,249"/>
+<area shape="poly" title=" " alt="" coords="533,228,437,185,439,180,535,223"/>
+<area shape="poly" title=" " alt="" coords="516,249,234,302,233,296,515,244"/>
+<area shape="poly" title=" " alt="" coords="653,105,605,252,593,287,588,285,600,250,648,103"/>
+<area shape="poly" title=" " alt="" coords="642,106,582,158,506,227,446,290,442,286,502,223,578,154,639,102"/>
+<area shape="poly" title=" " alt="" coords="676,102,732,139,765,164,795,194,821,225,837,258,839,292,834,309,825,326,799,344,759,358,668,379,667,373,758,353,797,339,821,322,830,307,834,292,831,260,816,228,791,197,761,169,729,143,673,106"/>
+<area shape="poly" title=" " alt="" coords="695,100,767,120,849,150,923,184,993,223,1103,289,1100,293,991,227,920,189,847,154,766,125,693,105"/>
+<area shape="poly" title=" " alt="" coords="659,104,682,285,677,285,654,105"/>
+<area shape="poly" title=" " alt="" coords="615,97,544,102,461,113,385,130,356,141,337,154,317,184,308,219,306,255,308,285,303,285,301,255,303,218,312,182,333,150,353,136,383,124,460,108,544,97,615,92"/>
+<area shape="poly" title=" " alt="" coords="663,103,764,285,759,288,659,106"/>
+<area shape="poly" title=" " alt="" coords="695,101,743,118,799,143,855,178,881,200,903,224,922,254,934,285,929,287,917,257,899,227,877,203,852,182,797,148,741,123,693,106"/>
+<area shape="poly" title=" " alt="" coords="616,106,450,151,448,146,614,101"/>
+<area shape="poly" title=" " alt="" coords="648,106,613,154,571,215,566,212,608,150,644,103"/>
+<area shape="poly" title=" " alt="" coords="615,99,454,119,372,135,315,154,274,184,238,220,210,257,189,288,185,285,205,254,234,216,270,180,312,150,370,130,454,114,615,94"/>
 </map>
 </div>
 </div>
 <p><a href="dist__m4ri_8c_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structdistfork__ctx__t.html">distfork_ctx_t</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structworker__arg__t.html">worker_arg_t</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="define-members" name="define-members"></a>
 Macros</h2></td></tr>
-<tr class="memitem:ab6bca16ed021b1e211fde8669758f199" id="r_ab6bca16ed021b1e211fde8669758f199"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#ab6bca16ed021b1e211fde8669758f199">NEW</a>&#160;&#160;&#160;1</td></tr>
-<tr class="separator:ab6bca16ed021b1e211fde8669758f199"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a369266c24eacffb87046522897a570d5" id="r_a369266c24eacffb87046522897a570d5"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a369266c24eacffb87046522897a570d5">_GNU_SOURCE</a></td></tr>
+<tr class="separator:a369266c24eacffb87046522897a570d5"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
-<tr class="memitem:a00fa641b89fcf044e3eba6b95e1fc4e0" id="r_a00fa641b89fcf044e3eba6b95e1fc4e0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a00fa641b89fcf044e3eba6b95e1fc4e0">do_RW_dist</a> (<a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
-<tr class="memdesc:a00fa641b89fcf044e3eba6b95e1fc4e0"><td class="mdescLeft">&#160;</td><td class="mdescRight">distance of a classical or quantum CSS code  <br /></td></tr>
-<tr class="separator:a00fa641b89fcf044e3eba6b95e1fc4e0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3c04138a5bfe5d72780bb7e82a18e627" id="r_a3c04138a5bfe5d72780bb7e82a18e627"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a3c04138a5bfe5d72780bb7e82a18e627">main</a> (int argc, char **argv)</td></tr>
+<tr class="separator:a3c04138a5bfe5d72780bb7e82a18e627"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
-<h2 class="groupheader">Macro Definition Documentation</h2>
-<a id="ab6bca16ed021b1e211fde8669758f199" name="ab6bca16ed021b1e211fde8669758f199"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab6bca16ed021b1e211fde8669758f199">&#9670;&#160;</a></span>NEW</h2>
+<a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Multithreaded distance calculation and bracketing (<a class="el" href="namespacedist__m4ri.html">dist_m4ri</a>) </p>
+<hr  />
+<p>The program implements multithreaded distance calculation:</p><ul>
+<li>method=1: Multithreaded Random Window (RW) algorithm (upper bound)</li>
+<li>method=2: Multithreaded Connected Cluster (CC) algorithm (lower bound / exact)</li>
+<li>method=3: Bracketing mode (artillery fork / вилка) dynamically balancing CC and RW threads based on distance estimate (dexp/dest), current bounds [dmin, dmax], RW step count, timeout, and scaling characteristics.</li>
+</ul>
+<p>Output to stdout: "dmin dmax rw_steps" where dmin-1 is the maximum cluster size analyzed without success by CC, dmin=dmax if CC actually found a min-weight codeword of this size, dmax is the smallest-weight codeword found by RW, and rw_steps is the number of completed RW steps (0 if CC found a min-weight codeword or if RW did not run in method=2). NOTE: This 3-number output format is incompatible with legacy single-threaded dist_m4ri_old.</p>
+<p>All debugging messages and confinement profile are sent to stderr.</p>
+<p>author: Leonid Pryadko <a href="#" onclick="location.href='mai'+'lto:'+'leo'+'ni'+'d.p'+'ry'+'adk'+'o@'+'ucr'+'.e'+'du'; return false;">leoni<span class="obfuscator">.nosp@m.</span>d.pr<span class="obfuscator">.nosp@m.</span>yadko<span class="obfuscator">.nosp@m.</span>@ucr<span class="obfuscator">.nosp@m.</span>.edu</a> </p>
+
+<p class="definition">Definition in file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+</div><h2 class="groupheader">Macro Definition Documentation</h2>
+<a id="a369266c24eacffb87046522897a570d5" name="a369266c24eacffb87046522897a570d5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a369266c24eacffb87046522897a570d5">&#9670;&#160;</a></span>_GNU_SOURCE</h2>
 
 <div class="memitem">
 <div class="memproto">
       <table class="memname">
         <tr>
-          <td class="memname">#define NEW&#160;&#160;&#160;1</td>
+          <td class="memname">#define _GNU_SOURCE</td>
         </tr>
       </table>
 </div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00026">26</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
 <h2 class="groupheader">Function Documentation</h2>
-<a id="a00fa641b89fcf044e3eba6b95e1fc4e0" name="a00fa641b89fcf044e3eba6b95e1fc4e0"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a00fa641b89fcf044e3eba6b95e1fc4e0">&#9670;&#160;</a></span>do_RW_dist()</h2>
+<a id="a3c04138a5bfe5d72780bb7e82a18e627" name="a3c04138a5bfe5d72780bb7e82a18e627"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3c04138a5bfe5d72780bb7e82a18e627">&#9670;&#160;</a></span>main()</h2>
 
 <div class="memitem">
 <div class="memproto">
       <table class="memname">
         <tr>
-          <td class="memname">int do_RW_dist </td>
+          <td class="memname">int main </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structparams__t.html">params_t</a> *const&#160;</td>
-          <td class="paramname"><em>p</em></td><td>)</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>argc</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
           <td></td>
+          <td class="paramtype">char **&#160;</td>
+          <td class="paramname"><em>argv</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
-<p>distance of a classical or quantum CSS code </p>
-<hr  />
- <p>The program implements two methods:</p><ol type="1">
-<li>Random information set (random window) algorithm (upper bound). <br  />
- This works with any code (LDPC or not). (2) depth-first codeword enumeration (connected cluster) algorithm (Lower bound or actual distance if a codeword is found.) <br  />
-</li>
-</ol>
-<p>A. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..." in IEEE Trans. Inf. Th., vol. 63, p. 4675 (2017). doi: 10.1109/TIT.2017.2690381</p>
-<p>author: Leonid Pryadko <a href="#" onclick="location.href='mai'+'lto:'+'leo'+'ni'+'d.p'+'ry'+'adk'+'o@'+'ucr'+'.e'+'du'; return false;">leoni<span class="obfuscator">.nosp@m.</span>d.pr<span class="obfuscator">.nosp@m.</span>yadko<span class="obfuscator">.nosp@m.</span>@ucr<span class="obfuscator">.nosp@m.</span>.edu</a>, Weilei Zeng</p>
-<p>Random Information Set search for small-E logical operators.</p>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramname">dW</td><td>weight increment from the minimum found </td></tr>
-    <tr><td class="paramname">p</td><td>pointer to global parameters structure </td></tr>
-    <tr><td class="paramname">classical</td><td>set to <code>1</code> for classical code (do not use <code>L</code> matrix), <code>0</code> otherwise <br  />
- </td></tr>
-  </table>
-  </dd>
-</dl>
-<dl class="section return"><dt>Returns</dt><dd>minimum <code>weight</code> of a CW found (or <code>-weigt</code> if early termination condition is reached). Or <code>0</code> if no codewords wit <code>w&lt;wmax</code> have been found. </dd></dl>
-<p>whether to verify logical ops as a vector or individually</p>
-<p>actual <code>vector</code> in sparse form</p>
-<ol type="1">
-<li>Construct random column permutation P</li>
-</ol>
-<p>identity column permutation</p>
-<p>list of pivot columns</p>
-<p>list of pivot columns</p>
-<p>list of pivot columns</p>
-<p>random pivots LAPAC-style</p>
-<p>&lt; corresponding permutation</p>
-<p>full row echelon form of <code>H</code> (gauss) using the order in <code>perm</code></p>
-<p>construct skip-pivot permutation</p>
-<p>it is a bit faster to transpose <code>mH</code> first.</p>
-<p>calculate sparse version of each vector (list of positions) <code>p</code> <code>p</code><code>p</code> # pivot columns marked with <code>p</code> <br  />
- [1 a1 b1 ] -&gt; [a1 1 a2 a3 0 ] [ a2 1 b2 ] [b1 0 b2 b3 1 ] [ a3 1 b3 ]</p>
-<p>each row in the dual matrix</p>
-<p>how many non-zero elements</p>
-<p>older version going over columns of <code>H</code></p>
-<p>function <code>mzd_find_pivot()</code> walks over columns one-by-one to find a non-zero bit. Returns <code>1</code> if a non-zero bit was found. WARNING: this is the slowest option!!!</p>
-<p>NEW==1, use transposed <code>H</code> &ndash; the <code>fastest</code> version of the code</p>
-<p><code>cw</code> of no interest</p>
-<p>sort the column indices</p>
-<p>expensive: verify orthogonality</p>
-<p>verify logical operator</p>
-<p>no need to verify</p>
-<p>we got non-trivial codeword!</p>
-<p>TODO: try local search to <code>lerr</code> (if 2 or larger)</p>
-<p>at this point we have <code>cnt</code> codeword indices in <code>ee</code></p>
-<p>early termination condition</p>
-<p>this distance value is of little interest;</p>
-<p>stop right away</p>
-<p>end of the dual matrix rows loop</p>
-<p>end of <code>steps</code> random window</p>
-<p>early termination label</p>
-<p>clean up</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00820">820</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00037">37</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
-
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00033">params_t::classical</a>, <a class="el" href="util__io_8c_source.html#l00751">codeword_add_maybe()</a>, <a class="el" href="util__io_8h_source.html#l00071">params_t::codewords</a>, <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::debug</a>, <a class="el" href="util__io_8h_source.html#l00068">params_t::dW</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00067">params_t::maxC</a>, <a class="el" href="util__io_8h_source.html#l00073">params_t::min_w</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__io_8h_source.html#l00072">params_t::num_cws</a>, <a class="el" href="util__io_8c_source.html#l00048">p</a>, <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>, <a class="el" href="util__io_8h_source.html#l00080">params_t::spaH</a>, <a class="el" href="util__io_8h_source.html#l00082">params_t::spaL</a>, <a class="el" href="util__io_8h_source.html#l00036">params_t::steps</a>, <a class="el" href="util__io_8h_source.html#l00041">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00047">params_t::wmin</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="dist__m4ri_8c_source.html#l00140">distfork_ctx_t::cc_active_workers</a>, <a class="el" href="dist__m4ri_8c_source.html#l00135">distfork_ctx_t::cc_col_next</a>, <a class="el" href="dist__m4ri_8c_source.html#l00125">distfork_ctx_t::cc_found_weight</a>, <a class="el" href="dist__m4ri_8c_source.html#l00142">distfork_ctx_t::cc_round_active</a>, <a class="el" href="dist__m4ri_8c_source.html#l00141">distfork_ctx_t::cc_target_workers</a>, <a class="el" href="dist__m4ri_8c_source.html#l00134">distfork_ctx_t::cc_weight</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__io_8h_source.html#l00071">params_t::codewords</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00115">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00156">worker_arg_t::ctx</a>, <a class="el" href="dist__m4ri_8c_source.html#l00145">distfork_ctx_t::cw_mutex</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::debug</a>, <a class="el" href="dist__m4ri_8c_source.html#l00120">distfork_ctx_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00084">params_t::dexp</a>, <a class="el" href="dist__m4ri_8c_source.html#l00124">distfork_ctx_t::dmax</a>, <a class="el" href="dist__m4ri_8c_source.html#l00123">distfork_ctx_t::dmin</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00069">params_t::finC</a>, <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="dist__m4ri_8c_source.html#l00139">distfork_ctx_t::max_col_W</a>, <a class="el" href="util__io_8h_source.html#l00028">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00035">params_t::method</a>, <a class="el" href="dist__m4ri_8c_source.html#l00138">distfork_ctx_t::mHT_cc</a>, <a class="el" href="dist__m4ri_8c_source.html#l00158">worker_arg_t::min_swei</a>, <a class="el" href="util__io_8h_source.html#l00073">params_t::min_w</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="dist__m4ri_8c_source.html#l00117">distfork_ctx_t::num_threads</a>, <a class="el" href="util__io_8c_source.html#l00817">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l00870">nzlist_write()</a>, <a class="el" href="util__io_8h_source.html#l00070">params_t::outC</a>, <a class="el" href="dist__m4ri_8c_source.html#l00116">distfork_ctx_t::p</a>, <a class="el" href="util__io_8c_source.html#l00051">p</a>, <a class="el" href="util__io_8c_source.html#l00007">prm</a>, <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>, <a class="el" href="dist__m4ri_8c_source.html#l00131">distfork_ctx_t::rw_steps_completed</a>, <a class="el" href="dist__m4ri_8c_source.html#l00130">distfork_ctx_t::rw_steps_started</a>, <a class="el" href="util__io_8h_source.html#l00037">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00080">params_t::spaH</a>, <a class="el" href="dist__m4ri_8c_source.html#l00119">distfork_ctx_t::start_time</a>, <a class="el" href="util__io_8h_source.html#l00036">params_t::steps</a>, <a class="el" href="dist__m4ri_8c_source.html#l00126">distfork_ctx_t::stop_flag</a>, <a class="el" href="dist__m4ri_8c_source.html#l00152">distfork_ctx_t::threads</a>, <a class="el" href="util__io_8h_source.html#l00083">params_t::threads</a>, <a class="el" href="dist__m4ri_8c_source.html#l00157">worker_arg_t::tid</a>, <a class="el" href="dist__m4ri_8c_source.html#l00118">distfork_ctx_t::timeout</a>, <a class="el" href="util__io_8h_source.html#l00085">params_t::timeout</a>, <a class="el" href="dist__m4ri_8c_source.html#l00129">distfork_ctx_t::total_rw_steps</a>, <a class="el" href="util__io_8c_source.html#l00053">var_init()</a>, <a class="el" href="util__io_8c_source.html#l00450">var_kill()</a>, <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>, and <a class="el" href="util__io_8h_source.html#l00041">params_t::wmax</a>.</p>
 
 </div>
 </div>

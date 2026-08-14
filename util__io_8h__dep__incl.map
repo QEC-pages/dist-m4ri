@@ -1,13 +1,21 @@
 <map id="src/util_io.h" name="src/util_io.h">
-<area shape="rect" id="Node000001" title=" " alt="" coords="175,5,272,31"/>
-<area shape="rect" id="Node000002" href="$dist__cc_8c.html" title=" " alt="" coords="54,152,155,177"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="162,31,73,51,36,64,13,80,9,90,9,100,23,119,48,136,76,150,73,154,45,141,19,123,4,102,3,89,9,77,33,60,71,46,160,26"/>
-<area shape="rect" id="Node000003" href="$dist__m4ri_8c.html" title=" " alt="" coords="23,79,141,104"/>
-<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="190,39,106,81,104,76,188,34"/>
-<area shape="rect" id="Node000004" href="$util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="165,79,281,104"/>
-<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="217,44,219,78,214,79,212,45"/>
-<area shape="rect" id="Node000005" href="$util__io_8c.html" title=" " alt="" coords="306,79,402,104"/>
-<area shape="poly" id="edge6_Node000001_Node000005" title=" " alt="" coords="258,35,334,76,331,81,255,40"/>
-<area shape="poly" id="edge5_Node000004_Node000001" title=" " alt="" coords="229,65,228,31,233,31,235,65"/>
-<area shape="poly" id="edge4_Node000004_Node000002" title=" " alt="" coords="194,113,125,154,123,149,191,109"/>
+<area shape="rect" id="Node000001" title=" " alt="" coords="170,5,267,31"/>
+<area shape="rect" id="Node000002" href="$dist__cc_8c.html" title=" " alt="" coords="5,225,107,251"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="157,27,129,34,101,44,76,59,55,80,46,98,41,117,39,158,46,196,54,224,49,226,41,197,34,159,36,116,41,96,51,77,72,55,99,39,127,28,156,22"/>
+<area shape="rect" id="Node000003" href="$dist__cc_8h.html" title=" " alt="" coords="145,152,247,177"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="217,45,200,152,195,151,212,44"/>
+<area shape="rect" id="Node000004" href="$dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri)" alt="" coords="137,225,255,251"/>
+<area shape="poly" id="edge5_Node000001_Node000004" title=" " alt="" coords="236,41,251,69,264,104,270,141,268,160,262,179,242,207,217,227,213,223,238,203,258,176,263,159,264,141,259,105,246,71,232,43"/>
+<area shape="rect" id="Node000005" href="$dist__rw_8c.html" title=" " alt="" coords="323,79,426,104"/>
+<area shape="poly" id="edge6_Node000001_Node000005" title=" " alt="" coords="257,34,350,76,348,81,255,39"/>
+<area shape="rect" id="Node000006" href="$util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="65,79,181,104"/>
+<area shape="poly" id="edge7_Node000001_Node000006" title=" " alt="" coords="187,40,133,81,130,76,184,36"/>
+<area shape="rect" id="Node000007" href="$util__io_8c.html" title=" " alt="" coords="451,79,547,104"/>
+<area shape="poly" id="edge12_Node000001_Node000007" title=" " alt="" coords="277,31,454,76,453,81,276,37"/>
+<area shape="poly" id="edge3_Node000003_Node000002" title=" " alt="" coords="163,186,80,227,78,223,160,181"/>
+<area shape="poly" id="edge4_Node000003_Node000004" title=" " alt="" coords="199,191,199,225,193,225,193,191"/>
+<area shape="poly" id="edge11_Node000006_Node000001" title=" " alt="" coords="155,69,208,29,212,33,158,73"/>
+<area shape="poly" id="edge8_Node000006_Node000002" title=" " alt="" coords="110,117,90,153,62,226,57,224,86,151,106,114"/>
+<area shape="poly" id="edge9_Node000006_Node000003" title=" " alt="" coords="146,112,186,150,182,154,143,116"/>
+<area shape="poly" id="edge10_Node000006_Node000004" title=" " alt="" coords="124,118,127,147,136,176,156,203,180,223,177,227,152,207,131,179,121,148,119,118"/>
 </map>

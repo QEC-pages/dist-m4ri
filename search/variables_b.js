@@ -1,15 +1,11 @@
 var searchData=
 [
-  ['n0_0',['n0',['../structparams__t.html#a25f587c153f763af776bd21f89f4d029',1,'params_t']]],
-  ['nchk_1',['nchk',['../structparams__t.html#a2a380c61241b18a605719b406c1435fb',1,'params_t']]],
-  ['next_2',['next',['../structUT__hash__handle.html#a93bc88ffe97f85ea0d9e0056b7118942',1,'UT_hash_handle']]],
-  ['noexpand_3',['noexpand',['../structUT__hash__table.html#a635661789933752e7b83dac84430eae1',1,'UT_hash_table']]],
-  ['nonideal_5fitems_4',['nonideal_items',['../structUT__hash__table.html#a8cb66cfb259a204cda59a815e4db664f',1,'UT_hash_table']]],
-  ['noscan_5',['noscan',['../structparams__t.html#a39ef65e6585579451fc51f21c3e8e8f2',1,'params_t']]],
-  ['num_5fbuckets_6',['num_buckets',['../structUT__hash__table.html#a3ed04b6233facaedf910672578d86339',1,'UT_hash_table']]],
-  ['num_5fcws_7',['num_cws',['../structparams__t.html#ad0b54b0b218ae5b48134fe0550e74d19',1,'params_t']]],
-  ['num_5fitems_8',['num_items',['../structUT__hash__table.html#a74534cc14f080c96f94d8f5da83d9d76',1,'UT_hash_table']]],
-  ['nvar_9',['nvar',['../structparams__t.html#a691cc572781a2b35351e846ebcb8e6ba',1,'params_t']]],
-  ['nz_10',['nz',['../structcsr__t.html#a8165d5f059150d9602c5329ebe415197',1,'csr_t::nz'],['../namespacegen__segfault__matrix.html#a9bbc9e2285562f99b126c189f27491cf',1,'gen_segfault_matrix.nz']]],
-  ['nzmax_11',['nzmax',['../structcsr__t.html#a91d6a7baf1505544be123a48d2400291',1,'csr_t']]]
+  ['max_5fcol_5fw_0',['max_col_W',['../structdistfork__ctx__t.html#a9eedaa91fe1ffb76fa9f678eea41c88b',1,'distfork_ctx_t']]],
+  ['max_5fcol_5fwgt_5fh_1',['max_col_wgt_H',['../structparams__t.html#a3702398386c01512c5ccb91efc30778d',1,'params_t']]],
+  ['max_5frow_5fwgt_5fh_2',['max_row_wgt_H',['../structparams__t.html#aeb2fa8ec480148d2e7371cefc35995e8',1,'params_t']]],
+  ['maxc_3',['maxC',['../structparams__t.html#a0e3bd9808077ec768a03ebcec432d06a',1,'params_t']]],
+  ['method_4',['method',['../structparams__t.html#a74084a38c2280b79067adc128bfceefe',1,'params_t']]],
+  ['mht_5fcc_5',['mHT_cc',['../structdistfork__ctx__t.html#a4c3cdf093fc57b3d6cf95f9faeb92e3f',1,'distfork_ctx_t']]],
+  ['min_5fswei_6',['min_swei',['../structworker__arg__t.html#a62a400d7cb1a6da30d4a71f9bcdc487a',1,'worker_arg_t']]],
+  ['min_5fw_7',['min_w',['../structparams__t.html#a53ca760e9f06f86fa573f464f620114b',1,'params_t']]]
 ];

@@ -1,14 +1,6 @@
 var searchData=
 [
-  ['seed_0',['seed',['../structparams__t.html#aedc69284ea56d4b02256baba42790e4c',1,'params_t']]],
-  ['signature_1',['signature',['../structUT__hash__table.html#a87d1ab3f3ede1809c6a485972d20b25f',1,'UT_hash_table']]],
-  ['size_2',['size',['../structdem__program__t.html#a93bea4590dae2b178099fdd53b3eb7dc',1,'dem_program_t']]],
-  ['smax_3',['smax',['../structparams__t.html#a688e867b05209a9a1ae222f89d43b436',1,'params_t']]],
-  ['spag_4',['spaG',['../structparams__t.html#a401b2879fcc12e5880b15e2913bcb452',1,'params_t']]],
-  ['spah_5',['spaH',['../structparams__t.html#a4b6c894c9f71c8ae733d479f9091a29e',1,'params_t']]],
-  ['spal_6',['spaL',['../structparams__t.html#a3b1829675dc96846b9ea2d9c22de89b4',1,'params_t']]],
-  ['start_7',['start',['../structparams__t.html#aaf596e306a9163de6c34ca099d1beb83',1,'params_t']]],
-  ['steps_8',['steps',['../structparams__t.html#a98e23e7755528a567048d6ab3631ac30',1,'params_t']]],
-  ['swei_9',['swei',['../structparams__t.html#afd5e0451b022d4a16f27fd2e68411a97',1,'params_t']]],
-  ['syn_10',['syn',['../structTWO__VEC__T.html#a7a0ddfcb717f479d9546fdcd6bd0220f',1,'TWO_VEC_T']]]
+  ['rows_0',['rows',['../structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d',1,'csr_t::rows'],['../namespacegen__segfault__matrix.html#aa8017377dc391d27cf393e6b878fbec4',1,'gen_segfault_matrix.rows']]],
+  ['rw_5fsteps_5fcompleted_1',['rw_steps_completed',['../structdistfork__ctx__t.html#ae634279dfa978b1d58e02027bfdae654',1,'distfork_ctx_t']]],
+  ['rw_5fsteps_5fstarted_2',['rw_steps_started',['../structdistfork__ctx__t.html#a18063b904e0907f7496211dea64456eb',1,'distfork_ctx_t']]]
 ];
