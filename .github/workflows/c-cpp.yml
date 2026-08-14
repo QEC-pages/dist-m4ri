@@ -1,24 +1,35 @@
 name: C/C++ CI
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-
-jobs:
-  build:
-
-    runs-on: ubuntu-latest
-    # ubuntu-20.04
-    # ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y libm4ri-dev
-    - name: Build
-      run: cd src && make -j dist_m4ri
-    - name: Run Tests
-      run: cd src && make test
-
+     push:
+        branches: [ "master", "main", "dev-distfork" ]
+     pull_request:
+        branches: [ "master", "main" ]
+  
+    jobs:
+      build_and_test:
+        runs-on: ubuntu-latest
+  
+        steps:
+        - uses: actions/checkout@v4
+  
+        - name: Set up Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: "3.11"
+  
+        - name: Install C and Python Dependencies
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y libm4ri-dev
+            python -m pip install --upgrade pip
+            pip install numpy scipy stim pytest
+  
+        - name: Build C Binaries
+          run: make -C src all
+  
+        - name: Run C Tests
+          run: make -C src test
+  
+        - name: Run Python Pytest Suite
+          run: pytest tests/test_dist_m4ri.py -v
