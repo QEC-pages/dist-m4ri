@@ -15,6 +15,8 @@
  * dmin=dmax if CC actually found a min-weight codeword of this size,
  * and dmax is the smallest-weight codeword found by RW.
  *
+ * All debugging messages and confinement profile are sent to stderr.
+ *
  * author: Leonid Pryadko <leonid.pryadko@ucr.edu>
  ************************************************************************/
 
@@ -150,13 +152,15 @@ typedef struct {
 typedef struct {
   distfork_ctx_t *ctx;
   int tid;
+  int min_swei[MAX_W];
 } worker_arg_t;
 
 /* Recursive CC worker function (interruptible) */
 static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
                               const int w_limit, const int max_col_wt,
                               const csr_t * const mH, const csr_t * const mHT,
-                              distfork_ctx_t *ctx) {
+                              worker_arg_t *warg) {
+  distfork_ctx_t *ctx = warg->ctx;
   if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
     return 0;
   }
@@ -177,6 +181,12 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
         syn[w+1]->wei = 0;
         int swei = one_csr_row_combine(syn[w+1], syn[w], mHT, col);
 
+        if (p->smax && swei > 0 && swei <= p->smax && (w + 1 < MAX_W)) {
+          if (swei < warg->min_swei[w + 1]) {
+            warg->min_swei[w + 1] = swei;
+          }
+        }
+
         int current_limit = w_limit;
         int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
         if (cur_dmax > 0 && p->dW >= 0) {
@@ -186,7 +196,7 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
         if (err->wei < current_limit) {
           if (swei) {
             int result = start_CC_recurs_mt(err, urr, syn, w_limit, max_col_wt,
-                                            mH, mHT, ctx);
+                                            mH, mHT, warg);
             if (result == 1) {
               urr->wei--;
               one_ordered_pos_del(err, col, pos);
@@ -197,6 +207,7 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
           if (!swei) {
             int nz = (!mL) || sparse_syndrome_non_zero(mL, err->wei, err->vec);
             if (nz) {
+              bool stop = false;
               pthread_mutex_lock(&ctx->cw_mutex);
               p->codewords = codeword_add_maybe(p, err->vec, err->wei);
               int cur_d = atomic_load(&ctx->dmax);
@@ -206,15 +217,19 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
               atomic_store(&ctx->cc_found_weight, err->wei);
               if (!p->outC && p->maxC == 0) {
                 atomic_store(&ctx->stop_flag, true);
+                stop = true;
               }
               if (p->maxC && p->num_cws >= p->maxC) {
                 atomic_store(&ctx->stop_flag, true);
+                stop = true;
               }
               pthread_mutex_unlock(&ctx->cw_mutex);
 
-              urr->wei--;
-              one_ordered_pos_del(err, col, pos);
-              return 1;
+              if (stop) {
+                urr->wei--;
+                one_ordered_pos_del(err, col, pos);
+                return 1;
+              }
             }
           }
         }
@@ -301,7 +316,9 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
           if (old_dmax == 0 || best < old_dmax) {
             atomic_store(&ctx->dmax, best);
             if (p->debug & 16) {
-              printf("# [thread %d] RW found new upper bound cw of weight %d\n", tid, best);
+              int num_rw = (ctx->p->method == 1) ? ctx->num_threads : (ctx->num_threads - atomic_load(&ctx->cc_target_workers));
+              if (num_rw < 1) num_rw = 1;
+              fprintf(stderr, "# [thread %d] RW found new upper bound cw of weight %d (using %d RW threads)\n", tid, best, num_rw);
             }
             int cur_dmin = atomic_load(&ctx->dmin);
             if (cur_dmin > 0 && best <= cur_dmin) {
@@ -329,6 +346,11 @@ static void *worker_thread_func(void *arg) {
   int tid = warg->tid;
   const int nvar = ctx->p->spaH->cols;
   const bool enable_rw = (ctx->p->method & 1) != 0;
+
+  /* Initialize min_swei for this thread */
+  for (int i = 0; i < MAX_W; i++) {
+    warg->min_swei[i] = ctx->p->spaH->rows + 1;
+  }
 
   /* Thread-local RW matrices (allocated safely only if RW is enabled) */
   mzd_t *mH = NULL;
@@ -383,9 +405,15 @@ static void *worker_thread_func(void *arg) {
           syn[1]->wei = 0;
           int swei = one_csr_row_combine(syn[1], syn[0], ctx->mHT_cc, col);
 
+          if (ctx->p->smax && swei > 0 && swei <= ctx->p->smax) {
+            if (swei < warg->min_swei[1]) {
+              warg->min_swei[1] = swei;
+            }
+          }
+
           if (w > 1) {
             if (swei) {
-              start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W, ctx->p->spaH, ctx->mHT_cc, ctx);
+              start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W, ctx->p->spaH, ctx->mHT_cc, warg);
             }
           } else {
             if (!swei) {
@@ -450,8 +478,8 @@ static void *worker_thread_func(void *arg) {
 /* Method 1 coordinator */
 static void run_method1_coordinator(distfork_ctx_t *ctx) {
   if (ctx->p->debug & 2) {
-    printf("# running method=1 (multithreaded RW) with %d threads, total steps=%ld\n",
-           ctx->num_threads, ctx->total_rw_steps);
+    fprintf(stderr, "# running method=1 (multithreaded RW) with %d threads, total steps=%ld\n",
+            ctx->num_threads, ctx->total_rw_steps);
   }
 
   while (!atomic_load(&ctx->stop_flag)) {
@@ -473,8 +501,8 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
   const int w_start = ctx->p->noscan ? wmax : 1;
 
   if (ctx->p->debug & 2) {
-    printf("# running method=2 (multithreaded CC) with %d threads, w_start=%d wmax=%d\n",
-           ctx->num_threads, w_start, wmax);
+    fprintf(stderr, "# running method=2 (multithreaded CC) with %d threads, w_start=%d wmax=%d\n",
+            ctx->num_threads, w_start, wmax);
   }
 
   for (int w = w_start; w <= wmax; w++) {
@@ -494,9 +522,11 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_target_workers, ctx->num_threads);
     atomic_store(&ctx->cc_round_active, 1);
 
+    double cc_start = get_time_sec();
+
     if (ctx->p->debug & 2) {
-      printf("# searching w=%d with %d CC threads, columns [%d, %d]\n",
-             w, ctx->num_threads, beg, end);
+      fprintf(stderr, "# searching w=%d with %d CC threads, columns [%d, %d]\n",
+              w, ctx->num_threads, beg, end);
     }
 
     while (!atomic_load(&ctx->stop_flag)) {
@@ -512,18 +542,24 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
 
     atomic_store(&ctx->cc_round_active, 0);
 
+    double cc_dur = get_time_sec() - cc_start;
+
     int cw_found = atomic_load(&ctx->cc_found_weight);
     if (cw_found > 0) {
       atomic_store(&ctx->dmin, cw_found);
       atomic_store(&ctx->dmax, cw_found);
       atomic_store(&ctx->stop_flag, true);
+      if (ctx->p->debug & 1) {
+        fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads)\n", cw_found, ctx->num_threads);
+      }
       break;
     }
 
     /* Weight w analyzed without success */
     atomic_store(&ctx->dmin, w + 1);
     if (ctx->p->debug & 1) {
-      printf("# CC w=%d completed: no codewords found -> dmin=%d\n", w, w + 1);
+      fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found -> dmin=%d\n",
+              w, cc_dur, ctx->num_threads, w + 1);
     }
   }
 }
@@ -534,8 +570,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
   int w = ctx->p->noscan ? ctx->p->wmax : 1;
 
   if (ctx->p->debug & 2) {
-    printf("# running method=3 (bracketing mode) with %d threads, timeout=%.1fs, dexp=%d\n",
-           ctx->num_threads, ctx->timeout, ctx->dexp);
+    fprintf(stderr, "# running method=3 (bracketing mode) with %d threads, timeout=%.1fs, dexp=%d\n",
+            ctx->num_threads, ctx->timeout, ctx->dexp);
   }
 
   /* Initial RW probe to measure average step time */
@@ -619,8 +655,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     /* Check if CC for weight w can finish within timeout */
     if (t_cc_est / ctx->num_threads > remaining_time * 1.5) {
       if (ctx->p->debug & 2) {
-        printf("# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting threads to RW\n",
-               w, t_cc_est / ctx->num_threads, remaining_time);
+        fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting %d threads to RW\n",
+                w, t_cc_est / ctx->num_threads, remaining_time, ctx->num_threads);
       }
       while (!atomic_load(&ctx->stop_flag)) {
         if (get_time_sec() - ctx->start_time >= ctx->timeout) break;
@@ -655,6 +691,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       if (n_cc >= ctx->num_threads && steps_rem > 0) n_cc = ctx->num_threads - 1;
     }
 
+    int n_rw = ctx->num_threads - n_cc;
+
     int beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
     int end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
 
@@ -664,6 +702,11 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_col_next, beg);
     atomic_store(&ctx->cc_target_workers, n_cc);
     atomic_store(&ctx->cc_round_active, 1);
+
+    if (ctx->p->debug & 2) {
+      fprintf(stderr, "# CC round w=%d started: %d CC threads, %d RW threads (bounds [%d, %d], rem_rw=%ld, rem_time=%.2fs)\n",
+              w, n_cc, n_rw, cur_dmin, cur_dmax, steps_rem, remaining_time);
+    }
 
     double cc_start = get_time_sec();
 
@@ -689,7 +732,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       atomic_store(&ctx->dmax, cw_found);
       atomic_store(&ctx->stop_flag, true);
       if (ctx->p->debug & 1) {
-        printf("# CC found min-weight codeword: d=%d\n", cw_found);
+        fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads)\n", cw_found, n_cc);
       }
       break;
     }
@@ -700,7 +743,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     int new_dmin = w + 1;
     atomic_store(&ctx->dmin, new_dmin);
     if (ctx->p->debug & 1) {
-      printf("# CC round w=%d finished in %.3fs: no codewords -> dmin=%d\n", w, cc_dur, new_dmin);
+      fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): no codewords -> dmin=%d\n",
+              w, cc_dur, n_cc, n_rw, new_dmin);
     }
 
     cur_dmax = atomic_load(&ctx->dmax);
@@ -708,7 +752,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       atomic_store(&ctx->dmin, cur_dmax);
       atomic_store(&ctx->stop_flag, true);
       if (ctx->p->debug & 1) {
-        printf("# bracketing bounds coincide: dmin = dmax = %d\n", cur_dmax);
+        fprintf(stderr, "# bracketing bounds coincide: dmin = dmax = %d\n", cur_dmax);
       }
       break;
     }
@@ -773,6 +817,9 @@ int main(int argc, char **argv) {
   for (int i = 0; i < num_threads; i++) {
     args[i].ctx = &ctx;
     args[i].tid = i;
+    for (int k = 0; k < MAX_W; k++) {
+      args[i].min_swei[k] = p->spaH->rows + 1;
+    }
     pthread_create(&ctx.threads[i], NULL, worker_thread_func, &args[i]);
   }
 
@@ -803,8 +850,50 @@ int main(int argc, char **argv) {
     final_dmin = final_dmax;
   }
 
+  /* Confinement profile output (if smax > 0 and CC was run) */
+  if (p->smax && p->method >= 2) {
+    int max_w_analyzed = (final_dmin > 1) ? (final_dmin - 1) : ((p->wmax > 0) ? p->wmax : 0);
+    if (cc_found > 0) max_w_analyzed = cc_found;
+    if (max_w_analyzed > 0) {
+      int global_swei[MAX_W];
+      for (int i = 0; i < MAX_W; i++) global_swei[i] = p->spaH->rows + 1;
+      for (int t = 0; t < num_threads; t++) {
+        for (int i = 1; i <= max_w_analyzed; i++) {
+          if (args[t].min_swei[i] < global_swei[i]) {
+            global_swei[i] = args[t].min_swei[i];
+          }
+        }
+      }
+      int skipped = 0;
+      if (p->debug & 1) {
+        for (int i = 1; i <= max_w_analyzed; i++) {
+          if (global_swei[i] <= p->spaH->rows) {
+            fprintf(stderr, "# w=%d min non-zero syndrome weight %d\n", i, global_swei[i]);
+          } else {
+            skipped = 1;
+          }
+        }
+      } else {
+        fprintf(stderr, "# confinement: ");
+        for (int i = 1; i <= max_w_analyzed; i++) {
+          if (global_swei[i] <= p->spaH->rows) {
+            fprintf(stderr, "%d%s", global_swei[i], i < max_w_analyzed ? "," : "");
+          } else {
+            skipped = 1;
+            fprintf(stderr, "?%s", i < max_w_analyzed ? "," : "");
+          }
+        }
+        fprintf(stderr, "\n");
+      }
+      if (skipped) {
+        fprintf(stderr, "# Note: Some weights were skipped in confinement profile. Try increasing smax (current: %d)\n", p->smax);
+      }
+    }
+  }
+
   /* Output to stdout: dmin dmax */
   printf("%d %d\n", final_dmin, final_dmax);
+  fflush(stdout);
 
   /* Codeword export */
   if (p->outC) {
@@ -816,9 +905,9 @@ int main(int argc, char **argv) {
   if (p->debug & 32) {
     cw_vec_t *cw;
     for (cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)) {
-      printf("# cw: [ ");
-      for (int i = 0; i < cw->weight; i++) printf("%d ", 1 + cw->arr[i]);
-      printf("] cnt=%d\n", cw->cnt);
+      fprintf(stderr, "# cw: [ ");
+      for (int i = 0; i < cw->weight; i++) fprintf(stderr, "%d ", 1 + cw->arr[i]);
+      fprintf(stderr, "] cnt=%d\n", cw->cnt);
     }
   }
 

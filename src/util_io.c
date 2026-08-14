@@ -75,13 +75,13 @@ void var_init(int argc, char **argv, params_t * const p){
         else
           p->debug ^= dbg; /** otherwise `XOR` */
         if(p->debug&4)
-	  printf("# read %s, debug=%d octal=%o\n",argv[i],p->debug,p->debug);
+	  fprintf(stderr, "# read %s, debug=%d octal=%o\n",argv[i],p->debug,p->debug);
       }
     }
     else if (sscanf(argv[i],"css=%d",&dbg)==1){
       p->css=dbg;
       if (p->debug&4)
-	printf("# read %s, css=%d\n",argv[i],p->css);
+	fprintf(stderr, "# read %s, css=%d\n",argv[i],p->css);
     }
     else if (0==strncmp(argv[i],"finH=",5)){ /** `finH` */
       if(strlen(argv[i])>5)
@@ -89,7 +89,7 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->finH = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
-	printf("# read %s, finH=%s; setting finH=\"\"\n",argv[i],p->finH);
+	fprintf(stderr, "# read %s, finH=%s; setting finH=\"\"\n",argv[i],p->finH);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finL=",5)){ /** `finL` */
@@ -98,7 +98,7 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->finL = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
-	printf("# read %s, finL=%s; setting finL=\"\"\n",argv[i],p->finL);
+	fprintf(stderr, "# read %s, finL=%s; setting finL=\"\"\n",argv[i],p->finL);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finG=",5)){/** `finG` degeneracy generator matrix */
@@ -107,7 +107,7 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->finG = argv[++i]; /**< allow space before file name */
       if (p->debug&4)
-	printf("# read %s, finG=%s; setting finG=\"\"\n",argv[i],p->finG);
+	fprintf(stderr, "# read %s, finG=%s; setting finG=\"\"\n",argv[i],p->finG);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"fin=",4)){
@@ -129,59 +129,59 @@ void var_init(int argc, char **argv, params_t * const p){
     else if (sscanf(argv[i],"method=%d",&dbg)==1){
       p->method=dbg;
       if (p->debug&4)
-	printf("# read %s, method=%d\n",argv[i],p->method);
+	fprintf(stderr, "# read %s, method=%d\n",argv[i],p->method);
       if( (p->method<=0) || (p->method>3))
 	ERROR("Unsupported method %d",p->method);
     }
     else if (sscanf(argv[i],"smax=%d",&dbg)==1){
       p->smax=dbg;
       if (p->debug&4)
-	printf("# read %s, smax=%d\n",argv[i],p->smax);
+	fprintf(stderr, "# read %s, smax=%d\n",argv[i],p->smax);
     }
     else if (sscanf(argv[i],"wmax=%d",&dbg)==1){
       p->wmax=dbg;
       if (p->debug&4)
-	printf("# read %s, wmax=%d\n",argv[i],p->wmax);
+	fprintf(stderr, "# read %s, wmax=%d\n",argv[i],p->wmax);
     }
     else if (sscanf(argv[i],"dmax=%d",&dbg)==1){
       p->dmax=dbg;
       if (p->debug&4)
-	printf("# read %s, dmax=%d\n",argv[i],p->dmax);
+	fprintf(stderr, "# read %s, dmax=%d\n",argv[i],p->dmax);
     }
     else if (sscanf(argv[i],"start=%d",&dbg)==1){
       p->start=dbg;
       if (p->debug&4)
-	printf("# read %s, start=%d\n",argv[i],p->start);
+	fprintf(stderr, "# read %s, start=%d\n",argv[i],p->start);
     }
     else if (sscanf(argv[i],"cbeg=%d",&dbg)==1){
       p->cbeg=dbg;
       if (p->debug&4)
-	printf("# read %s, cbeg=%d\n",argv[i],p->cbeg);
+	fprintf(stderr, "# read %s, cbeg=%d\n",argv[i],p->cbeg);
     }
     else if (sscanf(argv[i],"cend=%d",&dbg)==1){
       p->cend=dbg;
       if (p->debug&4)
-	printf("# read %s, cend=%d\n",argv[i],p->cend);
+	fprintf(stderr, "# read %s, cend=%d\n",argv[i],p->cend);
     }
     else if (sscanf(argv[i],"wmin=%d",&dbg)==1){
       p->wmin=dbg;
       if (p->debug&4)
-	printf("# read %s, wmin=%d\n",argv[i],p->wmin);
+	fprintf(stderr, "# read %s, wmin=%d\n",argv[i],p->wmin);
     }
     else if (sscanf(argv[i],"steps=%d",&dbg)==1){
       p->steps=dbg;
       if (p->debug&4)
-	printf("# read %s, steps=%d\n",argv[i],p->steps);
+	fprintf(stderr, "# read %s, steps=%d\n",argv[i],p->steps);
     }
     else if (sscanf(argv[i],"seed=%d",&dbg)==1){
       p->seed=dbg;
       if (p->debug&4)
-	printf("# read %s, seed=%d\n",argv[i],p->seed);      
+	fprintf(stderr, "# read %s, seed=%d\n",argv[i],p->seed);      
     }    
     else if (sscanf(argv[i],"noscan=%d",&dbg)==1){
       p->noscan=dbg;
       if (p->debug&4)
-	printf("# read %s, noscan=%d\n",argv[i],p->noscan);
+	fprintf(stderr, "# read %s, noscan=%d\n",argv[i],p->noscan);
     }
     else if (0==strncmp(argv[i],"fdem=",5)){
       if(strlen(argv[i])>5)
@@ -189,12 +189,12 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->fdem = argv[++i];
       if (p->debug&4)
-	printf("# read %s, fdem=%s\n",argv[i],p->fdem);
+	fprintf(stderr, "# read %s, fdem=%s\n",argv[i],p->fdem);
     }
     else if (sscanf(argv[i],"pmin=%lg",&prob)==1){
       p->pmin=prob;
       if (p->debug&4)
-	printf("# read %s, pmin=%g\n",argv[i],p->pmin);
+	fprintf(stderr, "# read %s, pmin=%g\n",argv[i],p->pmin);
     }
     else if (0==strncmp(argv[i],"finC=",5)){
       if(strlen(argv[i])>5)
@@ -202,7 +202,7 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->finC = argv[++i];
       if (p->debug&4)
-	printf("# read %s, finC=%s\n",argv[i],p->finC);
+	fprintf(stderr, "# read %s, finC=%s\n",argv[i],p->finC);
     }
     else if (0==strncmp(argv[i],"outC=",5)){
       if(strlen(argv[i])>5)
@@ -210,45 +210,45 @@ void var_init(int argc, char **argv, params_t * const p){
       else
         p->outC = argv[++i];
       if (p->debug&4)
-	printf("# read %s, outC=%s\n",argv[i],p->outC);
+	fprintf(stderr, "# read %s, outC=%s\n",argv[i],p->outC);
     }
     else if (sscanf(argv[i],"maxC=%lld",&dbg_ll)==1){
       p->maxC=dbg_ll;
       if (p->debug&4)
-	printf("# read %s, maxC=%lld\n",argv[i],p->maxC);
+	fprintf(stderr, "# read %s, maxC=%lld\n",argv[i],p->maxC);
     }
     else if (sscanf(argv[i],"dW=%d",&dbg)==1){
       p->dW=dbg;
       if (p->debug&4)
-	printf("# read %s, dW=%d\n",argv[i],p->dW);
+	fprintf(stderr, "# read %s, dW=%d\n",argv[i],p->dW);
     }
     else if (sscanf(argv[i],"classical=%d",&dbg)==1){
       p->classical=dbg;
       if (p->debug&4)
-	printf("# read %s, classical=%d\n",argv[i],p->classical);
+	fprintf(stderr, "# read %s, classical=%d\n",argv[i],p->classical);
     }
     else if (sscanf(argv[i],"threads=%d",&dbg)==1){
       p->threads=dbg;
       if (p->debug&4)
-	printf("# read %s, threads=%d\n",argv[i],p->threads);
+	fprintf(stderr, "# read %s, threads=%d\n",argv[i],p->threads);
     }
     else if (sscanf(argv[i],"dexp=%d",&dbg)==1){
       p->dexp=dbg;
       if (p->debug&4)
-	printf("# read %s, dexp=%d\n",argv[i],p->dexp);
+	fprintf(stderr, "# read %s, dexp=%d\n",argv[i],p->dexp);
     }
     else if (sscanf(argv[i],"dest=%d",&dbg)==1){
       p->dexp=dbg;
       if (p->debug&4)
-	printf("# read %s, dest=%d (alias for dexp)\n",argv[i],p->dexp);
+	fprintf(stderr, "# read %s, dest=%d (alias for dexp)\n",argv[i],p->dexp);
     }
     else if (sscanf(argv[i],"timeout=%lf",&prob)==1){
       p->timeout=prob;
       if (p->debug&4)
-	printf("# read %s, timeout=%g\n",argv[i],p->timeout);
+	fprintf(stderr, "# read %s, timeout=%g\n",argv[i],p->timeout);
     }
     else{ /* unrecognized option */
-      printf("# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
+      fprintf(stderr, "# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
       ERROR("try \"%s -h\" for options",argv[0]);
     }
   } /* end parameter scan cycle */
@@ -323,7 +323,7 @@ void var_init(int argc, char **argv, params_t * const p){
     sprintf(s,"%s%s",p->fin,swit>0?"Z.mtx":"X.mtx");
     p->finH=s;
     if (p->debug & 2)
-      printf("# read 'fin=%s'; " //"since switch=%d "
+      fprintf(stderr, "# read 'fin=%s'; " //"since switch=%d "
 	     "assigning \n# finH=%s\n# finG=%s\n",
 	     p->fin,// swit,
 	     p->finH,p->finG);
@@ -339,7 +339,7 @@ void var_init(int argc, char **argv, params_t * const p){
     if (p->finH){
       p->spaH=csr_mm_read(p->finH,p->spaH,0);
       if(p->debug&1)
-	printf("# read H <- file '%s'\n",p->finH);
+	fprintf(stderr, "# read H <- file '%s'\n",p->finH);
       if(p->debug&32){
 	if((p->spaH->cols<150)||(p->debug&2048))
 	  csr_print(p->spaH,"H");
@@ -356,7 +356,7 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->classical == -1) p->classical = 0;
       p->spaG=csr_mm_read(p->finG,p->spaG,0);
       if(p->debug&1)
-	printf("# read G <- file '%s'\n",p->finG);
+	fprintf(stderr, "# read G <- file '%s'\n",p->finG);
       if(csr_csr_mul_non_zero(p->spaH, p->spaG))
 	 ERROR("rows of H and G matrices are not orthogonal");
       if(p->debug&32){
@@ -368,7 +368,7 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->classical == -1) p->classical = 0;
       p->spaL=csr_mm_read(p->finL,p->spaL,0);
       if(p->debug&1)
-	printf("# read L <- file '%s'\n",p->finL);
+	fprintf(stderr, "# read L <- file '%s'\n",p->finL);
       if(p->debug&32){
 	if((p->spaL->cols<150)||(p->debug&2048))
 	  csr_print(p->spaL,"L");
@@ -393,10 +393,10 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->seed<=0){
     p->seed = time(NULL) - 1000 * p->seed + 10*getpid();
     if(p->debug&4)
-      printf("# initializing rng from time(NULL), seed=%d\n",p->seed);
+      fprintf(stderr, "# initializing rng from time(NULL), seed=%d\n",p->seed);
   }
   else if(p->debug&4)
-    printf("# initializing rng from seed=%d\n",p->seed);
+    fprintf(stderr, "# initializing rng from seed=%d\n",p->seed);
 
   srand(p->seed);
 
@@ -429,7 +429,7 @@ void var_init(int argc, char **argv, params_t * const p){
     }
     if (p->spaL != NULL) {
       if (p->debug & 1) {
-        printf("# Warning: classical=1 specified, discarding L matrix (logical operators)\n");
+        fprintf(stderr, "# Warning: classical=1 specified, discarding L matrix (logical operators)\n");
       }
       p->spaL = csr_free(p->spaL);
     }
@@ -661,7 +661,7 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
   }
 
   if(debug & 1)
-    printf("# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
+    fprintf(stderr, "# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
   if((r<=0)||(k<=0)||(n<=0))
     ERROR("invalid DEM file %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
 	  fnam,r,k,n,iD,iL);
@@ -677,7 +677,7 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
 FILE * nzlist_w_new(const char fnam[], const char comment[]){
   FILE *f=fopen(fnam,"w");
   if(!f){
-    printf("FILE I/O ERROR: %s\n", strerror(errno));
+    fprintf(stderr, "FILE I/O ERROR: %s\n", strerror(errno));
     ERROR("can't open file %s for writing",fnam);
   }
   fprintf(f,"%%%% NZLIST\n");
@@ -739,7 +739,7 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
   
   if(fscanf(f," %d",&w) != 1){
     if (feof(f)) return NULL;
-    printf("%s:%lld: invalid NZLIST entry\n", fnam, *lineno);
+    fprintf(stderr, "%s:%lld: invalid NZLIST entry\n", fnam, *lineno);
     ERROR("expected an integer");
   }
   if ((vec!=NULL) && (vec->weight<w)){
@@ -755,7 +755,7 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
   vec->cnt = 1;
   for(int i=0; i<w; i++){
     if(fscanf(f," %d ",vec->arr + i) != 1){
-      printf("%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
+      fprintf(stderr, "%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
       ERROR("expected an integer i=%d of %d",i,w);
     }    
     vec->arr[i]--;
@@ -763,7 +763,7 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
 
   for(int i=1; i<w; i++){
     if((vec->arr[i-1] < 0) || (vec->arr[i-1] >= vec->arr[i])){
-      printf("%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
+      fprintf(stderr, "%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
       ERROR("expected strictly increasing positive entries");
     }   
   }
@@ -775,8 +775,9 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
   if (p->maxC && p->num_cws >= p->maxC) {
     return p->codewords;
   }
-  // Check if weight is within the current limit: min_w + dW
-  if (p->min_w != INT_MAX && p->dW >= 0 && weight > p->min_w + p->dW) {
+  // Check if weight is within the current limit: min_w + dW (or min_w if dW < 0)
+  int max_allowed_w = (p->min_w == INT_MAX) ? INT_MAX : ((p->dW >= 0) ? (p->min_w + p->dW) : p->min_w);
+  if (weight > max_allowed_w) {
     return p->codewords;
   }
 
@@ -794,17 +795,16 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
     HASH_ADD(hh, p->codewords, arr, keylen, entry);
     p->num_cws++;
     
-    // Update min_w
+    // Update min_w and prune heavier codewords
     if (weight < p->min_w) {
       p->min_w = weight;
-      if (p->dW >= 0) {
-        cw_vec_t *cw, *tmp;
-        HASH_ITER(hh, p->codewords, cw, tmp) {
-          if (cw->weight > p->min_w + p->dW) {
-            HASH_DEL(p->codewords, cw);
-            free(cw);
-            p->num_cws--;
-          }
+      int prune_w = (p->dW >= 0) ? (p->min_w + p->dW) : p->min_w;
+      cw_vec_t *cw, *tmp;
+      HASH_ITER(hh, p->codewords, cw, tmp) {
+        if (cw->weight > prune_w) {
+          HASH_DEL(p->codewords, cw);
+          free(cw);
+          p->num_cws--;
         }
       }
     }
@@ -821,7 +821,7 @@ long long int nzlist_read(const char fnam[], params_t *p){
   FILE * f=nzlist_r_open(fnam, &lineno);
   if(!f){
     if ((p->outC ==NULL) || (strcmp(fnam,p->outC)!=0)){      
-      printf("codeword input file I/O ERROR: %s, outC=%s\n", strerror(errno),p->outC);
+      fprintf(stderr, "codeword input file I/O ERROR: %s, outC=%s\n", strerror(errno),p->outC);
       ERROR("can't open file %s for reading",fnam);
     }
     else
@@ -860,10 +860,10 @@ long long int nzlist_read(const char fnam[], params_t *p){
   }
   fclose(f);
   if (skipped_invalid > 0) {
-    printf("# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n", skipped_invalid);
+    fprintf(stderr, "# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n", skipped_invalid);
   }
   if(p->debug&1)
-    printf("# read %lld codewords from %s, total %lld\n",count, fnam, p->num_cws);
+    fprintf(stderr, "# read %lld codewords from %s, total %lld\n",count, fnam, p->num_cws);
   return count; 
 }
 

@@ -75,16 +75,16 @@ assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 pmin=0.02 deb
 assert_output "$BIN method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=100 debug=0" 0 "^3$" ""
 
 # Test 7: Validation: noscan=1 with method=1
-assert_output "$BIN method=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 noscan=1 debug=0" 255 "noscan=1 only works with method=2" "ERROR in function"
+assert_output "$BIN method=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 noscan=1 debug=0" 255 "" "noscan=1 only works with method=2"
 
 # Test 8: Validation: noscan=1 with method=3
-assert_output "$BIN method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 noscan=1 debug=0" 255 "noscan=1 only works with method=2" "ERROR in function"
+assert_output "$BIN method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 noscan=1 debug=0" 255 "" "noscan=1 only works with method=2"
 
 # Test 9: Validation: fdem and finH together
-assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0" 255 "Cannot specify matrix files.*along with fdem" "ERROR in function"
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0" 255 "" "Cannot specify matrix files.*along with fdem"
 
 # Test 10: Validation: pmin without fdem
-assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 pmin=0.01 debug=0" 255 "pmin can only be used when fdem is specified" "ERROR in function"
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 pmin=0.01 debug=0" 255 "" "pmin can only be used when fdem is specified"
 
 # Create temp DEM file with repeat blocks
 TEMP_DEM=$(mktemp --suffix=.dem)
@@ -124,7 +124,7 @@ if [ ! -s "$TEMP_CWS1" ]; then
 fi
 
 # Step 3: Run again loading file 1 and saving to file 2, check for read message
-assert_output "$BIN debug=33 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$TEMP_CWS1 outC=$TEMP_CWS2" 0 "read 128 codewords from" ""
+assert_output "$BIN debug=33 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$TEMP_CWS1 outC=$TEMP_CWS2" 0 "" "read 128 codewords from"
 
 # Step 4: Verify files are identical
 if ! diff -q "$TEMP_CWS1" "$TEMP_CWS2" >/dev/null; then
@@ -148,14 +148,15 @@ EOF
 
 echo "Running Test 14: Codeword verification"
 STDOUT_FILE=$(mktemp)
-$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$INVALID_CWS debug=0 > "$STDOUT_FILE"
+STDERR_FILE=$(mktemp)
+$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$INVALID_CWS debug=0 > "$STDOUT_FILE" 2> "$STDERR_FILE"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
     echo "  [FAIL] Expected exit code 0, got $EXIT_CODE"
     FAILED=1
 fi
-if ! grep -q "skipped 2 invalid codewords" "$STDOUT_FILE"; then
+if ! grep -q "skipped 2 invalid codewords" "$STDERR_FILE"; then
     echo "  [FAIL] Warning message missing"
     FAILED=1
 fi
@@ -164,19 +165,19 @@ if ! grep -q -E "^3$" "$STDOUT_FILE"; then
     FAILED=1
 fi
 
-rm -f "$INVALID_CWS" "$STDOUT_FILE"
+rm -f "$INVALID_CWS" "$STDOUT_FILE" "$STDERR_FILE"
 
 # Test 15: Classical mode auto-detection (H only)
 assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0" 0 "^2$" ""
 
 # Test 16: Conflict detection (classical=0 with only H)
-assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 classical=0 debug=0" 255 "L matrix.*is required for quantum code" "ERROR in function"
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 classical=0 debug=0" 255 "" "L matrix.*is required for quantum code"
 
 # Test 17: Conflict detection (classical=1 with finL)
-assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=3 classical=1 debug=0" 255 "Conflict: classical=1 specified" "ERROR in function"
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=3 classical=1 debug=0" 255 "" "Conflict: classical=1 specified"
 
 # Test 18: Discarding L with fdem and classical=1
-assert_output "$BIN debug=1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 classical=1" 0 "discarding L matrix" ""
+assert_output "$BIN debug=1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 classical=1" 0 "" "discarding L matrix"
 
 # Test 19: Coordinate general integer matrix format
 assert_output "$BIN method=2 finH=$SCRIPT_DIR/test_crd_gen_int.mmx wmax=2 debug=0" 0 "^2$" ""
