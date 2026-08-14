@@ -4,17 +4,17 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 SRC_DIR="$SCRIPT_DIR/.."
 WS_ROOT="$SCRIPT_DIR/../.."
-BIN="$SRC_DIR/dist_m4ri"
-BIN_FORK="$SRC_DIR/distfork"
+BIN="$SRC_DIR/dist_m4ri_old"
+BIN_FORK="$SRC_DIR/dist_m4ri"
 EXAMPLES_DIR="$WS_ROOT/examples"
 
 if [ ! -f "$BIN" ]; then
-    echo "Error: dist_m4ri binary not found at $BIN"
+    echo "Error: dist_m4ri_old binary not found at $BIN"
     exit 1
 fi
 
 if [ ! -f "$BIN_FORK" ]; then
-    echo "Error: distfork binary not found at $BIN_FORK"
+    echo "Error: dist_m4ri binary not found at $BIN_FORK"
     exit 1
 fi
 
