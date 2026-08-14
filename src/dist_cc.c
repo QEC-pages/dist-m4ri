@@ -238,6 +238,11 @@ int do_CC_dist(params_t * const p){
     if (p->min_w > w && w < w_limit_dynamic) {
       printf("-%d\n", w);
       fflush(stdout);
+    } else if (p->min_w <= w && p->dW >= 0 && w <= w_limit_dynamic) {
+      if (debug & 1) {
+        fprintf(stderr, "# CC round w=%d finished: searched with dW=%d (min_w=%d, total %lld codewords)\n",
+                w, p->dW, p->min_w, p->num_cws);
+      }
     }
   }
   

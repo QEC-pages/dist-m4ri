@@ -214,7 +214,10 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
               if (p->min_w < cur_d || cur_d == 0) {
                 atomic_store(&ctx->dmax, p->min_w);
               }
-              atomic_store(&ctx->cc_found_weight, err->wei);
+              int cur_cc_found = atomic_load(&ctx->cc_found_weight);
+              if (cur_cc_found == 0 || err->wei < cur_cc_found) {
+                atomic_store(&ctx->cc_found_weight, err->wei);
+              }
               if (!p->outC && p->maxC == 0) {
                 atomic_store(&ctx->stop_flag, true);
                 stop = true;
@@ -505,7 +508,9 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
             ctx->num_threads, w_start, wmax);
   }
 
-  for (int w = w_start; w <= wmax; w++) {
+  int w_limit = wmax;
+
+  for (int w = w_start; w <= w_limit; w++) {
     if (atomic_load(&ctx->stop_flag)) break;
     if (get_time_sec() - ctx->start_time >= ctx->timeout) {
       atomic_store(&ctx->stop_flag, true);
@@ -548,18 +553,40 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     if (cw_found > 0) {
       atomic_store(&ctx->dmin, cw_found);
       atomic_store(&ctx->dmax, cw_found);
-      atomic_store(&ctx->stop_flag, true);
-      if (ctx->p->debug & 1) {
-        fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads)\n", cw_found, ctx->num_threads);
-      }
-      break;
-    }
 
-    /* Weight w analyzed without success */
-    atomic_store(&ctx->dmin, w + 1);
-    if (ctx->p->debug & 1) {
-      fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found -> dmin=%d\n",
-              w, cc_dur, ctx->num_threads, w + 1);
+      if (ctx->p->outC && ctx->p->dW > 0 && w < minint(wmax, cw_found + ctx->p->dW)) {
+        w_limit = minint(wmax, cw_found + ctx->p->dW);
+        if (ctx->p->debug & 1) {
+          if (w == cw_found) {
+            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): found min-weight codewords (dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
+                    w, cc_dur, ctx->num_threads, cw_found, w_limit, ctx->p->dW, ctx->p->num_cws);
+          } else {
+            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+                    w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
+          }
+        }
+      } else {
+        if (ctx->p->debug & 1) {
+          if (w > cw_found) {
+            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+                    w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
+          } else {
+            fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads, total %lld cws)\n",
+                    cw_found, ctx->num_threads, ctx->p->num_cws);
+          }
+        }
+        if (w >= w_limit) {
+          atomic_store(&ctx->stop_flag, true);
+          break;
+        }
+      }
+    } else {
+      /* Weight w analyzed without success */
+      atomic_store(&ctx->dmin, w + 1);
+      if (ctx->p->debug & 1) {
+        fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found -> dmin=%d\n",
+                w, cc_dur, ctx->num_threads, w + 1);
+      }
     }
   }
 }
@@ -596,17 +623,14 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     int cur_dmax = atomic_load(&ctx->dmax);
     int cur_dmin = atomic_load(&ctx->dmin);
 
-    if (cur_dmax > 0 && cur_dmin >= cur_dmax) {
-      /* Bracketing converged */
-      atomic_store(&ctx->dmin, cur_dmax);
-      atomic_store(&ctx->stop_flag, true);
-      break;
-    }
-
     /* Target cluster size for CC */
     int target_cc_w;
     if (cur_dmax > 0) {
-      target_cc_w = cur_dmax - 1;
+      if (ctx->p->outC && ctx->p->dW > 0 && cur_dmin >= cur_dmax) {
+        target_cc_w = cur_dmax + ctx->p->dW;
+      } else {
+        target_cc_w = cur_dmax - 1;
+      }
     } else if (ctx->dexp > 0) {
       target_cc_w = ctx->dexp;
     } else if (ctx->p->wmax > 0) {
@@ -617,6 +641,13 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
     if (ctx->p->wmax > 0 && target_cc_w > ctx->p->wmax) {
       target_cc_w = ctx->p->wmax;
+    }
+
+    if (cur_dmax > 0 && cur_dmin >= cur_dmax && w > target_cc_w) {
+      /* Bracketing converged and all requested dW rounds completed */
+      atomic_store(&ctx->dmin, cur_dmax);
+      atomic_store(&ctx->stop_flag, true);
+      break;
     }
 
     if (w > target_cc_w) {
@@ -730,31 +761,53 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     if (cw_found > 0) {
       atomic_store(&ctx->dmin, cw_found);
       atomic_store(&ctx->dmax, cw_found);
-      atomic_store(&ctx->stop_flag, true);
-      if (ctx->p->debug & 1) {
-        fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads)\n", cw_found, n_cc);
+
+      if (ctx->p->outC && ctx->p->dW > 0 && w < minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW)) {
+        if (ctx->p->debug & 1) {
+          fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): found codewords (dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
+                  w, cc_dur, n_cc, n_rw, cw_found, minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW), ctx->p->dW, ctx->p->num_cws);
+        }
+      } else {
+        if (ctx->p->debug & 1) {
+          fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads, total %lld cws)\n",
+                  cw_found, n_cc, ctx->p->num_cws);
+        }
+        atomic_store(&ctx->stop_flag, true);
+        break;
       }
-      break;
-    }
-
-    if (atomic_load(&ctx->stop_flag)) break;
-
-    /* Weight w analyzed without success */
-    int new_dmin = w + 1;
-    atomic_store(&ctx->dmin, new_dmin);
-    if (ctx->p->debug & 1) {
-      fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): no codewords -> dmin=%d\n",
-              w, cc_dur, n_cc, n_rw, new_dmin);
-    }
-
-    cur_dmax = atomic_load(&ctx->dmax);
-    if (cur_dmax > 0 && new_dmin >= cur_dmax) {
-      atomic_store(&ctx->dmin, cur_dmax);
-      atomic_store(&ctx->stop_flag, true);
+    } else if (cur_dmin > 1 && cur_dmin >= cur_dmax) {
+      /* Extra dW round completed */
       if (ctx->p->debug & 1) {
-        fprintf(stderr, "# bracketing bounds coincide: dmin = dmax = %d\n", cur_dmax);
+        fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+                w, cc_dur, n_cc, n_rw, cur_dmin, ctx->p->num_cws);
       }
-      break;
+    } else {
+      if (atomic_load(&ctx->stop_flag)) break;
+
+      /* Weight w analyzed without success */
+      int new_dmin = w + 1;
+      atomic_store(&ctx->dmin, new_dmin);
+      if (ctx->p->debug & 1) {
+        fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): no codewords -> dmin=%d\n",
+                w, cc_dur, n_cc, n_rw, new_dmin);
+      }
+
+      cur_dmax = atomic_load(&ctx->dmax);
+      if (cur_dmax > 0 && new_dmin >= cur_dmax) {
+        atomic_store(&ctx->dmin, cur_dmax);
+        if (ctx->p->outC && ctx->p->dW > 0 && cur_dmax + ctx->p->dW > cur_dmax) {
+          if (ctx->p->debug & 1) {
+            fprintf(stderr, "# bracketing bounds coincide: dmin = dmax = %d (continuing up to w=%d for dW=%d)\n",
+                    cur_dmax, cur_dmax + ctx->p->dW, ctx->p->dW);
+          }
+        } else {
+          atomic_store(&ctx->stop_flag, true);
+          if (ctx->p->debug & 1) {
+            fprintf(stderr, "# bracketing bounds coincide: dmin = dmax = %d\n", cur_dmax);
+          }
+          break;
+        }
+      }
     }
 
     w++;

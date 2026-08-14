@@ -238,6 +238,16 @@ assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLE
 # Test 32: distfork classical mode
 assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0 threads=4" 0 "^2 2$" ""
 
+# Test 33: distfork method=2 with dW=1 and outC
+TEMP_DW_CWS=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK debug=15 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem dW=1 wmax=4 outC=$TEMP_DW_CWS threads=4" 0 "^3 3$" "continuing up to w=4 for dW=1"
+rm -f "$TEMP_DW_CWS"
+
+# Test 34: dist_m4ri method=2 with dW=1 reporting
+TEMP_M4RI_CWS=$(mktemp --suffix=.nz)
+assert_output "$BIN debug=1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem dW=1 wmax=4 outC=$TEMP_M4RI_CWS" 0 "^3$" "CC round w=.*searched with dW=1"
+rm -f "$TEMP_M4RI_CWS"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1
@@ -245,3 +255,4 @@ else
     echo "All tests passed!"
     exit 0
 fi
+
