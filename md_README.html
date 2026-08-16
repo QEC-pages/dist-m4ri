@@ -197,9 +197,11 @@ Command-Line Usage</h1>
 <div class="line">    finL=[str]: matrix Lx (quantum CSS code only) (NULL)</div>
 <div class="line">    fdem=[str]: detector error model (DEM) file from stim (NULL)</div>
 <div class="line">    pmin=[float]: minimum error probability to keep for DEM (0.0)</div>
+<div class="line">    dmin=[int]: known lower bound on distance (w starts from dmin in CC) (1)</div>
+<div class="line">    dmax=[int]: known upper bound on distance (RW ignores codewords of weight &gt;= dmax) (0)</div>
 <div class="line">    wmax=[int]: maximum cluster weight for CC (0)</div>
 <div class="line">    wmin=[int]: minimum distance of interest for RW (1)</div>
-<div class="line">    steps=[int]: number of RW information sets (1)</div>
+<div class="line">    steps=[int]: number of RW information sets (1000)</div>
 <div class="line">    smax=[int]: maximum syndrome weight for confinement (5)</div>
 <div class="line">    outC=[str]: file to output codewords in NZLIST format (NULL)</div>
 <div class="line">    finC=[str]: file to read initial codewords from (NULL)</div>
