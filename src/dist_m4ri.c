@@ -524,9 +524,32 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
 
   for (int w = w_start; w <= w_limit; w++) {
     if (atomic_load(&ctx->stop_flag)) break;
-    if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+    double now = get_time_sec();
+    double remaining_time = ctx->timeout - (now - ctx->start_time);
+    if (ctx->timeout > 0.0 && remaining_time <= 0.0) {
       atomic_store(&ctx->stop_flag, true);
       break;
+    }
+
+    /* Estimate CC time for weight w if timeout > 0 */
+    if (ctx->timeout > 0.0 && w > w_start) {
+      double prev = ctx->cc_time_per_weight[w - 1];
+      if (prev <= 0.0001) prev = 0.001;
+      double growth = 4.0;
+      if (w >= 3 && ctx->cc_time_per_weight[w - 2] > 0.0001) {
+        growth = ctx->cc_time_per_weight[w - 1] / ctx->cc_time_per_weight[w - 2];
+        if (growth < 2.0) growth = 2.0;
+        if (growth > 10.0) growth = 10.0;
+      }
+      double t_cc_est = prev * growth;
+      if ((t_cc_est / ctx->num_threads) > remaining_time * 1.5) {
+        if (ctx->p->debug & 1) {
+          fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, terminating early (dmin=%d)\n",
+                  w, t_cc_est / ctx->num_threads, remaining_time, atomic_load(&ctx->dmin));
+        }
+        atomic_store(&ctx->stop_flag, true);
+        break;
+      }
     }
 
     int beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
@@ -562,6 +585,9 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_round_active, 0);
 
     double cc_dur = get_time_sec() - cc_start;
+    if (w < MAX_W) {
+      ctx->cc_time_per_weight[w] = cc_dur;
+    }
 
     int cw_found = atomic_load(&ctx->cc_found_weight);
     if (cw_found > 0) {
@@ -894,6 +920,15 @@ int main(int argc, char **argv) {
   }
   atomic_init(&ctx.dmax, init_dmax);
 
+  if (init_dmax > 0 && p->wmin > 0 && init_dmax <= p->wmin && !p->outC) {
+    if (p->debug & 2) {
+      fprintf(stderr, "# early termination due to wmin=%d (known dmax=%d <= wmin)\n", p->wmin, init_dmax);
+    }
+    printf("%d %d 0\n", p->dmin > 1 ? p->dmin : 0, init_dmax);
+    var_kill(p);
+    return 0;
+  }
+
   if (p->method == 3 && init_dmax > 0 && p->dmin > 1 && p->dmin >= init_dmax && !p->outC) {
     if (p->debug & 2) {
       fprintf(stderr, "# running method=3 (bracketing mode) with %d threads, timeout=%.1fs, dexp=%d\n",
@@ -957,6 +992,10 @@ int main(int argc, char **argv) {
     final_dmax = cc_found;
   } else if (final_dmax > 0 && final_dmin >= final_dmax) {
     final_dmin = final_dmax;
+  }
+
+  if (p->wmin > 0 && final_dmax > 0 && final_dmax <= p->wmin) {
+    fprintf(stderr, "# early termination due to wmin=%d (cw of weight %d <= wmin found)\n", p->wmin, final_dmax);
   }
 
   /* Confinement profile output (if smax > 0 and CC was run) */

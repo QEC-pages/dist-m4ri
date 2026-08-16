@@ -226,5 +226,70 @@ def test_format_bounds_list_and_str():
     assert dist_m4ri.format_bounds_str([4, 6, 1000]) == "4 6 1000"
 
 
+def test_persistent_json_cache(tmp_path):
+    import json
+    json_file = str(tmp_path / "test_cache.json")
+
+    dist_m4ri.clear_distance_cache()
+    c_file = os.path.join(EXAMPLES_DIR, "c1920H.mmx")
+
+    # Run 1: 50 steps with cache_file
+    d1 = dist_m4ri.compute_classical_distance(c_file, method=1, num_steps=50, threads=4, cache_file=json_file)
+    assert os.path.isfile(json_file)
+
+    with open(json_file, "r") as f:
+        data1 = json.load(f)
+    assert len(data1) == 1
+    key = list(data1.keys())[0]
+    assert data1[key]["rw_steps"] == 50
+    assert data1[key]["dmax"] == d1
+
+    # Clear memory cache and re-read from JSON
+    dist_m4ri.clear_distance_cache()
+    entry = dist_m4ri.get_cached_distance(H=c_file, cache_file=json_file)
+    assert entry is not None
+    assert entry["rw_steps"] == 50
+
+    # Run 2: another 100 steps
+    d2 = dist_m4ri.compute_classical_distance(c_file, method=1, num_steps=100, threads=4, cache_file=json_file)
+    with open(json_file, "r") as f:
+        data2 = json.load(f)
+    assert data2[key]["rw_steps"] == 150
+    assert data2[key]["dmax"] <= d1
+
+    # CSS persistent caching
+    hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    hz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    d_css, dx_info, dz_info = dist_m4ri.compute_css_distance(
+        Hx=hx_file, Hz=hx_file, Lz=hz_file, Lx=hz_file,
+        d_exp=5, threads=4, cache_file=json_file
+    )
+    assert d_css == 5
+    with open(json_file, "r") as f:
+        data_css = json.load(f)
+    assert len(data_css) >= 2
+
+    # DEM persistent caching
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    d_dem, d_info = dist_m4ri.compute_dem_distance(dem=dem_file, threads=4, cache_file=json_file)
+    assert d_dem == 3
+    with open(json_file, "r") as f:
+        data_dem = json.load(f)
+    assert len(data_dem) >= 3
+
+    dist_m4ri.clear_distance_cache(cache_file=json_file, clear_file=True)
+    assert not os.path.exists(json_file)
+
+
+def test_wmin_greater_than_dmax():
+    hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    # When dmax=5 and wmin=7, wmin >= dmax should terminate immediately without search
+    d, d_info = dist_m4ri.compute_classical_distance(
+        H=hx_file, dmax=5, wmin=7, return_info=True, threads=4
+    )
+    assert d == 5
+    assert d_info == [0, 5, 0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

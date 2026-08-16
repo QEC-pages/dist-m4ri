@@ -13,59 +13,152 @@ no Python-level threading or subprocess-per-core logic is necessary.
 
 import os
 import sys
+import json
 import time
 import random
 import shutil
+import hashlib
 import tempfile
 import threading
 import subprocess
 from pathlib import Path
 from typing import List, Tuple, Union, Optional, Dict, Any
 
-import numpy as np
-from scipy.io import mmwrite
-from scipy.sparse import issparse, csr_array, csr_matrix
+_codedistance_mod = None
+_stim_mod = None
 
-try:
-    import stim
-    _HAS_STIM = True
-except ImportError:
-    _HAS_STIM = False
 
-try:
-    import codedistance
-    _HAS_CODEDISTANCE = True
-except ImportError:
-    _HAS_CODEDISTANCE = False
+def _get_codedistance():
+    """Lazily imports the codedistance library only when requested."""
+    global _codedistance_mod
+    if _codedistance_mod is None:
+        try:
+            import codedistance
+            _codedistance_mod = codedistance
+        except ImportError:
+            raise ImportError("codedistance library is requested but not installed.")
+    return _codedistance_mod
+
+
+def _get_stim():
+    """Lazily imports stim only when requested."""
+    global _stim_mod
+    if _stim_mod is None:
+        try:
+            import stim
+            _stim_mod = stim
+        except ImportError:
+            raise ImportError("stim library is requested but not installed.")
+    return _stim_mod
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily resolves module attributes without loading heavy dependencies at startup."""
+    if name == "_HAS_STIM":
+        try:
+            import stim
+            return True
+        except ImportError:
+            return False
+    if name == "_HAS_CODEDISTANCE":
+        try:
+            import codedistance
+            return True
+        except ImportError:
+            return False
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 # Global cache for distance results
-_distance_cache: Dict[Any, Any] = {}
+_distance_cache: Dict[str, Any] = {}
 _use_distance_cache: bool = True
+_distance_cache_file: Optional[str] = None
 
 # Aliases for backward compatibility with vecdec.py
 _css_distance_cache = _distance_cache
 _use_css_distance_cache = _use_distance_cache
 
 
-def clear_distance_cache():
-    """Clears all cached distance calculations."""
-    global _distance_cache
+def set_distance_cache_file(filepath: Optional[Union[str, Path]] = None) -> None:
+    """
+    Sets the default JSON file for persistent distance caching.
+    If the file exists, its contents are loaded into memory.
+    """
+    global _distance_cache_file
+    if filepath is not None:
+        _distance_cache_file = str(Path(filepath).resolve())
+        load_distance_cache(_distance_cache_file)
+    else:
+        _distance_cache_file = None
+
+
+def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """
+    Loads distance cache from a JSON file into memory.
+    """
+    global _distance_cache, _distance_cache_file
+    target_file = str(Path(filepath).resolve()) if filepath is not None else _distance_cache_file
+    if target_file and os.path.isfile(target_file):
+        try:
+            with open(target_file, "r") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                _distance_cache.update(data)
+        except Exception as e:
+            sys.stderr.write(f"# Warning: Failed to load distance cache from {target_file}: {e}\n")
+    return _distance_cache
+
+
+def save_distance_cache(filepath: Optional[Union[str, Path]] = None) -> None:
+    """
+    Saves the in-memory distance cache to a JSON file.
+    Uses atomic write via a temporary file to prevent corruption.
+    """
+    global _distance_cache, _distance_cache_file
+    target_file = str(Path(filepath).resolve()) if filepath is not None else _distance_cache_file
+    if not target_file:
+        return
+
+    parent_dir = os.path.dirname(os.path.abspath(target_file)) or "."
+    os.makedirs(parent_dir, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(suffix=".tmp", prefix="dist_cache_", dir=parent_dir)
+    try:
+        with open(fd, "w") as f:
+            json.dump(_distance_cache, f, indent=2)
+        os.replace(temp_path, target_file)
+    except Exception as e:
+        if os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except OSError: pass
+        sys.stderr.write(f"# Warning: Failed to save distance cache to {target_file}: {e}\n")
+
+
+def clear_distance_cache(cache_file: Optional[Union[str, Path]] = None, clear_file: bool = False) -> None:
+    """
+    Clears all cached distance calculations from memory, and optionally deletes the persistent JSON file.
+    """
+    global _distance_cache, _distance_cache_file
     _distance_cache.clear()
+    target_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    if clear_file and target_file and os.path.isfile(target_file):
+        try:
+            os.remove(target_file)
+        except OSError:
+            pass
 
 
-def enable_distance_cache():
+def enable_distance_cache() -> None:
     """Enables distance caching."""
     global _use_distance_cache
     _use_distance_cache = True
 
 
-def disable_distance_cache():
+def disable_distance_cache() -> None:
     """Disables distance caching."""
     global _use_distance_cache
     _use_distance_cache = False
 
 
-def get_distance_cache() -> Dict[Any, Any]:
+def get_distance_cache() -> Dict[str, Any]:
     """Returns the global distance cache dictionary."""
     global _distance_cache
     return _distance_cache
@@ -104,8 +197,12 @@ def get_cached_distance(
     H: Optional[Any] = None,
     Hx: Optional[Any] = None,
     Hz: Optional[Any] = None,
+    Lx: Optional[Any] = None,
+    Lz: Optional[Any] = None,
     dem: Optional[Any] = None,
-    circuit: Optional[Any] = None
+    circuit: Optional[Any] = None,
+    pmin: float = 0.0,
+    cache_file: Optional[Union[str, Path]] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Retrieves the cached distance entry (including bounds and cumulative rw_steps)
@@ -114,18 +211,26 @@ def get_cached_distance(
     Returns:
         dict with keys {"dist", "dmin", "dmax", "rw_steps", ...} or None if not cached.
     """
-    global _distance_cache
+    global _distance_cache, _distance_cache_file
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    if eff_cache_file:
+        load_distance_cache(eff_cache_file)
+
     if H is not None:
-        key = ("classical", get_sparse_array_state(H))
+        key = f"classical:{get_sparse_array_state(H)}"
         entry = _distance_cache.get(key)
         if entry:
             entry = dict(entry)
             entry["d_info"] = format_bounds_list(entry.get("dmin", 0), entry.get("dmax", 0), entry.get("rw_steps", 0))
         return entry
     elif Hx is not None or Hz is not None:
-        hx_st = get_sparse_array_state(Hx) if Hx is not None else None
-        hz_st = get_sparse_array_state(Hz) if Hz is not None else None
-        key = ("css", hx_st, hz_st)
+        hx_st = get_sparse_array_state(Hx) if Hx is not None else "none"
+        hz_st = get_sparse_array_state(Hz) if Hz is not None else "none"
+        key = f"css:X={hx_st}:Z={hz_st}"
+        if Lx is not None or Lz is not None:
+            lx_st = get_sparse_array_state(Lx) if Lx is not None else "none"
+            lz_st = get_sparse_array_state(Lz) if Lz is not None else "none"
+            key = f"{key}:Lx={lx_st}:Lz={lz_st}"
         entry = _distance_cache.get(key)
         if entry:
             entry = dict(entry)
@@ -135,8 +240,15 @@ def get_cached_distance(
                 entry["dZ"] = format_bounds_list(entry.get("dmin_Z", 0), entry.get("dmax_Z", 0), entry.get("rw_steps_Z", 0))
         return entry
     elif dem is not None or circuit is not None:
-        obj = dem if dem is not None else circuit
-        key = ("dem", get_sparse_array_state(obj))
+        if dem is None and circuit is not None:
+            if hasattr(circuit, 'detector_error_model'):
+                obj = circuit.detector_error_model(decompose_errors=True)
+            else:
+                obj = circuit
+        else:
+            obj = dem
+        dem_st = get_sparse_array_state(obj)
+        key = f"dem:{dem_st}" if pmin <= 0.0 else f"dem:{dem_st}:pmin={pmin}"
         entry = _distance_cache.get(key)
         if entry:
             entry = dict(entry)
@@ -151,20 +263,33 @@ enable_css_distance_cache = enable_distance_cache
 disable_css_distance_cache = disable_distance_cache
 
 
-def get_sparse_array_state(A) -> Any:
-    """Returns a hashable state representing a numpy/scipy matrix for cache keys."""
+def get_sparse_array_state(A) -> str:
+    """Returns a deterministic string representation for JSON-compatible cache keys."""
     if A is None:
-        return None
+        return "none"
     if isinstance(A, (str, Path)):
-        return str(A)
-    if isinstance(A, np.ndarray):
-        return (A.shape, A.dtype.str, A.tobytes())
-    if issparse(A):
+        path_str = str(Path(A).resolve())
+        if os.path.isfile(path_str):
+            try:
+                with open(path_str, "rb") as f:
+                    content_h = hashlib.sha256(f.read()).hexdigest()
+                return f"file:{path_str}:{content_h}"
+            except Exception:
+                return f"file:{path_str}"
+        return path_str
+    if hasattr(A, 'shape') and hasattr(A, 'dtype') and hasattr(A, 'tobytes'):
+        h = hashlib.sha256(A.tobytes()).hexdigest()
+        dtype_str = getattr(A.dtype, 'str', str(A.dtype))
+        return f"ndarray:{A.shape}:{dtype_str}:{h}"
+    if hasattr(A, 'tocsr'):
         csr = A.tocsr()
-        return (csr.shape, csr.data.tobytes(), csr.indices.tobytes(), csr.indptr.tobytes())
+        h = hashlib.sha256(csr.data.tobytes() + csr.indices.tobytes() + csr.indptr.tobytes()).hexdigest()
+        return f"csr:{csr.shape}:{h}"
     if hasattr(A, 'tobytes'):
-        return A.tobytes()
-    return str(A)
+        h = hashlib.sha256(A.tobytes()).hexdigest()
+        return f"bytes:{h}"
+    h = hashlib.sha256(str(A).encode('utf-8')).hexdigest()
+    return f"str_sha256:{h}"
 
 
 def create_unique_file(directory: Union[str, Path] = "tmp", extension: str = ".tmp") -> str:
@@ -398,6 +523,13 @@ def run_dist_m4ri(
         tuple (dmin, dmax, rw_steps)
     """
     exec_path = find_dist_m4ri_binary(dist_m4ri_path)
+
+    if method == 2 and wmax <= 0:
+        if dmax > 0:
+            wmax = dmax
+        elif timeout <= 0.0:
+            raise ValueError("either parameter wmax>0 or timeout>0 should be specified for CC method=2.")
+
     cmd = [exec_path, f"debug={debug}", f"method={method}"]
 
     if finH: cmd.append(f"finH={finH}")
@@ -452,6 +584,10 @@ def _matrix_to_file(matrix, extension: str = ".mtx", temp_dir: str = "tmp") -> s
     if isinstance(matrix, (str, Path)):
         return str(matrix)
 
+    import numpy as np
+    from scipy.io import mmwrite
+    from scipy.sparse import csr_matrix, issparse
+
     path = create_unique_file(directory=temp_dir, extension=extension)
     if issparse(matrix):
         csr = matrix.astype(np.int8)
@@ -475,11 +611,13 @@ def compute_classical_distance(
     d_max: int = 0,
     dmin: int = 0,
     dmax: int = 0,
+    wmin: int = 1,
     wmax: int = 0,
     dW: int = -1,
     maxC: int = 0,
     do_cws: bool = False,
     return_info: bool = False,
+    cache_file: Optional[Union[str, Path]] = None,
     solver: str = "dist_m4ri",
     codedistance_method: str = "QDistEvol",
     codedistance_params: Optional[Dict[str, Any]] = None,
@@ -499,10 +637,13 @@ def compute_classical_distance(
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance.
         d_max / dmax: Known upper bound on distance.
+        wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         do_cws: Whether to return extracted codewords.
+        return_info: If True, return (dist, d_info) or (dist, d_info, cws) where d_info is [dmin, dmax, num_rw].
+        cache_file: Optional JSON file path for persistent distance caching.
         solver: "dist_m4ri" or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
@@ -510,25 +651,26 @@ def compute_classical_distance(
         debug: Debug level flags.
 
     Returns:
-        dist or (dist, cws) if do_cws is True
+        dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
 
-    global _distance_cache, _use_distance_cache
+    global _distance_cache, _use_distance_cache, _distance_cache_file
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     code_key = None
     cached_entry = None
 
     if solver == "codedistance":
         if do_cws:
             raise ValueError("Codeword extraction (do_cws=True) is not supported with codedistance solver; use solver='dist_m4ri'.")
-        if not _HAS_CODEDISTANCE:
-            raise ImportError("codedistance library requested but not installed.")
+        codedistance = _get_codedistance()
+        import numpy as np
         params = dict(codedistance_params or {})
         if num_steps is not None and "iterCount" not in params:
             params["iterCount"] = num_steps
 
-        H_mat = H.toarray() if issparse(H) else (np.asarray(H, dtype=np.int8) if isinstance(H, np.ndarray) else None)
+        H_mat = H.toarray() if hasattr(H, 'toarray') else (np.asarray(H, dtype=np.int8) if isinstance(H, (np.ndarray, list)) else None)
         res = codedistance.codeDistance(
             H_mat, None, tB=1, method=codedistance_method, params=params,
             seed=seed if seed != 0 else None
@@ -537,9 +679,11 @@ def compute_classical_distance(
 
     # Solver is native multithreaded dist_m4ri (supports bounds caching and cumulative RW steps)
     if _use_distance_cache:
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
         try:
             h_state = get_sparse_array_state(H)
-            code_key = ("classical", h_state)
+            code_key = f"classical:{h_state}"
             cached_entry = _distance_cache.get(code_key)
             if cached_entry is not None:
                 # If exact distance is already proven and not asking for more codewords
@@ -584,6 +728,7 @@ def compute_classical_distance(
             classical=1,
             dmin=eff_dmin,
             dmax=eff_dmax,
+            wmin=wmin,
             wmax=wmax,
             dexp=d_exp,
             steps=num_steps,
@@ -633,6 +778,8 @@ def compute_classical_distance(
                 "d_info": d_info,
                 "cws": combined_cws
             }
+            if eff_cache_file:
+                save_distance_cache(eff_cache_file)
 
             if return_info:
                 return (dist, d_info, combined_cws) if do_cws else (dist, d_info)
@@ -664,10 +811,12 @@ def compute_css_distance(
     d_max: int = 0,
     dmin: int = 0,
     dmax: int = 0,
+    wmin: int = 1,
     wmax: int = 0,
     dW: int = -1,
     maxC: int = 0,
     do_cws: bool = False,
+    cache_file: Optional[Union[str, Path]] = None,
     solver: str = "dist_m4ri",
     codedistance_method: str = "QDistEvol",
     codedistance_params: Optional[Dict[str, Any]] = None,
@@ -691,10 +840,12 @@ def compute_css_distance(
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance, inclusive.
         d_max / dmax: Known upper bound on distance, inclusive.
+        wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         do_cws: Whether to return extracted X and Z codewords.
+        cache_file: Optional JSON file path for persistent distance caching.
         solver: "dist_m4ri" or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
@@ -702,8 +853,8 @@ def compute_css_distance(
         debug: Debug level flags.
 
     Returns:
-        tuple (dist, dist_list_X, dist_list_Z, cws_X, cws_Z) if do_cws
-        else (dist, dist_list_X, dist_list_Z)
+        tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
+        else (dist, dX_info, dZ_info)
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
@@ -714,15 +865,16 @@ def compute_css_distance(
     if not can_compute_Z and not can_compute_X:
         raise ValueError("Cannot compute CSS distance: Both Hx and Hz are empty.")
 
-    global _distance_cache, _use_distance_cache
+    global _distance_cache, _use_distance_cache, _distance_cache_file
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     code_key = None
     cached_entry = None
 
     if solver == "codedistance":
         if do_cws:
             raise ValueError("Codeword extraction (do_cws=True) is not supported with codedistance solver; use solver='dist_m4ri'.")
-        if not _HAS_CODEDISTANCE:
-            raise ImportError("codedistance library requested but not installed.")
+        codedistance = _get_codedistance()
+        import numpy as np
         params = dict(codedistance_params or {})
         if num_steps is not None and "iterCount" not in params:
             params["iterCount"] = num_steps
@@ -730,8 +882,8 @@ def compute_css_distance(
         dist_Z, dist_X = None, None
         dX_info, dZ_info = None, None
 
-        Hx_mat = Hx.toarray() if issparse(Hx) else (np.asarray(Hx, dtype=np.int8) if isinstance(Hx, np.ndarray) else None)
-        Hz_mat = Hz.toarray() if issparse(Hz) else (np.asarray(Hz, dtype=np.int8) if isinstance(Hz, np.ndarray) else None)
+        Hx_mat = Hx.toarray() if hasattr(Hx, 'toarray') else (np.asarray(Hx, dtype=np.int8) if isinstance(Hx, (np.ndarray, list)) else None)
+        Hz_mat = Hz.toarray() if hasattr(Hz, 'toarray') else (np.asarray(Hz, dtype=np.int8) if isinstance(Hz, (np.ndarray, list)) else None)
 
         if can_compute_Z:
             res_Z = codedistance.CSScodeDistance(
@@ -760,10 +912,16 @@ def compute_css_distance(
 
     # Solver is native multithreaded dist_m4ri
     if _use_distance_cache:
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
         try:
-            hx_state = get_sparse_array_state(Hx) if can_compute_Z else None
-            hz_state = get_sparse_array_state(Hz) if can_compute_X else None
-            code_key = ("css", hx_state, hz_state)
+            hx_state = get_sparse_array_state(Hx) if can_compute_Z else "none"
+            hz_state = get_sparse_array_state(Hz) if can_compute_X else "none"
+            code_key = f"css:X={hx_state}:Z={hz_state}"
+            if Lx is not None or Lz is not None:
+                lx_state = get_sparse_array_state(Lx) if Lx is not None else "none"
+                lz_state = get_sparse_array_state(Lz) if Lz is not None else "none"
+                code_key = f"{code_key}:Lx={lx_state}:Lz={lz_state}"
             cached_entry = _distance_cache.get(code_key)
             if cached_entry is not None:
                 # If exact distance is already proven and not asking for more codewords
@@ -825,6 +983,7 @@ def compute_css_distance(
                 finL=file_Lz,
                 dmin=eff_dmin,
                 dmax=eff_dmax,
+                wmin=wmin,
                 wmax=wmax,
                 dexp=d_exp,
                 steps=num_steps,
@@ -851,6 +1010,7 @@ def compute_css_distance(
                 finL=file_Lx,
                 dmin=eff_dmin,
                 dmax=eff_dmax,
+                wmin=wmin,
                 wmax=wmax,
                 dexp=d_exp,
                 steps=num_steps,
@@ -914,6 +1074,8 @@ def compute_css_distance(
                 "cws_X": cws_X,
                 "cws_Z": cws_Z
             }
+            if eff_cache_file:
+                save_distance_cache(eff_cache_file)
         return res_tuple
 
     finally:
@@ -936,12 +1098,14 @@ def compute_dem_distance(
     d_max: int = 0,
     dmin: int = 0,
     dmax: int = 0,
+    wmin: int = 1,
     wmax: int = 0,
     dW: int = -1,
     maxC: int = 0,
     pmin: float = 0.0,
     noscan: int = 0,
     do_cws: bool = False,
+    cache_file: Optional[Union[str, Path]] = None,
     solver: str = "dist_m4ri",
     codedistance_method: str = "UndetectableErrorStim",
     codedistance_params: Optional[Dict[str, Any]] = None,
@@ -963,12 +1127,14 @@ def compute_dem_distance(
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance, inclusive.
         d_max / dmax: Known upper bound on distance, inclusive.
+        wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         pmin: Probability cutoff for error mechanisms in DEM.
         noscan: Skip CC scan loop if 1.
         do_cws: Whether to return extracted error mechanisms / codewords.
+        cache_file: Optional JSON file path for persistent distance caching.
         solver: "dist_m4ri" or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
@@ -976,7 +1142,7 @@ def compute_dem_distance(
         debug: Debug level flags.
 
     Returns:
-        tuple (dist, dist_list, cws) if do_cws else (dist, dist_list)
+        tuple (dist, d_info, cws) if do_cws else (dist, d_info)
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
@@ -993,8 +1159,7 @@ def compute_dem_distance(
     if solver == "codedistance":
         if do_cws:
             raise ValueError("Codeword extraction (do_cws=True) is not supported with codedistance solver; use solver='dist_m4ri'.")
-        if not _HAS_CODEDISTANCE:
-            raise ImportError("codedistance library requested but not installed.")
+        codedistance = _get_codedistance()
         params = dict(codedistance_params or {})
         params.setdefault("filterCircuit", False)
         if num_steps is not None and "iterCount" not in params:
@@ -1018,14 +1183,17 @@ def compute_dem_distance(
         return d, d_info
 
     # Solver is native multithreaded dist_m4ri
-    global _distance_cache, _use_distance_cache
+    global _distance_cache, _use_distance_cache, _distance_cache_file
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     code_key = None
     cached_entry = None
     if _use_distance_cache:
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
         try:
             dem_obj = dem if dem is not None else circuit
             dem_state = get_sparse_array_state(dem_obj)
-            code_key = ("dem", dem_state)
+            code_key = f"dem:{dem_state}" if pmin <= 0.0 else f"dem:{dem_state}:pmin={pmin}"
             cached_entry = _distance_cache.get(code_key)
             if cached_entry is not None:
                 # If exact distance is already proven and not asking for more codewords
@@ -1078,6 +1246,7 @@ def compute_dem_distance(
             fdem=file_dem,
             dmin=eff_dmin,
             dmax=eff_dmax,
+            wmin=wmin,
             wmax=wmax,
             dexp=d_exp,
             steps=num_steps,
@@ -1130,6 +1299,8 @@ def compute_dem_distance(
                 "d_info": d_info,
                 "cws": combined_cws
             }
+            if eff_cache_file:
+                save_distance_cache(eff_cache_file)
 
         if do_cws:
             return dist, d_info, cws
@@ -1140,3 +1311,333 @@ def compute_dem_distance(
             if f and os.path.exists(f):
                 try: os.remove(f)
                 except OSError: pass
+
+
+def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
+    """Writes codewords to a text file in NZLIST format (1-based indices)."""
+    with open(filepath, "w") as f:
+        f.write("%% NZLIST\n")
+        f.write(f"% {len(cws)} codewords\n")
+        for cw in cws:
+            f.write(f"{len(cw)} " + " ".join(str(idx + 1) for idx in cw) + "\n")
+
+
+def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
+    """Parses CLI arguments supporting both key=value pairs and standard --flags."""
+    args: Dict[str, Any] = {
+        "method": 3,
+        "finH": None,
+        "finG": None,
+        "finL": None,
+        "fdem": None,
+        "Hx": None,
+        "Hz": None,
+        "Lx": None,
+        "Lz": None,
+        "finC": None,
+        "outC": None,
+        "dmin": 0,
+        "dmax": 0,
+        "wmin": 1,
+        "wmax": 0,
+        "dexp": 0,
+        "steps": None,
+        "threads": None,
+        "timeout": 60.0,
+        "dW": -1,
+        "maxC": 0,
+        "pmin": 0.0,
+        "noscan": 0,
+        "classical": -1,
+        "seed": 0,
+        "debug": 0,
+        "solver": "dist_m4ri",
+        "cache_file": "tmp_dist_cache.json",
+        "use_cache": True,
+        "do_cws": False,
+    }
+
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if not arg:
+            i += 1
+            continue
+
+        if arg in ("-h", "--help", "help"):
+            args["help"] = True
+            i += 1
+            continue
+
+        if arg in ("--no-cache", "-no-cache", "nocache", "--nocache"):
+            args["use_cache"] = False
+            args["cache_file"] = None
+            i += 1
+            continue
+
+        if arg in ("--cws", "-cws", "cws", "do_cws=1", "--do_cws"):
+            args["do_cws"] = True
+            i += 1
+            continue
+
+        key = None
+        val = None
+        if "=" in arg:
+            key, val = arg.split("=", 1)
+            if key.startswith("--"):
+                key = key[2:]
+            elif key.startswith("-"):
+                key = key[1:]
+        elif arg.startswith("--") or arg.startswith("-"):
+            key = arg.lstrip("-")
+            if i + 1 < len(argv) and not argv[i + 1].startswith("-") and "=" not in argv[i + 1]:
+                val = argv[i + 1]
+                i += 1
+            else:
+                val = "1"
+        else:
+            if os.path.exists(arg):
+                if arg.endswith(".dem"):
+                    args["fdem"] = arg
+                elif arg.endswith(".mmx") or arg.endswith(".mtx"):
+                    if args["finH"] is None:
+                        args["finH"] = arg
+                    elif args["finL"] is None:
+                        args["finL"] = arg
+            i += 1
+            continue
+
+        if key:
+            key_lower = key.lower()
+            if key_lower in ("cache", "cache_file", "cachefile"):
+                if val.lower() in ("0", "none", "false", "off", "no"):
+                    args["use_cache"] = False
+                    args["cache_file"] = None
+                else:
+                    args["use_cache"] = True
+                    args["cache_file"] = val
+            elif key_lower in ("fdem", "dem"):
+                args["fdem"] = val
+            elif key_lower == "finh":
+                args["finH"] = val
+            elif key_lower == "fing":
+                args["finG"] = val
+            elif key_lower == "finl":
+                args["finL"] = val
+            elif key_lower in ("hx", "finhx"):
+                args["Hx"] = val
+            elif key_lower in ("hz", "finhz"):
+                args["Hz"] = val
+            elif key_lower in ("lx", "finlx"):
+                args["Lx"] = val
+            elif key_lower in ("lz", "finlz"):
+                args["Lz"] = val
+            elif key_lower == "finc":
+                args["finC"] = val
+            elif key_lower == "outc":
+                args["outC"] = val
+                args["do_cws"] = True
+            elif key_lower in ("method", "m"):
+                args["method"] = int(val)
+            elif key_lower in ("dmin", "d_min"):
+                args["dmin"] = int(val)
+            elif key_lower in ("dmax", "d_max"):
+                args["dmax"] = int(val)
+            elif key_lower in ("wmin", "w_min"):
+                args["wmin"] = int(val)
+            elif key_lower in ("wmax", "w_max"):
+                args["wmax"] = int(val)
+            elif key_lower in ("dexp", "dest", "d_exp"):
+                args["dexp"] = int(val)
+            elif key_lower in ("steps", "num_steps", "nsteps"):
+                args["steps"] = int(val)
+            elif key_lower in ("threads", "num_threads", "t"):
+                args["threads"] = int(val)
+            elif key_lower in ("timeout", "time"):
+                args["timeout"] = float(val)
+            elif key_lower == "dw":
+                args["dW"] = int(val)
+            elif key_lower in ("maxc", "max_c"):
+                args["maxC"] = int(val)
+            elif key_lower == "pmin":
+                args["pmin"] = float(val)
+            elif key_lower == "noscan":
+                args["noscan"] = int(val)
+            elif key_lower == "classical":
+                args["classical"] = int(val)
+            elif key_lower == "seed":
+                args["seed"] = int(val)
+            elif key_lower in ("debug", "dbg"):
+                args["debug"] = int(val)
+            elif key_lower == "solver":
+                args["solver"] = val
+            elif key_lower == "cws":
+                args["do_cws"] = bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no"))
+
+        i += 1
+
+    return args
+
+
+def print_cli_help() -> None:
+    help_text = """dist_m4ri.py: Multithreaded distance calculator Python CLI
+
+Usage: dist_m4ri.py [key=val | --flag val ...]
+
+Options:
+  fdem=FILE             Detector Error Model input file (.dem)
+  finH=FILE             Parity check matrix input file (.mmx / .mtx)
+  finG=FILE             Generator matrix input file (.mmx / .mtx)
+  finL=FILE             Logical operator matrix input file (.mmx / .mtx)
+  Hx=FILE, Hz=FILE      CSS check matrices (alternative to finH/finL)
+  Lx=FILE, Lz=FILE      CSS logical operators (optional)
+  method=N              1=RW, 2=CC, 3=Bracketing (default: 3)
+  dmin=N                Certified lower bound, inclusive (default: 0)
+  dmax=N                Known upper bound, inclusive (default: 0)
+  wmin=N                Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1)
+  wmax=N                Maximum weight to search in CC
+  dexp=N                Expected distance estimate
+  steps=N               Maximum RW steps (default: 1000 in method 3)
+  threads=N             Worker threads (default: hardware concurrency)
+  timeout=SEC           Execution timeout in seconds (default: 60.0)
+  dW=N                  Extra weight window above dmin to collect codewords
+  maxC=N                Maximum number of codewords to collect
+  outC=FILE             File to output non-trivial codewords (NZLIST format)
+  pmin=PROB             Probability threshold for DEM errors
+  noscan=1              Skip CC scan loop
+  classical=1           Force classical mode (0 for CSS)
+  seed=N                Random seed
+  debug=N               Debug bitmask (e.g. 1, 2, 4)
+  solver=NAME           'dist_m4ri' (default) or 'codedistance'
+  cache=FILE            Persistent JSON cache file (default: tmp_dist_cache.json)
+  --no-cache / nocache  Disable persistent JSON caching
+  --cws                 Collect and output non-trivial codewords
+"""
+    print(help_text)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    args = parse_cli_args(argv)
+
+    if args.get("help") or (not args.get("fdem") and not args.get("finH") and not args.get("Hx")):
+        print_cli_help()
+        return 0
+
+    cache_file = args["cache_file"] if args["use_cache"] else None
+    if not args["use_cache"]:
+        disable_distance_cache()
+
+    try:
+        if args["fdem"]:
+            res = compute_dem_distance(
+                dem=args["fdem"],
+                method=args["method"],
+                threads=args["threads"],
+                timeout=args["timeout"],
+                num_steps=args["steps"],
+                d_exp=args["dexp"],
+                dmin=args["dmin"],
+                dmax=args["dmax"],
+                wmin=args["wmin"],
+                wmax=args["wmax"],
+                dW=args["dW"],
+                maxC=args["maxC"],
+                pmin=args["pmin"],
+                noscan=args["noscan"],
+                do_cws=args["do_cws"] or (args["outC"] is not None),
+                cache_file=cache_file,
+                solver=args["solver"],
+                seed=args["seed"],
+                debug=args["debug"]
+            )
+            if args["do_cws"] or (args["outC"] is not None):
+                dist, d_info, cws = res
+                print(format_bounds_str(d_info))
+                if args["outC"]:
+                    _write_nzlist_file(args["outC"], cws)
+            else:
+                dist, d_info = res
+                print(format_bounds_str(d_info))
+            return 0
+
+        if args["Hx"] is not None or (args["classical"] == 0 and args["finH"] is not None):
+            hx = args["Hx"] if args["Hx"] is not None else args["finH"]
+            hz = args["Hz"] if args["Hz"] is not None else (args["finG"] if args["finG"] is not None else args["finL"])
+            lx = args["Lx"]
+            lz = args["Lz"]
+            res = compute_css_distance(
+                Hx=hx,
+                Hz=hz,
+                Lx=lx,
+                Lz=lz,
+                method=args["method"],
+                threads=args["threads"],
+                timeout=args["timeout"],
+                num_steps=args["steps"],
+                d_exp=args["dexp"],
+                dmin=args["dmin"],
+                dmax=args["dmax"],
+                wmin=args["wmin"],
+                wmax=args["wmax"],
+                dW=args["dW"],
+                maxC=args["maxC"],
+                do_cws=args["do_cws"] or (args["outC"] is not None),
+                cache_file=cache_file,
+                solver=args["solver"],
+                seed=args["seed"],
+                debug=args["debug"]
+            )
+            if args["do_cws"] or (args["outC"] is not None):
+                dist, dx_info, dz_info, cws_x, cws_z = res
+                exact_tag = " (exact)" if (dx_info and dx_info[0] > 0 and dx_info[0] == dx_info[1] and dz_info and dz_info[0] > 0 and dz_info[0] == dz_info[1]) else ""
+                print(f"{dist} dX: {dx_info} dZ: {dz_info}{exact_tag}")
+                if args["outC"]:
+                    _write_nzlist_file(args["outC"], (cws_x or []) + (cws_z or []))
+            else:
+                dist, dx_info, dz_info = res
+                exact_tag = " (exact)" if (dx_info and dx_info[0] > 0 and dx_info[0] == dx_info[1] and dz_info and dz_info[0] > 0 and dz_info[0] == dz_info[1]) else ""
+                print(f"{dist} dX: {dx_info} dZ: {dz_info}{exact_tag}")
+            return 0
+
+        if args["finH"]:
+            res = compute_classical_distance(
+                H=args["finH"],
+                method=args["method"],
+                threads=args["threads"],
+                timeout=args["timeout"],
+                num_steps=args["steps"],
+                d_exp=args["dexp"],
+                dmin=args["dmin"],
+                dmax=args["dmax"],
+                wmin=args["wmin"],
+                wmax=args["wmax"],
+                dW=args["dW"],
+                maxC=args["maxC"],
+                do_cws=args["do_cws"] or (args["outC"] is not None),
+                return_info=True,
+                cache_file=cache_file,
+                solver=args["solver"],
+                seed=args["seed"],
+                debug=args["debug"]
+            )
+            if args["do_cws"] or (args["outC"] is not None):
+                dist, d_info, cws = res
+                print(format_bounds_str(d_info))
+                if args["outC"]:
+                    _write_nzlist_file(args["outC"], cws)
+            else:
+                dist, d_info = res
+                print(format_bounds_str(d_info))
+            return 0
+    except ValueError as e:
+        sys.stderr.write(f"Error: {e}\n")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -176,7 +176,7 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\n"									\
   "\t\t2: connected cluster (CC) algorithm.  Options:\n"		\
   "\t\t   wmax=[int]:  maximum cluster weight to construct, inclusive (0)\n" \
-  "\t\t\t must be non-zero for CC only, otherwise use upper bound from RW\n" \
+  "\t\t\t optional if timeout>0 or dmax>0 is set; otherwise required for CC only\n" \
   "\t\t   smax=[int]:  maximum syndrome weight of interest, inclusive (5)\n" \
   "\t\t\t must be non-zero to calculate confinement profile\n"          \
   "\t\t   start=[int]: use only this position to start (equiv. to cbeg=cend=start) (-1)\n" \
@@ -185,10 +185,10 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\t\t   noscan=[int]: start CC directly with wmax (0)\n" \
   "\t\t3: bracketing mode (balanced concurrent RW and CC)\n" \
   "\n"									\
-  "   Multithreading parameters (distfork):\n"				\
-  "\tthreads=[int]: number of threads to use (0 for auto) (0)\n"	\
-  "\tdexp=[int]:    expected distance value (alias: dest) (0)\n"	\
-  "\ttimeout=[sec]: timeout in seconds (60)\n"				\
+  "   Execution and multithreading parameters:\n"				\
+  "\tthreads=[int]: number of threads to use (0 for auto CPU count) (0)\n"	\
+  "\ttimeout=[sec]: timeout in seconds (60.0)\n"				\
+  "\tdexp=[int]:    expected distance value for method=3 (alias: dest) (0)\n"				\
   "\n"									\
   "   Distance bounds parameters:\n"					\
   "\tdmin=[int]:    known lower bound on distance, inclusive (w starts from dmin in CC) (1)\n" \
