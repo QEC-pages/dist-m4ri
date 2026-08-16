@@ -248,6 +248,24 @@ TEMP_M4RI_CWS=$(mktemp --suffix=.nz)
 assert_output "$BIN debug=1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem dW=1 wmax=4 outC=$TEMP_M4RI_CWS" 0 "^3$" "CC round w=.*searched with dW=1"
 rm -f "$TEMP_M4RI_CWS"
 
+# Test 35: dist_m4ri method=2 timeout lower bound correctness
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 timeout=0.0001 debug=0 threads=4" 0 "^[1-5] 0 0$" ""
+
+# Test 36: dist_m4ri method=3 timeout bound correctness
+assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 timeout=0.0001 debug=0 threads=4" 0 "^[1-5] [0-5] [0-9]+$" ""
+
+# Test 37: dmin parameter starting CC search directly at dmin
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx dmin=5 wmax=5 debug=0 threads=4" 0 "^5 5 0$" ""
+
+# Test 38: dmax parameter in method 1
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx dmax=5 steps=100 debug=0 threads=4" 0 "^1 5 [0-9]+$" ""
+
+# Test 39: dmin and dmax in method 3
+assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx dmin=4 dmax=5 timeout=5 debug=0 threads=4" 0 "^5 5 [0-9]+$" ""
+
+# Test 40: conflicting debug parameters error
+assert_output "$BIN debug=1 debug=2 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2" 255 "" "debug parameter specified multiple times with conflicting values"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1
@@ -255,4 +273,5 @@ else
     echo "All tests passed!"
     exit 0
 fi
+
 

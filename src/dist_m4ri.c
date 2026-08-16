@@ -295,11 +295,13 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       int cnt = 0;
       const int col = ee[cnt++] = skip_pivs->values[ir];
       int limit = nvar + 1;
-      if (p->wmax > 0) limit = p->wmax + 1;
       int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
       if (cur_dmax > 0) {
-        if (p->dW >= 0) limit = minint(limit, cur_dmax + p->dW + 1);
-        else limit = minint(limit, cur_dmax);
+        if ((p->outC || p->maxC || p->dW > 0) && p->dW >= 0) {
+          limit = minint(limit, cur_dmax + p->dW + 1);
+        } else {
+          limit = minint(limit, cur_dmax);
+        }
       }
 
       word *rawrow = mzd_row(mHT, col);
@@ -504,7 +506,7 @@ static void run_method1_coordinator(distfork_ctx_t *ctx) {
 static void run_method2_coordinator(distfork_ctx_t *ctx) {
   const int nvar = ctx->p->spaH->cols;
   const int wmax = ctx->p->wmax;
-  const int w_start = ctx->p->noscan ? wmax : 1;
+  const int w_start = ctx->p->noscan ? wmax : (ctx->p->dmin > 1 ? ctx->p->dmin : 1);
 
   if (ctx->p->debug & 2) {
     fprintf(stderr, "# running method=2 (multithreaded CC) with %d threads, w_start=%d wmax=%d\n",
@@ -512,6 +514,13 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
   }
 
   int w_limit = wmax;
+  if (ctx->p->dmax > 0) {
+    if (ctx->p->outC && ctx->p->dW > 0) {
+      w_limit = minint(wmax > 0 ? wmax : ctx->p->dmax + ctx->p->dW, ctx->p->dmax + ctx->p->dW);
+    } else {
+      w_limit = minint(wmax > 0 ? wmax : ctx->p->dmax, ctx->p->dmax);
+    }
+  }
 
   for (int w = w_start; w <= w_limit; w++) {
     if (atomic_load(&ctx->stop_flag)) break;
@@ -537,12 +546,14 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
               w, ctx->num_threads, beg, end);
     }
 
+    bool round_completed = false;
     while (!atomic_load(&ctx->stop_flag)) {
       if (get_time_sec() - ctx->start_time >= ctx->timeout) {
         atomic_store(&ctx->stop_flag, true);
         break;
       }
       if (atomic_load(&ctx->cc_col_next) > end && atomic_load(&ctx->cc_active_workers) == 0) {
+        round_completed = true;
         break;
       }
       usleep(100);
@@ -563,7 +574,7 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
           if (w == cw_found) {
             fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): found min-weight codewords (dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
                     w, cc_dur, ctx->num_threads, cw_found, w_limit, ctx->p->dW, ctx->p->num_cws);
-          } else {
+          } else if (round_completed) {
             fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed (dmin=%d, total %lld cws)\n",
                     w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
           }
@@ -571,19 +582,24 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       } else {
         if (ctx->p->debug & 1) {
           if (w > cw_found) {
-            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed (dmin=%d, total %lld cws)\n",
-                    w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
+            if (round_completed) {
+              fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+                      w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
+            }
           } else {
             fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads, total %lld cws)\n",
                     cw_found, ctx->num_threads, ctx->p->num_cws);
           }
         }
-        if (w >= w_limit) {
+        if (w >= w_limit || !round_completed) {
           atomic_store(&ctx->stop_flag, true);
           break;
         }
       }
     } else {
+      if (!round_completed) {
+        break;
+      }
       /* Weight w analyzed without success */
       atomic_store(&ctx->dmin, w + 1);
       if (ctx->p->debug & 1) {
@@ -597,11 +613,18 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
 /* Method 3 coordinator */
 static void run_method3_coordinator(distfork_ctx_t *ctx) {
   const int nvar = ctx->p->spaH->cols;
-  int w = ctx->p->noscan ? ctx->p->wmax : 1;
+  int w = ctx->p->noscan ? ctx->p->wmax : (ctx->p->dmin > 1 ? ctx->p->dmin : 1);
 
   if (ctx->p->debug & 2) {
     fprintf(stderr, "# running method=3 (bracketing mode) with %d threads, timeout=%.1fs, dexp=%d\n",
             ctx->num_threads, ctx->timeout, ctx->dexp);
+  }
+
+  int init_dmax = atomic_load(&ctx->dmax);
+  int init_dmin = atomic_load(&ctx->dmin);
+  if (init_dmax > 0 && init_dmin >= init_dmax && (!ctx->p->outC || ctx->p->dW <= 0)) {
+    atomic_store(&ctx->stop_flag, true);
+    return;
   }
 
   /* Initial RW probe to measure average step time */
@@ -654,11 +677,6 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     }
 
     if (w > target_cc_w) {
-      if (cur_dmax > 0 && cur_dmin < cur_dmax) {
-        atomic_store(&ctx->dmin, cur_dmax);
-        atomic_store(&ctx->stop_flag, true);
-        break;
-      }
       /* Let remaining RW steps finish */
       while (!atomic_load(&ctx->stop_flag)) {
         if (get_time_sec() - ctx->start_time >= ctx->timeout) break;
@@ -743,6 +761,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     }
 
     double cc_start = get_time_sec();
+    bool round_completed = false;
 
     while (!atomic_load(&ctx->stop_flag)) {
       if (get_time_sec() - ctx->start_time >= ctx->timeout) {
@@ -750,6 +769,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
         break;
       }
       if (atomic_load(&ctx->cc_col_next) > end && atomic_load(&ctx->cc_active_workers) == 0) {
+        round_completed = true;
         break;
       }
       usleep(100);
@@ -767,25 +787,42 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
       if (ctx->p->outC && ctx->p->dW > 0 && w < minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW)) {
         if (ctx->p->debug & 1) {
-          fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): found codewords (dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
-                  w, cc_dur, n_cc, n_rw, cw_found, minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW), ctx->p->dW, ctx->p->num_cws);
+          if (w == cw_found) {
+            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): found codewords (dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
+                    w, cc_dur, n_cc, n_rw, cw_found, minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW), ctx->p->dW, ctx->p->num_cws);
+          } else if (round_completed) {
+            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+                    w, cc_dur, n_cc, n_rw, cw_found, ctx->p->num_cws);
+          }
         }
       } else {
         if (ctx->p->debug & 1) {
-          fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads, total %lld cws)\n",
-                  cw_found, n_cc, ctx->p->num_cws);
+          if (w > cw_found) {
+            if (round_completed) {
+              fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+                      w, cc_dur, n_cc, n_rw, cw_found, ctx->p->num_cws);
+            }
+          } else {
+            fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads, total %lld cws)\n",
+                    cw_found, n_cc, ctx->p->num_cws);
+          }
         }
         atomic_store(&ctx->stop_flag, true);
         break;
       }
-    } else if (cur_dmin > 1 && cur_dmin >= cur_dmax) {
+    } else if (cur_dmax > 0 && cur_dmin >= cur_dmax) {
       /* Extra dW round completed */
-      if (ctx->p->debug & 1) {
+      if (round_completed && (ctx->p->debug & 1)) {
         fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): extra dW round completed (dmin=%d, total %lld cws)\n",
                 w, cc_dur, n_cc, n_rw, cur_dmin, ctx->p->num_cws);
       }
+      if (!round_completed) {
+        break;
+      }
     } else {
-      if (atomic_load(&ctx->stop_flag)) break;
+      if (!round_completed) {
+        break;
+      }
 
       /* Weight w analyzed without success */
       int new_dmin = w + 1;
@@ -845,12 +882,28 @@ int main(int argc, char **argv) {
   ctx.total_rw_steps = (p->steps > 0) ? p->steps : 1;
 
   /* Initialize dmin and dmax */
-  atomic_init(&ctx.dmin, 1);
+  atomic_init(&ctx.dmin, p->dmin > 1 ? p->dmin : 1);
   int init_dmax = 0;
+  if (p->dmax > 0) {
+    init_dmax = p->dmax;
+  }
   if (p->min_w != INT_MAX) {
-    init_dmax = p->min_w;
+    if (init_dmax == 0 || p->min_w < init_dmax) {
+      init_dmax = p->min_w;
+    }
   }
   atomic_init(&ctx.dmax, init_dmax);
+
+  if (p->method == 3 && init_dmax > 0 && p->dmin > 1 && p->dmin >= init_dmax && (!p->outC || p->dW <= 0)) {
+    if (p->debug & 2) {
+      fprintf(stderr, "# running method=3 (bracketing mode) with %d threads, timeout=%.1fs, dexp=%d\n",
+              num_threads, timeout, p->dexp);
+    }
+    printf("%d %d 0\n", p->dmin, init_dmax);
+    var_kill(p);
+    return 0;
+  }
+
   atomic_init(&ctx.cc_found_weight, 0);
   atomic_init(&ctx.stop_flag, false);
   atomic_init(&ctx.rw_steps_started, 0);

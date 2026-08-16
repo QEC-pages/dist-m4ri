@@ -8,10 +8,11 @@ params_t prm={
   .debug=3,
   .method=0,
   .classical=-1,
-  .steps=1,
+  .steps=1000,
   .css=1,
   .smax=5,
   .wmax=0,
+  .dmin=0,
   .dmax=0,
   .wmin=1,
   .noscan=0,
@@ -65,18 +66,17 @@ void var_init(int argc, char **argv, params_t * const p){
       exit (-1);
     }
 
+  int debug_set=0;
+
   for(int i=1; i<argc; i++){
     if(sscanf(argv[i],"debug=%d",& dbg)==1){/** `debug` */
-      if(dbg==0)
-	p->debug = 0;
-      else{
-        if(i==1)
-          p->debug = dbg; /** just assign if in the `1st position` */
-        else
-          p->debug ^= dbg; /** otherwise `XOR` */
-        if(p->debug&4)
-	  fprintf(stderr, "# read %s, debug=%d octal=%o\n",argv[i],p->debug,p->debug);
+      if(debug_set && p->debug != dbg){
+        ERROR("debug parameter specified multiple times with conflicting values (%d vs %d)\n", p->debug, dbg);
       }
+      p->debug = dbg;
+      debug_set = 1;
+      if(p->debug&4)
+	fprintf(stderr, "# read %s, debug=%d octal=%o\n",argv[i],p->debug,p->debug);
     }
     else if (sscanf(argv[i],"css=%d",&dbg)==1){
       p->css=dbg;
@@ -142,6 +142,11 @@ void var_init(int argc, char **argv, params_t * const p){
       p->wmax=dbg;
       if (p->debug&4)
 	fprintf(stderr, "# read %s, wmax=%d\n",argv[i],p->wmax);
+    }
+    else if (sscanf(argv[i],"dmin=%d",&dbg)==1){
+      p->dmin=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, dmin=%d\n",argv[i],p->dmin);
     }
     else if (sscanf(argv[i],"dmax=%d",&dbg)==1){
       p->dmax=dbg;
@@ -270,8 +275,17 @@ void var_init(int argc, char **argv, params_t * const p){
     ERROR("pmin can only be used when fdem is specified");
   }
 
-  if (p->dmax != 0) {
-    ERROR("parameter dmax=%d is not implemented. Please use wmax instead.\n", p->dmax);
+  if (p->dmin < 0) {
+    ERROR("parameter dmin=%d cannot be negative\n", p->dmin);
+  }
+  if (p->dmax < 0) {
+    ERROR("parameter dmax=%d cannot be negative\n", p->dmax);
+  }
+  if (p->dmin > 0 && p->dmax > 0 && p->dmin > p->dmax) {
+    ERROR("parameter dmin=%d cannot be larger than dmax=%d\n", p->dmin, p->dmax);
+  }
+  if (p->wmax > 0 && p->dmin > p->wmax) {
+    ERROR("parameter dmin=%d cannot be larger than wmax=%d\n", p->dmin, p->wmax);
   }
 
   if (p->wmax > 0 && p->wmin > p->wmax) {
@@ -294,12 +308,20 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->cbeg >= 0 && p->cend >= 0 && p->cbeg > p->cend) {
     ERROR("cbeg=%d cannot be larger than cend=%d\n", p->cbeg, p->cend);
   }
+  if (p->noscan && p->smax > 0) {
+    fprintf(stderr, "# WARNING: smax=%d disabled (set to 0) because noscan=1 skips small cluster weights\n", p->smax);
+    p->smax = 0;
+  } else if (p->dmin > 1 && p->smax > 0) {
+    fprintf(stderr, "# WARNING: smax=%d disabled (set to 0) because dmin=%d skips small cluster weights\n", p->smax, p->dmin);
+    p->smax = 0;
+  }
+
   if (p->method == 2) {
     if (p->wmin != 1) {
-      printf("# WARNING: wmin=%d is ignored for CC method\n", p->wmin);
+      fprintf(stderr, "# WARNING: wmin=%d is ignored for CC method\n", p->wmin);
     }
-    if (p->steps != 1) {
-      printf("# WARNING: steps=%d is ignored for CC method\n", p->steps);
+    if (p->steps != 1000) {
+      fprintf(stderr, "# WARNING: steps=%d is ignored for CC method\n", p->steps);
     }
   }
 

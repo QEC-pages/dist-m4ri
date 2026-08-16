@@ -186,11 +186,18 @@ int do_CC_dist(params_t * const p){
     //    syn[i]->max = mH->rows;    
   }
   int result = 0;
-  const int w_start = noscan ? wmax : 1;
+  const int w_start = noscan ? wmax : (p->dmin > 1 ? p->dmin : 1);
   int w_limit_dynamic = wmax;
+  if (p->dmax > 0) {
+    if (p->outC && p->dW > 0) {
+      w_limit_dynamic = minint(wmax > 0 ? wmax : p->dmax + p->dW, p->dmax + p->dW);
+    } else {
+      w_limit_dynamic = minint(wmax > 0 ? wmax : p->dmax, p->dmax);
+    }
+  }
   for(int w=w_start; w <= w_limit_dynamic; w++){ /* cluster weight */
     if (p->min_w != INT_MAX && p->dW >= 0) {
-      w_limit_dynamic = minint(wmax, p->min_w + p->dW);
+      w_limit_dynamic = minint(wmax > 0 ? wmax : p->min_w + p->dW, p->min_w + p->dW);
     }
     if (w > w_limit_dynamic) {
       break;

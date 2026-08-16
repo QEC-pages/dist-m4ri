@@ -39,11 +39,8 @@ typedef struct{
 		calculate confinement or use hashing storage.
 	     */
   int wmax; /** max cluster size to try for `CC`; */
-  int dmax; /** only look for errors of weight < dmax for `RW` warning: do not
-              set this up unless you know what you are doing!  This should only
-              be an actual upper bound on the distance from a previous
-              calculation!  Setting it will speed things up a little, but may
-              make results invalid! */
+  int dmin; /** known lower bound on distance (w starts from dmin in CC) */
+  int dmax; /** known upper bound on distance (RW ignores codewords of weight >= dmax unless collecting) */
   int wmin; /** min distance below which we are not interested 
 		if w <= wmin found in RW, terminate immediately 
 		start clusters with `wmin` for `CC`
@@ -172,7 +169,7 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\tmethod=[int]: bitmap for method used (no default): \n" \
   "\n"									\
   "\t\t1: random window (RW) algorithm. Options:\n"			\
-  "\t\t   steps=[int]: how many information sets to use (1)\n"		\
+  "\t\t   steps=[int]: how many information sets to use (1000)\n"		\
   "\t\t   wmin=[int]:  minimum distance of interest (1)\n"		\
   "\t\t\t immediately stop and return '-w' on a cw of weight w<=wmin\n" \
   "\t\t\t use this option to quickly scan over a large number of codes\n" \
@@ -192,6 +189,10 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\tthreads=[int]: number of threads to use (0 for auto) (0)\n"	\
   "\tdexp=[int]:    expected distance value (alias: dest) (0)\n"	\
   "\ttimeout=[sec]: timeout in seconds (60)\n"				\
+  "\n"									\
+  "   Distance bounds parameters:\n"					\
+  "\tdmin=[int]:    known lower bound on distance (w starts from dmin in CC) (1)\n" \
+  "\tdmax=[int]:    known upper bound on distance (RW ignores codewords of weight >= dmax) (0)\n" \
   "\n"									\
   "   General parameters:\n"						\
   "\tfdem=[str]: detector error model (DEM) file from stim (NULL)\n" \

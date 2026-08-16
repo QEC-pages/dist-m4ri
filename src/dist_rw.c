@@ -50,7 +50,10 @@ int do_RW_dist(params_t * const p){
     ERROR("L0 should be non-NULL only for classical code!\n");
   }
 
-  int minW = wmax > 0 ? wmax : nvar+1;
+  int minW = nvar + 1;
+  if (p->dmax > 0 && p->dmax < minW) {
+    minW = p->dmax;
+  }
   if (p->min_w != INT_MAX && p->min_w < minW) {
     minW = p->min_w;
   }
@@ -126,11 +129,13 @@ int do_RW_dist(params_t * const p){
       int cnt=0; /** how many non-zero elements */
       const int col = ee[cnt++] = skip_pivs->values[ir];
       int limit = nvar + 1;
-      if (p->wmax > 0) {
-        limit = p->wmax + 1;
-      }
-      if (p->min_w != INT_MAX && p->dW >= 0) {
-        limit = minint(limit, p->min_w + p->dW + 1);
+      int cur_d = (minW <= nvar) ? minW : 0;
+      if (cur_d > 0) {
+        if ((p->outC || p->maxC || p->dW > 0) && p->dW >= 0) {
+          limit = minint(limit, cur_d + p->dW + 1);
+        } else {
+          limit = minint(limit, cur_d);
+        }
       }
 #if (NEW==0) /** older version going over columns of `H` */
       for(int ix=0; ix<rank; ix++){
