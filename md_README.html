@@ -130,7 +130,7 @@ How the Methods Work</h1>
 2. Multithreaded CC Algorithm (&lt;tt&gt;method=2&lt;/tt&gt;)</h2>
 <p>Recursively explores connected clusters starting from each column $i \in [0, n-1]$. Columns are distributed dynamically among worker threads via lock-free atomic queues. If <code>noscan=0</code> (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When <code>outC</code> is specified, CC exhausts all columns for weight $w$ to collect all unique minimum-weight codewords.</p>
 <p>Relevant parameters:</p><ul>
-<li><code>wmax=[int]</code>: Maximum cluster weight to search.</li>
+<li><code>wmax=[int]</code>: Maximum cluster weight to search (optional if <code>timeout&gt;0</code> or <code>dmax&gt;0</code> is specified; otherwise required for CC).</li>
 <li><code>noscan=[int]</code>: If set to 1, start CC directly at $w_{\max}$ without scanning smaller weights.</li>
 <li><code>cbeg=[int]</code>, <code>cend=[int]</code>: Column range $[c_{\text{beg}}, c_{\text{end}}]$ to limit the CC search space.</li>
 <li><code>start=[int]</code>: Set $c_{\text{beg}} = c_{\text{end}} = \text{start}$ (useful for cyclic or symmetric codes).</li>
@@ -138,20 +138,36 @@ How the Methods Work</h1>
 </ul>
 <h2><a class="anchor" id="autotoc_md18"></a>
 3. Bracketing Mode (&lt;tt&gt;method=3&lt;/tt&gt;)</h2>
-<p>Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down).</p><ul>
-<li>Measures the empirical time per RW step and the exponential growth factor of CC rounds.</li>
-<li>Solves an optimal thread allocation ratio at each CC weight round to balance the expected time of CC completion against the remaining RW step budget and timeout.</li>
-<li>Terminates automatically when $d_{\min} = d_{\max}$, when <code>timeout</code> is reached, or when <code>steps</code> are exhausted.</li>
+<p>Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to solve the exact code distance as quickly as possible.</p>
+<h3><a class="anchor" id="autotoc_md19"></a>
+Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:</h3>
+<ol type="1">
+<li><b>Target Search Depth</b>:<ul>
+<li>Before RW discovers a candidate codeword, $d_{\max}$ is unknown. Providing <code>dexp=D</code> (alias: <code>dest=D</code>) tells the coordinator to plan CC verification up to target weight $D - 1$ (or $D$).</li>
 </ul>
+</li>
+<li><b>Predictive Workload Modeling</b>:<ul>
+<li>The coordinator measures empirical single-thread speed for RW steps ($t_{\text{RW}}$) and fits exponential growth to completed CC rounds to estimate time $T_{\text{CC}}$ required to reach $\min(d_{\max}, d_{\exp})$.</li>
+<li>It computes the remaining work ratio: $$\text{ratio} = \frac{T_{\text{CC}}}{T_{\text{CC}} + T_{\text{RW}}}$$ and dynamically splits threads at each round: $$N_{\text{CC}} = \text{round}(N_{\text{threads}} \times \text{ratio}), \quad N_{\text{RW}} = N_{\text{threads}} - N_{\text{CC}}$$</li>
+<li><b>Small $d_{\exp}$</b>: CC requires little work, so only 1–2 threads run CC while the majority maximize RW sampling speed.</li>
+<li><b>Heavier rounds</b>: As $w$ grows toward $d_{\exp}$, $T_{\text{CC}}$ increases and additional threads are shifted to CC to ensure both algorithms converge on the exact distance simultaneously.</li>
+</ul>
+</li>
+<li><b>Adaptive Early Cutoff</b>:<ul>
+<li>If CC reaches $w &gt; d_{\exp}$ before a codeword is found, CC halts and yields 100% of threads to RW.</li>
+<li>If a projected CC round is estimated to exceed the remaining <code>timeout</code>, the coordinator terminates CC early and devotes remaining time entirely to RW.</li>
+</ul>
+</li>
+</ol>
 <p>Relevant parameters:</p><ul>
-<li><code>dexp=[int]</code> (alias: <code>dest=[int]</code>): Expected code distance to help guide initial thread balancing.</li>
-<li><code>threads=[int]</code>: Number of worker threads.</li>
-<li><code>timeout=[sec]</code>: Maximum wall-clock time in seconds.</li>
-<li><code>steps=[int]</code>: Maximum total RW steps.</li>
+<li><code>dexp=[int]</code> (alias: <code>dest=[int]</code>): Expected code distance to guide target search depth and thread allocation.</li>
+<li><code>threads=[int]</code>: Number of worker threads (default: hardware concurrency).</li>
+<li><code>timeout=[sec]</code>: Maximum execution time in seconds (default: 60.0).</li>
+<li><code>steps=[int]</code>: Maximum total RW steps (default: 1000).</li>
 <li><code>dW=[int]</code>: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).</li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md20"></a>
+<h1><a class="anchor" id="autotoc_md21"></a>
 Confinement Profile</h1>
 <p>With <code>smax &gt; 0</code> (default: <code>smax=5</code>), the CC algorithm tracks the minimum non-zero syndrome weight observed for each cluster weight $w$:</p>
 <div class="fragment"><div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 debug=0 threads=4</div>
@@ -162,7 +178,7 @@ Confinement Profile</h1>
 <div class="line"># w=3 min non-zero syndrome weight 1</div>
 <div class="line"># w=4 min non-zero syndrome weight 1</div>
 </div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md22"></a>
+<h1><a class="anchor" id="autotoc_md23"></a>
 Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)</h1>
 <ul>
 <li>**<code>outC=[file.nz]</code>**: Saves all unique discovered codewords in standard <b>NZLIST</b> format: <div class="fragment"><div class="line">%% NZLIST</div>
@@ -174,7 +190,7 @@ Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)</h1>
 <li>**<code>maxC=[int]</code>**: Limits collection to at most <code>maxC</code> unique codewords.</li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md24"></a>
+<h1><a class="anchor" id="autotoc_md25"></a>
 Command-Line Usage</h1>
 <div class="fragment"><div class="line">$ ./src/dist_m4ri --help</div>
 <div class="line">src/dist_m4ri: distance of a classical or quantum CSS code</div>
@@ -186,10 +202,10 @@ Command-Line Usage</h1>
 <div class="line">        2: connected cluster (CC) algorithm</div>
 <div class="line">        3: bracketing mode (balanced concurrent RW and CC)</div>
 <div class="line"> </div>
-<div class="line">   Multithreading parameters:</div>
+<div class="line">   Execution and multithreading parameters:</div>
 <div class="line">    threads=[int]: number of threads to use (0 for auto CPU count) (0)</div>
-<div class="line">    dexp=[int]:    expected distance value (alias: dest) (0)</div>
-<div class="line">    timeout=[sec]: timeout in seconds (60)</div>
+<div class="line">    timeout=[sec]: timeout in seconds (60.0)</div>
+<div class="line">    dexp=[int]:    expected distance value for method=3 (alias: dest) (0)</div>
 <div class="line"> </div>
 <div class="line">   General parameters:</div>
 <div class="line">    finH=[str]: parity check matrix Hx (NULL)</div>
@@ -197,10 +213,10 @@ Command-Line Usage</h1>
 <div class="line">    finL=[str]: matrix Lx (quantum CSS code only) (NULL)</div>
 <div class="line">    fdem=[str]: detector error model (DEM) file from stim (NULL)</div>
 <div class="line">    pmin=[float]: minimum error probability to keep for DEM (0.0)</div>
-<div class="line">    dmin=[int]: known lower bound on distance (w starts from dmin in CC) (1)</div>
-<div class="line">    dmax=[int]: known upper bound on distance (RW ignores codewords of weight &gt;= dmax) (0)</div>
-<div class="line">    wmax=[int]: maximum cluster weight for CC (0)</div>
-<div class="line">    wmin=[int]: minimum distance of interest for RW (1)</div>
+<div class="line">    dmin=[int]: known lower bound on distance, inclusive (w starts from dmin in CC) (1)</div>
+<div class="line">    dmax=[int]: known upper bound on distance, inclusive (RW ignores codewords of weight &gt;= dmax) (0)</div>
+<div class="line">    wmax=[int]: maximum cluster weight for CC (0; optional if timeout&gt;0 or dmax&gt;0)</div>
+<div class="line">    wmin=[int]: minimum distance of interest for RW and CC (1; early termination if cw &lt;= wmin found)</div>
 <div class="line">    steps=[int]: number of RW information sets (1000)</div>
 <div class="line">    smax=[int]: maximum syndrome weight for confinement (5)</div>
 <div class="line">    outC=[str]: file to output codewords in NZLIST format (NULL)</div>
@@ -209,7 +225,7 @@ Command-Line Usage</h1>
 <div class="line">    maxC=[int]: maximum number of codewords to collect (0)</div>
 <div class="line">    classical=[0|1]: force classical (1) or quantum (0) code (-1)</div>
 <div class="line">    debug=[int]: debug output bitmap (3)</div>
-</div><!-- fragment --><h2><a class="anchor" id="autotoc_md25"></a>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md26"></a>
 CLI Examples</h2>
 <div class="fragment"><div class="line"># 1. Classical linear code using 8 threads in bracketing mode</div>
 <div class="line">$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8</div>
@@ -223,10 +239,10 @@ CLI Examples</h2>
 <div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finG=./examples/surf_d5_L.mmx wmax=5 threads=4</div>
 <div class="line">5 5</div>
 </div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md27"></a>
+<h1><a class="anchor" id="autotoc_md28"></a>
 Python Wrapper (&lt;tt&gt;dist_m4ri.py&lt;/tt&gt;)</h1>
 <p>A Python module <a href="dist_m4ri.py"><code>dist_m4ri.py</code></a> is included for high-level scripting, NumPy/SciPy integration, and Stim interoperability without manual threading overhead.</p>
-<h2><a class="anchor" id="autotoc_md28"></a>
+<h2><a class="anchor" id="autotoc_md29"></a>
 Key Python Functions</h2>
 <ul>
 <li><code>compute_classical_distance(H, ...)</code>: Minimum distance of a classical linear code (from NumPy 2D array, SciPy sparse matrix, or <code>.mtx</code> file).</li>
@@ -236,7 +252,7 @@ Key Python Functions</h2>
 <li>Distance caching: <code>enable_distance_cache()</code>, <code>disable_distance_cache()</code>, <code>clear_distance_cache()</code>.</li>
 <li>Optional solver backend: <code>solver="codedistance"</code> (uses the <code>codedistance</code> library if installed).</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md29"></a>
+<h2><a class="anchor" id="autotoc_md30"></a>
 Python Example</h2>
 <div class="fragment"><div class="line"><span class="keyword">import</span> numpy <span class="keyword">as</span> np</div>
 <div class="line"><span class="keyword">import</span> stim</div>
@@ -248,7 +264,7 @@ Python Example</h2>
 <div class="line">    [0, 1, 0, 1, 0, 1, 1],</div>
 <div class="line">    [0, 0, 1, 0, 1, 1, 1]</div>
 <div class="line">], dtype=np.int8)</div>
-<div class="line">d = <a class="code hl_function" href="namespacedist__m4ri.html#a180d3f884d32b54d6cca14b82037b86f">dist_m4ri.compute_classical_distance</a>(H, threads=4)</div>
+<div class="line">d = <a class="code hl_function" href="namespacedist__m4ri.html#af4ca25056e2c502c073f686cde6d2cb2">dist_m4ri.compute_classical_distance</a>(H, threads=4)</div>
 <div class="line">print(f<span class="stringliteral">&quot;Hamming code distance: {d}&quot;</span>)  <span class="comment"># 3</span></div>
 <div class="line"> </div>
 <div class="line"><span class="comment"># 2. Stim DEM / Circuit Distance with Codewords</span></div>
@@ -258,11 +274,11 @@ Python Example</h2>
 <div class="line">    distance=3,</div>
 <div class="line">    after_clifford_depolarization=0.001</div>
 <div class="line">)</div>
-<div class="line">dist, dist_list, cws = <a class="code hl_function" href="namespacedist__m4ri.html#a676898b05c33f892f826ab8351459815">dist_m4ri.compute_dem_distance</a>(circuit=circuit, do_cws=<span class="keyword">True</span>, threads=8)</div>
-<div class="line">print(f<span class="stringliteral">&quot;Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms&quot;</span>)</div>
+<div class="line">dist, d_info, cws = <a class="code hl_function" href="namespacedist__m4ri.html#a2cff56d01a00a4bdf8998366b2848f82">dist_m4ri.compute_dem_distance</a>(circuit=circuit, do_cws=<span class="keyword">True</span>, threads=8)</div>
+<div class="line">print(f<span class="stringliteral">&quot;Surface code distance: {dist}, bounds: {d_info}, found {len(cws)} error mechanisms&quot;</span>)</div>
 <div class="line"> </div>
-<div class="line"><span class="comment"># 3. CSS Quantum Code</span></div>
-<div class="line">dist, d_x, d_z = <a class="code hl_function" href="namespacedist__m4ri.html#a77ba36ad5b05feff698ebdc9e541c019">dist_m4ri.compute_css_distance</a>(</div>
+<div class="line"><span class="comment"># 3. CSS Quantum Code (returns dist, dX_info, dZ_info where each info is [dmin, dmax, num_rw])</span></div>
+<div class="line">dist, d_x, d_z = <a class="code hl_function" href="namespacedist__m4ri.html#aed058abc0ddde2b3889884cae873caae">dist_m4ri.compute_css_distance</a>(</div>
 <div class="line">    Hx=<span class="stringliteral">&quot;examples/surf_d5_H.mmx&quot;</span>,</div>
 <div class="line">    Hz=<span class="stringliteral">&quot;examples/surf_d5_H.mmx&quot;</span>,</div>
 <div class="line">    Lz=<span class="stringliteral">&quot;examples/surf_d5_L.mmx&quot;</span>,</div>
@@ -270,14 +286,21 @@ Python Example</h2>
 <div class="line">    d_exp=5,</div>
 <div class="line">    threads=8</div>
 <div class="line">)</div>
-<div class="line">print(f<span class="stringliteral">&quot;CSS distance: {dist}&quot;</span>)  <span class="comment"># 5</span></div>
-<div class="ttc" id="anamespacedist__m4ri_html_a180d3f884d32b54d6cca14b82037b86f"><div class="ttname"><a href="namespacedist__m4ri.html#a180d3f884d32b54d6cca14b82037b86f">dist_m4ri.compute_classical_distance</a></div><div class="ttdeci">Union[int, Tuple[int, List[List[int]]]] compute_classical_distance(Any H, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00297">dist_m4ri.py:314</a></div></div>
-<div class="ttc" id="anamespacedist__m4ri_html_a676898b05c33f892f826ab8351459815"><div class="ttname"><a href="namespacedist__m4ri.html#a676898b05c33f892f826ab8351459815">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int wmax=0, int dW=-1, int maxC=0, float pmin=0.0, int noscan=0, bool do_cws=False, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00637">dist_m4ri.py:659</a></div></div>
-<div class="ttc" id="anamespacedist__m4ri_html_a77ba36ad5b05feff698ebdc9e541c019"><div class="ttname"><a href="namespacedist__m4ri.html#a77ba36ad5b05feff698ebdc9e541c019">dist_m4ri.compute_css_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_css_distance(Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00422">dist_m4ri.py:444</a></div></div>
+<div class="line">print(f<span class="stringliteral">&quot;CSS distance: {dist}, dX: {d_x}, dZ: {d_z}&quot;</span>)  <span class="comment"># CSS distance: 5, dX: [5, 5, 0], dZ: [5, 5, 0]</span></div>
+<div class="line"> </div>
+<div class="line"><span class="comment"># 4. Persistent JSON Cache</span></div>
+<div class="line"><span class="comment"># Pass cache_file to save/load bounds, cumulative RW steps, and codewords across runs:</span></div>
+<div class="line">d = <a class="code hl_function" href="namespacedist__m4ri.html#af4ca25056e2c502c073f686cde6d2cb2">dist_m4ri.compute_classical_distance</a>(<span class="stringliteral">&quot;examples/c1920H.mmx&quot;</span>, num_steps=100, cache_file=<span class="stringliteral">&quot;my_cache.json&quot;</span>)</div>
+<div class="line"><span class="comment"># Or set a default cache file globally:</span></div>
+<div class="line"><a class="code hl_function" href="namespacedist__m4ri.html#a24ae179f0afb3cb3e8c5fd39293e3639">dist_m4ri.set_distance_cache_file</a>(<span class="stringliteral">&quot;my_cache.json&quot;</span>)</div>
+<div class="ttc" id="anamespacedist__m4ri_html_a24ae179f0afb3cb3e8c5fd39293e3639"><div class="ttname"><a href="namespacedist__m4ri.html#a24ae179f0afb3cb3e8c5fd39293e3639">dist_m4ri.set_distance_cache_file</a></div><div class="ttdeci">None set_distance_cache_file(Optional[Union[str, Path]] filepath=None)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00081">dist_m4ri.py:81</a></div></div>
+<div class="ttc" id="anamespacedist__m4ri_html_a2cff56d01a00a4bdf8998366b2848f82"><div class="ttname"><a href="namespacedist__m4ri.html#a2cff56d01a00a4bdf8998366b2848f82">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, float pmin=0.0, int noscan=0, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l01088">dist_m4ri.py:1115</a></div></div>
+<div class="ttc" id="anamespacedist__m4ri_html_aed058abc0ddde2b3889884cae873caae"><div class="ttname"><a href="namespacedist__m4ri.html#aed058abc0ddde2b3889884cae873caae">dist_m4ri.compute_css_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_css_distance(Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00799">dist_m4ri.py:826</a></div></div>
+<div class="ttc" id="anamespacedist__m4ri_html_af4ca25056e2c502c073f686cde6d2cb2"><div class="ttname"><a href="namespacedist__m4ri.html#af4ca25056e2c502c073f686cde6d2cb2">dist_m4ri.compute_classical_distance</a></div><div class="ttdeci">Any compute_classical_distance(Any H, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00602">dist_m4ri.py:626</a></div></div>
 </div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md31"></a>
+<h1><a class="anchor" id="autotoc_md32"></a>
 Compilation &amp; Testing</h1>
-<h2><a class="anchor" id="autotoc_md32"></a>
+<h2><a class="anchor" id="autotoc_md33"></a>
 Prerequisites</h2>
 <ul>
 <li>Recent <code>gcc</code> with POSIX threads support (<code>-pthread</code>).</li>
@@ -285,7 +308,7 @@ Prerequisites</h2>
 <div class="line">sudo apt-get install -y libm4ri-dev</div>
 </div><!-- fragment --></li>
 </ul>
-<h2><a class="anchor" id="autotoc_md33"></a>
+<h2><a class="anchor" id="autotoc_md34"></a>
 Build Targets</h2>
 <div class="fragment"><div class="line">cd src</div>
 <div class="line"> </div>
@@ -294,11 +317,11 @@ Build Targets</h2>
 <div class="line"> </div>
 <div class="line"># Run full C test suite (34 tests)</div>
 <div class="line">make test</div>
-</div><!-- fragment --><h2><a class="anchor" id="autotoc_md34"></a>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md35"></a>
 Python Unit Tests</h2>
 <div class="fragment"><div class="line">pytest tests/test_dist_m4ri.py -v</div>
 </div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md36"></a>
+<h1><a class="anchor" id="autotoc_md37"></a>
 References</h1>
 <p>If you use this program, please cite:</p>
 <ul>

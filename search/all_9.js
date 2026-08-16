@@ -1,16 +1,14 @@
 var searchData=
 [
-  ['fdem_0',['fdem',['../structparams__t.html#accf18aaf47d37dafc64688b647c23047',1,'params_t']]],
-  ['fin_1',['fin',['../structparams__t.html#a955e8b9d37a7dd87ce2b43dc34f51ff5',1,'params_t']]],
-  ['finc_2',['finC',['../structparams__t.html#a092a5b2b8c167837fa8b48a77af77a96',1,'params_t']]],
-  ['finc_20tt_3',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md22',1,'']]],
-  ['find_20upper_20bound_20on_20the_20distance_4',['operation mode: find upper bound on the distance.',['../md_todo.html#autotoc_md39',1,'']]],
-  ['find_5fdist_5fm4ri_5fbinary_5',['find_dist_m4ri_binary',['../namespacedist__m4ri.html#a09fdbac5261d1261a975d8ec7e9a95d0',1,'dist_m4ri']]],
-  ['fing_6',['finG',['../structparams__t.html#a784ac56cc7097b61176da3ac379b8e46',1,'params_t']]],
-  ['finh_7',['finH',['../structparams__t.html#a29c580219768d9851f7efbbffb5193ad',1,'params_t']]],
-  ['finl_8',['finL',['../structparams__t.html#a83e6f05b6a4e4c4b0e51133c6a33ae40',1,'params_t']]],
-  ['firstbit_9',['FIRSTBIT',['../util__m4ri_8h.html#a4aec4c59fc492a10f6b76e26c847439b',1,'util_m4ri.h']]],
-  ['for_20tt_20dist_5fm4ri_20tt_20program_10',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]],
-  ['format_20stream_20separation_11',['Output Format &amp; Stream Separation',['../md_README.html#autotoc_md13',1,'']]],
-  ['functions_12',['Key Python Functions',['../md_README.html#autotoc_md28',1,'']]]
+  ['elmt_5ffrom_5fhh_0',['ELMT_FROM_HH',['../uthash_8h.html#a568e95048979b8b3e4ea1567fd91c186',1,'uthash.h']]],
+  ['enable_5fcss_5fdistance_5fcache_1',['enable_css_distance_cache',['../namespacedist__m4ri.html#a76028dce26a189a85a5003b9a33a2189',1,'dist_m4ri']]],
+  ['enable_5fdistance_5fcache_2',['enable_distance_cache',['../namespacedist__m4ri.html#aad8170f6c6c518b89a459ee650806715',1,'dist_m4ri']]],
+  ['err_3',['err',['../structTWO__VEC__T.html#ac73ebf2a295199179dce84b3948f549c',1,'TWO_VEC_T']]],
+  ['error_4',['ERROR',['../util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa',1,'util_m4ri.h']]],
+  ['errors_5',['errors',['../dist__cc_8c.html#a7275784c83d6539fa52a69376a994d0f',1,'dist_cc.c']]],
+  ['example_6',['Python Example',['../md_README.html#autotoc_md30',1,'']]],
+  ['examples_7',['CLI Examples',['../md_README.html#autotoc_md26',1,'']]],
+  ['examples_5fdir_8',['EXAMPLES_DIR',['../namespacetest__dist__m4ri.html#afed76f6f9fe972266596664ec821c9a3',1,'test_dist_m4ri']]],
+  ['expand_5fmult_9',['expand_mult',['../structUT__hash__bucket.html#a9b739c1b69c141e8198c0c64af643b2b',1,'UT_hash_bucket']]],
+  ['export_20tt_20outc_20tt_20tt_20finc_20tt_10',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md23',1,'']]]
 ];

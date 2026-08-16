@@ -1,10 +1,10 @@
 var searchData=
 [
-  ['clear_5fdistance_5fcache_0',['clear_distance_cache',['../namespacedist__m4ri.html#a0137f031fea137f9185ad8714a8ad660',1,'dist_m4ri']]],
+  ['clear_5fdistance_5fcache_0',['clear_distance_cache',['../namespacedist__m4ri.html#a85273fbd5f371d3840fa8bd3be65f45a',1,'dist_m4ri']]],
   ['codeword_5fadd_5fmaybe_1',['codeword_add_maybe',['../util__io_8c.html#a9b85379c13cfa22372bf6752dce0ee51',1,'codeword_add_maybe(params_t *const p, const int arr[], int weight):&#160;util_io.c'],['../util__io_8h.html#a9b85379c13cfa22372bf6752dce0ee51',1,'codeword_add_maybe(params_t *const p, const int arr[], int weight):&#160;util_io.c']]],
-  ['compute_5fclassical_5fdistance_2',['compute_classical_distance',['../namespacedist__m4ri.html#a180d3f884d32b54d6cca14b82037b86f',1,'dist_m4ri']]],
-  ['compute_5fcss_5fdistance_3',['compute_css_distance',['../namespacedist__m4ri.html#a77ba36ad5b05feff698ebdc9e541c019',1,'dist_m4ri']]],
-  ['compute_5fdem_5fdistance_4',['compute_dem_distance',['../namespacedist__m4ri.html#a676898b05c33f892f826ab8351459815',1,'dist_m4ri']]],
+  ['compute_5fclassical_5fdistance_2',['compute_classical_distance',['../namespacedist__m4ri.html#af4ca25056e2c502c073f686cde6d2cb2',1,'dist_m4ri']]],
+  ['compute_5fcss_5fdistance_3',['compute_css_distance',['../namespacedist__m4ri.html#aed058abc0ddde2b3889884cae873caae',1,'dist_m4ri']]],
+  ['compute_5fdem_5fdistance_4',['compute_dem_distance',['../namespacedist__m4ri.html#a2cff56d01a00a4bdf8998366b2848f82',1,'dist_m4ri']]],
   ['create_5funique_5ffile_5',['create_unique_file',['../namespacedist__m4ri.html#a0d2316ce4c5c2336a055b8e2de01dea0',1,'dist_m4ri']]],
   ['csr_5fapply_5fperm_6',['csr_apply_perm',['../util__m4ri_8c.html#af12e9bf80c70823f805f2fdd5f8b1301',1,'csr_apply_perm(csr_t *dst, const csr_t *const src, const mzp_t *const perm):&#160;util_m4ri.c'],['../util__m4ri_8h.html#af12e9bf80c70823f805f2fdd5f8b1301',1,'csr_apply_perm(csr_t *dst, const csr_t *const src, const mzp_t *const perm):&#160;util_m4ri.c']]],
   ['csr_5fcompress_7',['csr_compress',['../util__m4ri_8c.html#abd05b2966513b66d20a452237037c05a',1,'csr_compress(csr_t *mat):&#160;util_m4ri.c'],['../util__m4ri_8h.html#abd05b2966513b66d20a452237037c05a',1,'csr_compress(csr_t *mat):&#160;util_m4ri.c']]],

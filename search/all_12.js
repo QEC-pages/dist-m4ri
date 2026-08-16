@@ -1,20 +1,15 @@
 var searchData=
 [
-  ['p_0',['p',['../structdistfork__ctx__t.html#ad1174a85e86651f2c81b7b7211fcc7a5',1,'distfork_ctx_t::p'],['../structcsr__t.html#a969fc3d4a88acf579ef26170645cbb6c',1,'csr_t::p'],['../util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f',1,'p:&#160;util_io.c']]],
-  ['params_5ft_1',['params_t',['../structparams__t.html',1,'']]],
-  ['parse_5fdist_5fm4ri_5foutput_2',['parse_dist_m4ri_output',['../namespacedist__m4ri.html#a5f4a9b8f51c1d262ba0eedfc8adf9151',1,'dist_m4ri']]],
-  ['perm_5fp_3',['perm_p',['../util__m4ri_8c.html#ad6effe03482dab5432463782b1312d11',1,'perm_p(mzp_t *q, const mzp_t *p, rci_t start):&#160;util_m4ri.c'],['../util__m4ri_8h.html#ad6effe03482dab5432463782b1312d11',1,'perm_p(mzp_t *q, const mzp_t *p, rci_t start):&#160;util_m4ri.c']]],
-  ['perm_5fp_5ftrans_4',['perm_p_trans',['../util__m4ri_8c.html#aa1a86f0cab9ff0b1d4e3ace6c90af696',1,'perm_p_trans(mzp_t *q, const mzp_t *p, const rci_t start):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aa1a86f0cab9ff0b1d4e3ace6c90af696',1,'perm_p_trans(mzp_t *q, const mzp_t *p, const rci_t start):&#160;util_m4ri.c']]],
-  ['pmin_5',['pmin',['../structparams__t.html#a90599e2e0e86087f94fb068e8f8d8953',1,'params_t']]],
-  ['prerequisites_6',['Prerequisites',['../md_README.html#autotoc_md32',1,'']]],
-  ['prev_7',['prev',['../structUT__hash__handle.html#abaf54a69367933df2d45575f48ca6a58',1,'UT_hash_handle']]],
-  ['prm_8',['prm',['../util__io_8c.html#ae188785995f4e3b54b93fee1e5eb7f90',1,'prm:&#160;util_io.c'],['../util__io_8h.html#ae188785995f4e3b54b93fee1e5eb7f90',1,'prm:&#160;util_io.c']]],
-  ['product_5fweight_5fcsr_5fmzd_9',['product_weight_csr_mzd',['../util__m4ri_8c.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c']]],
-  ['profile_10',['Confinement Profile',['../md_README.html#autotoc_md20',1,'']]],
-  ['program_11',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]],
-  ['py_20tt_12',['Python Wrapper (&lt;tt&gt;dist_m4ri.py&lt;/tt&gt;)',['../md_README.html#autotoc_md27',1,'']]],
-  ['python_20example_13',['Python Example',['../md_README.html#autotoc_md29',1,'']]],
-  ['python_20functions_14',['Key Python Functions',['../md_README.html#autotoc_md28',1,'']]],
-  ['python_20unit_20tests_15',['Python Unit Tests',['../md_README.html#autotoc_md34',1,'']]],
-  ['python_20wrapper_20tt_20dist_5fm4ri_20py_20tt_16',['Python Wrapper (&lt;tt&gt;dist_m4ri.py&lt;/tt&gt;)',['../md_README.html#autotoc_md27',1,'']]]
+  ['of_20a_20classical_20or_20quantum_20css_20code_0',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
+  ['of_20tt_20dexp_20tt_20_3a_1',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md19',1,'']]],
+  ['on_20the_20distance_2',['operation mode: find upper bound on the distance.',['../md_todo.html#autotoc_md40',1,'']]],
+  ['one_5fvec_5fprint_3',['one_vec_print',['../dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c'],['../util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c']]],
+  ['one_5fvec_5ft_4',['one_vec_t',['../structONE__VEC__T.html',1,'ONE_VEC_T'],['../util__hash_8h.html#a6fec6ff254fd408f8f9cd7288562927e',1,'one_vec_t:&#160;util_hash.h']]],
+  ['operation_20mode_3a_20distance_20verification_5',['operation mode: distance verification.',['../md_todo.html#autotoc_md39',1,'']]],
+  ['operation_20mode_3a_20find_20upper_20bound_20on_20the_20distance_6',['operation mode: find upper bound on the distance.',['../md_todo.html#autotoc_md40',1,'']]],
+  ['or_20quantum_20css_20code_7',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
+  ['outc_8',['outC',['../structparams__t.html#a3c694ec3b7732cb8729753162401ce94',1,'params_t']]],
+  ['outc_20tt_20tt_20finc_20tt_9',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md23',1,'']]],
+  ['output_20format_20stream_20separation_10',['Output Format &amp; Stream Separation',['../md_README.html#autotoc_md13',1,'']]],
+  ['overview_11',['overview',['../index.html#autotoc_md3',1,'Overview'],['../md_README.html#autotoc_md11',1,'Overview']]]
 ];

@@ -13,12 +13,15 @@ var searchData=
   ['cc_5fweight_10',['cc_weight',['../structdistfork__ctx__t.html#a87e00c9eb4ad8db2fed88b72d63ccc1d',1,'distfork_ctx_t']]],
   ['cend_11',['cend',['../structparams__t.html#a96eb21ad52169867b5ccaae805b11d5c',1,'params_t']]],
   ['classical_12',['classical',['../structparams__t.html#ae1da808c5c337d0003a85c5041541fb4',1,'params_t']]],
-  ['clear_5fcss_5fdistance_5fcache_13',['clear_css_distance_cache',['../namespacedist__m4ri.html#afccd182f387dfbdcdab449a38ed730c1',1,'dist_m4ri']]],
+  ['clear_5fcss_5fdistance_5fcache_13',['clear_css_distance_cache',['../namespacedist__m4ri.html#a8ac543e4dc381c55575f032d52adf724',1,'dist_m4ri']]],
   ['cnt_14',['cnt',['../structCW__VEC__T.html#ab74061fc402881847d6e68c4aa743564',1,'CW_VEC_T']]],
   ['codewords_15',['codewords',['../structparams__t.html#ae4e4194165127a44b58a27005224054b',1,'params_t']]],
   ['cols_16',['cols',['../structcsr__t.html#ae4ec2876423b9af903dfa139afbfbf34',1,'csr_t::cols'],['../namespacegen__segfault__matrix.html#a8de97a910522a3ffa8e2d85af5be74da',1,'gen_segfault_matrix.cols']]],
   ['count_17',['count',['../structUT__hash__bucket.html#a5d20cc12bdcbde360398910eefb45634',1,'UT_hash_bucket']]],
   ['css_18',['css',['../structparams__t.html#ae32a4e19b8029b1c17d2f12d20750b33',1,'params_t']]],
   ['ctx_19',['ctx',['../structworker__arg__t.html#abe54768812f5c958183880324fadf270',1,'worker_arg_t']]],
-  ['cw_5fmutex_20',['cw_mutex',['../structdistfork__ctx__t.html#a488d5d3e7eaca1d5db12f378c0cf5de2',1,'distfork_ctx_t']]]
+  ['cw_5fmutex_20',['cw_mutex',['../structdistfork__ctx__t.html#a488d5d3e7eaca1d5db12f378c0cf5de2',1,'distfork_ctx_t']]],
+  ['cws_21',['cws',['../classdist__m4ri_1_1DistanceResult.html#a8598ec675c9b6a83da0c4db1d5746cdc',1,'dist_m4ri::DistanceResult']]],
+  ['cws_5fx_22',['cws_X',['../classdist__m4ri_1_1DistanceResult.html#a1d92fae667377b739fde8c5c7ace3156',1,'dist_m4ri::DistanceResult']]],
+  ['cws_5fz_23',['cws_Z',['../classdist__m4ri_1_1DistanceResult.html#a799d482915382b6082040738291e2bf7',1,'dist_m4ri::DistanceResult']]]
 ];

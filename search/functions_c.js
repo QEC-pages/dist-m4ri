@@ -1,7 +1,9 @@
 var searchData=
 [
-  ['rand_5funiform_0',['rand_uniform',['../util__m4ri_8c.html#af1ce91e890a6c392f0ff3b1791ac8490',1,'rand_uniform(const int max):&#160;util_m4ri.c'],['../util__m4ri_8h.html#af1ce91e890a6c392f0ff3b1791ac8490',1,'rand_uniform(const int max):&#160;util_m4ri.c']]],
-  ['read_5fdem_5ffile_1',['read_dem_file',['../util__io_8c.html#a0d24c5677bd19ec529d6d6cbccd4ff9b',1,'read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug):&#160;util_io.c'],['../util__io_8h.html#a0d24c5677bd19ec529d6d6cbccd4ff9b',1,'read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug):&#160;util_io.c']]],
-  ['read_5fsparse_5fvectors_2',['read_sparse_vectors',['../namespacedist__m4ri.html#a8cf50ce34fc2fc29006bdba900ac1ad2',1,'dist_m4ri']]],
-  ['run_5fdist_5fm4ri_3',['run_dist_m4ri',['../namespacedist__m4ri.html#aa5a6fc041e5bc5bc38afcef0e56b4d7b',1,'dist_m4ri']]]
+  ['parse_5fcli_5fargs_0',['parse_cli_args',['../namespacedist__m4ri.html#a408e52fb3f71e37ba2189d0a09eeb45c',1,'dist_m4ri']]],
+  ['parse_5fdist_5fm4ri_5foutput_1',['parse_dist_m4ri_output',['../namespacedist__m4ri.html#a5f4a9b8f51c1d262ba0eedfc8adf9151',1,'dist_m4ri']]],
+  ['perm_5fp_2',['perm_p',['../util__m4ri_8c.html#ad6effe03482dab5432463782b1312d11',1,'perm_p(mzp_t *q, const mzp_t *p, rci_t start):&#160;util_m4ri.c'],['../util__m4ri_8h.html#ad6effe03482dab5432463782b1312d11',1,'perm_p(mzp_t *q, const mzp_t *p, rci_t start):&#160;util_m4ri.c']]],
+  ['perm_5fp_5ftrans_3',['perm_p_trans',['../util__m4ri_8c.html#aa1a86f0cab9ff0b1d4e3ace6c90af696',1,'perm_p_trans(mzp_t *q, const mzp_t *p, const rci_t start):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aa1a86f0cab9ff0b1d4e3ace6c90af696',1,'perm_p_trans(mzp_t *q, const mzp_t *p, const rci_t start):&#160;util_m4ri.c']]],
+  ['print_5fcli_5fhelp_4',['print_cli_help',['../namespacedist__m4ri.html#ad671a0804976d079b8dd8973eac8dcb4',1,'dist_m4ri']]],
+  ['product_5fweight_5fcsr_5fmzd_5',['product_weight_csr_mzd',['../util__m4ri_8c.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c'],['../util__m4ri_8h.html#aefd306e4326e9b4fb57478642f64fb3b',1,'product_weight_csr_mzd(const csr_t *A, const mzd_t *B, int transpose):&#160;util_m4ri.c']]]
 ];
