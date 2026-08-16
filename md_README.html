@@ -138,7 +138,7 @@ How the Methods Work</h1>
 </ul>
 <h2><a class="anchor" id="autotoc_md18"></a>
 3. Bracketing Mode (&lt;tt&gt;method=3&lt;/tt&gt;)</h2>
-<p>Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to solve the exact code distance as quickly as possible.</p>
+<p>Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to determine the exact code distance as quickly as possible.</p>
 <h3><a class="anchor" id="autotoc_md19"></a>
 Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:</h3>
 <ol type="1">
@@ -172,7 +172,7 @@ Confinement Profile</h1>
 <p>With <code>smax &gt; 0</code> (default: <code>smax=5</code>), the CC algorithm tracks the minimum non-zero syndrome weight observed for each cluster weight $w$:</p>
 <div class="fragment"><div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 debug=0 threads=4</div>
 <div class="line"># confinement: 1,1,1,1</div>
-<div class="line">5 0</div>
+<div class="line">5 0 0</div>
 </div><!-- fragment --><p>With <code>debug=1</code>, detailed per-weight lines are printed to <code>stderr</code>: </p><div class="fragment"><div class="line"># w=1 min non-zero syndrome weight 1</div>
 <div class="line"># w=2 min non-zero syndrome weight 1</div>
 <div class="line"># w=3 min non-zero syndrome weight 1</div>
@@ -193,13 +193,27 @@ Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)</h1>
 <h1><a class="anchor" id="autotoc_md25"></a>
 Command-Line Usage</h1>
 <div class="fragment"><div class="line">$ ./src/dist_m4ri --help</div>
-<div class="line">src/dist_m4ri: distance of a classical or quantum CSS code</div>
-<div class="line">    usage: src/dist_m4ri parameter=value [...]</div>
+<div class="line">./src/dist_m4ri: distance of a classical or quantum CSS code</div>
+<div class="line">    usage: ./src/dist_m4ri parameter=value [...]</div>
 <div class="line"> </div>
 <div class="line">   Required parameter:</div>
 <div class="line">    method=[int]: bitmap for method used (no default): </div>
-<div class="line">        1: random window (RW) algorithm</div>
-<div class="line">        2: connected cluster (CC) algorithm</div>
+<div class="line"> </div>
+<div class="line">        1: random window (RW) algorithm. Options:</div>
+<div class="line">           steps=[int]: how many information sets to use (1000)</div>
+<div class="line">           wmin=[int]:  minimum distance of interest (1)</div>
+<div class="line">             immediately stop and return &#39;-w&#39; on a cw of weight w&lt;=wmin</div>
+<div class="line">             use this option to quickly scan over a large number of codes</div>
+<div class="line"> </div>
+<div class="line">        2: connected cluster (CC) algorithm.  Options:</div>
+<div class="line">           wmax=[int]:  maximum cluster weight to construct, inclusive (0)</div>
+<div class="line">             optional if timeout&gt;0 or dmax&gt;0 is set; otherwise required for CC only</div>
+<div class="line">           smax=[int]:  maximum syndrome weight of interest, inclusive (5)</div>
+<div class="line">             must be non-zero to calculate confinement profile</div>
+<div class="line">           start=[int]: use only this position to start (equiv. to cbeg=cend=start) (-1)</div>
+<div class="line">           cbeg=[int]:  start column to begin CC search (-1)</div>
+<div class="line">           cend=[int]:  end column to limit CC search (-1)</div>
+<div class="line">           noscan=[int]: start CC directly with wmax (0)</div>
 <div class="line">        3: bracketing mode (balanced concurrent RW and CC)</div>
 <div class="line"> </div>
 <div class="line">   Execution and multithreading parameters:</div>
@@ -207,37 +221,53 @@ Command-Line Usage</h1>
 <div class="line">    timeout=[sec]: timeout in seconds (60.0)</div>
 <div class="line">    dexp=[int]:    expected distance value for method=3 (alias: dest) (0)</div>
 <div class="line"> </div>
+<div class="line">   Distance bounds parameters:</div>
+<div class="line">    dmin=[int]:    known lower bound on distance, inclusive (w starts from dmin in CC) (1)</div>
+<div class="line">    dmax=[int]:    known upper bound on distance, inclusive (RW ignores codewords of weight &gt;= dmax) (0)</div>
+<div class="line"> </div>
 <div class="line">   General parameters:</div>
+<div class="line">    fdem=[str]: detector error model (DEM) file from stim (NULL)</div>
+<div class="line">    pmin=[float]: minimum error probability to keep for DEM (0.0)</div>
 <div class="line">    finH=[str]: parity check matrix Hx (NULL)</div>
 <div class="line">    finG=[str]: matrix Hz (quantum CSS code only) (NULL)</div>
 <div class="line">    finL=[str]: matrix Lx (quantum CSS code only) (NULL)</div>
-<div class="line">    fdem=[str]: detector error model (DEM) file from stim (NULL)</div>
-<div class="line">    pmin=[float]: minimum error probability to keep for DEM (0.0)</div>
-<div class="line">    dmin=[int]: known lower bound on distance, inclusive (w starts from dmin in CC) (1)</div>
-<div class="line">    dmax=[int]: known upper bound on distance, inclusive (RW ignores codewords of weight &gt;= dmax) (0)</div>
-<div class="line">    wmax=[int]: maximum cluster weight for CC (0; optional if timeout&gt;0 or dmax&gt;0)</div>
-<div class="line">    wmin=[int]: minimum distance of interest for RW and CC (1; early termination if cw &lt;= wmin found)</div>
-<div class="line">    steps=[int]: number of RW information sets (1000)</div>
-<div class="line">    smax=[int]: maximum syndrome weight for confinement (5)</div>
-<div class="line">    outC=[str]: file to output codewords in NZLIST format (NULL)</div>
-<div class="line">    finC=[str]: file to read initial codewords from (NULL)</div>
-<div class="line">    dW=[int]: extra weight above dmin to collect codewords (-1)</div>
-<div class="line">    maxC=[int]: maximum number of codewords to collect (0)</div>
-<div class="line">    classical=[0|1]: force classical (1) or quantum (0) code (-1)</div>
-<div class="line">    debug=[int]: debug output bitmap (3)</div>
+<div class="line">         Either L=Lx or G=Hz matrix is required for a quantum CSS code</div>
+<div class="line">    fin=[str]:  base name for input files (&quot;try&quot;)</div>
+<div class="line">         set finH-&gt;&quot;${fin}X.mtx&quot;  finG-&gt;&quot;${fin}Z.mtx&quot;</div>
+<div class="line">    css=[int]:  reserved for future use (1)</div>
+<div class="line">    seed=[int]: rng seed [use 0 for time(NULL)] (0)</div>
+<div class="line">    debug=[int]:     bitmap for aux information to output (3)</div>
+<div class="line">        0: clear the entire debug bitmap to 0.</div>
+<div class="line">        1: output misc general info (on by default)</div>
+<div class="line">        2: output more general info (on by default)</div>
+<div class="line">        4: debug command line arguments parsing</div>
+<div class="line">        8: output progress reports every 1000 steps</div>
+<div class="line">        16: output new min-weight codewords found (cut large vectors)</div>
+<div class="line">        32: output matrices (unless n is large)</div>
+<div class="line">        64: debug confinement hash updates (swei changes)</div>
+<div class="line">        128: debug duplicate syndromes in confinement hash (debug build only)</div>
+<div class="line">        256: reserved</div>
+<div class="line">        512: reserved</div>
+<div class="line">        1024: reserved</div>
+<div class="line">        2048: allow big matrix / large vector output</div>
+<div class="line">           see the source code for more options</div>
+<div class="line">      Multiple &#39;debug&#39; parameters are XOR combined except for 0.</div>
+<div class="line">      Use debug=0 as the 1st argument to suppress all debug messages.</div>
+<div class="line">   -h gives this help (also &#39;--help&#39;)</div>
 </div><!-- fragment --><h2><a class="anchor" id="autotoc_md26"></a>
 CLI Examples</h2>
 <div class="fragment"><div class="line"># 1. Classical linear code using 8 threads in bracketing mode</div>
-<div class="line">$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8</div>
-<div class="line">8 8</div>
+<div class="line">$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8 debug=0</div>
+<div class="line">8 8 2340</div>
 <div class="line"> </div>
 <div class="line"># 2. Stim Detector Error Model (DEM) with timeout and codeword export</div>
-<div class="line">$ ./src/dist_m4ri method=3 fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4</div>
-<div class="line">3 3</div>
+<div class="line">$ ./src/dist_m4ri method=3 fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4 debug=0</div>
+<div class="line">3 3 1000</div>
 <div class="line"> </div>
-<div class="line"># 3. Quantum CSS code (Hx and Hz) using pure CC search up to wmax=5</div>
-<div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finG=./examples/surf_d5_L.mmx wmax=5 threads=4</div>
-<div class="line">5 5</div>
+<div class="line"># 3. Quantum CSS code (Hx and Lx) using pure CC search up to wmax=5</div>
+<div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=5 debug=0 threads=4</div>
+<div class="line"># confinement: 1,1,1,1,1</div>
+<div class="line">5 5 0</div>
 </div><!-- fragment --><hr  />
 <h1><a class="anchor" id="autotoc_md28"></a>
 Python Wrapper (&lt;tt&gt;dist_m4ri.py&lt;/tt&gt;)</h1>
@@ -274,26 +304,19 @@ Python Example</h2>
 <div class="line">    distance=3,</div>
 <div class="line">    after_clifford_depolarization=0.001</div>
 <div class="line">)</div>
-<div class="line">dist, d_info, cws = <a class="code hl_function" href="namespacedist__m4ri.html#a2cff56d01a00a4bdf8998366b2848f82">dist_m4ri.compute_dem_distance</a>(circuit=circuit, do_cws=<span class="keyword">True</span>, threads=8)</div>
-<div class="line">print(f<span class="stringliteral">&quot;Surface code distance: {dist}, bounds: {d_info}, found {len(cws)} error mechanisms&quot;</span>)</div>
+<div class="line">dist, dist_list, cws = <a class="code hl_function" href="namespacedist__m4ri.html#a2cff56d01a00a4bdf8998366b2848f82">dist_m4ri.compute_dem_distance</a>(circuit=circuit, do_cws=<span class="keyword">True</span>, threads=4)</div>
+<div class="line">print(f<span class="stringliteral">&quot;Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms&quot;</span>)</div>
 <div class="line"> </div>
-<div class="line"><span class="comment"># 3. CSS Quantum Code (returns dist, dX_info, dZ_info where each info is [dmin, dmax, num_rw])</span></div>
+<div class="line"><span class="comment"># 3. CSS Quantum Code</span></div>
 <div class="line">dist, d_x, d_z = <a class="code hl_function" href="namespacedist__m4ri.html#aed058abc0ddde2b3889884cae873caae">dist_m4ri.compute_css_distance</a>(</div>
 <div class="line">    Hx=<span class="stringliteral">&quot;examples/surf_d5_H.mmx&quot;</span>,</div>
 <div class="line">    Hz=<span class="stringliteral">&quot;examples/surf_d5_H.mmx&quot;</span>,</div>
 <div class="line">    Lz=<span class="stringliteral">&quot;examples/surf_d5_L.mmx&quot;</span>,</div>
 <div class="line">    Lx=<span class="stringliteral">&quot;examples/surf_d5_L.mmx&quot;</span>,</div>
 <div class="line">    d_exp=5,</div>
-<div class="line">    threads=8</div>
+<div class="line">    threads=4</div>
 <div class="line">)</div>
-<div class="line">print(f<span class="stringliteral">&quot;CSS distance: {dist}, dX: {d_x}, dZ: {d_z}&quot;</span>)  <span class="comment"># CSS distance: 5, dX: [5, 5, 0], dZ: [5, 5, 0]</span></div>
-<div class="line"> </div>
-<div class="line"><span class="comment"># 4. Persistent JSON Cache</span></div>
-<div class="line"><span class="comment"># Pass cache_file to save/load bounds, cumulative RW steps, and codewords across runs:</span></div>
-<div class="line">d = <a class="code hl_function" href="namespacedist__m4ri.html#af4ca25056e2c502c073f686cde6d2cb2">dist_m4ri.compute_classical_distance</a>(<span class="stringliteral">&quot;examples/c1920H.mmx&quot;</span>, num_steps=100, cache_file=<span class="stringliteral">&quot;my_cache.json&quot;</span>)</div>
-<div class="line"><span class="comment"># Or set a default cache file globally:</span></div>
-<div class="line"><a class="code hl_function" href="namespacedist__m4ri.html#a24ae179f0afb3cb3e8c5fd39293e3639">dist_m4ri.set_distance_cache_file</a>(<span class="stringliteral">&quot;my_cache.json&quot;</span>)</div>
-<div class="ttc" id="anamespacedist__m4ri_html_a24ae179f0afb3cb3e8c5fd39293e3639"><div class="ttname"><a href="namespacedist__m4ri.html#a24ae179f0afb3cb3e8c5fd39293e3639">dist_m4ri.set_distance_cache_file</a></div><div class="ttdeci">None set_distance_cache_file(Optional[Union[str, Path]] filepath=None)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00081">dist_m4ri.py:81</a></div></div>
+<div class="line">print(f<span class="stringliteral">&quot;CSS distance: {dist}&quot;</span>)  <span class="comment"># 5</span></div>
 <div class="ttc" id="anamespacedist__m4ri_html_a2cff56d01a00a4bdf8998366b2848f82"><div class="ttname"><a href="namespacedist__m4ri.html#a2cff56d01a00a4bdf8998366b2848f82">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, float pmin=0.0, int noscan=0, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l01088">dist_m4ri.py:1115</a></div></div>
 <div class="ttc" id="anamespacedist__m4ri_html_aed058abc0ddde2b3889884cae873caae"><div class="ttname"><a href="namespacedist__m4ri.html#aed058abc0ddde2b3889884cae873caae">dist_m4ri.compute_css_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_css_distance(Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00799">dist_m4ri.py:826</a></div></div>
 <div class="ttc" id="anamespacedist__m4ri_html_af4ca25056e2c502c073f686cde6d2cb2"><div class="ttname"><a href="namespacedist__m4ri.html#af4ca25056e2c502c073f686cde6d2cb2">dist_m4ri.compute_classical_distance</a></div><div class="ttdeci">Any compute_classical_distance(Any H, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00602">dist_m4ri.py:626</a></div></div>
