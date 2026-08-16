@@ -622,7 +622,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
   int init_dmax = atomic_load(&ctx->dmax);
   int init_dmin = atomic_load(&ctx->dmin);
-  if (init_dmax > 0 && init_dmin >= init_dmax && (!ctx->p->outC || ctx->p->dW <= 0)) {
+  if (init_dmax > 0 && init_dmin >= init_dmax && !ctx->p->outC) {
     atomic_store(&ctx->stop_flag, true);
     return;
   }
@@ -652,8 +652,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     /* Target cluster size for CC */
     int target_cc_w;
     if (cur_dmax > 0) {
-      if (ctx->p->outC && ctx->p->dW > 0 && cur_dmin >= cur_dmax) {
-        target_cc_w = cur_dmax + ctx->p->dW;
+      if (ctx->p->outC && (ctx->p->dW > 0 || cur_dmin >= cur_dmax)) {
+        target_cc_w = cur_dmax + (ctx->p->dW > 0 ? ctx->p->dW : 0);
       } else {
         target_cc_w = cur_dmax - 1;
       }
@@ -894,7 +894,7 @@ int main(int argc, char **argv) {
   }
   atomic_init(&ctx.dmax, init_dmax);
 
-  if (p->method == 3 && init_dmax > 0 && p->dmin > 1 && p->dmin >= init_dmax && (!p->outC || p->dW <= 0)) {
+  if (p->method == 3 && init_dmax > 0 && p->dmin > 1 && p->dmin >= init_dmax && !p->outC) {
     if (p->debug & 2) {
       fprintf(stderr, "# running method=3 (bracketing mode) with %d threads, timeout=%.1fs, dexp=%d\n",
               num_threads, timeout, p->dexp);

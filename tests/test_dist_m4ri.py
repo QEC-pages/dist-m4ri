@@ -54,6 +54,8 @@ def test_css_distance_files():
         d_exp=5, threads=4
     )
     assert dist == 5
+    assert d_x == [5, 5, 0]
+    assert d_z == [5, 5, 0]
 
 
 def test_css_distance_sparse():
@@ -71,22 +73,27 @@ def test_css_distance_sparse():
     ], dtype=np.int8)
     dist, d_x, d_z = dist_m4ri.compute_css_distance(hx, hz, threads=2)
     assert dist > 0
+    assert len(d_x) == 3
+    assert len(d_z) == 3
 
 
 def test_dem_distance_file():
     dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
-    dist, d_list = dist_m4ri.compute_dem_distance(dem=dem_file, threads=4)
+    dist, d_info = dist_m4ri.compute_dem_distance(dem=dem_file, threads=4)
     assert dist == 3
+    assert d_info == [3, 3, 0]
 
     # With codewords (method=3 bracketing mode collects discovered cws)
-    dist, d_list, cws = dist_m4ri.compute_dem_distance(dem=dem_file, do_cws=True, threads=4)
+    dist, d_info, cws = dist_m4ri.compute_dem_distance(dem=dem_file, do_cws=True, threads=4)
     assert dist == 3
+    assert d_info == [3, 3, 0]
     assert len(cws) > 0
     assert all(len(cw) == 3 for cw in cws)
 
     # Exhaustive CC scan (method=2) finds all 128 codewords
-    dist, d_list, cws_cc = dist_m4ri.compute_dem_distance(dem=dem_file, method=2, wmax=3, do_cws=True, threads=4)
+    dist, d_info, cws_cc = dist_m4ri.compute_dem_distance(dem=dem_file, method=2, wmax=3, do_cws=True, threads=4)
     assert dist == 3
+    assert d_info == [3, 3, 0]
     assert len(cws_cc) == 128
     assert all(len(cw) == 3 for cw in cws_cc)
 
@@ -102,8 +109,9 @@ def test_dem_distance_stim():
         after_clifford_depolarization=0.001
     )
     dem = circuit.detector_error_model(decompose_errors=True)
-    dist, d_list = dist_m4ri.compute_dem_distance(dem=dem, threads=4)
+    dist, d_info = dist_m4ri.compute_dem_distance(dem=dem, threads=4)
     assert dist == 3
+    assert d_info == [3, 3, 0]
 
 
 def test_caching():
@@ -173,6 +181,49 @@ def test_dmin_dmax_parameters():
     dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
     d_dem, _ = dist_m4ri.compute_dem_distance(dem=dem_file, dmin=2, dmax=4, threads=4)
     assert d_dem == 3
+
+
+def test_caching_cumulative_rw_steps():
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+
+    c_file = os.path.join(EXAMPLES_DIR, "c1920H.mmx")
+
+    # Run 1: 50 steps
+    d1 = dist_m4ri.compute_classical_distance(c_file, method=1, num_steps=50, threads=4)
+    entry1 = dist_m4ri.get_cached_distance(H=c_file)
+    assert entry1 is not None
+    assert entry1["rw_steps"] == 50
+    assert entry1["dmax"] > 0
+    assert d1 == entry1["dmax"]
+
+    # Run 2: another 100 steps
+    d2 = dist_m4ri.compute_classical_distance(c_file, method=1, num_steps=100, threads=4)
+    entry2 = dist_m4ri.get_cached_distance(H=c_file)
+    assert entry2 is not None
+    assert entry2["rw_steps"] == 150
+    assert entry2["dmax"] <= entry1["dmax"]
+    assert d2 == entry2["dmax"]
+
+    dist_m4ri.clear_distance_cache()
+
+
+def test_format_bounds_list_and_str():
+    # Exact known distance
+    assert dist_m4ri.format_bounds_list(5, 5, 0) == [5, 5, 0]
+    assert dist_m4ri.format_bounds_str([5, 5, 0]) == "5 5 0 (exact)"
+
+    # No upper bound (dmax == 0)
+    assert dist_m4ri.format_bounds_list(4, 0, 0) == [4, 0, 0]
+    assert dist_m4ri.format_bounds_str([4, 0, 0]) == "4 0 0"
+
+    # No lower bound (dmin <= 1)
+    assert dist_m4ri.format_bounds_list(0, 323, 100) == [0, 323, 100]
+    assert dist_m4ri.format_bounds_str([0, 323, 100]) == "0 323 100"
+
+    # Lower and upper bounds differing
+    assert dist_m4ri.format_bounds_list(4, 6, 1000) == [4, 6, 1000]
+    assert dist_m4ri.format_bounds_str([4, 6, 1000]) == "4 6 1000"
 
 
 if __name__ == "__main__":
