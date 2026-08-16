@@ -57,23 +57,35 @@ Recursively explores connected clusters starting from each column $i \in [0, n-1
 If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `outC` is specified, CC exhausts all columns for weight $w$ to collect all unique minimum-weight codewords.
 
 Relevant parameters:
-- `wmax=[int]`: Maximum cluster weight to search.
+- `wmax=[int]`: Maximum cluster weight to search (optional if `timeout>0` or `dmax>0` is specified; otherwise required for CC).
 - `noscan=[int]`: If set to 1, start CC directly at $w_{\max}$ without scanning smaller weights.
 - `cbeg=[int]`, `cend=[int]`: Column range $[c_{\text{beg}}, c_{\text{end}}]$ to limit the CC search space.
 - `start=[int]`: Set $c_{\text{beg}} = c_{\text{end}} = \text{start}$ (useful for cyclic or symmetric codes).
 - `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 5; set 0 to disable).
 
 ### 3. Bracketing Mode (`method=3`)
-Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down).
-- Measures the empirical time per RW step and the exponential growth factor of CC rounds.
-- Solves an optimal thread allocation ratio at each CC weight round to balance the expected time of CC completion against the remaining RW step budget and timeout.
-- Terminates automatically when $d_{\min} = d_{\max}$, when `timeout` is reached, or when `steps` are exhausted.
+Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to solve the exact code distance as quickly as possible.
+
+#### Dynamic Thread Allocation & Role of `dexp`:
+1. **Target Search Depth**:
+   - Before RW discovers a candidate codeword, $d_{\max}$ is unknown. Providing `dexp=D` (alias: `dest=D`) tells the coordinator to plan CC verification up to target weight $D - 1$ (or $D$).
+2. **Predictive Workload Modeling**:
+   - The coordinator measures empirical single-thread speed for RW steps ($t_{\text{RW}}$) and fits exponential growth to completed CC rounds to estimate time $T_{\text{CC}}$ required to reach $\min(d_{\max}, d_{\exp})$.
+   - It computes the remaining work ratio:
+     $$\text{ratio} = \frac{T_{\text{CC}}}{T_{\text{CC}} + T_{\text{RW}}}$$
+     and dynamically splits threads at each round:
+     $$N_{\text{CC}} = \text{round}(N_{\text{threads}} \times \text{ratio}), \quad N_{\text{RW}} = N_{\text{threads}} - N_{\text{CC}}$$
+   - **Small $d_{\exp}$**: CC requires little work, so only 1–2 threads run CC while the majority maximize RW sampling speed.
+   - **Heavier rounds**: As $w$ grows toward $d_{\exp}$, $T_{\text{CC}}$ increases and additional threads are shifted to CC to ensure both algorithms converge on the exact distance simultaneously.
+3. **Adaptive Early Cutoff**:
+   - If CC reaches $w > d_{\exp}$ before a codeword is found, CC halts and yields 100% of threads to RW.
+   - If a projected CC round is estimated to exceed the remaining `timeout`, the coordinator terminates CC early and devotes remaining time entirely to RW.
 
 Relevant parameters:
-- `dexp=[int]` (alias: `dest=[int]`): Expected code distance to help guide initial thread balancing.
-- `threads=[int]`: Number of worker threads.
-- `timeout=[sec]`: Maximum wall-clock time in seconds.
-- `steps=[int]`: Maximum total RW steps.
+- `dexp=[int]` (alias: `dest=[int]`): Expected code distance to guide target search depth and thread allocation.
+- `threads=[int]`: Number of worker threads (default: hardware concurrency).
+- `timeout=[sec]`: Maximum execution time in seconds (default: 60.0).
+- `steps=[int]`: Maximum total RW steps (default: 1000).
 - `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
 
 ---
@@ -126,10 +138,10 @@ src/dist_m4ri: distance of a classical or quantum CSS code
 		2: connected cluster (CC) algorithm
 		3: bracketing mode (balanced concurrent RW and CC)
 
-   Multithreading parameters:
+   Execution and multithreading parameters:
 	threads=[int]: number of threads to use (0 for auto CPU count) (0)
-	dexp=[int]:    expected distance value (alias: dest) (0)
-	timeout=[sec]: timeout in seconds (60)
+	timeout=[sec]: timeout in seconds (60.0)
+	dexp=[int]:    expected distance value for method=3 (alias: dest) (0)
 
    General parameters:
 	finH=[str]: parity check matrix Hx (NULL)
@@ -137,10 +149,10 @@ src/dist_m4ri: distance of a classical or quantum CSS code
 	finL=[str]: matrix Lx (quantum CSS code only) (NULL)
 	fdem=[str]: detector error model (DEM) file from stim (NULL)
 	pmin=[float]: minimum error probability to keep for DEM (0.0)
-	dmin=[int]: known lower bound on distance (w starts from dmin in CC) (1)
-	dmax=[int]: known upper bound on distance (RW ignores codewords of weight >= dmax) (0)
-	wmax=[int]: maximum cluster weight for CC (0)
-	wmin=[int]: minimum distance of interest for RW (1)
+	dmin=[int]: known lower bound on distance, inclusive (w starts from dmin in CC) (1)
+	dmax=[int]: known upper bound on distance, inclusive (RW ignores codewords of weight >= dmax) (0)
+	wmax=[int]: maximum cluster weight for CC (0; optional if timeout>0 or dmax>0)
+	wmin=[int]: minimum distance of interest for RW and CC (1; early termination if cw <= wmin found)
 	steps=[int]: number of RW information sets (1000)
 	smax=[int]: maximum syndrome weight for confinement (5)
 	outC=[str]: file to output codewords in NZLIST format (NULL)
@@ -205,10 +217,10 @@ circuit = stim.Circuit.generated(
     distance=3,
     after_clifford_depolarization=0.001
 )
-dist, dist_list, cws = dist_m4ri.compute_dem_distance(circuit=circuit, do_cws=True, threads=8)
-print(f"Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms")
+dist, d_info, cws = dist_m4ri.compute_dem_distance(circuit=circuit, do_cws=True, threads=8)
+print(f"Surface code distance: {dist}, bounds: {d_info}, found {len(cws)} error mechanisms")
 
-# 3. CSS Quantum Code
+# 3. CSS Quantum Code (returns dist, dX_info, dZ_info where each info is [dmin, dmax, num_rw])
 dist, d_x, d_z = dist_m4ri.compute_css_distance(
     Hx="examples/surf_d5_H.mmx",
     Hz="examples/surf_d5_H.mmx",
@@ -217,7 +229,13 @@ dist, d_x, d_z = dist_m4ri.compute_css_distance(
     d_exp=5,
     threads=8
 )
-print(f"CSS distance: {dist}")  # 5
+print(f"CSS distance: {dist}, dX: {d_x}, dZ: {d_z}")  # CSS distance: 5, dX: [5, 5, 0], dZ: [5, 5, 0]
+
+# 4. Persistent JSON Cache
+# Pass cache_file to save/load bounds, cumulative RW steps, and codewords across runs:
+d = dist_m4ri.compute_classical_distance("examples/c1920H.mmx", num_steps=100, cache_file="my_cache.json")
+# Or set a default cache file globally:
+dist_m4ri.set_distance_cache_file("my_cache.json")
 ```
 
 ---

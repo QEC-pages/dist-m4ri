@@ -317,9 +317,6 @@ void var_init(int argc, char **argv, params_t * const p){
   }
 
   if (p->method == 2) {
-    if (p->wmin != 1) {
-      fprintf(stderr, "# WARNING: wmin=%d is ignored for CC method\n", p->wmin);
-    }
     if (p->steps != 1000) {
       fprintf(stderr, "# WARNING: steps=%d is ignored for CC method\n", p->steps);
     }
@@ -403,9 +400,13 @@ void var_init(int argc, char **argv, params_t * const p){
     }
   }
 
-  if(p->method &2 ){ /* CC */
-    if ((p->wmax<=0) && ((p->method & 1 )==0))
-      ERROR("parameter wmax=%d should be positive for CC method=%d", p->wmax,p->method);
+  if(p->method & 2){ /* CC */
+    if ((p->wmax<=0) && ((p->method & 1 )==0)) {
+      if (p->timeout <= 0.0) {
+        ERROR("either parameter wmax>0 or timeout>0 should be specified for CC method=%d", p->method);
+      }
+      p->wmax = MAX_W - 1;
+    }
     if(p->wmax>=MAX_W)
       ERROR("increase MAX_W=%d defined in 'util_io.h'",MAX_W);
     for(int i=0; i<MAX_W; i++)
