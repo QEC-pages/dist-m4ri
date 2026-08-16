@@ -157,5 +157,23 @@ def test_run_dist_m4ri_three_numbers():
     assert rw_steps >= 100
 
 
+def test_dmin_dmax_parameters():
+    # Test dmin/dmax in run_dist_m4ri
+    h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    dmin, dmax, rw_steps = dist_m4ri.run_dist_m4ri(method=3, finH=h_file, finL=l_file, dmin=4, dmax=5, timeout=5, threads=4)
+    assert (dmin, dmax) == (5, 5)
+
+    # Test dmin/dmax in compute_classical_distance
+    c_file = os.path.join(EXAMPLES_DIR, "c204H.mmx")
+    d = dist_m4ri.compute_classical_distance(c_file, dmin=5, dmax=8, threads=4)
+    assert d == 8
+
+    # Test dmin/dmax in compute_dem_distance
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    d_dem, _ = dist_m4ri.compute_dem_distance(dem=dem_file, dmin=2, dmax=4, threads=4)
+    assert d_dem == 3
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

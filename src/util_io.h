@@ -191,8 +191,8 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\ttimeout=[sec]: timeout in seconds (60)\n"				\
   "\n"									\
   "   Distance bounds parameters:\n"					\
-  "\tdmin=[int]:    known lower bound on distance (w starts from dmin in CC) (1)\n" \
-  "\tdmax=[int]:    known upper bound on distance (RW ignores codewords of weight >= dmax) (0)\n" \
+  "\tdmin=[int]:    known lower bound on distance, inclusive (w starts from dmin in CC) (1)\n" \
+  "\tdmax=[int]:    known upper bound on distance, inclusive (RW ignores codewords of weight >= dmax) (0)\n" \
   "\n"									\
   "   General parameters:\n"						\
   "\tfdem=[str]: detector error model (DEM) file from stim (NULL)\n" \

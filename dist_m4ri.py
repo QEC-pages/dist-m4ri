@@ -206,6 +206,8 @@ def run_dist_m4ri(
     finG: Optional[str] = None,
     finL: Optional[str] = None,
     fdem: Optional[str] = None,
+    dmin: int = 0,
+    dmax: int = 0,
     wmax: int = 0,
     wmin: int = 1,
     dexp: int = 0,
@@ -237,6 +239,8 @@ def run_dist_m4ri(
     if finG: cmd.append(f"finG={finG}")
     if finL: cmd.append(f"finL={finL}")
     if fdem: cmd.append(f"fdem={fdem}")
+    if dmin > 0: cmd.append(f"dmin={dmin}")
+    if dmax > 0: cmd.append(f"dmax={dmax}")
     if wmax > 0: cmd.append(f"wmax={wmax}")
     if wmin > 1: cmd.append(f"wmin={wmin}")
     if dexp > 0: cmd.append(f"dexp={dexp}")
@@ -302,6 +306,10 @@ def compute_classical_distance(
     timeout: float = 60.0,
     num_steps: Optional[int] = None,
     d_exp: int = 0,
+    d_min: int = 0,
+    d_max: int = 0,
+    dmin: int = 0,
+    dmax: int = 0,
     wmax: int = 0,
     dW: int = -1,
     maxC: int = 0,
@@ -323,6 +331,8 @@ def compute_classical_distance(
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
+        d_min / dmin: Known lower bound on distance.
+        d_max / dmax: Known upper bound on distance.
         wmax: Maximum weight to search in CC.
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
@@ -336,12 +346,15 @@ def compute_classical_distance(
     Returns:
         dist or (dist, cws) if do_cws is True
     """
+    eff_dmin = dmin if dmin > 0 else d_min
+    eff_dmax = dmax if dmax > 0 else d_max
+
     global _distance_cache, _use_distance_cache
     cache_key = None
     if _use_distance_cache:
         try:
             h_state = get_sparse_array_state(H)
-            cache_key = ("classical", h_state, method, d_exp, wmax, dW, maxC, do_cws, solver, codedistance_method)
+            cache_key = ("classical", h_state, method, d_exp, eff_dmin, eff_dmax, wmax, dW, maxC, do_cws, solver, codedistance_method)
             if cache_key in _distance_cache:
                 if debug & 4:
                     print("[dist_m4ri] Cache hit for classical distance!")
@@ -389,6 +402,8 @@ def compute_classical_distance(
             method=method,
             finH=file_H,
             classical=1,
+            dmin=eff_dmin,
+            dmax=eff_dmax,
             wmax=wmax,
             dexp=d_exp,
             steps=num_steps,
@@ -431,6 +446,9 @@ def compute_css_distance(
     num_steps: Optional[int] = None,
     d_exp: int = 0,
     d_min: int = 0,
+    d_max: int = 0,
+    dmin: int = 0,
+    dmax: int = 0,
     wmax: int = 0,
     dW: int = -1,
     maxC: int = 0,
@@ -456,7 +474,8 @@ def compute_css_distance(
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
-        d_min: Minimum target distance.
+        d_min / dmin: Known lower bound on distance, inclusive.
+        d_max / dmax: Known upper bound on distance, inclusive.
         wmax: Maximum weight to search in CC.
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
@@ -471,6 +490,9 @@ def compute_css_distance(
         tuple (dist, dist_list_X, dist_list_Z, cws_X, cws_Z) if do_cws
         else (dist, dist_list_X, dist_list_Z)
     """
+    eff_dmin = dmin if dmin > 0 else d_min
+    eff_dmax = dmax if dmax > 0 else d_max
+
     can_compute_Z = Hx is not None and (hasattr(Hx, 'shape') and Hx.shape[0] > 0 if not isinstance(Hx, str) else True)
     can_compute_X = Hz is not None and (hasattr(Hz, 'shape') and Hz.shape[0] > 0 if not isinstance(Hz, str) else True)
 
@@ -484,7 +506,7 @@ def compute_css_distance(
             hx_state = get_sparse_array_state(Hx) if can_compute_Z else None
             hz_state = get_sparse_array_state(Hz) if can_compute_X else None
             cache_key = (
-                "css", hx_state, hz_state, method, d_exp, d_min, wmax, dW, maxC,
+                "css", hx_state, hz_state, method, d_exp, eff_dmin, eff_dmax, wmax, dW, maxC,
                 do_cws, solver, codedistance_method
             )
             if cache_key in _distance_cache:
@@ -571,8 +593,9 @@ def compute_css_distance(
                 finH=file_Hx,
                 finG=file_Hz if file_Lz is None else None,
                 finL=file_Lz,
+                dmin=eff_dmin,
+                dmax=eff_dmax,
                 wmax=wmax,
-                wmin=d_min,
                 dexp=d_exp,
                 steps=num_steps,
                 threads=threads,
@@ -597,8 +620,9 @@ def compute_css_distance(
                 finH=file_Hz,
                 finG=file_Hx if file_Lx is None else None,
                 finL=file_Lx,
+                dmin=eff_dmin,
+                dmax=eff_dmax,
                 wmax=wmax,
-                wmin=d_min,
                 dexp=d_exp,
                 steps=num_steps,
                 threads=threads,
@@ -644,6 +668,9 @@ def compute_dem_distance(
     num_steps: Optional[int] = None,
     d_exp: int = 0,
     d_min: int = 0,
+    d_max: int = 0,
+    dmin: int = 0,
+    dmax: int = 0,
     wmax: int = 0,
     dW: int = -1,
     maxC: int = 0,
@@ -669,7 +696,8 @@ def compute_dem_distance(
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
-        d_min: Minimum target distance.
+        d_min / dmin: Known lower bound on distance, inclusive.
+        d_max / dmax: Known upper bound on distance, inclusive.
         wmax: Maximum weight to search in CC.
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
@@ -685,6 +713,9 @@ def compute_dem_distance(
     Returns:
         tuple (dist, dist_list, cws) if do_cws else (dist, dist_list)
     """
+    eff_dmin = dmin if dmin > 0 else d_min
+    eff_dmax = dmax if dmax > 0 else d_max
+
     if dem is None and circuit is not None:
         if hasattr(circuit, 'detector_error_model'):
             dem = circuit.detector_error_model(decompose_errors=True)
@@ -747,8 +778,9 @@ def compute_dem_distance(
             dist_m4ri_path=dist_m4ri,
             method=method,
             fdem=file_dem,
+            dmin=eff_dmin,
+            dmax=eff_dmax,
             wmax=wmax,
-            wmin=d_min,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
