@@ -64,7 +64,7 @@ Relevant parameters:
 - `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 5; set 0 to disable).
 
 ### 3. Bracketing Mode (`method=3`)
-Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to solve the exact code distance as quickly as possible.
+Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to determine the exact code distance as quickly as possible.
 
 #### Dynamic Thread Allocation & Role of `dexp`:
 1. **Target Search Depth**:
@@ -97,7 +97,7 @@ With `smax > 0` (default: `smax=5`), the CC algorithm tracks the minimum non-zer
 ```bash
 $ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 debug=0 threads=4
 # confinement: 1,1,1,1
-5 0
+5 0 0
 ```
 
 With `debug=1`, detailed per-weight lines are printed to `stderr`:
@@ -129,13 +129,27 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 
 ```sh
 $ ./src/dist_m4ri --help
-src/dist_m4ri: distance of a classical or quantum CSS code
-	usage: src/dist_m4ri parameter=value [...]
+./src/dist_m4ri: distance of a classical or quantum CSS code
+	usage: ./src/dist_m4ri parameter=value [...]
 
    Required parameter:
 	method=[int]: bitmap for method used (no default): 
-		1: random window (RW) algorithm
-		2: connected cluster (CC) algorithm
+
+		1: random window (RW) algorithm. Options:
+		   steps=[int]: how many information sets to use (1000)
+		   wmin=[int]:  minimum distance of interest (1)
+			 immediately stop and return '-w' on a cw of weight w<=wmin
+			 use this option to quickly scan over a large number of codes
+
+		2: connected cluster (CC) algorithm.  Options:
+		   wmax=[int]:  maximum cluster weight to construct, inclusive (0)
+			 optional if timeout>0 or dmax>0 is set; otherwise required for CC only
+		   smax=[int]:  maximum syndrome weight of interest, inclusive (5)
+			 must be non-zero to calculate confinement profile
+		   start=[int]: use only this position to start (equiv. to cbeg=cend=start) (-1)
+		   cbeg=[int]:  start column to begin CC search (-1)
+		   cend=[int]:  end column to limit CC search (-1)
+		   noscan=[int]: start CC directly with wmax (0)
 		3: bracketing mode (balanced concurrent RW and CC)
 
    Execution and multithreading parameters:
@@ -143,40 +157,56 @@ src/dist_m4ri: distance of a classical or quantum CSS code
 	timeout=[sec]: timeout in seconds (60.0)
 	dexp=[int]:    expected distance value for method=3 (alias: dest) (0)
 
+   Distance bounds parameters:
+	dmin=[int]:    known lower bound on distance, inclusive (w starts from dmin in CC) (1)
+	dmax=[int]:    known upper bound on distance, inclusive (RW ignores codewords of weight >= dmax) (0)
+
    General parameters:
+	fdem=[str]: detector error model (DEM) file from stim (NULL)
+	pmin=[float]: minimum error probability to keep for DEM (0.0)
 	finH=[str]: parity check matrix Hx (NULL)
 	finG=[str]: matrix Hz (quantum CSS code only) (NULL)
 	finL=[str]: matrix Lx (quantum CSS code only) (NULL)
-	fdem=[str]: detector error model (DEM) file from stim (NULL)
-	pmin=[float]: minimum error probability to keep for DEM (0.0)
-	dmin=[int]: known lower bound on distance, inclusive (w starts from dmin in CC) (1)
-	dmax=[int]: known upper bound on distance, inclusive (RW ignores codewords of weight >= dmax) (0)
-	wmax=[int]: maximum cluster weight for CC (0; optional if timeout>0 or dmax>0)
-	wmin=[int]: minimum distance of interest for RW and CC (1; early termination if cw <= wmin found)
-	steps=[int]: number of RW information sets (1000)
-	smax=[int]: maximum syndrome weight for confinement (5)
-	outC=[str]: file to output codewords in NZLIST format (NULL)
-	finC=[str]: file to read initial codewords from (NULL)
-	dW=[int]: extra weight above dmin to collect codewords (-1)
-	maxC=[int]: maximum number of codewords to collect (0)
-	classical=[0|1]: force classical (1) or quantum (0) code (-1)
-	debug=[int]: debug output bitmap (3)
+		 Either L=Lx or G=Hz matrix is required for a quantum CSS code
+	fin=[str]:  base name for input files ("try")
+		 set finH->"${fin}X.mtx"  finG->"${fin}Z.mtx"
+	css=[int]:  reserved for future use (1)
+	seed=[int]: rng seed [use 0 for time(NULL)] (0)
+	debug=[int]:	 bitmap for aux information to output (3)
+		0: clear the entire debug bitmap to 0.
+		1: output misc general info (on by default)
+		2: output more general info (on by default)
+		4: debug command line arguments parsing
+		8: output progress reports every 1000 steps
+		16: output new min-weight codewords found (cut large vectors)
+		32: output matrices (unless n is large)
+		64: debug confinement hash updates (swei changes)
+		128: debug duplicate syndromes in confinement hash (debug build only)
+		256: reserved
+		512: reserved
+		1024: reserved
+		2048: allow big matrix / large vector output
+		   see the source code for more options
+	  Multiple 'debug' parameters are XOR combined except for 0.
+	  Use debug=0 as the 1st argument to suppress all debug messages.
+   -h gives this help (also '--help')
 ```
 
 ### CLI Examples
 
 ```bash
 # 1. Classical linear code using 8 threads in bracketing mode
-$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8
-8 8
+$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8 debug=0
+8 8 2340
 
 # 2. Stim Detector Error Model (DEM) with timeout and codeword export
-$ ./src/dist_m4ri method=3 fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4
-3 3
+$ ./src/dist_m4ri method=3 fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4 debug=0
+3 3 1000
 
-# 3. Quantum CSS code (Hx and Hz) using pure CC search up to wmax=5
-$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finG=./examples/surf_d5_L.mmx wmax=5 threads=4
-5 5
+# 3. Quantum CSS code (Hx and Lx) using pure CC search up to wmax=5
+$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=5 debug=0 threads=4
+# confinement: 1,1,1,1,1
+5 5 0
 ```
 
 ---
@@ -217,25 +247,19 @@ circuit = stim.Circuit.generated(
     distance=3,
     after_clifford_depolarization=0.001
 )
-dist, d_info, cws = dist_m4ri.compute_dem_distance(circuit=circuit, do_cws=True, threads=8)
-print(f"Surface code distance: {dist}, bounds: {d_info}, found {len(cws)} error mechanisms")
+dist, dist_list, cws = dist_m4ri.compute_dem_distance(circuit=circuit, do_cws=True, threads=4)
+print(f"Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms")
 
-# 3. CSS Quantum Code (returns dist, dX_info, dZ_info where each info is [dmin, dmax, num_rw])
+# 3. CSS Quantum Code
 dist, d_x, d_z = dist_m4ri.compute_css_distance(
     Hx="examples/surf_d5_H.mmx",
     Hz="examples/surf_d5_H.mmx",
     Lz="examples/surf_d5_L.mmx",
     Lx="examples/surf_d5_L.mmx",
     d_exp=5,
-    threads=8
+    threads=4
 )
-print(f"CSS distance: {dist}, dX: {d_x}, dZ: {d_z}")  # CSS distance: 5, dX: [5, 5, 0], dZ: [5, 5, 0]
-
-# 4. Persistent JSON Cache
-# Pass cache_file to save/load bounds, cumulative RW steps, and codewords across runs:
-d = dist_m4ri.compute_classical_distance("examples/c1920H.mmx", num_steps=100, cache_file="my_cache.json")
-# Or set a default cache file globally:
-dist_m4ri.set_distance_cache_file("my_cache.json")
+print(f"CSS distance: {dist}")  # 5
 ```
 
 ---
