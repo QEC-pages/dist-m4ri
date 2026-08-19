@@ -116,8 +116,10 @@ Functions</h2></td></tr>
 <tr class="separator:a119162910a3b61bf61ae1326972f6ee3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a0f48db667d0b97b5f158b2fd3defe56a" id="r_a0f48db667d0b97b5f158b2fd3defe56a"><td class="memItemLeft" align="right" valign="top">str&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a0f48db667d0b97b5f158b2fd3defe56a">format_bounds_str</a> (List[int] bounds)</td></tr>
 <tr class="separator:a0f48db667d0b97b5f158b2fd3defe56a"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a194984c1e5d6fd923d4ec22d82b47628" id="r_a194984c1e5d6fd923d4ec22d82b47628"><td class="memItemLeft" align="right" valign="top">Optional[Dict[str, Any]]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a194984c1e5d6fd923d4ec22d82b47628">get_cached_distance</a> (Optional[Any] H=None, Optional[Any] Hx=None, Optional[Any] Hz=None, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[Any] dem=None, Optional[Any] circuit=None, float pmin=0.0, Optional[Union[str, Path]] cache_file=None)</td></tr>
-<tr class="separator:a194984c1e5d6fd923d4ec22d82b47628"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad3ccec3864f2c33e676b60f0feff0e2d" id="r_ad3ccec3864f2c33e676b60f0feff0e2d"><td class="memItemLeft" align="right" valign="top">str&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#ad3ccec3864f2c33e676b60f0feff0e2d">explain_bounds</a> (List[int] bounds, Optional[int] method=None, str label=&quot;&quot;)</td></tr>
+<tr class="separator:ad3ccec3864f2c33e676b60f0feff0e2d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9c38d054a76b6886309dc5d0dc6e1214" id="r_a9c38d054a76b6886309dc5d0dc6e1214"><td class="memItemLeft" align="right" valign="top">Optional[Dict[str, Any]]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a9c38d054a76b6886309dc5d0dc6e1214">get_cached_distance</a> (Optional[Any] H=None, Optional[Any] G=None, Optional[Any] L=None, Optional[Any] Hx=None, Optional[Any] Hz=None, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[Any] dem=None, Optional[Any] circuit=None, float pmin=0.0, Optional[Union[str, Path]] cache_file=None)</td></tr>
+<tr class="separator:a9c38d054a76b6886309dc5d0dc6e1214"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a9beceb39f5357d0dd249f15263c556ba" id="r_a9beceb39f5357d0dd249f15263c556ba"><td class="memItemLeft" align="right" valign="top">str&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a9beceb39f5357d0dd249f15263c556ba">get_sparse_array_state</a> (A)</td></tr>
 <tr class="separator:a9beceb39f5357d0dd249f15263c556ba"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a0d2316ce4c5c2336a055b8e2de01dea0" id="r_a0d2316ce4c5c2336a055b8e2de01dea0"><td class="memItemLeft" align="right" valign="top">str&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a0d2316ce4c5c2336a055b8e2de01dea0">create_unique_file</a> (Union[str, Path] directory=&quot;tmp&quot;, str extension=&quot;.tmp&quot;)</td></tr>
@@ -128,16 +130,20 @@ Functions</h2></td></tr>
 <tr class="separator:a09fdbac5261d1261a975d8ec7e9a95d0"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a5f4a9b8f51c1d262ba0eedfc8adf9151" id="r_a5f4a9b8f51c1d262ba0eedfc8adf9151"><td class="memItemLeft" align="right" valign="top">Tuple[int, int, int]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a5f4a9b8f51c1d262ba0eedfc8adf9151">parse_dist_m4ri_output</a> (str stdout)</td></tr>
 <tr class="separator:a5f4a9b8f51c1d262ba0eedfc8adf9151"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a0bd48c1dba073c6ed03f3a9aeb1ba033" id="r_a0bd48c1dba073c6ed03f3a9aeb1ba033"><td class="memItemLeft" align="right" valign="top">Tuple[int, int, int]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a0bd48c1dba073c6ed03f3a9aeb1ba033">run_dist_m4ri</a> (Optional[str] dist_m4ri_path=None, int method=3, Optional[str] finH=None, Optional[str] finG=None, Optional[str] finL=None, Optional[str] fdem=None, int dmin=0, int dmax=0, int wmax=0, int wmin=1, int dexp=0, int dest=0, Optional[int] steps=None, Optional[int] threads=None, float timeout=60.0, Optional[int] smax=None, int noscan=0, int classical=-1, int dW=-1, int maxC=0, float pmin=0.0, Optional[str] outC=None, int seed=0, int debug=0, Optional[threading.Event] stop_event=None)</td></tr>
-<tr class="separator:a0bd48c1dba073c6ed03f3a9aeb1ba033"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abdbec81ff4e89ee98e87291ff9959764" id="r_abdbec81ff4e89ee98e87291ff9959764"><td class="memItemLeft" align="right" valign="top">Optional[str]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#abdbec81ff4e89ee98e87291ff9959764">check_finc_outc</a> (Optional[str] finC, Optional[str] outC, bool verbose=False)</td></tr>
+<tr class="separator:abdbec81ff4e89ee98e87291ff9959764"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a261318a1af1981f911006d833c2508e9" id="r_a261318a1af1981f911006d833c2508e9"><td class="memItemLeft" align="right" valign="top">Tuple[int, int, int]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a261318a1af1981f911006d833c2508e9">run_dist_m4ri</a> (Optional[str] dist_m4ri_path=None, int method=3, Optional[str] finH=None, Optional[str] finG=None, Optional[str] finL=None, Optional[str] fin=None, Optional[str] finC=None, Optional[str] fdem=None, int dmin=0, int dmax=0, int wmax=0, int wmin=1, int dexp=0, int dest=0, Optional[int] steps=None, Optional[int] threads=None, float timeout=60.0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, Optional[int] css=None, int noscan=0, int classical=-1, int dW=-1, int maxC=0, float pmin=0.0, Optional[str] outC=None, int seed=0, int debug=0, Optional[threading.Event] stop_event=None)</td></tr>
+<tr class="separator:a261318a1af1981f911006d833c2508e9"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a31b20c374ff5c4bc18df5575f691a77c" id="r_a31b20c374ff5c4bc18df5575f691a77c"><td class="memItemLeft" align="right" valign="top">str&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a31b20c374ff5c4bc18df5575f691a77c">_matrix_to_file</a> (matrix, str extension=&quot;.mtx&quot;, str temp_dir=&quot;tmp&quot;)</td></tr>
 <tr class="separator:a31b20c374ff5c4bc18df5575f691a77c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af4ca25056e2c502c073f686cde6d2cb2" id="r_af4ca25056e2c502c073f686cde6d2cb2"><td class="memItemLeft" align="right" valign="top">Any&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#af4ca25056e2c502c073f686cde6d2cb2">compute_classical_distance</a> (Any H, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0)</td></tr>
-<tr class="separator:af4ca25056e2c502c073f686cde6d2cb2"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aed058abc0ddde2b3889884cae873caae" id="r_aed058abc0ddde2b3889884cae873caae"><td class="memItemLeft" align="right" valign="top">Tuple[Any,...]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#aed058abc0ddde2b3889884cae873caae">compute_css_distance</a> (Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</td></tr>
-<tr class="separator:aed058abc0ddde2b3889884cae873caae"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2cff56d01a00a4bdf8998366b2848f82" id="r_a2cff56d01a00a4bdf8998366b2848f82"><td class="memItemLeft" align="right" valign="top">Tuple[Any,...]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a2cff56d01a00a4bdf8998366b2848f82">compute_dem_distance</a> (Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, int dW=-1, int maxC=0, float pmin=0.0, int noscan=0, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, **kwargs)</td></tr>
-<tr class="separator:a2cff56d01a00a4bdf8998366b2848f82"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a431924a43acd782d2b728e2d919c8af2" id="r_a431924a43acd782d2b728e2d919c8af2"><td class="memItemLeft" align="right" valign="top">Any&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a431924a43acd782d2b728e2d919c8af2">compute_classical_distance</a> (Any H, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False)</td></tr>
+<tr class="separator:a431924a43acd782d2b728e2d919c8af2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac2aa7218c15b3daccae623b939530b27" id="r_ac2aa7218c15b3daccae623b939530b27"><td class="memItemLeft" align="right" valign="top">Any&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#ac2aa7218c15b3daccae623b939530b27">compute_quantum_distance</a> (Any H, Optional[Any] G=None, Optional[Any] L=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False)</td></tr>
+<tr class="separator:ac2aa7218c15b3daccae623b939530b27"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac8f3df8589c8e43f503c31002edca478" id="r_ac8f3df8589c8e43f503c31002edca478"><td class="memItemLeft" align="right" valign="top">Tuple[Any,...]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#ac8f3df8589c8e43f503c31002edca478">compute_css_distance</a> (Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, **kwargs)</td></tr>
+<tr class="separator:ac8f3df8589c8e43f503c31002edca478"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa6fbfd9ade48f989606a6ae850712336" id="r_aa6fbfd9ade48f989606a6ae850712336"><td class="memItemLeft" align="right" valign="top">Tuple[Any,...]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#aa6fbfd9ade48f989606a6ae850712336">compute_dem_distance</a> (Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, **kwargs)</td></tr>
+<tr class="separator:aa6fbfd9ade48f989606a6ae850712336"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4047c86bb3f13df192c6aabac6b76a25" id="r_a4047c86bb3f13df192c6aabac6b76a25"><td class="memItemLeft" align="right" valign="top">None&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a4047c86bb3f13df192c6aabac6b76a25">_write_nzlist_file</a> (str filepath, List[List[int]] cws)</td></tr>
 <tr class="separator:a4047c86bb3f13df192c6aabac6b76a25"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a408e52fb3f71e37ba2189d0a09eeb45c" id="r_a408e52fb3f71e37ba2189d0a09eeb45c"><td class="memItemLeft" align="right" valign="top">Dict[str, Any]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a408e52fb3f71e37ba2189d0a09eeb45c">parse_cli_args</a> (List[str] argv)</td></tr>
@@ -175,6 +181,7 @@ Variables</h2></td></tr>
 
 Provides high-level APIs for computing:
 - Classical code distance: compute_classical_distance(...)
+- Single-sided quantum code distance: compute_quantum_distance(...)
 - CSS quantum code distance: compute_css_distance(...)
 - Detector Error Model (DEM) distance: compute_dem_distance(...)
 
@@ -198,7 +205,7 @@ no Python-level threading or subprocess-per-core logic is necessary.
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Lazily resolves module attributes without loading heavy dependencies at startup.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00055">55</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00056">56</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -225,9 +232,9 @@ no Python-level threading or subprocess-per-core logic is necessary.
 </table>
 </div><div class="memdoc">
 <pre class="fragment">Lazily imports the codedistance library only when requested.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00031">31</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00032">32</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
@@ -254,7 +261,7 @@ no Python-level threading or subprocess-per-core logic is necessary.
 </table>
 </div><div class="memdoc">
 <pre class="fragment">Lazily imports stim only when requested.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00043">43</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00044">44</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -298,11 +305,11 @@ no Python-level threading or subprocess-per-core logic is necessary.
 </table>
 </div><div class="memdoc">
 <pre class="fragment">Helper to convert a matrix (numpy or scipy sparse) or file path to an MTX file path.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00582">582</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00666">666</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00295">create_unique_file()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00347">create_unique_file()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
@@ -340,9 +347,52 @@ no Python-level threading or subprocess-per-core logic is necessary.
 </table>
 </div><div class="memdoc">
 <pre class="fragment">Writes codewords to a text file in NZLIST format (1-based indices).</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01316">1316</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01786">1786</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>.</p>
+
+</div>
+</div>
+<a id="abdbec81ff4e89ee98e87291ff9959764" name="abdbec81ff4e89ee98e87291ff9959764"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abdbec81ff4e89ee98e87291ff9959764">&#9670;&#160;</a></span>check_finc_outc()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"> Optional[str] dist_m4ri.check_finc_outc </td>
+          <td>(</td>
+          <td class="paramtype">Optional[str]&#160;</td>
+          <td class="paramname"><em>finC</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str]&#160;</td>
+          <td class="paramname"><em>outC</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool &#160;</td>
+          <td class="paramname"><em>verbose</em> = <code>False</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<pre class="fragment">When finC and outC names are identical, an empty or non-existent file is silently ignored
+(with a warning if verbose is True).
+
+Returns:
+    The effective finC filepath to use (or None if ignored).
+</pre> 
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00544">544</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00594">run_dist_m4ri()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00384">test_dist_m4ri.test_check_finc_outc()</a>.</p>
 
 </div>
 </div>
@@ -373,14 +423,14 @@ no Python-level threading or subprocess-per-core logic is necessary.
 </div><div class="memdoc">
 <pre class="fragment">Clears all cached distance calculations from memory, and optionally deletes the persistent JSON file.
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00135">135</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00136">136</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>.</p>
 
 </div>
 </div>
-<a id="af4ca25056e2c502c073f686cde6d2cb2" name="af4ca25056e2c502c073f686cde6d2cb2"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af4ca25056e2c502c073f686cde6d2cb2">&#9670;&#160;</a></span>compute_classical_distance()</h2>
+<a id="a431924a43acd782d2b728e2d919c8af2" name="a431924a43acd782d2b728e2d919c8af2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a431924a43acd782d2b728e2d919c8af2">&#9670;&#160;</a></span>compute_classical_distance()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -466,6 +516,36 @@ no Python-level threading or subprocess-per-core logic is necessary.
         <tr>
           <td class="paramkey"></td>
           <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>smax</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>start</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cbeg</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cend</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>noscan</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
           <td class="paramtype">int &#160;</td>
           <td class="paramname"><em>dW</em> = <code>-1</code>, </td>
         </tr>
@@ -474,6 +554,18 @@ no Python-level threading or subprocess-per-core logic is necessary.
           <td></td>
           <td class="paramtype">int &#160;</td>
           <td class="paramname"><em>maxC</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>finC</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>outC</em> = <code>None</code>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
@@ -521,7 +613,13 @@ no Python-level threading or subprocess-per-core logic is necessary.
           <td class="paramkey"></td>
           <td></td>
           <td class="paramtype">int &#160;</td>
-          <td class="paramname"><em>debug</em> = <code>0</code>&#160;</td>
+          <td class="paramname"><em>debug</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool &#160;</td>
+          <td class="paramname"><em>verbose</em> = <code>False</code>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -544,8 +642,13 @@ Args:
     d_max / dmax: Known upper bound on distance.
     wmin: Minimum distance of interest (terminate early if cw of weight &lt;= wmin is found in RW or CC, default: 1).
     wmax: Maximum weight to search in CC.
+    smax: Maximum syndrome weight for CC confinement profile.
+    start / cbeg / cend: Column search range for CC.
+    noscan: Skip CC scan loop if 1.
     dW: Extra weight window above dmin to collect codewords.
     maxC: Maximum number of codewords to collect.
+    finC: Input file with initial codewords.
+    outC: Output file to save codewords (NZLIST format).
     do_cws: Whether to return extracted codewords.
     return_info: If True, return (dist, d_info) or (dist, d_info, cws) where d_info is [dmin, dmax, num_rw].
     cache_file: Optional JSON file path for persistent distance caching.
@@ -554,20 +657,21 @@ Args:
     codedistance_params: Extra parameters for codedistance library.
     seed: Random seed.
     debug: Debug level flags.
+    verbose: Verbose reporting flag.
 
 Returns:
     dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00602">602</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00686">686</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00031">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00582">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00295">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00167">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00266">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00094">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00303">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00518">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00111">save_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00666">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01786">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00544">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00347">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00318">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00594">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00025">test_dist_m4ri.test_classical_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00031">test_dist_m4ri.test_classical_distance_numpy()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00284">test_dist_m4ri.test_wmin_greater_than_dmax()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00025">test_dist_m4ri.test_classical_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00031">test_dist_m4ri.test_classical_distance_numpy()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>.</p>
 
 </div>
 </div>
-<a id="aed058abc0ddde2b3889884cae873caae" name="aed058abc0ddde2b3889884cae873caae"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aed058abc0ddde2b3889884cae873caae">&#9670;&#160;</a></span>compute_css_distance()</h2>
+<a id="ac8f3df8589c8e43f503c31002edca478" name="ac8f3df8589c8e43f503c31002edca478"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac8f3df8589c8e43f503c31002edca478">&#9670;&#160;</a></span>compute_css_distance()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -671,6 +775,36 @@ Returns:
         <tr>
           <td class="paramkey"></td>
           <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>smax</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>start</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cbeg</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cend</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>noscan</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
           <td class="paramtype">int &#160;</td>
           <td class="paramname"><em>dW</em> = <code>-1</code>, </td>
         </tr>
@@ -679,6 +813,18 @@ Returns:
           <td></td>
           <td class="paramtype">int &#160;</td>
           <td class="paramname"><em>maxC</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>finC</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>outC</em> = <code>None</code>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
@@ -725,6 +871,12 @@ Returns:
         <tr>
           <td class="paramkey"></td>
           <td></td>
+          <td class="paramtype">bool &#160;</td>
+          <td class="paramname"><em>verbose</em> = <code>False</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
           <td class="paramtype">**&#160;</td>
           <td class="paramname"><em>kwargs</em>&#160;</td>
         </tr>
@@ -752,8 +904,13 @@ Args:
     d_max / dmax: Known upper bound on distance, inclusive.
     wmin: Minimum distance of interest (terminate early if cw of weight &lt;= wmin is found in RW or CC, default: 1).
     wmax: Maximum weight to search in CC.
+    smax: Maximum syndrome weight for CC confinement profile.
+    start / cbeg / cend: Column search range for CC.
+    noscan: Skip CC scan loop if 1.
     dW: Extra weight window above dmin to collect codewords.
     maxC: Maximum number of codewords to collect.
+    finC: Input file with initial codewords.
+    outC: Output file to save codewords (NZLIST format).
     do_cws: Whether to return extracted X and Z codewords.
     cache_file: Optional JSON file path for persistent distance caching.
     solver: "dist_m4ri" or "codedistance".
@@ -761,21 +918,22 @@ Args:
     codedistance_params: Extra parameters for codedistance library.
     seed: Random seed.
     debug: Debug level flags.
+    verbose: Verbose reporting flag.
 
 Returns:
     tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
     else (dist, dX_info, dZ_info)
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00799">799</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01188">1188</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00031">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00582">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00295">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00167">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00266">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00094">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00303">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00518">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00111">save_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00666">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01786">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00544">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00347">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00318">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00594">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00048">test_dist_m4ri.test_css_distance_files()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00061">test_dist_m4ri.test_css_distance_sparse()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00048">test_dist_m4ri.test_css_distance_files()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00061">test_dist_m4ri.test_css_distance_sparse()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
 
 </div>
 </div>
-<a id="a2cff56d01a00a4bdf8998366b2848f82" name="a2cff56d01a00a4bdf8998366b2848f82"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2cff56d01a00a4bdf8998366b2848f82">&#9670;&#160;</a></span>compute_dem_distance()</h2>
+<a id="aa6fbfd9ade48f989606a6ae850712336" name="aa6fbfd9ade48f989606a6ae850712336"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa6fbfd9ade48f989606a6ae850712336">&#9670;&#160;</a></span>compute_dem_distance()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -867,6 +1025,36 @@ Returns:
         <tr>
           <td class="paramkey"></td>
           <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>smax</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>start</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cbeg</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cend</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>noscan</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
           <td class="paramtype">int &#160;</td>
           <td class="paramname"><em>dW</em> = <code>-1</code>, </td>
         </tr>
@@ -885,8 +1073,14 @@ Returns:
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype">int &#160;</td>
-          <td class="paramname"><em>noscan</em> = <code>0</code>, </td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>finC</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>outC</em> = <code>None</code>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
@@ -933,6 +1127,12 @@ Returns:
         <tr>
           <td class="paramkey"></td>
           <td></td>
+          <td class="paramtype">bool &#160;</td>
+          <td class="paramname"><em>verbose</em> = <code>False</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
           <td class="paramtype">**&#160;</td>
           <td class="paramname"><em>kwargs</em>&#160;</td>
         </tr>
@@ -958,10 +1158,14 @@ Args:
     d_max / dmax: Known upper bound on distance, inclusive.
     wmin: Minimum distance of interest (terminate early if cw of weight &lt;= wmin is found in RW or CC, default: 1).
     wmax: Maximum weight to search in CC.
+    smax: Maximum syndrome weight for CC confinement profile.
+    start / cbeg / cend: Column search range for CC.
+    noscan: Skip CC scan loop if 1.
     dW: Extra weight window above dmin to collect codewords.
     maxC: Maximum number of codewords to collect.
     pmin: Probability cutoff for error mechanisms in DEM.
-    noscan: Skip CC scan loop if 1.
+    finC: Input file with initial codewords.
+    outC: Output file to save codewords (NZLIST format).
     do_cws: Whether to return extracted error mechanisms / codewords.
     cache_file: Optional JSON file path for persistent distance caching.
     solver: "dist_m4ri" or "codedistance".
@@ -969,15 +1173,272 @@ Args:
     codedistance_params: Extra parameters for codedistance library.
     seed: Random seed.
     debug: Debug level flags.
+    verbose: Verbose reporting flag.
 
 Returns:
     tuple (dist, d_info, cws) if do_cws else (dist, d_info)
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01088">1088</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01524">1524</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00031">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00295">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00167">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00266">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00094">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00303">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00518">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00111">save_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01786">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00544">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00347">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00318">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00594">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00080">test_dist_m4ri.test_dem_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00101">test_dist_m4ri.test_dem_distance_stim()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00080">test_dist_m4ri.test_dem_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00101">test_dist_m4ri.test_dem_distance_stim()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
+
+</div>
+</div>
+<a id="ac2aa7218c15b3daccae623b939530b27" name="ac2aa7218c15b3daccae623b939530b27"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac2aa7218c15b3daccae623b939530b27">&#9670;&#160;</a></span>compute_quantum_distance()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"> Any dist_m4ri.compute_quantum_distance </td>
+          <td>(</td>
+          <td class="paramtype">Any&#160;</td>
+          <td class="paramname"><em>H</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[Any] &#160;</td>
+          <td class="paramname"><em>G</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[Any] &#160;</td>
+          <td class="paramname"><em>L</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>dist_m4ri</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>method</em> = <code>3</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>threads</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float &#160;</td>
+          <td class="paramname"><em>timeout</em> = <code>60.0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>num_steps</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>d_exp</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>d_min</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>d_max</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>dmin</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>dmax</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>wmin</em> = <code>1</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>wmax</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>smax</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>start</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cbeg</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cend</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>noscan</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>dW</em> = <code>-1</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>maxC</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>finC</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>outC</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool &#160;</td>
+          <td class="paramname"><em>do_cws</em> = <code>False</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool &#160;</td>
+          <td class="paramname"><em>return_info</em> = <code>False</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[Union[str, Path]] &#160;</td>
+          <td class="paramname"><em>cache_file</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">str &#160;</td>
+          <td class="paramname"><em>solver</em> = <code>&quot;dist_m4ri&quot;</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">str &#160;</td>
+          <td class="paramname"><em>codedistance_method</em> = <code>&quot;QDistEvol&quot;</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[Dict[str, Any]] &#160;</td>
+          <td class="paramname"><em>codedistance_params</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>seed</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int &#160;</td>
+          <td class="paramname"><em>debug</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool &#160;</td>
+          <td class="paramname"><em>verbose</em> = <code>False</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<pre class="fragment">Computes the minimum distance of a single-sided quantum code given parity check matrix H
+and degeneracy generator G (or logical operator matrix L).
+
+Args:
+    H: Parity check matrix (numpy array, scipy sparse matrix, or file path).
+    G: Degeneracy generator matrix (numpy array, scipy sparse matrix, or file path).
+    L: Logical operator matrix (numpy array, scipy sparse matrix, or file path).
+    dist_m4ri: Path to dist_m4ri executable (optional).
+    method: Solver method (1=RW, 2=CC, 3=Bracketing default).
+    threads: Number of worker threads.
+    timeout: Execution timeout in seconds.
+    num_steps: Maximum RW steps.
+    d_exp: Expected distance estimate.
+    d_min / dmin: Known lower bound on distance.
+    d_max / dmax: Known upper bound on distance.
+    wmin: Minimum distance of interest (terminate early if cw of weight &lt;= wmin is found in RW or CC, default: 1).
+    wmax: Maximum weight to search in CC.
+    smax: Maximum syndrome weight for CC confinement profile.
+    start / cbeg / cend: Column search range for CC.
+    noscan: Skip CC scan loop if 1.
+    dW: Extra weight window above dmin to collect codewords.
+    maxC: Maximum number of codewords to collect.
+    finC: Input file with initial codewords.
+    outC: Output file to save codewords (NZLIST format).
+    do_cws: Whether to return extracted codewords.
+    return_info: If True, return (dist, d_info) or (dist, d_info, cws) where d_info is [dmin, dmax, num_rw].
+    cache_file: Optional JSON file path for persistent distance caching.
+    solver: "dist_m4ri" or "codedistance".
+    codedistance_method: Method if using codedistance library.
+    codedistance_params: Extra parameters for codedistance library.
+    seed: Random seed.
+    debug: Debug level flags.
+    verbose: Verbose reporting flag.
+
+Returns:
+    dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
+</pre> 
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00921">921</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00666">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01786">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00544">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00347">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00318">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00594">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00284">test_dist_m4ri.test_quantum_distance_single_sided()</a>.</p>
 
 </div>
 </div>
@@ -1007,9 +1468,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Creates a unique temporary file path and ensures the parent directory exists.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00295">295</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00347">347</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00582">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00666">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
@@ -1028,9 +1489,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Disables distance caching.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00155">155</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00156">156</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>.</p>
 
 </div>
 </div>
@@ -1049,9 +1510,56 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Enables distance caching.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00149">149</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00150">150</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>.</p>
+
+</div>
+</div>
+<a id="ad3ccec3864f2c33e676b60f0feff0e2d" name="ad3ccec3864f2c33e676b60f0feff0e2d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad3ccec3864f2c33e676b60f0feff0e2d">&#9670;&#160;</a></span>explain_bounds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"> str dist_m4ri.explain_bounds </td>
+          <td>(</td>
+          <td class="paramtype">List[int]&#160;</td>
+          <td class="paramname"><em>bounds</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>method</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">str &#160;</td>
+          <td class="paramname"><em>label</em> = <code>&quot;&quot;</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<pre class="fragment">Returns a human-readable explanation of [dmin, dmax, num_rw] following README.md.
+
+Args:
+    bounds: [dmin, dmax, rw_steps] list.
+    method: Optional solver method (1=RW, 2=CC, 3=Bracketing).
+    label: Optional prefix/label (e.g. "dX", "dZ", "").
+
+Returns:
+    Multi-line formatted explanation string.
+</pre> 
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00197">197</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00337">test_dist_m4ri.test_explain_bounds()</a>.</p>
 
 </div>
 </div>
@@ -1071,9 +1579,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Finds the dist_m4ri executable.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00346">346</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00398">398</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00518">run_dist_m4ri()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00019">test_dist_m4ri.test_find_binary()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00594">run_dist_m4ri()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00019">test_dist_m4ri.test_find_binary()</a>.</p>
 
 </div>
 </div>
@@ -1114,9 +1622,9 @@ Returns:
 - [0, dmax, num_rw] if there is no lower bound (dmin &lt;= 1)
 - [dmin, dmax, num_rw] otherwise
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00167">167</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00168">168</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00206">get_cached_distance()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00253">get_cached_distance()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
 
 </div>
 </div>
@@ -1136,14 +1644,14 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Formats a bounds list [dmin, dmax, num_rw] as a string, stating '(exact)' if bounds coincide.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00188">188</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00189">189</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
 
 </div>
 </div>
-<a id="a194984c1e5d6fd923d4ec22d82b47628" name="a194984c1e5d6fd923d4ec22d82b47628"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a194984c1e5d6fd923d4ec22d82b47628">&#9670;&#160;</a></span>get_cached_distance()</h2>
+<a id="a9c38d054a76b6886309dc5d0dc6e1214" name="a9c38d054a76b6886309dc5d0dc6e1214"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9c38d054a76b6886309dc5d0dc6e1214">&#9670;&#160;</a></span>get_cached_distance()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1153,6 +1661,18 @@ Returns:
           <td>(</td>
           <td class="paramtype">Optional[Any] &#160;</td>
           <td class="paramname"><em>H</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[Any] &#160;</td>
+          <td class="paramname"><em>G</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[Any] &#160;</td>
+          <td class="paramname"><em>L</em> = <code>None</code>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
@@ -1215,9 +1735,9 @@ for a given code matrix, CSS code, or DEM.
 Returns:
     dict with keys {"dist", "dmin", "dmax", "rw_steps", ...} or None if not cached.
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00196">196</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00241">241</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00167">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00266">get_sparse_array_state()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00094">load_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00318">get_sparse_array_state()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
 
@@ -1238,7 +1758,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Returns the global distance cache dictionary.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00161">161</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00162">162</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>.</p>
 
 </div>
 </div>
@@ -1258,9 +1780,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Returns a deterministic string representation for JSON-compatible cache keys.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00266">266</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00318">318</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00206">get_cached_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00253">get_cached_distance()</a>.</p>
 
 </div>
 </div>
@@ -1281,9 +1803,9 @@ Returns:
 </div><div class="memdoc">
 <pre class="fragment">Loads distance cache from a JSON file into memory.
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00094">94</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00095">95</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00206">get_cached_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00081">set_distance_cache_file()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00253">get_cached_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00082">set_distance_cache_file()</a>.</p>
 
 </div>
 </div>
@@ -1303,11 +1825,11 @@ Returns:
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01519">1519</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l02028">2028</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l01316">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00155">disable_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00188">format_bounds_str()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01325">parse_cli_args()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l01482">print_cli_help()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l01786">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00544">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00156">disable_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00197">explain_bounds()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00189">format_bounds_str()</a>, <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01795">parse_cli_args()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l01985">print_cli_help()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00355">test_dist_m4ri.test_cli_css_dx_dz_bounds()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00413">test_dist_m4ri.test_cli_identical_finc_outc_nonexistent()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00369">test_dist_m4ri.test_cli_verbose_mode()</a>.</p>
 
 </div>
 </div>
@@ -1327,9 +1849,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Parses CLI arguments supporting both key=value pairs and standard --flags.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01325">1325</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01795">1795</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00294">test_dist_m4ri.test_cli_argument_parsing()</a>.</p>
 
 </div>
 </div>
@@ -1354,9 +1876,9 @@ Expected format on stdout: "dmin dmax rw_steps", "dmin dmax", or a single intege
 Returns:
     tuple (dmin, dmax, rw_steps)
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00375">375</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00427">427</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00518">run_dist_m4ri()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00594">run_dist_m4ri()</a>.</p>
 
 </div>
 </div>
@@ -1375,9 +1897,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01482">1482</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01985">1985</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01519">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02028">main()</a>.</p>
 
 </div>
 </div>
@@ -1405,14 +1927,14 @@ Args:
 Returns:
     list of list of int: A list where each element is a 0-based sparse vector.
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00303">303</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00355">355</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
-<a id="a0bd48c1dba073c6ed03f3a9aeb1ba033" name="a0bd48c1dba073c6ed03f3a9aeb1ba033"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a0bd48c1dba073c6ed03f3a9aeb1ba033">&#9670;&#160;</a></span>run_dist_m4ri()</h2>
+<a id="a261318a1af1981f911006d833c2508e9" name="a261318a1af1981f911006d833c2508e9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a261318a1af1981f911006d833c2508e9">&#9670;&#160;</a></span>run_dist_m4ri()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1446,6 +1968,18 @@ Returns:
           <td></td>
           <td class="paramtype">Optional[str] &#160;</td>
           <td class="paramname"><em>finL</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>fin</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[str] &#160;</td>
+          <td class="paramname"><em>finC</em> = <code>None</code>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
@@ -1516,6 +2050,30 @@ Returns:
         <tr>
           <td class="paramkey"></td>
           <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>start</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cbeg</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>cend</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Optional[int] &#160;</td>
+          <td class="paramname"><em>css</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
           <td class="paramtype">int &#160;</td>
           <td class="paramname"><em>noscan</em> = <code>0</code>, </td>
         </tr>
@@ -1579,11 +2137,11 @@ Returns:
 Returns:
     tuple (dmin, dmax, rw_steps)
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00492">492</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00562">562</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00346">find_dist_m4ri_binary()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00375">parse_dist_m4ri_output()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00544">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00398">find_dist_m4ri_binary()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00427">parse_dist_m4ri_output()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00149">test_dist_m4ri.test_run_dist_m4ri_three_numbers()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00149">test_dist_m4ri.test_run_dist_m4ri_three_numbers()</a>.</p>
 
 </div>
 </div>
@@ -1605,9 +2163,9 @@ Returns:
 <pre class="fragment">Saves the in-memory distance cache to a JSON file.
 Uses atomic write via a temporary file to prevent corruption.
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00111">111</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00112">112</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00626">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00826">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l01115">compute_dem_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00718">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01223">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01558">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00955">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
@@ -1629,9 +2187,9 @@ Uses atomic write via a temporary file to prevent corruption.
 <pre class="fragment">Sets the default JSON file for persistent distance caching.
 If the file exists, its contents are loaded into memory.
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00081">81</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00082">82</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00094">load_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>.</p>
 
 </div>
 </div>
@@ -1656,7 +2214,7 @@ If the file exists, its contents are loaded into memory.
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00027">27</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00028">28</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1680,7 +2238,7 @@ If the file exists, its contents are loaded into memory.
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00077">77</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00078">78</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1704,7 +2262,7 @@ If the file exists, its contents are loaded into memory.
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00072">72</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00073">73</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1728,7 +2286,7 @@ If the file exists, its contents are loaded into memory.
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00074">74</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00075">75</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1752,7 +2310,7 @@ If the file exists, its contents are loaded into memory.
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00028">28</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00029">29</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1776,7 +2334,7 @@ If the file exists, its contents are loaded into memory.
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00078">78</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00079">79</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1800,7 +2358,7 @@ If the file exists, its contents are loaded into memory.
 </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00073">73</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00074">74</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1816,7 +2374,7 @@ If the file exists, its contents are loaded into memory.
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00261">261</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00313">313</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1832,7 +2390,7 @@ If the file exists, its contents are loaded into memory.
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00263">263</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00315">315</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>
@@ -1848,7 +2406,7 @@ If the file exists, its contents are loaded into memory.
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00262">262</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00314">314</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
 </div>
 </div>

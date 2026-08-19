@@ -10,5 +10,6 @@ var searchData=
   ['examples_7',['CLI Examples',['../md_README.html#autotoc_md26',1,'']]],
   ['examples_5fdir_8',['EXAMPLES_DIR',['../namespacetest__dist__m4ri.html#afed76f6f9fe972266596664ec821c9a3',1,'test_dist_m4ri']]],
   ['expand_5fmult_9',['expand_mult',['../structUT__hash__bucket.html#a9b739c1b69c141e8198c0c64af643b2b',1,'UT_hash_bucket']]],
-  ['export_20tt_20outc_20tt_20tt_20finc_20tt_10',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md23',1,'']]]
+  ['explain_5fbounds_10',['explain_bounds',['../namespacedist__m4ri.html#ad3ccec3864f2c33e676b60f0feff0e2d',1,'dist_m4ri']]],
+  ['export_20tt_20outc_20tt_20tt_20finc_20tt_11',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md23',1,'']]]
 ];

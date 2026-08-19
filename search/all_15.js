@@ -9,7 +9,7 @@ var searchData=
   ['role_20of_20tt_20dexp_20tt_20_3a_6',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md19',1,'']]],
   ['rows_7',['rows',['../namespacegen__segfault__matrix.html#aa8017377dc391d27cf393e6b878fbec4',1,'gen_segfault_matrix.rows'],['../structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d',1,'csr_t::rows']]],
   ['run_20it_8',['How to run it',['../index.html#autotoc_md6',1,'']]],
-  ['run_5fdist_5fm4ri_9',['run_dist_m4ri',['../namespacedist__m4ri.html#a0bd48c1dba073c6ed03f3a9aeb1ba033',1,'dist_m4ri']]],
+  ['run_5fdist_5fm4ri_9',['run_dist_m4ri',['../namespacedist__m4ri.html#a261318a1af1981f911006d833c2508e9',1,'dist_m4ri']]],
   ['rw_20algorithm_20method_201_10',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
   ['rw_20algorithm_20tt_20method_201_20tt_11',['1. Multithreaded RW Algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)',['../md_README.html#autotoc_md16',1,'']]],
   ['rw_5fsteps_12',['rw_steps',['../classdist__m4ri_1_1DistanceResult.html#a0a214e842180f4c29ed491de4ab12236',1,'dist_m4ri::DistanceResult']]],
