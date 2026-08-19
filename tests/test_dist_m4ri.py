@@ -281,15 +281,164 @@ def test_persistent_json_cache(tmp_path):
     assert not os.path.exists(json_file)
 
 
-def test_wmin_greater_than_dmax():
-    hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
-    # When dmax=5 and wmin=7, wmin >= dmax should terminate immediately without search
-    d, d_info = dist_m4ri.compute_classical_distance(
-        H=hx_file, dmax=5, wmin=7, return_info=True, threads=4
+def test_quantum_distance_single_sided():
+    h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    dist, d_info = dist_m4ri.compute_quantum_distance(
+        H=h_file, L=l_file, method=3, d_exp=5, threads=4, return_info=True
     )
-    assert d == 5
-    assert d_info == [0, 5, 0]
+    assert dist == 5
+    assert d_info == [5, 5, 0]
+
+
+def test_cli_argument_parsing():
+    # Auto-infer classical = 0 when finG or finL is given
+    args1 = dist_m4ri.parse_cli_args(["finH=h.mtx", "finG=g.mtx", "smax=0", "finC=init.nz", "start=2"])
+    assert args1["classical"] == 0
+    assert args1["finH"] == "h.mtx"
+    assert args1["finG"] == "g.mtx"
+    assert args1["smax"] == 0
+    assert args1["finC"] == "init.nz"
+    assert args1["start"] == 2
+
+    # Auto-infer classical = 1 when only finH is given
+    args2 = dist_m4ri.parse_cli_args(["finH=h.mtx", "method=2"])
+    assert args2["classical"] == 1
+    assert args2["finH"] == "h.mtx"
+    assert args2["finG"] is None
+
+    # Auto-infer classical = 0 when fdem is given
+    args3 = dist_m4ri.parse_cli_args(["fdem=model.dem"])
+    assert args3["classical"] == 0
+
+
+def test_quantum_cache_separation():
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+
+    h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+
+    # Classical distance of H
+    d_class = dist_m4ri.compute_classical_distance(h_file, dmax=5, threads=4)
+    # Quantum distance of (H, L)
+    d_quant = dist_m4ri.compute_quantum_distance(h_file, L=l_file, dmax=5, threads=4)
+
+    cache = dist_m4ri.get_distance_cache()
+    class_keys = [k for k in cache if k.startswith("classical:")]
+    quant_keys = [k for k in cache if k.startswith("quantum:")]
+
+    assert len(class_keys) >= 1
+    assert len(quant_keys) >= 1
+
+    dist_m4ri.clear_distance_cache()
+
+
+def test_explain_bounds():
+    # Exact distance
+    exp1 = dist_m4ri.explain_bounds([5, 5, 0], method=2, label="dX")
+    assert "Lower bound (dmin = 5): Exact distance certified" in exp1
+    assert "Upper bound (dmax = 5): Weight of the smallest non-trivial codeword discovered" in exp1
+    assert "Random window steps (rw_steps = 0): Set to 0 because the exact distance d = 5 was proven" in exp1
+
+    # Pure lower bound in method 2
+    exp2 = dist_m4ri.explain_bounds([4, 0, 0], method=2)
+    assert "All cluster weights w <= 3 were exhaustively analyzed" in exp2
+    assert "Method 2 (Connected Cluster) is an exhaustive search" in exp2
+
+    # RW search
+    exp3 = dist_m4ri.explain_bounds([1, 8, 120], method=1)
+    assert "No non-trivial lower bound certified" in exp3
+    assert "120 completed random information set searches" in exp3
+
+
+def test_cli_css_dx_dz_bounds(capsys):
+    hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    lz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    ret = dist_m4ri.main([
+        f"Hx={hx_file}", f"Hz={hx_file}", f"Lx={lz_file}", f"Lz={lz_file}",
+        "method=2", "wmax=5", "--no-cache", "threads=4"
+    ])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "dX: 5 5 0 (exact)" in captured.out
+    assert "dZ: 5 5 0 (exact)" in captured.out
+    assert "(d = 5) (exact)" in captured.out
+
+
+def test_cli_verbose_mode(capsys):
+    h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    ret = dist_m4ri.main([
+        "--verbose", "method=2", f"finH={h_file}", f"finL={l_file}",
+        "wmax=5", "threads=4"
+    ])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Cache retrieval:" in captured.out
+    assert "Lower bound" in captured.out
+    assert "Upper bound" in captured.out
+    assert "Random window steps" in captured.out
+
+
+def test_check_finc_outc():
+    import tempfile
+
+    # Non-existent file when finC == outC
+    assert dist_m4ri.check_finc_outc("nonexistent.nz", "nonexistent.nz") is None
+
+    # Non-existent file when finC != outC
+    assert dist_m4ri.check_finc_outc("nonexistent.nz", "other.nz") == "nonexistent.nz"
+
+    # Empty 0-byte file when finC == outC
+    with tempfile.NamedTemporaryFile(suffix=".nz", delete=False) as f:
+        tmp_empty = f.name
+    try:
+        assert dist_m4ri.check_finc_outc(tmp_empty, tmp_empty) is None
+    finally:
+        if os.path.exists(tmp_empty):
+            os.remove(tmp_empty)
+
+    # Existing non-empty file when finC == outC
+    with tempfile.NamedTemporaryFile(suffix=".nz", delete=False, mode="w") as f:
+        f.write("1 2 3\n")
+        tmp_nonempty = f.name
+    try:
+        assert dist_m4ri.check_finc_outc(tmp_nonempty, tmp_nonempty) == tmp_nonempty
+    finally:
+        if os.path.exists(tmp_nonempty):
+            os.remove(tmp_nonempty)
+
+
+def test_cli_identical_finc_outc_nonexistent(capsys):
+    import tempfile
+    h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+    l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    
+    tmp_out = os.path.join(tempfile.gettempdir(), f"tmp_test_cw_{os.getpid()}.nz")
+    if os.path.exists(tmp_out):
+        os.remove(tmp_out)
+
+    try:
+        ret = dist_m4ri.main([
+            "--verbose", "--no-cache", "method=2",
+            f"finH={h_file}", f"finL={l_file}",
+            f"finC={tmp_out}", f"outC={tmp_out}",
+            "wmax=5", "threads=4"
+        ])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "Warning: finC=" in captured.out
+        assert "is empty or non-existent; silently ignoring input codewords." in captured.out
+        assert "5 5 0 (exact)" in captured.out
+        assert os.path.exists(tmp_out)
+    finally:
+        if os.path.exists(tmp_out):
+            os.remove(tmp_out)
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+
