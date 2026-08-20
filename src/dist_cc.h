@@ -112,41 +112,29 @@ static inline int one_ordered_search(one_vec_t * const err, const int val){
     return -1;
 } 
 
+/** @brief delete `val` in known position `pos` from ordered array */
+static inline void one_ordered_pos_del(
+    one_vec_t * const err, _maybe_unused const int val, const int pos
+) {
+#ifndef NDEBUG
+  if ((pos < 0) || (pos >= err->wei) || (err->wei == 0)
+      || (err->vec[pos] != val))
+    ERROR("this should not happen!");
+#endif
+  err->wei--; 
+  for (int i = pos; i < err->wei; i++)
+    err->vec[i] = err->vec[i + 1];
+}
+
 /** @brief delete `val` (if originally present) from ordered array 
  *  @return 1 if `val` was found, 0 otherwise 
  */
-static inline int one_ordered_find_del(one_vec_t * const err, const int val){
-  /** binary search for pos of `j` */
-  int bot=0, top=err->wei, mid=0;
-#ifndef NDEBUG  
-  if (!top)
+static inline int one_ordered_find_del(one_vec_t * const err, const int val) {
+  int pos = one_ordered_search(err, val);
+  if (pos == -1)
     return 0;
-#endif   
-  while(top - bot > 1){
-    mid = (top+bot) >> 1;
-    if (err->vec[mid] <= val)
-      bot = mid;
-    else
-      top = mid;
-  }
-  if ( err->vec[mid] != val)
-    return 0;
-  
-  for(int i=mid; i < err->wei; i++)
-      err->vec[i] = err->vec[i+1];
-  err->wei --;
+  one_ordered_pos_del(err, val, pos);
   return 1;
-}
-
-/** @brief delete `val` in known position `pos` from ordered array */
-static inline void one_ordered_pos_del(one_vec_t * const err, _maybe_unused const int val, const int pos){
-#ifndef NDEBUG
-  if ((pos<0) || (pos >= err->wei) || (err->wei == 0) || (err->vec[pos] != val))
-    ERROR("this should not happen!");
-#endif
-  err->wei --; 
-  for(int i=pos; i < err->wei; i++)
-      err->vec[i] = err->vec[i+1];
 }
 
 int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],

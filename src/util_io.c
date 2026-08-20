@@ -477,16 +477,16 @@ void var_kill(params_t * const p){
     csr_free(p->spaH);
   if(p->spaG)
     csr_free(p->spaG);
-#if 0
-  if(strlen(p->fin) != 0){
-    if(p->finH){
-      printf("freeing finH=%s\n", p->finH);
+  if (strlen(p->fin) != 0) {
+    if (p->finH) {
       free(p->finH);
+      p->finH = NULL;
     }
-    if(p->finG)
-      free(p->finH);    
+    if (p->finG) {
+      free(p->finG);
+      p->finG = NULL;
+    }
   }
-#endif
 
   cw_vec_t *cw, *tmp;
   HASH_ITER(hh, p->codewords, cw, tmp) {

@@ -381,12 +381,19 @@ static void *worker_thread_func(void *arg) {
   }
 
   /* Thread-local CC memory */
-  const int wmax = ctx->p->wmax > 0 ? ctx->p->wmax : 100;
-  one_vec_t *err = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 2));
-  one_vec_t *urr = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax + 2));
-  one_vec_t **syn = calloc(wmax + 3, sizeof(one_vec_t *));
-  for (int i = 0; i <= wmax + 2; i++) {
-    syn[i] = calloc(1, sizeof(one_vec_t) + sizeof(int) * (ctx->p->spaH->rows + 1));
+  const int wmax_alloc = (ctx->p->wmax > 0 && ctx->p->wmax < MAX_W)
+                         ? ctx->p->wmax : (MAX_W - 1);
+  one_vec_t *err = calloc(
+      1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2)
+  );
+  one_vec_t *urr = calloc(
+      1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2)
+  );
+  one_vec_t **syn = calloc(wmax_alloc + 3, sizeof(one_vec_t *));
+  for (int i = 0; i <= wmax_alloc + 2; i++) {
+    syn[i] = calloc(
+        1, sizeof(one_vec_t) + sizeof(int) * (ctx->p->spaH->rows + 1)
+    );
   }
 
   while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
@@ -475,7 +482,7 @@ static void *worker_thread_func(void *arg) {
     safe_mzd_free(mH);
   }
 
-  for (int i = 0; i <= wmax + 2; i++) free(syn[i]);
+  for (int i = 0; i <= wmax_alloc + 2; i++) free(syn[i]);
   free(syn);
   free(err);
   free(urr);
@@ -691,8 +698,10 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       target_cc_w = nvar;
     }
 
-    if (ctx->p->wmax > 0 && target_cc_w > ctx->p->wmax) {
-      target_cc_w = ctx->p->wmax;
+    int max_allowed_w = (ctx->p->wmax > 0)
+                        ? minint(ctx->p->wmax, MAX_W - 2) : (MAX_W - 2);
+    if (target_cc_w > max_allowed_w) {
+      target_cc_w = max_allowed_w;
     }
 
     if (cur_dmax > 0 && cur_dmin >= cur_dmax && w > target_cc_w) {
@@ -804,7 +813,9 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_round_active, 0);
 
     double cc_dur = get_time_sec() - cc_start;
-    ctx->cc_time_per_weight[w] = cc_dur * (double)n_cc;
+    if (w < MAX_W) {
+      ctx->cc_time_per_weight[w] = cc_dur * (double)n_cc;
+    }
 
     int cw_found = atomic_load(&ctx->cc_found_weight);
     if (cw_found > 0) {
@@ -924,7 +935,7 @@ int main(int argc, char **argv) {
     if (p->debug & 2) {
       fprintf(stderr, "# early termination due to wmin=%d (known dmax=%d <= wmin)\n", p->wmin, init_dmax);
     }
-    printf("%d %d 0\n", p->dmin > 1 ? p->dmin : 0, init_dmax);
+    printf("%d %d 0\n", p->dmin > 1 ? p->dmin : 1, init_dmax);
     var_kill(p);
     return 0;
   }
