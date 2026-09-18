@@ -10,6 +10,7 @@ var searchData=
   ['algorithm_20tt_20method_202_20tt_7',['2. Multithreaded CC Algorithm (&lt;tt&gt;method=2&lt;/tt&gt;)',['../md_README.html#autotoc_md17',1,'']]],
   ['allocation_20role_20of_20tt_20dexp_20tt_20_3a_8',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md19',1,'']]],
   ['and_20code_20contributions_9',['Issue reporting and code contributions',['../md_CONTRIBUTING.html#autotoc_md1',1,'']]],
-  ['arr_10',['arr',['../structCW__VEC__T.html#a4c30a39a9f5e151be61422a6406b0605',1,'CW_VEC_T']]],
-  ['avg_5frw_5fstep_5ftime_11',['avg_rw_step_time',['../structdistfork__ctx__t.html#a5f961da672b6513be1af598977b28b50',1,'distfork_ctx_t']]]
+  ['and_20help_20system_10',['Command-Line Usage and Help System',['../md_README.html#autotoc_md26',1,'']]],
+  ['arr_11',['arr',['../structCW__VEC__T.html#a4c30a39a9f5e151be61422a6406b0605',1,'CW_VEC_T']]],
+  ['avg_5frw_5fstep_5ftime_12',['avg_rw_step_time',['../structdistfork__ctx__t.html#a5f961da672b6513be1af598977b28b50',1,'distfork_ctx_t']]]
 ];

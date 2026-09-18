@@ -13,6 +13,7 @@ var searchData=
   ['_5fget_5fcodedistance_10',['_get_codedistance',['../namespacedist__m4ri.html#abe9d4b5b6178933bdf4ac98dfb339950',1,'dist_m4ri']]],
   ['_5fget_5fstim_11',['_get_stim',['../namespacedist__m4ri.html#a1b46eb60f8acb8fb9915f031b379a1b5',1,'dist_m4ri']]],
   ['_5fmatrix_5fto_5ffile_12',['_matrix_to_file',['../namespacedist__m4ri.html#a31b20c374ff5c4bc18df5575f691a77c',1,'dist_m4ri']]],
-  ['_5fsplit_5fcss_5ffilename_13',['_split_css_filename',['../namespacedist__m4ri.html#ad7b27e6febedf7a0850a0edaaa9e3737',1,'dist_m4ri']]],
-  ['_5fwrite_5fnzlist_5ffile_14',['_write_nzlist_file',['../namespacedist__m4ri.html#a4047c86bb3f13df192c6aabac6b76a25',1,'dist_m4ri']]]
+  ['_5fparse_5fversion_13',['_parse_version',['../namespacedist__m4ri.html#a3aa637d1b2305040b2143ca342e7572f',1,'dist_m4ri']]],
+  ['_5fsplit_5fcss_5ffilename_14',['_split_css_filename',['../namespacedist__m4ri.html#ad7b27e6febedf7a0850a0edaaa9e3737',1,'dist_m4ri']]],
+  ['_5fwrite_5fnzlist_5ffile_15',['_write_nzlist_file',['../namespacedist__m4ri.html#a4047c86bb3f13df192c6aabac6b76a25',1,'dist_m4ri']]]
 ];

@@ -10,5 +10,5 @@ var searchData=
   ['worker_5farg_5ft_7',['worker_arg_t',['../structworker__arg__t.html',1,'']]],
   ['works_3a_20cc_20algorithm_20method_202_8',['How it works: CC algorithm (method=2).',['../index.html#autotoc_md5',1,'']]],
   ['works_3a_20rw_20algorithm_20method_201_9',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md4',1,'']]],
-  ['wrapper_20tt_20dist_5fm4ri_20py_20tt_10',['Python Wrapper (&lt;tt&gt;dist_m4ri.py&lt;/tt&gt;)',['../md_README.html#autotoc_md29',1,'']]]
+  ['wrapper_20tt_20dist_5fm4ri_20py_20tt_10',['Python Wrapper (&lt;tt&gt;dist_m4ri.py&lt;/tt&gt;)',['../md_README.html#autotoc_md31',1,'']]]
 ];

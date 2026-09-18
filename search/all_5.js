@@ -19,9 +19,10 @@ var searchData=
   ['_5fgnu_5fsource_16',['_GNU_SOURCE',['../dist__m4ri_8c.html#a369266c24eacffb87046522897a570d5',1,'dist_m4ri.c']]],
   ['_5fmatrix_5fto_5ffile_17',['_matrix_to_file',['../namespacedist__m4ri.html#a31b20c374ff5c4bc18df5575f691a77c',1,'dist_m4ri']]],
   ['_5fmaybe_5funused_18',['_maybe_unused',['../mmio_8c.html#a2e7a5d6297b074e7b1499afaaa7af841',1,'_maybe_unused:&#160;mmio.c'],['../util__io_8h.html#a2e7a5d6297b074e7b1499afaaa7af841',1,'_maybe_unused:&#160;util_io.h']]],
-  ['_5fsplit_5fcss_5ffilename_19',['_split_css_filename',['../namespacedist__m4ri.html#ad7b27e6febedf7a0850a0edaaa9e3737',1,'dist_m4ri']]],
-  ['_5fstim_5fmod_20',['_stim_mod',['../namespacedist__m4ri.html#a843edc32427a3b9a8c51ff05cf8f278e',1,'dist_m4ri']]],
-  ['_5fuse_5fcss_5fdistance_5fcache_21',['_use_css_distance_cache',['../namespacedist__m4ri.html#a5ce5a9255596a426f569c75296c423a6',1,'dist_m4ri']]],
-  ['_5fuse_5fdistance_5fcache_22',['_use_distance_cache',['../namespacedist__m4ri.html#ac259efdb51f43647e67dc82802ff28d0',1,'dist_m4ri']]],
-  ['_5fwrite_5fnzlist_5ffile_23',['_write_nzlist_file',['../namespacedist__m4ri.html#a4047c86bb3f13df192c6aabac6b76a25',1,'dist_m4ri']]]
+  ['_5fparse_5fversion_19',['_parse_version',['../namespacedist__m4ri.html#a3aa637d1b2305040b2143ca342e7572f',1,'dist_m4ri']]],
+  ['_5fsplit_5fcss_5ffilename_20',['_split_css_filename',['../namespacedist__m4ri.html#ad7b27e6febedf7a0850a0edaaa9e3737',1,'dist_m4ri']]],
+  ['_5fstim_5fmod_21',['_stim_mod',['../namespacedist__m4ri.html#a843edc32427a3b9a8c51ff05cf8f278e',1,'dist_m4ri']]],
+  ['_5fuse_5fcss_5fdistance_5fcache_22',['_use_css_distance_cache',['../namespacedist__m4ri.html#a5ce5a9255596a426f569c75296c423a6',1,'dist_m4ri']]],
+  ['_5fuse_5fdistance_5fcache_23',['_use_distance_cache',['../namespacedist__m4ri.html#ac259efdb51f43647e67dc82802ff28d0',1,'dist_m4ri']]],
+  ['_5fwrite_5fnzlist_5ffile_24',['_write_nzlist_file',['../namespacedist__m4ri.html#a4047c86bb3f13df192c6aabac6b76a25',1,'dist_m4ri']]]
 ];

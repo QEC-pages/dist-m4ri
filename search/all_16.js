@@ -4,7 +4,7 @@ var searchData=
   ['read_5fdem_5ffile_1',['read_dem_file',['../util__io_8h.html#a0d24c5677bd19ec529d6d6cbccd4ff9b',1,'read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug):&#160;util_io.c'],['../util__io_8c.html#a0d24c5677bd19ec529d6d6cbccd4ff9b',1,'read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int debug):&#160;util_io.c']]],
   ['read_5fsparse_5fvectors_2',['read_sparse_vectors',['../namespacedist__m4ri.html#a8cf50ce34fc2fc29006bdba900ac1ad2',1,'dist_m4ri']]],
   ['readme_2emd_3',['README.md',['../README_8md.html',1,'']]],
-  ['references_4',['references',['../md_README.html#autotoc_md38',1,'References'],['../index.html#autotoc_md9',1,'References']]],
+  ['references_4',['references',['../md_README.html#autotoc_md40',1,'References'],['../index.html#autotoc_md9',1,'References']]],
   ['reporting_20and_20code_20contributions_5',['Issue reporting and code contributions',['../md_CONTRIBUTING.html#autotoc_md1',1,'']]],
   ['role_20of_20tt_20dexp_20tt_20_3a_6',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md19',1,'']]],
   ['rows_7',['rows',['../namespacegen__segfault__matrix.html#aa8017377dc391d27cf393e6b878fbec4',1,'gen_segfault_matrix.rows'],['../structcsr__t.html#ab1f6b5797cf5dd0b305e23118323b85d',1,'csr_t::rows']]],

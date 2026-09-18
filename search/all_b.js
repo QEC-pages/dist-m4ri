@@ -4,7 +4,7 @@ var searchData=
   ['fin_1',['fin',['../structparams__t.html#a955e8b9d37a7dd87ce2b43dc34f51ff5',1,'params_t']]],
   ['finc_2',['finC',['../structparams__t.html#a092a5b2b8c167837fa8b48a77af77a96',1,'params_t']]],
   ['finc_20tt_3',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md24',1,'']]],
-  ['find_20upper_20bound_20on_20the_20distance_4',['operation mode: find upper bound on the distance.',['../md_todo.html#autotoc_md41',1,'']]],
+  ['find_20upper_20bound_20on_20the_20distance_4',['operation mode: find upper bound on the distance.',['../md_todo.html#autotoc_md43',1,'']]],
   ['find_5fdist_5fm4ri_5fbinary_5',['find_dist_m4ri_binary',['../namespacedist__m4ri.html#a09fdbac5261d1261a975d8ec7e9a95d0',1,'dist_m4ri']]],
   ['fing_6',['finG',['../structparams__t.html#a784ac56cc7097b61176da3ac379b8e46',1,'params_t']]],
   ['finh_7',['finH',['../structparams__t.html#a29c580219768d9851f7efbbffb5193ad',1,'params_t']]],
@@ -14,5 +14,6 @@ var searchData=
   ['format_20stream_20separation_11',['Output Format &amp; Stream Separation',['../md_README.html#autotoc_md13',1,'']]],
   ['format_5fbounds_5flist_12',['format_bounds_list',['../namespacedist__m4ri.html#a119162910a3b61bf61ae1326972f6ee3',1,'dist_m4ri']]],
   ['format_5fbounds_5fstr_13',['format_bounds_str',['../namespacedist__m4ri.html#a0f48db667d0b97b5f158b2fd3defe56a',1,'dist_m4ri']]],
-  ['functions_14',['Key Python Functions',['../md_README.html#autotoc_md30',1,'']]]
+  ['full_20parameter_20listing_20tt_20dist_5fm4ri_20morehelp_20tt_14',['Full Parameter Listing (&lt;tt&gt;dist_m4ri --morehelp&lt;/tt&gt;)',['../md_README.html#autotoc_md28',1,'']]],
+  ['functions_15',['Key Python Functions',['../md_README.html#autotoc_md32',1,'']]]
 ];
