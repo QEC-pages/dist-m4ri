@@ -13,41 +13,53 @@ jobs:
         steps:
         - uses: actions/checkout@v4
           with:                                                                                                                                                                     
-               fetch-depth: 0                                                                                                                                                          
+               fetch-depth: 0 
+               
+        - name: Verify Version Consistency & PR Increment                                                                                                                               
+          if: github.event_name == 'pull_request'                                                                                                                                       
+          run: |                                                                                                                                                                        
+            # 1. Verify version is synchronized across all project files in the PR                                                                                                      
+            python3 - << 'EOF'                                                                                                                                                          
+            import re, sys                                                                                                                                                              
                                                                                                                                                                                         
-        - name: Verify Version Consistency & PR Increment                                                                                                                           
-          if: github.event_name == 'pull_request'                                                                                                                                   
-          run: |                                                                                                                                                                    
-                # 1. Verify version is synchronized across all project files in the PR                                                                                                  
-                python3 -c "                                                                                                                                                            
-                import re, sys                                                                                                                                                          
-                cff = re.search(r'version:\s*v?([\d\.]+)', open('CITATION.cff').read()).group(1)                                                                                        
-                py = re.search(r'__version__\s*=\s*[\"\\\']([\d\.]+)[\"\\\']', open('dist_m4ri.py').read()).group(1)                                                                    
-                c = re.search(r'#define\s+DIST_M4RI_VERSION\s+[\"\\\']([\d\.]+)[\"\\\']', open('src/util_io.h').read()).group(1)                                                        
-                print(f'PR versions: CITATION.cff={cff}, dist_m4ri.py={py}, src/util_io.h={c}')                                                                                         
-                if not (cff == py == c):                                                                                                                                                
-                    print('Error: Version mismatch across project files!', file=sys.stderr)                                                                                             
-                    sys.exit(1)                                                                                                                                                         
-                "                                                                                                                                                                       
+            cff = re.search(r'^version:\s*v?([\d.]+)', open('CITATION.cff').read(), re.MULTILINE).group(1)                                                                              
+            py = re.search(r'__version__\s*=\s*["\']([\d.]+)["\']', open('dist_m4ri.py').read()).group(1)                                                                               
+            c = re.search(r'#define\s+DIST_M4RI_VERSION\s+["\']([\d.]+)["\']', open('src/util_io.h').read()).group(1)                                                                   
+            doxy = re.search(r'PROJECT_NUMBER\s*=\s*([\d.]+)', open('Doxyfile').read()).group(1)                                                                                        
                                                                                                                                                                                         
-                # 2. Compare against target base branch (e.g. master/main)                                                                                                              
-                git fetch origin ${{ github.base_ref }}                                                                                                                                 
-                BASE_VER=$(git show origin/${{ github.base_ref }}:CITATION.cff | grep '^version:' | awk '{print $2}' | tr -d 'v')                                                       
-                PR_VER=$(grep '^version:' CITATION.cff | awk '{print $2}' | tr -d 'v')                                                                                                  
-                echo "Base branch version: $BASE_VER"                                                                                                                                   
-                echo "PR branch version:   $PR_VER"                                                                                                                                     
-                python3 -c "                                                                                                                                                            
-                import re, sys                                                                                                                                                          
-                def parse_ver(v):                                                                                                                                                       
-                    return tuple(int(x) for x in re.findall(r'\d+', v))                                                                                                                 
-                base = parse_ver('$BASE_VER')                                                                                                                                           
-                pr = parse_ver('$PR_VER')                                                                                                                                               
-                if pr <= base:                                                                                                                                                          
-                    print(f'Error: Version must be incremented on PR! Base={base}, PR={pr}', file=sys.stderr)                                                                           
-                    sys.exit(1)                                                                                                                                                         
-                print(f'Success: Version incremented from {base} to {pr}')                                                                                                              
-                "                                       
-                
+            print(f"PR versions: CITATION.cff={cff}, dist_m4ri.py={py}, src/util_io.h={c}, Doxyfile={doxy}")                                                                            
+            if not (cff == py == c == doxy):                                                                                                                                            
+                print("Error: Version mismatch across project files!", file=sys.stderr)                                                                                                 
+                sys.exit(1)                                                                                                                                                             
+            print("Success: All project versions match.")                                                                                                                               
+            EOF                                                                                                                                                                         
+                                                                                                                                                                                        
+            # 2. Compare against target base branch (e.g. master/main)                                                                                                                  
+            git fetch origin ${{ github.base_ref }}                                                                                                                                     
+            BASE_CFF=$(git show origin/${{ github.base_ref }}:CITATION.cff 2>/dev/null || true)                                                                                         
+            BASE_VER=$(echo "$BASE_CFF" | grep '^version:' | awk '{print $2}' | tr -d 'v')
+            PR_VER=$(grep '^version:' CITATION.cff | awk '{print $2}' | tr -d 'v')
+            echo "Base branch version: $BASE_VER"
+            echo "PR branch version:   $PR_VER"
+            python3 - "$BASE_VER" "$PR_VER" << 'EOF'
+            import re, sys
+  
+            def parse_ver(v):
+                return tuple(int(x) for x in re.findall(r'\d+', v))
+  
+            base = parse_ver(sys.argv[1]) if sys.argv[1] else ()
+            pr = parse_ver(sys.argv[2]) if sys.argv[2] else ()
+  
+            if not base:
+                print("Warning: Could not determine base branch version, skipping increment check.")
+                sys.exit(0)
+  
+            if pr <= base:
+                print(f"Error: Version must be incremented on PR! Base={base}, PR={pr}", file=sys.stderr)
+                sys.exit(1)
+            print(f"Success: Version incremented from {base} to {pr}")
+            EOF
+            
         - name: Set up Python
           uses: actions/setup-python@v5
           with:
