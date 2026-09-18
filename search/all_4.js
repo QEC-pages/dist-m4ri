@@ -1,26 +1,4 @@
 var searchData=
 [
-  ['_5f_5feq_5f_5f_0',['__eq__',['../classdist__m4ri_1_1DistanceResult.html#a6c9ea0668ba5f56f032466eadcf7cdad',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5fgetattr_5f_5f_1',['__getattr__',['../namespacedist__m4ri.html#a136b341873a05496d776ab7d96d42b06',1,'dist_m4ri']]],
-  ['_5f_5fgetitem_5f_5f_2',['__getitem__',['../classdist__m4ri_1_1DistanceResult.html#aacfc8205ae2d806ea6f1263e4019f1a2',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5findex_5f_5f_3',['__index__',['../classdist__m4ri_1_1DistanceResult.html#a3a8be9051086024954b2a2d86aab0154',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5finit_5f_5f_4',['__init__',['../classdist__m4ri_1_1DistanceResult.html#a95c14ebbad7622c8759e9d82c3e28e4e',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5fint_5f_5f_5',['__int__',['../classdist__m4ri_1_1DistanceResult.html#a8684d1d144171af948927e22bbf5de01',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5fiter_5f_5f_6',['__iter__',['../classdist__m4ri_1_1DistanceResult.html#aab9e3bf67cdfd2b43eeaeb50ff45308e',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5flen_5f_5f_7',['__len__',['../classdist__m4ri_1_1DistanceResult.html#a72c6b62af41daaf48d590cdd4e4a0bfb',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5frepr_5f_5f_8',['__repr__',['../classdist__m4ri_1_1DistanceResult.html#a1e2b7462c714cb94b4464335e3702c96',1,'dist_m4ri::DistanceResult']]],
-  ['_5f_5fstr_5f_5f_9',['__str__',['../classdist__m4ri_1_1DistanceResult.html#a4248ca5298c01cedeab2149e7941347f',1,'dist_m4ri::DistanceResult']]],
-  ['_5fcodedistance_5fmod_10',['_codedistance_mod',['../namespacedist__m4ri.html#ac2b6dba5727b825b74bf40be5fb0f072',1,'dist_m4ri']]],
-  ['_5fcss_5fdistance_5fcache_11',['_css_distance_cache',['../namespacedist__m4ri.html#ab77b10f11f4c71f08e3cf67cffdd9dc6',1,'dist_m4ri']]],
-  ['_5fdistance_5fcache_12',['_distance_cache',['../namespacedist__m4ri.html#ae8c4275e5d6bfffe0723ebc1d98bfa61',1,'dist_m4ri']]],
-  ['_5fdistance_5fcache_5ffile_13',['_distance_cache_file',['../namespacedist__m4ri.html#a21ea5825cb227c70b4fbddb4fa53bcf4',1,'dist_m4ri']]],
-  ['_5fget_5fcodedistance_14',['_get_codedistance',['../namespacedist__m4ri.html#abe9d4b5b6178933bdf4ac98dfb339950',1,'dist_m4ri']]],
-  ['_5fget_5fstim_15',['_get_stim',['../namespacedist__m4ri.html#a1b46eb60f8acb8fb9915f031b379a1b5',1,'dist_m4ri']]],
-  ['_5fgnu_5fsource_16',['_GNU_SOURCE',['../dist__m4ri_8c.html#a369266c24eacffb87046522897a570d5',1,'dist_m4ri.c']]],
-  ['_5fmatrix_5fto_5ffile_17',['_matrix_to_file',['../namespacedist__m4ri.html#a31b20c374ff5c4bc18df5575f691a77c',1,'dist_m4ri']]],
-  ['_5fmaybe_5funused_18',['_maybe_unused',['../mmio_8c.html#a2e7a5d6297b074e7b1499afaaa7af841',1,'_maybe_unused:&#160;mmio.c'],['../util__io_8h.html#a2e7a5d6297b074e7b1499afaaa7af841',1,'_maybe_unused:&#160;util_io.h']]],
-  ['_5fstim_5fmod_19',['_stim_mod',['../namespacedist__m4ri.html#a843edc32427a3b9a8c51ff05cf8f278e',1,'dist_m4ri']]],
-  ['_5fuse_5fcss_5fdistance_5fcache_20',['_use_css_distance_cache',['../namespacedist__m4ri.html#a5ce5a9255596a426f569c75296c423a6',1,'dist_m4ri']]],
-  ['_5fuse_5fdistance_5fcache_21',['_use_distance_cache',['../namespacedist__m4ri.html#ac259efdb51f43647e67dc82802ff28d0',1,'dist_m4ri']]],
-  ['_5fwrite_5fnzlist_5ffile_22',['_write_nzlist_file',['../namespacedist__m4ri.html#a4047c86bb3f13df192c6aabac6b76a25',1,'dist_m4ri']]]
+  ['_3a_0',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md19',1,'']]]
 ];

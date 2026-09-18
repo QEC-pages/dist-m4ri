@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['_3a_0',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md19',1,'']]]
+  ['4_20multithreading_20throttling_20batch_20sizing_0',['4. Multithreading, Throttling &amp; Batch Sizing',['../md_README.html#autotoc_md20',1,'']]]
 ];
