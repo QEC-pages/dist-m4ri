@@ -599,6 +599,8 @@ def run_dist_m4ri(
     outC: Optional[str] = None,
     seed: int = 0,
     debug: int = 0,
+    nothrottle: bool = False,
+    chunk_size: int = 0,
     stop_event: Optional[threading.Event] = None
 ) -> Tuple[int, int, int]:
     """
@@ -628,12 +630,12 @@ def run_dist_m4ri(
     if dmin > 0: cmd.append(f"dmin={dmin}")
     if dmax > 0: cmd.append(f"dmax={dmax}")
     if wmax > 0: cmd.append(f"wmax={wmax}")
-    if wmin > 1: cmd.append(f"wmin={wmin}")
+    if wmin is not None and wmin != 1: cmd.append(f"wmin={wmin}")
     if dexp > 0: cmd.append(f"dexp={dexp}")
     elif dest > 0: cmd.append(f"dest={dest}")
-    if steps is not None and steps > 0: cmd.append(f"steps={steps}")
+    if steps is not None and steps >= 0: cmd.append(f"steps={steps}")
     if threads is not None and threads > 0: cmd.append(f"threads={threads}")
-    if timeout > 0: cmd.append(f"timeout={timeout}")
+    if timeout is not None and timeout >= 0: cmd.append(f"timeout={timeout}")
     if smax is not None: cmd.append(f"smax={smax}")
     if start is not None and start >= 0: cmd.append(f"start={start}")
     if cbeg is not None and cbeg >= 0: cmd.append(f"cbeg={cbeg}")
@@ -646,6 +648,8 @@ def run_dist_m4ri(
     if pmin > 0.0: cmd.append(f"pmin={pmin}")
     if outC: cmd.append(f"outC={outC}")
     if seed != 0: cmd.append(f"seed={seed}")
+    if nothrottle: cmd.append("nothrottle=1")
+    if chunk_size > 0: cmd.append(f"chunk_size={chunk_size}")
 
     if debug & 2:
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
@@ -723,7 +727,10 @@ def compute_classical_distance(
     codedistance_params: Optional[Dict[str, Any]] = None,
     seed: int = 0,
     debug: int = 0,
-    verbose: bool = False
+    verbose: bool = False,
+    nothrottle: bool = False,
+    chunk_size: int = 0,
+    **kwargs
 ) -> Any:
     """
     Computes the minimum distance of a classical linear code given parity check matrix H.
@@ -883,7 +890,9 @@ def compute_classical_distance(
             maxC=maxC,
             outC=outC_file,
             seed=seed,
-            debug=debug
+            debug=debug,
+            nothrottle=nothrottle,
+            chunk_size=chunk_size
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -979,7 +988,10 @@ def compute_quantum_distance(
     codedistance_params: Optional[Dict[str, Any]] = None,
     seed: int = 0,
     debug: int = 0,
-    verbose: bool = False
+    verbose: bool = False,
+    nothrottle: bool = False,
+    chunk_size: int = 0,
+    **kwargs
 ) -> Any:
     """
     Computes the minimum distance of a single-sided quantum code given parity check matrix H
@@ -1179,7 +1191,9 @@ def compute_quantum_distance(
             maxC=maxC,
             outC=outC_file,
             seed=seed,
-            debug=debug
+            debug=debug,
+            nothrottle=nothrottle,
+            chunk_size=chunk_size
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -1276,6 +1290,8 @@ def compute_css_distance(
     seed: int = 0,
     debug: int = 0,
     verbose: bool = False,
+    nothrottle: bool = False,
+    chunk_size: int = 0,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -1535,7 +1551,9 @@ def compute_css_distance(
                 maxC=maxC,
                 outC=outZ,
                 seed=seed,
-                debug=debug
+                debug=debug,
+                nothrottle=nothrottle,
+                chunk_size=chunk_size
             )
             dist_Z = dmin_z if (dmin_z == dmax_z or dmax_z == 0) else dmax_z
             if (do_cws or outC) and outZ and os.path.exists(outZ):
@@ -1568,7 +1586,9 @@ def compute_css_distance(
                 maxC=maxC,
                 outC=outX,
                 seed=seed,
-                debug=debug
+                debug=debug,
+                nothrottle=nothrottle,
+                chunk_size=chunk_size
             )
             dist_X = dmin_x if (dmin_x == dmax_x or dmax_x == 0) else dmax_x
             if (do_cws or outC) and outX and os.path.exists(outX):
@@ -1691,6 +1711,8 @@ def compute_dem_distance(
     seed: int = 0,
     debug: int = 0,
     verbose: bool = False,
+    nothrottle: bool = False,
+    chunk_size: int = 0,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -1870,7 +1892,9 @@ def compute_dem_distance(
             maxC=maxC,
             outC=outC_file,
             seed=seed,
-            debug=debug
+            debug=debug,
+            nothrottle=nothrottle,
+            chunk_size=chunk_size
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -1982,6 +2006,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "use_cache": True,
         "do_cws": False,
         "verbose": False,
+        "nothrottle": False,
+        "chunk_size": 0,
     }
 
     i = 0
@@ -1993,6 +2019,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
         if arg in ("-h", "--help", "help"):
             args["help"] = True
+            i += 1
+            continue
+
+        if arg in ("--no-throttle", "-no-throttle", "nothrottle", "--nothrottle"):
+            args["nothrottle"] = True
             i += 1
             continue
 
@@ -2119,6 +2150,12 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["verbose"] = bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
             elif key_lower == "cws":
                 args["do_cws"] = bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no"))
+            elif key_lower in ("nothrottle", "no_throttle"):
+                args["nothrottle"] = (
+                    bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
+                )
+            elif key_lower in ("chunk_size", "chunksize", "batch", "chunk"):
+                args["chunk_size"] = int(val)
 
         i += 1
 
@@ -2162,7 +2199,9 @@ Options:
   dexp=N                Expected distance estimate
   steps=N               Maximum RW steps (default: 1000 in method 3)
   threads=N             Worker threads (default: hardware concurrency)
-  timeout=SEC           Execution timeout in seconds (default: 60.0)
+  timeout=SEC           Execution timeout in seconds, 0 for infinite (default: 60.0)
+  nothrottle=1          Disable automatic thread throttling (also --no-throttle)
+  chunk_size=N          RW batch chunk size (default: adaptive 25-500)
   dW=N                  Extra weight window above dmin to collect codewords
   maxC=N                Maximum number of codewords to collect
   finC=FILE             Input file with initial codewords (NZLIST format)
@@ -2229,7 +2268,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 solver=args["solver"],
                 seed=args["seed"],
                 debug=args["debug"],
-                verbose=args["verbose"]
+                verbose=args["verbose"],
+                nothrottle=args["nothrottle"],
+                chunk_size=args["chunk_size"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res
@@ -2274,7 +2315,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 solver=args["solver"],
                 seed=args["seed"],
                 debug=args["debug"],
-                verbose=args["verbose"]
+                verbose=args["verbose"],
+                nothrottle=args["nothrottle"],
+                chunk_size=args["chunk_size"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, dx_info, dz_info, cws_x, cws_z = res
@@ -2345,7 +2388,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 solver=args["solver"],
                 seed=args["seed"],
                 debug=args["debug"],
-                verbose=args["verbose"]
+                verbose=args["verbose"],
+                nothrottle=args["nothrottle"],
+                chunk_size=args["chunk_size"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res
@@ -2389,7 +2434,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 solver=args["solver"],
                 seed=args["seed"],
                 debug=args["debug"],
-                verbose=args["verbose"]
+                verbose=args["verbose"],
+                nothrottle=args["nothrottle"],
+                chunk_size=args["chunk_size"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res

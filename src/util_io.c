@@ -46,7 +46,9 @@ params_t prm={
   .spaL=NULL,
   .threads=0,
   .dexp=0,
-  .timeout=60.0
+  .timeout=60.0,
+  .nothrottle=0,
+  .chunk_size=0
 };
 
 params_t * const p = &prm;
@@ -252,6 +254,22 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	fprintf(stderr, "# read %s, timeout=%g\n",argv[i],p->timeout);
     }
+    else if (sscanf(argv[i],"nothrottle=%d",&dbg)==1){
+      p->nothrottle=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, nothrottle=%d\n",argv[i],p->nothrottle);
+    }
+    else if (strcmp(argv[i], "--no-throttle") == 0 || strcmp(argv[i], "-no-throttle") == 0
+             || strcmp(argv[i], "nothrottle") == 0) {
+      p->nothrottle=1;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, nothrottle=1\n",argv[i]);
+    }
+    else if (sscanf(argv[i],"chunk_size=%d",&dbg)==1 || sscanf(argv[i],"batch=%d",&dbg)==1){
+      p->chunk_size=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, chunk_size=%d\n",argv[i],p->chunk_size);
+    }
     else{ /* unrecognized option */
       fprintf(stderr, "# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
       ERROR("try \"%s -h\" for options",argv[0]);
@@ -322,9 +340,9 @@ void var_init(int argc, char **argv, params_t * const p){
     }
   }
 
-  if(p->method &1 ){ /* RW */
-    if (p->steps<=0)
-      ERROR("parameter steps=%d should be positive for RW method=%d", p->steps,p->method);
+  if (p->method == 1) { /* RW */
+    if (p->steps <= 0)
+      ERROR("parameter steps=%d should be positive for RW method=%d", p->steps, p->method);
   }
   
 
@@ -882,7 +900,7 @@ long long int nzlist_read(const char fnam[], params_t *p){
     free(entry);
   }
   fclose(f);
-  if (skipped_invalid > 0) {
+  if (skipped_invalid > 0 && (p->debug & 2)) {
     fprintf(stderr, "# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n", skipped_invalid);
   }
   if(p->debug&1)

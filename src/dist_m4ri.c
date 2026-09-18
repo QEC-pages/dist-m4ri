@@ -381,8 +381,7 @@ static void *worker_thread_func(void *arg) {
   }
 
   /* Thread-local CC memory */
-  const int wmax_alloc = (ctx->p->wmax > 0 && ctx->p->wmax < MAX_W)
-                         ? ctx->p->wmax : (MAX_W - 1);
+  const int wmax_alloc = MAX_W - 1;
   one_vec_t *err = calloc(
       1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2)
   );
@@ -397,7 +396,7 @@ static void *worker_thread_func(void *arg) {
   }
 
   while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
-    if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+    if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
       atomic_store(&ctx->stop_flag, true);
       break;
     }
@@ -456,7 +455,32 @@ static void *worker_thread_func(void *arg) {
     if (enable_rw && !atomic_load(&ctx->stop_flag)) {
       long cur_s = atomic_load(&ctx->rw_steps_started);
       if (cur_s < ctx->total_rw_steps) {
-        long target_s = cur_s + 10;
+        long batch_size;
+        if (ctx->p->chunk_size > 0) {
+          batch_size = ctx->p->chunk_size;
+        } else {
+          int nvar = ctx->p->nvar;
+          if (nvar < 500) {
+            if (ctx->total_rw_steps >= 50000) batch_size = 500;
+            else if (ctx->total_rw_steps >= 1000) batch_size = 250;
+            else batch_size = 50;
+          } else if (nvar < 5000) {
+            if (ctx->total_rw_steps >= 10000) batch_size = 100;
+            else batch_size = 50;
+          } else {
+            /* Large matrices (e.g. n >= 5000): keep chunk bounded to ~2-3s */
+            if (ctx->total_rw_steps >= 10000) batch_size = 50;
+            else batch_size = 25;
+          }
+        }
+        /* Prevent thread starvation: ensure chunk size doesn't monopolize steps across threads */
+        if (ctx->num_threads > 1 && ctx->total_rw_steps > 0) {
+          long max_chunk = (ctx->total_rw_steps + ctx->num_threads - 1) / ctx->num_threads;
+          if (max_chunk >= 1 && batch_size > max_chunk) {
+            batch_size = max_chunk;
+          }
+        }
+        long target_s = cur_s + batch_size;
         if (target_s > ctx->total_rw_steps) target_s = ctx->total_rw_steps;
         if (atomic_compare_exchange_weak(&ctx->rw_steps_started, &cur_s, target_s)) {
           int n_steps = (int)(target_s - cur_s);
@@ -498,7 +522,7 @@ static void run_method1_coordinator(distfork_ctx_t *ctx) {
   }
 
   while (!atomic_load(&ctx->stop_flag)) {
-    if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+    if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
       atomic_store(&ctx->stop_flag, true);
       break;
     }
@@ -578,7 +602,7 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
 
     bool round_completed = false;
     while (!atomic_load(&ctx->stop_flag)) {
-      if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+      if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
         atomic_store(&ctx->stop_flag, true);
         break;
       }
@@ -673,8 +697,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
   while (!atomic_load(&ctx->stop_flag)) {
     double now = get_time_sec();
-    double remaining_time = ctx->timeout - (now - ctx->start_time);
-    if (remaining_time <= 0.0) {
+    double remaining_time = (ctx->timeout > 0.0) ? (ctx->timeout - (now - ctx->start_time)) : 1e9;
+    if (ctx->timeout > 0.0 && remaining_time <= 0.0) {
       atomic_store(&ctx->stop_flag, true);
       break;
     }
@@ -714,7 +738,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     if (w > target_cc_w) {
       /* Let remaining RW steps finish */
       while (!atomic_load(&ctx->stop_flag)) {
-        if (get_time_sec() - ctx->start_time >= ctx->timeout) break;
+        if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) break;
         if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
         usleep(1000);
       }
@@ -740,13 +764,13 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     }
 
     /* Check if CC for weight w can finish within timeout */
-    if (t_cc_est / ctx->num_threads > remaining_time * 1.5) {
+    if (ctx->timeout > 0.0 && (t_cc_est / ctx->num_threads > remaining_time * 1.5)) {
       if (ctx->p->debug & 2) {
         fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting %d threads to RW\n",
                 w, t_cc_est / ctx->num_threads, remaining_time, ctx->num_threads);
       }
       while (!atomic_load(&ctx->stop_flag)) {
-        if (get_time_sec() - ctx->start_time >= ctx->timeout) break;
+        if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) break;
         if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
         usleep(1000);
       }
@@ -799,7 +823,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     bool round_completed = false;
 
     while (!atomic_load(&ctx->stop_flag)) {
-      if (get_time_sec() - ctx->start_time >= ctx->timeout) {
+      if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
         atomic_store(&ctx->stop_flag, true);
         break;
       }
@@ -901,13 +925,59 @@ int main(int argc, char **argv) {
   }
 
   /* Determine number of threads */
+  int requested_threads = p->threads;
   int num_threads = p->threads;
   if (num_threads <= 0) {
     long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
     num_threads = (nprocs > 0) ? (int)nprocs : 4;
   }
 
-  double timeout = (p->timeout > 0.0) ? p->timeout : 60.0;
+  if (!p->nothrottle) {
+    /* Thread throttling for small codes and large-memory matrices */
+    int nvar = p->nvar;
+    int nrows = p->spaH ? p->spaH->rows : 0;
+    unsigned long long n_elements = (unsigned long long)nrows * (unsigned long long)nvar;
+
+    /* 1. Small-code throttling: avoid thread spawn/join and lock overhead */
+    if (nvar < 100 || n_elements < 100000ULL) {
+      if (num_threads > 4) num_threads = 4;
+    } else if (nvar < 300 || n_elements < 500000ULL) {
+      if (num_threads > 16) num_threads = 16;
+    }
+
+    /* 2. Large-matrix memory throttling: prevent DRAM bus & L3 cache thrashing */
+    if (nrows > 0 && nvar > 0) {
+      size_t words_H = ((size_t)nvar + 63) / 64;
+      size_t bytes_H = (size_t)nrows * words_H * 8;
+      size_t words_HT = ((size_t)nrows + 63) / 64;
+      size_t bytes_HT = (size_t)nvar * words_HT * 8;
+      size_t dense_bytes_per_thread = bytes_H + bytes_HT;
+
+      /* If dense memory per thread exceeds 15 MB, cap total memory at ~1.5 GB */
+      if (dense_bytes_per_thread > 15ULL * 1024 * 1024) {
+        int max_mem_threads = (int)((1536ULL * 1024 * 1024) / dense_bytes_per_thread);
+        if (max_mem_threads < 2) max_mem_threads = 2;
+        if (max_mem_threads > 32) max_mem_threads = 32;
+        if (num_threads > max_mem_threads) num_threads = max_mem_threads;
+      }
+    }
+
+    /* 3. Steps throttling for RW: don't spawn more threads than needed for small step counts */
+    if ((p->method & 1) && p->steps > 0) {
+      int max_step_threads = (p->steps + 9) / 10;
+      if (max_step_threads < 1) max_step_threads = 1;
+      if (num_threads > max_step_threads) num_threads = max_step_threads;
+    }
+
+    if (requested_threads > 0 && num_threads != requested_threads && (p->debug & 2)) {
+      fprintf(stderr, "# Note: throttled threads from %d to %d (n=%d, r=%d)\n",
+              requested_threads, num_threads, nvar, nrows);
+    }
+  } else if (p->debug & 2) {
+    fprintf(stderr, "# Thread throttling disabled (nothrottle=1); running with %d threads\n", num_threads);
+  }
+
+  double timeout = (p->timeout > 0.0) ? p->timeout : 0.0;
 
   distfork_ctx_t ctx;
   memset(&ctx, 0, sizeof(ctx));
@@ -916,7 +986,7 @@ int main(int argc, char **argv) {
   ctx.timeout = timeout;
   ctx.start_time = get_time_sec();
   ctx.dexp = p->dexp;
-  ctx.total_rw_steps = (p->steps > 0) ? p->steps : 1;
+  ctx.total_rw_steps = (p->steps >= 0) ? p->steps : 1;
 
   /* Initialize dmin and dmax */
   atomic_init(&ctx.dmin, p->dmin > 1 ? p->dmin : 1);
