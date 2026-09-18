@@ -169,7 +169,9 @@ def test_dmin_dmax_parameters():
     # Test dmin/dmax in run_dist_m4ri
     h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
-    dmin, dmax, rw_steps = dist_m4ri.run_dist_m4ri(method=3, finH=h_file, finL=l_file, dmin=4, dmax=5, timeout=5, threads=4)
+    dmin, dmax, rw_steps = dist_m4ri.run_dist_m4ri(
+        method=3, finH=h_file, finL=l_file, dmin=4, dmax=5, timeout=5, threads=4
+    )
     assert (dmin, dmax) == (5, 5)
 
     # Test dmin/dmax in compute_classical_distance
@@ -435,6 +437,90 @@ def test_cli_identical_finc_outc_nonexistent(capsys):
     finally:
         if os.path.exists(tmp_out):
             os.remove(tmp_out)
+
+
+def test_cli_help(capsys):
+    ret = dist_m4ri.main(["--help"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "--morehelp" in captured.out
+    assert "threads=N" in captured.out
+    # Check that it fits within 80 rows
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    assert len(lines) < 80
+
+
+def test_cli_morehelp(capsys):
+    ret = dist_m4ri.main(["--morehelp"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Required input" in captured.out
+    assert "Calculation method:" in captured.out
+    assert "threads=N" in captured.out
+    assert "nothrottle=1" in captured.out
+
+
+def test_cli_no_args_error(capsys):
+    ret = dist_m4ri.main([])
+    assert ret == 255
+    captured = capsys.readouterr()
+    assert "no input matrix or model specified" in captured.err
+    assert "Allowed parameters:" in captured.err
+
+
+def test_cli_version(capsys):
+    ret = dist_m4ri.main(["--version"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "0.9.0" in captured.out
+
+
+def test_cli_binary_compatibility_silent(capsys):
+    ret = dist_m4ri.main(["--help"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    # When binary is found and up to date, stderr should be silent (no warnings)
+    assert "Warning:" not in captured.err
+    assert "0.9.0" in captured.out
+
+
+def test_binary_compatibility_warning(tmp_path):
+    # Current binary should be compatible and return None
+    assert dist_m4ri.check_binary_compatibility() is None
+
+    # Non-existent binary should return a warning
+    missing_warn = dist_m4ri.check_binary_compatibility(str(tmp_path / "nonexistent"))
+    assert missing_warn is not None
+    assert "not found" in missing_warn
+
+    # Older binary script (version 0.5.0) should return a version mismatch warning
+    fake_bin = tmp_path / "fake_dist_m4ri"
+    fake_bin.write_text("#!/bin/sh\necho \"dist_m4ri version 0.5.0\"\n")
+    fake_bin.chmod(0o755)
+    older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
+    assert older_warn is not None
+    assert "version 0.5.0" in older_warn
+    assert "expected >= 0.9.0" in older_warn
+
+
+def test_cache_versioning(tmp_path):
+    import json
+    cache_file = tmp_path / "test_cache.json"
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri._distance_cache["code_test"] = {"dist": 3, "dmin": 3, "dmax": 3}
+    dist_m4ri.save_distance_cache(str(cache_file))
+
+    # Verify version info is silently added to JSON file
+    with open(cache_file) as f:
+        data = json.load(f)
+    assert data.get("__version__") == dist_m4ri.__version__
+
+    # Verify loading does not pollute in-memory code keys
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.load_distance_cache(str(cache_file))
+    assert "__version__" not in dist_m4ri._distance_cache
+    assert "code_test" in dist_m4ri._distance_cache
 
 
 if __name__ == "__main__":
