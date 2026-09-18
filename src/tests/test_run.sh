@@ -266,6 +266,31 @@ assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLE
 # Test 40: conflicting debug parameters error
 assert_output "$BIN debug=1 debug=2 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2" 255 "" "debug parameter specified multiple times with conflicting values"
 
+# Test 41: dist_m4ri error on no arguments (short help)
+assert_output "$BIN_FORK" 255 "" "Allowed parameters:"
+
+# Test 42: dist_m4ri error on unrecognized parameter (short help)
+assert_output "$BIN_FORK unrecognized_param=123" 255 "" \
+    "unrecognized parameter \"unrecognized_param=123\" at position 1"
+
+# Test 43: dist_m4ri --help (returns 0, points to --morehelp)
+assert_output "$BIN_FORK --help" 0 "morehelp" ""
+
+# Test 44: dist_m4ri --morehelp (returns 0, lists all parameters including classical, finC, outC)
+assert_output "$BIN_FORK --morehelp" 0 "classical=\[0\|1\]" ""
+
+# Test 45: dist_m4ri_old --help
+assert_output "$BIN --help" 0 "morehelp" ""
+
+# Test 46: dist_m4ri_old --morehelp
+assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
+
+# Test 47: dist_m4ri --version
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.9.0" ""
+
+# Test 48: dist_m4ri_old --version
+assert_output "$BIN --version" 0 "dist_m4ri version 0.9.0" ""
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1
@@ -273,5 +298,6 @@ else
     echo "All tests passed!"
     exit 0
 fi
+
 
 

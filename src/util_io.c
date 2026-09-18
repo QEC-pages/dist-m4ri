@@ -53,20 +53,41 @@ params_t prm={
 
 params_t * const p = &prm;
 
+void print_short_help(const char *prog) {
+  fprintf(stderr, SHORT_HELP, prog, DIST_M4RI_VERSION, prog);
+}
+
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
   double prob=0.0;
   long long int dbg_ll=0;
 
-  if(argc <= 1)
-    ERROR("no command-line arguments given, " BRIEF_HELP,argv[0]);
-
-  for (int i=1; i<argc;i++) /* scan arguments for help message */
-    if((strcmp(argv[i],"--help")==0)||(strcmp(argv[i],"-h")==0)){
-      printf( USAGE,argv[0],argv[0]);
-      exit (-1);
+  for (int i = 1; i < argc; i++) /* scan arguments for version */
+    if ((strcmp(argv[i], "--version") == 0) || (strcmp(argv[i], "-version") == 0)) {
+      printf("dist_m4ri version %s\n", DIST_M4RI_VERSION);
+      exit(0);
     }
+
+  for (int i = 1; i < argc; i++) /* scan arguments for full help message */
+    if ((strcmp(argv[i], "--morehelp") == 0) || (strcmp(argv[i], "-morehelp") == 0)
+        || (strcmp(argv[i], "--more-help") == 0) || (strcmp(argv[i], "-more-help") == 0)) {
+      printf(MORE_HELP, argv[0], DIST_M4RI_VERSION, argv[0]);
+      exit(0);
+    }
+
+  for (int i = 1; i < argc; i++) /* scan arguments for standard help message */
+    if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)
+        || (strcmp(argv[i], "-?") == 0)) {
+      printf(USAGE, argv[0], DIST_M4RI_VERSION, argv[0]);
+      exit(0);
+    }
+
+  if (argc <= 1) {
+    fprintf(stderr, "%s: no command-line arguments given\n\n", argv[0]);
+    print_short_help(argv[0]);
+    exit(-1);
+  }
 
   int debug_set=0;
 
@@ -132,8 +153,11 @@ void var_init(int argc, char **argv, params_t * const p){
       p->method=dbg;
       if (p->debug&4)
 	fprintf(stderr, "# read %s, method=%d\n",argv[i],p->method);
-      if( (p->method<=0) || (p->method>3))
-	ERROR("Unsupported method %d",p->method);
+      if( (p->method<=0) || (p->method>3)) {
+        fprintf(stderr, "%s: unsupported method=%d specified\n\n", argv[0], p->method);
+        print_short_help(argv[0]);
+        exit(-1);
+      }
     }
     else if (sscanf(argv[i],"smax=%d",&dbg)==1){
       p->smax=dbg;
@@ -271,8 +295,9 @@ void var_init(int argc, char **argv, params_t * const p){
 	fprintf(stderr, "# read %s, chunk_size=%d\n",argv[i],p->chunk_size);
     }
     else{ /* unrecognized option */
-      fprintf(stderr, "# unrecognized parameter \"%s\" at position %d\n",argv[i],i);
-      ERROR("try \"%s -h\" for options",argv[0]);
+      fprintf(stderr, "%s: unrecognized parameter \"%s\" at position %d\n\n", argv[0], argv[i], i);
+      print_short_help(argv[0]);
+      exit(-1);
     }
   } /* end parameter scan cycle */
 
@@ -482,8 +507,9 @@ void var_init(int argc, char **argv, params_t * const p){
   }
 
   if ((p->method <= 0) || (p->method > 3)){
-      printf("invalid method=%d specified\n", p->method);
-      ERROR(BRIEF_HELP,argv[0]);
+      fprintf(stderr, "%s: invalid method=%d specified\n\n", argv[0], p->method);
+      print_short_help(argv[0]);
+      exit(-1);
   }
   
 }

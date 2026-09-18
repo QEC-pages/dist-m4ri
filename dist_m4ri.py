@@ -28,6 +28,8 @@ from typing import List, Tuple, Union, Optional, Dict, Any
 _codedistance_mod = None
 _stim_mod = None
 
+__version__ = "0.9.0"
+
 
 def _get_codedistance():
     """Lazily imports the codedistance library only when requested."""
@@ -95,6 +97,8 @@ def set_distance_cache_file(filepath: Optional[Union[str, Path]] = None) -> None
 def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     """
     Loads distance cache from a JSON file into memory.
+    Inspects cache version silently; if an incompatible version is detected in the future,
+    triggers a warning and bypasses/updates the cache.
     """
     global _distance_cache, _distance_cache_file
     target_file = str(Path(filepath).resolve()) if filepath is not None else _distance_cache_file
@@ -103,6 +107,14 @@ def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str
             with open(target_file, "r") as f:
                 data = json.load(f)
             if isinstance(data, dict):
+                cache_ver = data.pop("__version__", None)
+                # If cache is from a future incompatible version, skip loading
+                if cache_ver is not None and _parse_version(cache_ver) > _parse_version(__version__):
+                    sys.stderr.write(
+                        f"# Warning: Cache file '{target_file}' has newer version {cache_ver} "
+                        f"(current {__version__}); ignoring incompatible cache.\n"
+                    )
+                    return _distance_cache
                 _distance_cache.update(data)
         except Exception as e:
             sys.stderr.write(f"# Warning: Failed to load distance cache from {target_file}: {e}\n")
@@ -112,6 +124,7 @@ def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str
 def save_distance_cache(filepath: Optional[Union[str, Path]] = None) -> None:
     """
     Saves the in-memory distance cache to a JSON file.
+    Silently writes "__version__": __version__ into the file.
     Uses atomic write via a temporary file to prevent corruption.
     """
     global _distance_cache, _distance_cache_file
@@ -123,8 +136,10 @@ def save_distance_cache(filepath: Optional[Union[str, Path]] = None) -> None:
     os.makedirs(parent_dir, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(suffix=".tmp", prefix="dist_cache_", dir=parent_dir)
     try:
+        cache_data = dict(_distance_cache)
+        cache_data["__version__"] = __version__
         with open(fd, "w") as f:
-            json.dump(_distance_cache, f, indent=2)
+            json.dump(cache_data, f, indent=2)
         os.replace(temp_path, target_file)
     except Exception as e:
         if os.path.exists(temp_path):
@@ -405,8 +420,12 @@ def read_sparse_vectors(filepath: str) -> List[List[int]]:
 
 def find_dist_m4ri_binary(custom_path: Optional[str] = None) -> str:
     """Finds the dist_m4ri executable."""
-    if custom_path and os.path.isfile(custom_path) and os.access(custom_path, os.X_OK):
-        return os.path.abspath(custom_path)
+    if custom_path:
+        if os.path.isfile(custom_path) and os.access(custom_path, os.X_OK):
+            return os.path.abspath(custom_path)
+        raise FileNotFoundError(
+            f"Specified executable '{custom_path}' not found or not executable."
+        )
 
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -430,6 +449,47 @@ def find_dist_m4ri_binary(custom_path: Optional[str] = None) -> str:
     raise FileNotFoundError(
         "Could not find executable 'dist_m4ri'. Please run 'make -C src' to build it."
     )
+
+
+def _parse_version(v_str: str) -> Tuple[int, ...]:
+    import re
+    parts = re.findall(r"\d+", v_str)
+    return tuple(int(p) for p in parts) if parts else (0,)
+
+
+def check_binary_compatibility(binary_path: Optional[str] = None) -> Optional[str]:
+    """
+    Checks if the backend dist_m4ri binary exists and is compatible (version >= __version__).
+    Returns a warning message string if missing or older, or None if compatible (silent).
+    """
+    try:
+        path = find_dist_m4ri_binary(binary_path)
+    except (RuntimeError, FileNotFoundError):
+        return "Warning: backend binary 'dist_m4ri' not found (run 'make -C src' to build it)"
+
+    try:
+        proc = subprocess.run(
+            [path, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=2.0
+        )
+        if proc.returncode == 0 and "version" in proc.stdout:
+            bin_ver = proc.stdout.strip().split()[-1]
+            if _parse_version(bin_ver) < _parse_version(__version__):
+                return (
+                    f"Warning: backend binary '{path}' is version {bin_ver} "
+                    f"(expected >= {__version__}; run 'make -C src' to rebuild)"
+                )
+            return None  # Compatible and up-to-date: silent!
+        else:
+            return (
+                f"Warning: backend binary '{path}' does not support --version "
+                f"(expected >= {__version__}; run 'make -C src' to rebuild)"
+            )
+    except Exception as e:
+        return f"Warning: failed to check binary '{path}': {e}"
 
 
 def parse_dist_m4ri_output(stdout: str) -> Tuple[int, int, int]:
@@ -2044,6 +2104,9 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "verbose": False,
         "nothrottle": False,
         "chunk_size": 0,
+        "morehelp": False,
+        "version": False,
+        "unrecognized": [],
     }
 
     i = 0
@@ -2053,7 +2116,17 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             i += 1
             continue
 
-        if arg in ("-h", "--help", "help"):
+        if arg in ("--version", "-version", "version"):
+            args["version"] = True
+            i += 1
+            continue
+
+        if arg in ("--morehelp", "-morehelp", "--more-help", "-more-help", "morehelp"):
+            args["morehelp"] = True
+            i += 1
+            continue
+
+        if arg in ("-h", "--help", "help", "-?"):
             args["help"] = True
             i += 1
             continue
@@ -2103,6 +2176,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                         args["finH"] = arg
                     elif args["finG"] is None and args["finL"] is None:
                         args["finG"] = arg
+            else:
+                args["unrecognized"].append(arg)
             i += 1
             continue
 
@@ -2192,6 +2267,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 )
             elif key_lower in ("chunk_size", "chunksize", "batch", "chunk"):
                 args["chunk_size"] = int(val)
+            else:
+                args["unrecognized"].append(arg)
 
         i += 1
 
@@ -2210,50 +2287,181 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
     return args
 
 
-def print_cli_help() -> None:
-    help_text = """dist_m4ri.py: Multithreaded distance calculator Python CLI
-
+def print_cli_short_help(file: Optional[Any] = None) -> None:
+    text = f"""dist_m4ri.py (version {__version__}): Multithreaded distance calculator Python CLI
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
-Options:
-  fdem=FILE             Detector Error Model input file (.dem)
-  finH=FILE             Parity check matrix input file (.mmx / .mtx)
-  finG=FILE             Generator matrix input file (.mmx / .mtx)
-  finL=FILE             Logical operator matrix input file (.mmx / .mtx)
-  fin=PREFIX            Prefix for check matrices (e.g. try -> tryX.mtx, tryZ.mtx)
+Allowed parameters:
+  fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, classical,
+  method, dmin, dmax, dexp (dest), steps, wmin, wmax, timeout,
+  threads, nothrottle, chunk_size (batch), smax, noscan, start,
+  cbeg, cend, finC, outC, maxC, dW, seed, debug, solver, cache,
+  --no-cache, --verbose, --cws
+
+Help options:
+  -h, --help    : display help for commonly used parameters (fits 80 rows)
+  --morehelp    : display full help for all available parameters
+"""
+    print(text, file=file)
+
+
+def print_cli_help(file: Optional[Any] = None) -> None:
+    help_text = f"""dist_m4ri.py (version {__version__}): Multithreaded distance calculator Python CLI
+Usage: dist_m4ri.py [key=val | --flag val ...]
+
+Input matrices & models:
+  fdem=FILE             Detector Error Model input file (.dem) from Stim
+  finH=FILE             Parity check matrix H (classical) or Hx (CSS quantum) (.mmx/.mtx)
+  finG=FILE, finL=FILE  Hz check matrix or Lx logical operator matrix (quantum CSS)
+  fin=PREFIX            Base prefix for CSS matrices (loads ${{fin}}X.mtx, ${{fin}}Z.mtx, e.g. try -> tryX.mtx)
   Hx=FILE, Hz=FILE      CSS check matrices (alternative to finH/finG)
-  Lx=FILE, Lz=FILE      CSS logical operators (optional)
-  method=N              1=RW, 2=CC, 3=Bracketing (default: 3)
+  Lx=FILE, Lz=FILE      CSS logical operators (optional, constructed if omitted)
+  pmin=PROB             Minimum error probability threshold for DEM errors (default: 0.0)
+  classical=0|1         1: classical code (Hx only), 0: quantum CSS (auto-detected)
+
+Method and distance bounds:
+  method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
   dmin=N                Certified lower bound, inclusive (default: 0)
   dmax=N                Known upper bound, inclusive (default: 0)
-  wmin=N                Minimum distance of interest (terminate early if cw of weight <= wmin
-                        is found in RW or CC, default: 1)
-  wmax=N                Maximum weight to search in CC
-  smax=N                Maximum syndrome weight for CC confinement profile
-  start=N / cbeg=N      Starting column index for CC scan
-  cend=N                Ending column index for CC scan
-  dexp=N                Expected distance estimate
-  steps=N               Maximum RW steps (default: 1000 in method 3)
-  threads=N             Worker threads (default: hardware concurrency)
+  dexp=N                Expected distance estimate (alias: dest) (default: 0)
+
+Search limits and stopping criteria:
+  steps=N               Maximum RW steps / information sets (default: 1000 in method 3)
+  wmax=N                Maximum cluster weight to search in CC (0=until bound/timeout)
+  wmin=N                Stop immediately if cw with weight <= wmin is found (default: 1)
   timeout=SEC           Execution timeout in seconds, 0 for infinite (default: 60.0)
-  nothrottle=1          Disable automatic thread throttling (also --no-throttle)
-  chunk_size=N          RW batch chunk size (default: adaptive 25-500)
-  dW=N                  Extra weight window above dmin to collect codewords
-  maxC=N                Maximum number of codewords to collect
-  finC=FILE             Input initial codewords (for CSS, auto-resolves _X.nz and _Z.nz)
-  outC=FILE             Output codewords (for CSS, auto-suffixed as _X.nz and _Z.nz)
-  pmin=PROB             Probability threshold for DEM errors
-  noscan=1              Skip CC scan loop
-  classical=1           Force classical mode (0 for CSS / quantum)
-  seed=N                Random seed
-  debug=N               Debug bitmask (e.g. 1, 2, 4)
-  solver=NAME           'dist_m4ri' (default) or 'codedistance'
+
+Multithreading & execution:
+  threads=N             Max worker threads to use (default: CPU cores; subject to
+                        automatic throttling unless nothrottle=1)
+  solver=NAME           Distance solver backend: 'dist_m4ri' (default) or 'codedistance'
+
+Codeword collection & caching:
+  --cws                 Collect and output non-trivial minimum-weight codewords
+  outC=FILE             Save output codewords (for CSS, auto-suffixed _X.nz / _Z.nz)
+  finC=FILE             Input initial candidate codewords (.nz file)
   cache=FILE            Persistent JSON cache file (default: tmp_dist_cache.json)
   --no-cache / nocache  Disable persistent JSON caching
   --verbose / -v        Output detailed explanations of bounds, steps, and cache status
-  --cws                 Collect and output non-trivial codewords
+
+Extra parameters (see --morehelp for details):
+  smax=N (5)            Max syndrome weight for CC confinement profile (0 to disable)
+  noscan=1 (0)          CC method 2: start directly at wmax, skip scanning w<wmax
+  start/cbeg/cend=N     Limit CC search to specific column(s) (-1: all)
+  nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
+  chunk_size=N (0)      RW batch chunk size (default: 0 for adaptive 25-500, alias: batch)
+  maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
+  dW=N (0)              Extra weight window above dmin to collect codewords
+  seed=N (0)            Random number generator seed
+  debug=N (0)           Debug bitmask passed to dist_m4ri binary
+
+Help options:
+  -h, --help            Display this help message (commonly used parameters)
+  --morehelp            Display full help with all parameter descriptions
 """
-    print(help_text)
+    print(help_text, file=file)
+
+
+def print_cli_morehelp(file: Optional[Any] = None) -> None:
+    help_text = f"""dist_m4ri.py (version {__version__}): Multithreaded distance calculator Python CLI
+Usage: dist_m4ri.py [key=val | --flag val ...]
+
+Required input (at least one matrix/model specification):
+  fdem=FILE             Detector Error Model file (.dem) generated by Stim.
+                        Automatically constructs parity check H and logical L matrices.
+  finH=FILE             Parity check matrix file in Matrix Market (.mmx / .mtx) format.
+                        For classical codes, this is check matrix H. For CSS codes, Hx.
+  finG=FILE             Generator / Hz matrix for quantum CSS codes in Matrix Market format.
+  finL=FILE             Logical operator matrix Lx for quantum CSS codes in Matrix Market format.
+                        Note: For a quantum CSS code, either finL (Lx) or finG (Hz) is required.
+  fin=PREFIX            Base prefix for CSS matrices (loads ${{fin}}X.mtx and ${{fin}}Z.mtx, e.g. try -> tryX.mtx).
+  Hx=FILE, Hz=FILE      Alternative syntax for specifying CSS check matrices Hx and Hz.
+  Lx=FILE, Lz=FILE      Alternative syntax for specifying CSS logical operator matrices.
+  pmin=PROB             Minimum error probability threshold for DEM parsing (default: 0.0).
+                        Error mechanisms with probability < pmin are filtered out.
+  classical=0|1         Code type override:
+                        1: Classical linear code (Hx only; ignores/discards logicals).
+                        0: Quantum CSS code (requires logicals or Hz).
+                        Default: auto-detected (1 if only finH/Hx is given; 0 otherwise).
+
+Calculation method:
+  method=1|2|3          Calculation method (default: 3):
+                        1: Random Window (RW) algorithm (upper bound on distance).
+                           Repeatedly samples random information sets to find low-weight
+                           codewords. Fast for discovering small errors.
+                        2: Connected Cluster (CC) algorithm (lower bound / exact distance).
+                           Exhaustive cluster search finding certified lower bound dmin or
+                           exact distance if run to completion.
+                        3: Bracketing mode (concurrent RW and CC).
+                           Dynamically allocates worker threads between CC (lower bound) and
+                           RW (upper bound) to converge on the exact distance rapidly.
+
+Distance bounds and guidance:
+  dmin=N                Known certified lower bound on distance (default: 0).
+                        CC search begins at weight w = max(1, dmin).
+  dmax=N                Known upper bound on distance (default: 0).
+                        RW ignores candidate codewords of weight >= dmax.
+  dexp=N                Expected code distance estimate (alias: dest) (default: 0).
+                        Guides dynamic thread balancing in method=3 and feasibility checks.
+
+Search limits and stopping criteria:
+  steps=N               Maximum number of RW steps / information sets across all threads
+                        (default: 1000 in method 3; positive required for method 1).
+  wmax=N                Maximum cluster weight to analyze in CC (default: 0 = until bound/timeout).
+  wmin=N                Minimum distance threshold (default: 1).
+                        If a codeword of weight w <= wmin is discovered, search halts immediately.
+  timeout=SEC           Execution timeout in seconds (default: 60.0; set 0 for infinite).
+
+Multithreading & throttling:
+  threads=N             Maximum number of worker threads to allocate (default: CPU core count).
+                        Subject to automatic thread throttling unless nothrottle=1 is specified:
+                        - Small codes (n < 100 clamped to <= 4, n < 300 clamped to <= 16).
+                        - Large memory matrices (dense working memory capped at ~1.5 GB).
+                        - Small RW step counts (clamped to <= (steps + 9) / 10).
+  nothrottle=1          Disable automatic thread throttling (also --no-throttle).
+                        Forces allocation of the exact number of threads requested.
+  chunk_size=N          RW batch chunk size per thread (default: 0 = adaptive 25-500).
+                        Alias: batch=N.
+
+Connected Cluster (CC) search options:
+  smax=N                Maximum syndrome weight for confinement profile (default: 5).
+                        When smax > 0, tracks minimum syndrome weights for each error weight.
+                        Set smax=0 to disable confinement calculation.
+  noscan=1              Start CC directly at weight wmax, skipping weights w < wmax (default: 0).
+                        Only valid for method=2.
+  start=N               Restrict CC search to start column index N (equiv: cbeg=N cend=N).
+  cbeg=N                Beginning column index for CC search (default: 0).
+  cend=N                Ending column index for CC search (default: n - 1).
+
+Codeword collection and export:
+  --cws                 Collect and display non-trivial minimum-weight codewords.
+  outC=FILE             Export found codewords to file in .nz format.
+                        In CSS mode, automatically saves X-codewords to FILE_X.nz and
+                        Z-codewords to FILE_Z.nz.
+  finC=FILE             Import initial candidate codewords from file in .nz format.
+                        In CSS mode, automatically resolves FILE_X.nz and FILE_Z.nz.
+  maxC=N                Maximum number of codewords to collect (default: 0 = unlimited).
+  dW=N                  Extra weight window above minimum distance to collect codewords
+                        (w <= min_w + dW) (default: 0).
+
+Distance caching (Python CLI):
+  cache=FILE            Path to persistent JSON cache file (default: tmp_dist_cache.json).
+  --no-cache / nocache  Disable reading and writing to the persistent JSON cache.
+
+General options:
+  solver=NAME           Distance calculation engine: 'dist_m4ri' (default) or 'codedistance'.
+  --verbose / -v        Enable verbose output with detailed explanations of bounds,
+                        timings, steps, and cache status.
+  seed=N                Random number generator seed (default: 0 = current time).
+  debug=N               Debug bitmask passed directly to the dist_m4ri binary (default: 0).
+                        (0: silent, 1: general, 2: verbose/threads, 4: args, 8: progress,
+                         16: codewords, 32: matrices, 64: hash updates, 2048: large matrices).
+
+Help options:
+  -h, --help            Display summary help message (fits 80 rows).
+  --morehelp            Display this full help message with all parameters.
+"""
+    print(help_text, file=file)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -2262,12 +2470,33 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     args = parse_cli_args(argv)
 
-    if args.get("help") or (
+    if args.get("version"):
+        print(f"dist_m4ri.py version {__version__}")
+        return 0
+
+    if args.get("morehelp") or args.get("help"):
+        compat_warn = check_binary_compatibility()
+        if compat_warn:
+            print(f"dist_m4ri.py: {compat_warn}", file=sys.stderr)
+        if args.get("morehelp"):
+            print_cli_morehelp()
+        else:
+            print_cli_help()
+        return 0
+
+    if args.get("unrecognized"):
+        for u in args["unrecognized"]:
+            print(f"dist_m4ri.py: unrecognized parameter '{u}'", file=sys.stderr)
+        print_cli_short_help(file=sys.stderr)
+        return 255
+
+    if (
         not args.get("fdem") and not args.get("finH")
         and not args.get("Hx") and not args.get("Hz") and not args.get("fin")
     ):
-        print_cli_help()
-        return 0
+        print("dist_m4ri.py: no input matrix or model specified", file=sys.stderr)
+        print_cli_short_help(file=sys.stderr)
+        return 255
 
     # When finC and outC are identical, empty or non-existent file is silently ignored (with a warning if verbose)
     args["finC"] = check_finc_outc(args["finC"], args["outC"], verbose=args["verbose"])

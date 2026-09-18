@@ -164,71 +164,192 @@ long long int nzlist_write(const char fnam[], const char comment[], params_t *p)
  */
 cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
 
-#define USAGE								\
-  "%s: distance of a classical or quantum CSS code\n"			\
-  "\tusage: %s parameter=value [...]\n\n"				\
-  "   Required parameter:\n"						\
-  "\tmethod=[int]: bitmap for method used (no default): \n" \
-  "\n"									\
-  "\t\t1: random window (RW) algorithm. Options:\n"			\
-  "\t\t   steps=[int]: how many information sets to use (1000)\n"		\
-  "\t\t   wmin=[int]:  minimum distance of interest (1)\n"		\
-  "\t\t\t immediately stop and return '-w' on a cw of weight w<=wmin\n" \
-  "\t\t\t use this option to quickly scan over a large number of codes\n" \
-  "\n"									\
-  "\t\t2: connected cluster (CC) algorithm.  Options:\n"		\
-  "\t\t   wmax=[int]:  maximum cluster weight to construct, inclusive (0)\n" \
-  "\t\t\t optional if timeout>0 or dmax>0 is set; otherwise required for CC only\n" \
-  "\t\t   smax=[int]:  maximum syndrome weight of interest, inclusive (5)\n" \
-  "\t\t\t must be non-zero to calculate confinement profile\n"          \
-  "\t\t   start=[int]: use only this position to start (equiv. to cbeg=cend=start) (-1)\n" \
-  "\t\t   cbeg=[int]:  start column to begin CC search (-1)\n"		\
-  "\t\t   cend=[int]:  end column to limit CC search (-1)\n"		\
-  "\t\t   noscan=[int]: start CC directly with wmax (0)\n" \
-  "\t\t3: bracketing mode (balanced concurrent RW and CC)\n" \
-  "\n"									\
-  "   Execution and multithreading parameters:\n"				\
-  "\tthreads=[int]: number of threads to use (0 for auto CPU count) (0)\n"	\
-  "\tnothrottle=[int]: disable automatic thread throttling (0)\n"		\
-  "\tchunk_size=[int]: RW batch chunk size (0 for auto) (0)\n"			\
-  "\ttimeout=[sec]: timeout in seconds, 0 for infinite (60.0)\n"		\
-  "\tdexp=[int]:    expected distance value for method=3 (alias: dest) (0)\n"	\
-  "\n"									\
-  "   Distance bounds parameters:\n"					\
-  "\tdmin=[int]:    known lower bound on distance, inclusive (w starts from dmin in CC) (1)\n" \
-  "\tdmax=[int]:    known upper bound on distance, inclusive (RW ignores codewords of weight >= dmax) (0)\n" \
-  "\n"									\
-  "   General parameters:\n"						\
-  "\tfdem=[str]: detector error model (DEM) file from stim (NULL)\n" \
-  "\tpmin=[float]: minimum error probability to keep for DEM (0.0)\n" \
-  "\tfinH=[str]: parity check matrix Hx (NULL)\n"			\
-  "\tfinG=[str]: matrix Hz (quantum CSS code only) (NULL)\n"		\
-  "\tfinL=[str]: matrix Lx (quantum CSS code only) (NULL)\n"		\
-  "\t\t Either L=Lx or G=Hz matrix is required for a quantum CSS code\n" \
-  "\tfin=[str]:  base name for input files (\"try\")\n"			\
-  "\t\t set finH->\"${fin}X.mtx\"  finG->\"${fin}Z.mtx\"\n"		\
-  "\tcss=[int]:  reserved for future use (1)\n"				\
-  "\tseed=[int]: rng seed [use 0 for time(NULL)] (0)\n"			\
-  "\tdebug=[int]:\t bitmap for aux information to output (3)\n"		\
-  "\t\t0: clear the entire debug bitmap to 0.\n"			\
-  "\t\t1: output misc general info (on by default)\n"			\
-  "\t\t2: output more general info (on by default)\n"			\
-  "\t\t4: debug command line arguments parsing\n"			\
-  "\t\t8: output progress reports every 1000 steps\n"			\
-  "\t\t16: output new min-weight codewords found (cut large vectors)\n"	\
-  "\t\t32: output matrices (unless n is large)\n"			\
-  "\t\t64: debug confinement hash updates (swei changes)\n" \
-  "\t\t128: debug duplicate syndromes in confinement hash (debug build only)\n" \
-  "\t\t256: reserved\n"							\
-  "\t\t512: reserved\n"							\
-  "\t\t1024: reserved\n"						\
-  "\t\t2048: allow big matrix / large vector output\n"			\
-  "\t\t   see the source code for more options\n"			\
-  "\t  Multiple 'debug' parameters are XOR combined except for 0.\n"	\
-  "\t  Use debug=0 as the 1st argument to suppress all debug messages.\n"\
-  "   -h gives this help (also '--help')\n"
+#define DIST_M4RI_VERSION "0.9.0"
 
-#define BRIEF_HELP				\
-  "try \"%s -h\" for help"	       
+/**
+ * @brief Print short help message listing all allowed parameters to stderr.
+ *
+ * @param prog Program name (argv[0]).
+ */
+void print_short_help(const char *prog);
+
+#define SHORT_HELP \
+  "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
+  "Usage: %s method=[1|2|3] [parameter=value ...]\n\n" \
+  "Allowed parameters:\n" \
+  "  method, finH, finG, finL, fin, fdem, pmin, classical, css,\n" \
+  "  steps, wmin, wmax, dmin, dmax, dexp (dest), smax, start, cbeg,\n" \
+  "  cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
+  "  finC, outC, maxC, dW, seed, debug\n\n" \
+  "Help options:\n" \
+  "  -h, --help    : display help for commonly used parameters (fits 80 rows)\n" \
+  "  --morehelp    : display full help for all available parameters\n"
+
+#define USAGE \
+  "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
+  "Usage: %s method=[1|2|3] [parameter=value ...]\n\n" \
+  "Required parameter:\n" \
+  "  method=[int]       1: Random Window (RW) algorithm (upper bound)\n" \
+  "                     2: Connected Cluster (CC) algorithm (lower bound / exact)\n" \
+  "                     3: Bracketing mode (concurrent RW and CC)\n\n" \
+  "Input matrices (Matrix Market .mmx/.mtx format or Stim DEM):\n" \
+  "  finH=[file]        Parity check matrix H (classical) or Hx (CSS quantum)\n" \
+  "  finG=[file]        Hz check matrix (quantum CSS code only)\n" \
+  "  finL=[file]        Lx logical operator matrix (quantum CSS code only)\n" \
+  "                     Note: Either L=Lx or G=Hz is required for quantum CSS codes\n" \
+  "  fin=[str]          Base name for CSS matrices (loads ${fin}X.mtx, ${fin}Z.mtx)\n" \
+  "  fdem=[file]        Stim detector error model (DEM) file\n" \
+  "  pmin=[float]       Minimum error probability threshold to keep for DEM (0.0)\n" \
+  "  classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)\n\n" \
+  "Distance bounds and guidance:\n" \
+  "  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)\n" \
+  "  dmax=[int]         Known upper bound on distance (RW ignores cw wt >= dmax) (0)\n" \
+  "  dexp=[int]         Expected distance for method=3 thread allocation (alias: dest) (0)\n\n" \
+  "Search limits and stopping criteria:\n" \
+  "  steps=[int]        Maximum RW decoding steps / information sets (1000)\n" \
+  "  wmax=[int]         Maximum cluster weight to search in CC (0=until bound/timeout)\n" \
+  "  wmin=[int]         Stop immediately if cw with weight <= wmin is found (1)\n" \
+  "  timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)\n\n" \
+  "Multithreading:\n" \
+  "  threads=[int]      Max worker threads to use (0: auto CPU count) (0)\n" \
+  "                     (subject to throttling unless nothrottle=1)\n\n" \
+  "Codeword collection:\n" \
+  "  outC=[file]        Export found minimum-weight codewords to file (.nz format)\n" \
+  "  finC=[file]        Import initial codewords from file (.nz format)\n" \
+  "  maxC=[int]         Maximum number of codewords to collect (0 for unlimited) (0)\n" \
+  "  dW=[int]           Collect codewords up to weight dmin + dW (default: 0)\n\n" \
+  "Extra parameters (see --morehelp for details):\n" \
+  "  smax=[int] (5)         Max syndrome weight for confinement profile (0 to disable)\n" \
+  "  noscan=[0|1] (0)       CC method 2: start directly at wmax, skip scanning w<wmax\n" \
+  "  start/cbeg/cend=[int]  Limit CC search to specific column(s) (-1: all)\n" \
+  "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
+  "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
+  "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
+  "  debug=[int] (3)        Debug bitmask (0: silent, 1: general, 2: verbose, ...)\n" \
+  "  css=[int] (1)          Reserved for future use\n\n" \
+  "Help options:\n" \
+  "  -h, --help         Display this help message (commonly used parameters)\n" \
+  "  --morehelp         Display full help with all parameter descriptions\n" \
+  "  --version          Display program version\n"
+
+#define MORE_HELP \
+  "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
+  "Usage: %s method=[1|2|3] [parameter=value ...]\n\n" \
+  "Required parameter:\n" \
+  "  method=[int]       Bitmap / identifier for calculation method (no default):\n" \
+  "                     1: Random Window (RW) algorithm (upper bound)\n" \
+  "                        Finds an upper bound on distance by testing random\n" \
+  "                        information sets. Fast for finding small codewords.\n" \
+  "                     2: Connected Cluster (CC) algorithm (lower bound / exact)\n" \
+  "                        Exhaustive cluster search finding a lower bound or exact\n" \
+  "                        minimum distance. Guaranteed to find the true code\n" \
+  "                        distance if run to completion.\n" \
+  "                     3: Bracketing mode (concurrent RW and CC)\n" \
+  "                        Dynamically balances CC (lower bound) and RW (upper\n" \
+  "                        bound) worker threads based on distance estimate (dexp),\n" \
+  "                        current bounds [dmin, dmax], and remaining timeout.\n\n" \
+  "Input matrices and code specification:\n" \
+  "  finH=[file]        Parity check matrix H (for classical codes) or Hx (for\n" \
+  "                     quantum CSS codes) in Matrix Market (.mmx / .mtx) format.\n" \
+  "  finG=[file]        Generator / Hz matrix for quantum CSS codes in Matrix Market\n" \
+  "                     format. Used to verify orthogonality and construct logicals.\n" \
+  "  finL=[file]        Logical operator matrix Lx for quantum CSS codes in Matrix\n" \
+  "                     Market format.\n" \
+  "                     Note: For a quantum CSS code, either finL (Lx) or finG (Hz)\n" \
+  "                     must be provided.\n" \
+  "  fin=[str]          Base name for matrix input files (default: \"try\").\n" \
+  "                     Automatically looks for \"${fin}X.mtx\" as finH and\n" \
+  "                     \"${fin}Z.mtx\" as finG.\n" \
+  "  fdem=[file]        Detector Error Model file (.dem) generated by Stim.\n" \
+  "                     Automatically constructs H and L matrices. Cannot be\n" \
+  "                     combined with finH, finG, finL, or fin.\n" \
+  "  pmin=[float]       Minimum error probability threshold for DEM parsing (0.0).\n" \
+  "                     Error mechanisms with probability < pmin are ignored.\n" \
+  "                     Only valid when fdem is specified.\n" \
+  "  classical=[0|1]    Code type override:\n" \
+  "                     1: Treat as a classical linear code (Hx only; ignores\n" \
+  "                        or discards logical matrix L).\n" \
+  "                     0: Treat as a quantum CSS code (requires L or G matrix).\n" \
+  "                     Default: 1 if only finH is given; 0 if finG, finL, fin,\n" \
+  "                     or fdem is provided.\n" \
+  "  css=[int]          Reserved for future non-CSS quantum code support (1).\n\n" \
+  "Distance bounds and search guidance:\n" \
+  "  dmin=[int]         Known certified lower bound on distance (default: 1).\n" \
+  "                     In CC (method 2/3), cluster search begins at w = dmin.\n" \
+  "  dmax=[int]         Known upper bound on distance (default: 0).\n" \
+  "                     In RW (method 1/3), codewords of weight >= dmax are ignored\n" \
+  "                     unless collecting codewords.\n" \
+  "  dexp=[int]         Expected code distance (alias: dest) (default: 0).\n" \
+  "                     Used in method=3 (bracketing) to balance worker threads\n" \
+  "                     between CC and RW and estimate search feasibility.\n\n" \
+  "Search limits and Connected Cluster (CC) options:\n" \
+  "  steps=[int]        Maximum number of RW decoding steps / information sets\n" \
+  "                     (default: 1000). Ignored in method=2.\n" \
+  "  wmin=[int]         Minimum distance threshold (default: 1).\n" \
+  "                     If a codeword of weight w <= wmin is found, execution\n" \
+  "                     terminates immediately. Useful for screening codes.\n" \
+  "  wmax=[int]         Maximum cluster weight to analyze in CC (default: 0).\n" \
+  "                     In method=2, CC terminates after checking weight wmax.\n" \
+  "                     0 means continue until codeword found, bounds meet, or timeout.\n" \
+  "  smax=[int]         Maximum syndrome weight for confinement profile (default: 5).\n" \
+  "                     When smax > 0, tracks minimum syndrome weights for each\n" \
+  "                     error weight. Set smax=0 to disable confinement calculation.\n" \
+  "  noscan=[0|1]       1: Start CC directly at weight wmax, skipping scan over\n" \
+  "                     weights w < wmax (default: 0). Only valid for method=2.\n" \
+  "  start=[int]        Restrict CC search to start column index (default: -1).\n" \
+  "                     Equivalent to setting cbeg=start cend=start.\n" \
+  "  cbeg=[int]         Beginning column index for CC search (default: -1, start at 0).\n" \
+  "  cend=[int]         Ending column index for CC search (default: -1, end at n-1).\n\n" \
+  "Codeword collection and export:\n" \
+  "  outC=[file]        Export found codewords to file in .nz list format.\n" \
+  "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
+  "  maxC=[int]         Maximum number of codewords to collect (default: 0).\n" \
+  "                     0 means collect all valid codewords found up to wmax or stop\n" \
+  "                     flag. If maxC > 0, halts when maxC codewords are collected.\n" \
+  "  dW=[int]           Extra weight window above minimum distance (default: 0).\n" \
+  "                     Collects codewords with weight up to min_w + dW.\n\n" \
+  "Execution, multithreading, and timing:\n" \
+  "  threads=[int]      Maximum number of worker threads to use (default: 0 =\n" \
+  "                     hardware concurrency). Subject to throttling for small\n" \
+  "                     codes or large matrices unless nothrottle=1 is set.\n" \
+  "  timeout=[sec]      Execution timeout in seconds (default: 60.0, 0 = infinite).\n" \
+  "                     In method=3, dynamically guides CC vs RW thread balance.\n" \
+  "  nothrottle=[0|1]   Disable automatic thread throttling (default: 0).\n" \
+  "                     Aliases: --no-throttle, -no-throttle, nothrottle.\n" \
+  "                     By default, threads are throttled for very small codes or\n" \
+  "                     large matrices to avoid cache and memory bus thrashing.\n" \
+  "  chunk_size=[int]   RW batch chunk size per worker (default: 0 = adaptive).\n" \
+  "                     Alias: batch=[int].\n" \
+  "  seed=[int]         Random number generator seed (default: 0 = initialize from\n" \
+  "                     current time).\n\n" \
+  "Debug output bitmap (debug=[int], default: 3):\n" \
+  "  The debug parameter accepts a bitmask controlling diagnostic output to stderr:\n" \
+  "    0    : Clear entire debug bitmap (completely silent execution)\n" \
+  "    1    : General progress and round summary information (on by default)\n" \
+  "    2    : Detailed thread allocation and timing information (on by default)\n" \
+  "    4    : Command-line argument parsing diagnostics\n" \
+  "    8    : Progress reports every 1000 RW steps\n" \
+  "    16   : Output new minimum-weight codewords as they are found\n" \
+  "    32   : Dump matrices and full codeword lists\n" \
+  "    64   : Debug confinement hash table updates (swei changes)\n" \
+  "    128  : Debug duplicate syndromes in confinement hash (debug build)\n" \
+  "    2048 : Allow large matrix and vector output (bypasses size cutoff)\n" \
+  "  Multiple debug arguments are XOR-combined (except debug=0 which clears all).\n" \
+  "  Tip: Place debug=0 as the first argument to silence all diagnostic output.\n\n" \
+  "Output format (stdout):\n" \
+  "  Standard output produces a single line with three space-separated integers:\n" \
+  "    dmin dmax rw_steps\n" \
+  "  where:\n" \
+  "    dmin-1   : Maximum cluster weight analyzed by CC without finding any codeword.\n" \
+  "               If CC finds an exact minimum-weight codeword, dmin = dmax = weight.\n" \
+  "    dmax     : Smallest weight of any codeword found (0 if no codeword found).\n" \
+  "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n\n" \
+  "Help options:\n" \
+  "  -h, --help         Display help for commonly used parameters (fits 80 rows)\n" \
+  "  --morehelp         Display this full help message listing all parameters\n" \
+  "  --version          Display program version\n"
+
+#define BRIEF_HELP \
+  "try \"%s -h\" for help"
 
 #endif /* UTIL_IO_H */
