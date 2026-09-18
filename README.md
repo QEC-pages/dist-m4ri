@@ -106,6 +106,9 @@ To maximize throughput across both small codes and large circuit DEMs:
   contention by up to 10x during extended searches ($10^4$ or $10^5$ steps).
 - **Thread Starvation Prevention**: If `chunk_size` exceeds $\lceil \text{steps} / N_{\text{threads}} \rceil$, the chunk
   is automatically clamped so that a single thread cannot monopolize all steps, ensuring all cores run concurrently.
+- **CSS Codeword Suffixing**: In CSS mode, specifying `outC="cws.nz"` automatically saves $X$-codewords to `cws_X.nz`
+  and $Z$-codewords to `cws_Z.nz` (preventing mixed sectors in a single file). Specifying `finC="cws.nz"` automatically
+  resolves `cws_X.nz` and `cws_Z.nz` (or separates mixed files in-flight).
 - **Manual Override**: Pass `nothrottle=1` (or `--no-throttle` in Python) and `chunk_size=N` to override automatic
   heuristics.
 

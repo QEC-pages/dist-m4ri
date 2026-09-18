@@ -900,7 +900,7 @@ long long int nzlist_read(const char fnam[], params_t *p){
     free(entry);
   }
   fclose(f);
-  if (skipped_invalid > 0 && (p->debug & 2)) {
+  if (skipped_invalid > 0) {
     fprintf(stderr, "# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n", skipped_invalid);
   }
   if(p->debug&1)

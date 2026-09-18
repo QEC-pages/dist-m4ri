@@ -1256,6 +1256,20 @@ def compute_quantum_distance(
                 except OSError: pass
 
 
+def _split_css_filename(filepath: Optional[str], sector: str) -> Optional[str]:
+    """Generates sector-suffixed filename for CSS codewords (e.g. 'cws.nz' -> 'cws_X.nz')."""
+    if not filepath:
+        return None
+    base, ext = os.path.splitext(filepath)
+    if not ext:
+        ext = ".nz"
+    if base.endswith(f"_{sector}"):
+        return f"{base}{ext}"
+    elif base.endswith("_X") or base.endswith("_Z"):
+        base = base[:-2]
+    return f"{base}_{sector}{ext}"
+
+
 def compute_css_distance(
     Hx: Any,
     Hz: Any,
@@ -1525,6 +1539,23 @@ def compute_css_distance(
         dmin_x, dmax_x, rw_steps_x = 0, 0, 0
         cws_Z, cws_X = [], []
 
+        # Resolve sector-specific input codewords (finC_Z and finC_X)
+        finC_Z = None
+        finC_X = None
+        if finC:
+            outC_Z_name = _split_css_filename(outC, "Z") if outC else None
+            outC_X_name = _split_css_filename(outC, "X") if outC else None
+            cand_Z = _split_css_filename(finC, "Z")
+            cand_X = _split_css_filename(finC, "X")
+
+            finC_Z = check_finc_outc(cand_Z, outC_Z_name, verbose=False)
+            finC_X = check_finc_outc(cand_X, outC_X_name, verbose=False)
+
+            # Fallback: if sector-suffixed files don't exist, check raw finC
+            if not finC_Z and not finC_X and os.path.exists(finC):
+                finC_Z = check_finc_outc(finC, outC_Z_name, verbose=False)
+                finC_X = check_finc_outc(finC, outC_X_name, verbose=False)
+
         # Z-distance: Hx as finH, Hz as finG (or Lx as finL dual logical operators)
         if can_compute_Z:
             dmin_z, dmax_z, rw_steps_z = run_dist_m4ri(
@@ -1533,7 +1564,7 @@ def compute_css_distance(
                 finH=file_Hx,
                 finG=file_Hz if file_Lx is None else None,
                 finL=file_Lx,
-                finC=finC,
+                finC=finC_Z,
                 dmin=eff_dmin,
                 dmax=eff_dmax,
                 wmin=wmin,
@@ -1568,7 +1599,7 @@ def compute_css_distance(
                 finH=file_Hz,
                 finG=file_Hx if file_Lz is None else None,
                 finL=file_Lz,
-                finC=finC,
+                finC=finC_X,
                 dmin=eff_dmin,
                 dmax=eff_dmax,
                 wmin=wmin,
@@ -1606,7 +1637,12 @@ def compute_css_distance(
             dist = dist_Z
 
         if outC:
-            _write_nzlist_file(outC, (cws_X or []) + (cws_Z or []))
+            outC_X = _split_css_filename(outC, "X")
+            outC_Z = _split_css_filename(outC, "Z")
+            if cws_X:
+                _write_nzlist_file(outC_X, cws_X)
+            if cws_Z:
+                _write_nzlist_file(outC_Z, cws_Z)
 
         res_tuple = (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws else (dist, dX_info, dZ_info)
 
@@ -2204,8 +2240,8 @@ Options:
   chunk_size=N          RW batch chunk size (default: adaptive 25-500)
   dW=N                  Extra weight window above dmin to collect codewords
   maxC=N                Maximum number of codewords to collect
-  finC=FILE             Input file with initial codewords (NZLIST format)
-  outC=FILE             File to output non-trivial codewords (NZLIST format)
+  finC=FILE             Input initial codewords (for CSS, auto-resolves _X.nz and _Z.nz)
+  outC=FILE             Output codewords (for CSS, auto-suffixed as _X.nz and _Z.nz)
   pmin=PROB             Probability threshold for DEM errors
   noscan=1              Skip CC scan loop
   classical=1           Force classical mode (0 for CSS / quantum)
@@ -2322,7 +2358,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args["do_cws"] or (args["outC"] is not None):
                 dist, dx_info, dz_info, cws_x, cws_z = res
                 if args["outC"]:
-                    _write_nzlist_file(args["outC"], (cws_x or []) + (cws_z or []))
+                    outC_X = _split_css_filename(args["outC"], "X")
+                    outC_Z = _split_css_filename(args["outC"], "Z")
+                    if cws_x:
+                        _write_nzlist_file(outC_X, cws_x)
+                    if cws_z:
+                        _write_nzlist_file(outC_Z, cws_z)
             else:
                 dist, dx_info, dz_info = res
 
