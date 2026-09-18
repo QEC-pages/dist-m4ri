@@ -1010,7 +1010,7 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00900" name="l00900"></a><span class="lineno">  900</span>    free(entry);</div>
 <div class="line"><a id="l00901" name="l00901"></a><span class="lineno">  901</span>  }</div>
 <div class="line"><a id="l00902" name="l00902"></a><span class="lineno">  902</span>  fclose(f);</div>
-<div class="line"><a id="l00903" name="l00903"></a><span class="lineno">  903</span>  <span class="keywordflow">if</span> (skipped_invalid &gt; 0 &amp;&amp; (<a class="code hl_variable" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>-&gt;<a class="code hl_variable" href="structparams__t.html#ac71d44285373a5bfe9aec4bb8b3a8bea">debug</a> &amp; 2)) {</div>
+<div class="line"><a id="l00903" name="l00903"></a><span class="lineno">  903</span>  <span class="keywordflow">if</span> (skipped_invalid &gt; 0) {</div>
 <div class="line"><a id="l00904" name="l00904"></a><span class="lineno">  904</span>    fprintf(stderr, <span class="stringliteral">&quot;# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n&quot;</span>, skipped_invalid);</div>
 <div class="line"><a id="l00905" name="l00905"></a><span class="lineno">  905</span>  }</div>
 <div class="line"><a id="l00906" name="l00906"></a><span class="lineno">  906</span>  <span class="keywordflow">if</span>(<a class="code hl_variable" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>-&gt;<a class="code hl_variable" href="structparams__t.html#ac71d44285373a5bfe9aec4bb8b3a8bea">debug</a>&amp;1)</div>

@@ -140,6 +140,8 @@ Functions</h2></td></tr>
 <tr class="separator:add7169ad474a909a7133116ad0355d2a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a5d43c713b69d94bb58efb9d8bc34087b" id="r_a5d43c713b69d94bb58efb9d8bc34087b"><td class="memItemLeft" align="right" valign="top">Any&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a5d43c713b69d94bb58efb9d8bc34087b">compute_quantum_distance</a> (Any H, Optional[Any] G=None, Optional[Any] L=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, **kwargs)</td></tr>
 <tr class="separator:a5d43c713b69d94bb58efb9d8bc34087b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad7b27e6febedf7a0850a0edaaa9e3737" id="r_ad7b27e6febedf7a0850a0edaaa9e3737"><td class="memItemLeft" align="right" valign="top">Optional[str]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#ad7b27e6febedf7a0850a0edaaa9e3737">_split_css_filename</a> (Optional[str] filepath, str sector)</td></tr>
+<tr class="separator:ad7b27e6febedf7a0850a0edaaa9e3737"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a558e59ef7702c7d5ce3d09d17bfebb0a" id="r_a558e59ef7702c7d5ce3d09d17bfebb0a"><td class="memItemLeft" align="right" valign="top">Tuple[Any,...]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a558e59ef7702c7d5ce3d09d17bfebb0a">compute_css_distance</a> (Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, **kwargs)</td></tr>
 <tr class="separator:a558e59ef7702c7d5ce3d09d17bfebb0a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a03b5b3f170bd2aa581b2881b4991bd03" id="r_a03b5b3f170bd2aa581b2881b4991bd03"><td class="memItemLeft" align="right" valign="top">Tuple[Any,...]&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedist__m4ri.html#a03b5b3f170bd2aa581b2881b4991bd03">compute_dem_distance</a> (Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, **kwargs)</td></tr>
@@ -234,7 +236,7 @@ no Python-level threading or subprocess-per-core logic is necessary.
 <pre class="fragment">Lazily imports the codedistance library only when requested.</pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00032">32</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
@@ -309,7 +311,47 @@ no Python-level threading or subprocess-per-core logic is necessary.
 
 <p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
+
+</div>
+</div>
+<a id="ad7b27e6febedf7a0850a0edaaa9e3737" name="ad7b27e6febedf7a0850a0edaaa9e3737"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad7b27e6febedf7a0850a0edaaa9e3737">&#9670;&#160;</a></span>_split_css_filename()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"> Optional[str] dist_m4ri._split_css_filename </td>
+          <td>(</td>
+          <td class="paramtype">Optional[str]&#160;</td>
+          <td class="paramname"><em>filepath</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">str&#160;</td>
+          <td class="paramname"><em>sector</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">protected</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<pre class="fragment">Generates sector-suffixed filename for CSS codewords (e.g. 'cws.nz' -&gt; 'cws_X.nz').</pre> 
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01259">1259</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>.</p>
 
 </div>
 </div>
@@ -349,9 +391,9 @@ no Python-level threading or subprocess-per-core logic is necessary.
 <pre class="fragment">Writes codewords to a text file in NZLIST format (1-based indices).
 Skips creating the file if cws is empty.
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01956">1956</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01992">1992</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>.</p>
 
 </div>
 </div>
@@ -394,7 +436,7 @@ Returns:
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00552">552</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00384">test_dist_m4ri.test_check_finc_outc()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00384">test_dist_m4ri.test_check_finc_outc()</a>.</p>
 
 </div>
 </div>
@@ -684,9 +726,9 @@ Returns:
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00699">699</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01956">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01992">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00025">test_dist_m4ri.test_classical_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00031">test_dist_m4ri.test_classical_distance_numpy()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00117">test_dist_m4ri.test_caching()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00186">test_dist_m4ri.test_caching_cumulative_rw_steps()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00025">test_dist_m4ri.test_classical_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00031">test_dist_m4ri.test_classical_distance_numpy()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>.</p>
 
 </div>
 </div>
@@ -956,11 +998,11 @@ Returns:
     tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
     else (dist, dX_info, dZ_info)
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01259">1259</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01273">1273</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01956">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01259">_split_css_filename()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01992">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00048">test_dist_m4ri.test_css_distance_files()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00061">test_dist_m4ri.test_css_distance_sparse()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00048">test_dist_m4ri.test_css_distance_files()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00061">test_dist_m4ri.test_css_distance_sparse()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
 
 </div>
 </div>
@@ -1222,11 +1264,11 @@ Args:
 Returns:
     tuple (dist, d_info, cws) if do_cws else (dist, d_info)
 </pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01681">1681</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01717">1717</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01956">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01992">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00080">test_dist_m4ri.test_dem_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00101">test_dist_m4ri.test_dem_distance_stim()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00080">test_dist_m4ri.test_dem_distance_file()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00101">test_dist_m4ri.test_dem_distance_stim()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00229">test_dist_m4ri.test_persistent_json_cache()</a>.</p>
 
 </div>
 </div>
@@ -1498,9 +1540,9 @@ Returns:
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00958">958</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01956">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00032">_get_codedistance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01992">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00355">create_unique_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00168">format_bounds_list()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00326">get_sparse_array_state()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00095">load_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00363">read_sparse_vectors()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00605">run_dist_m4ri()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00112">save_distance_cache()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00284">test_dist_m4ri.test_quantum_distance_single_sided()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00315">test_dist_m4ri.test_quantum_cache_separation()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00284">test_dist_m4ri.test_quantum_distance_single_sided()</a>.</p>
 
 </div>
 </div>
@@ -1532,7 +1574,7 @@ Returns:
 <pre class="fragment">Creates a unique temporary file path and ensures the parent directory exists.</pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00355">355</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00679">_matrix_to_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
@@ -1553,7 +1595,7 @@ Returns:
 <pre class="fragment">Disables distance caching.</pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00156">156</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>.</p>
 
 </div>
 </div>
@@ -1621,7 +1663,7 @@ Returns:
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00197">197</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00337">test_dist_m4ri.test_explain_bounds()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00337">test_dist_m4ri.test_explain_bounds()</a>.</p>
 
 </div>
 </div>
@@ -1686,7 +1728,7 @@ Returns:
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00168">168</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00257">get_cached_distance()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00257">get_cached_distance()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
 
 </div>
 </div>
@@ -1708,7 +1750,7 @@ Returns:
 <pre class="fragment">Formats a bounds list [dmin, dmax, num_rw] as a string, stating '(exact)' if bounds coincide.</pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00189">189</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00211">test_dist_m4ri.test_format_bounds_list_and_str()</a>.</p>
 
 </div>
 </div>
@@ -1844,7 +1886,7 @@ Returns:
 <pre class="fragment">Returns a deterministic string representation for JSON-compatible cache keys.</pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00326">326</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00257">get_cached_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00257">get_cached_distance()</a>.</p>
 
 </div>
 </div>
@@ -1867,7 +1909,7 @@ Returns:
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00095">95</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00257">get_cached_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00082">set_distance_cache_file()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00257">get_cached_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00082">set_distance_cache_file()</a>.</p>
 
 </div>
 </div>
@@ -1887,11 +1929,11 @@ Returns:
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l02223">2223</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l02259">2259</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l01956">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00156">disable_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00197">explain_bounds()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00189">format_bounds_str()</a>, <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01969">parse_cli_args()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l02177">print_cli_help()</a>.</p>
+<p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l01259">_split_css_filename()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01992">_write_nzlist_file()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00156">disable_distance_cache()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00197">explain_bounds()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00189">format_bounds_str()</a>, <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, <a class="el" href="dist__m4ri_8py_source.html#l02005">parse_cli_args()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l02213">print_cli_help()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00355">test_dist_m4ri.test_cli_css_dx_dz_bounds()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00413">test_dist_m4ri.test_cli_identical_finc_outc_nonexistent()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00369">test_dist_m4ri.test_cli_verbose_mode()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00355">test_dist_m4ri.test_cli_css_dx_dz_bounds()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00413">test_dist_m4ri.test_cli_identical_finc_outc_nonexistent()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00369">test_dist_m4ri.test_cli_verbose_mode()</a>.</p>
 
 </div>
 </div>
@@ -1911,9 +1953,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 <pre class="fragment">Parses CLI arguments supporting both key=value pairs and standard --flags.</pre> 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l01969">1969</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l02005">2005</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00294">test_dist_m4ri.test_cli_argument_parsing()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00294">test_dist_m4ri.test_cli_argument_parsing()</a>.</p>
 
 </div>
 </div>
@@ -1959,9 +2001,9 @@ Returns:
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l02177">2177</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l02213">2213</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02223">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l02259">main()</a>.</p>
 
 </div>
 </div>
@@ -1991,7 +2033,7 @@ Returns:
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00363">363</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
@@ -2215,7 +2257,7 @@ Returns:
 
 <p class="reference">References <a class="el" href="dist__m4ri_8py_source.html#l00552">check_finc_outc()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00406">find_dist_m4ri_binary()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00435">parse_dist_m4ri_output()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00149">test_dist_m4ri.test_run_dist_m4ri_three_numbers()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>, <a class="el" href="test__dist__m4ri_8py_source.html#l00168">test_dist_m4ri.test_dmin_dmax_parameters()</a>, and <a class="el" href="test__dist__m4ri_8py_source.html#l00149">test_dist_m4ri.test_run_dist_m4ri_three_numbers()</a>.</p>
 
 </div>
 </div>
@@ -2239,7 +2281,7 @@ Uses atomic write via a temporary file to prevent corruption.
 </pre> 
 <p class="definition">Definition at line <a class="el" href="dist__m4ri_8py_source.html#l00112">112</a> of file <a class="el" href="dist__m4ri_8py_source.html">dist_m4ri.py</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01296">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01717">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8py_source.html#l00734">compute_classical_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01310">compute_css_distance()</a>, <a class="el" href="dist__m4ri_8py_source.html#l01753">compute_dem_distance()</a>, and <a class="el" href="dist__m4ri_8py_source.html#l00995">compute_quantum_distance()</a>.</p>
 
 </div>
 </div>
