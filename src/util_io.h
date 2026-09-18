@@ -79,7 +79,9 @@ typedef struct{
   csr_t *spaL;
   int threads; /* number of threads to use (0 for auto) */
   int dexp;    /* expected distance value (0 for auto/none) */
-  double timeout; /* timeout in seconds (default 60.0) */
+  double timeout; /* timeout in seconds (default 60.0, 0 for infinite) */
+  int nothrottle; /* 1: disable automatic thread throttling */
+  int chunk_size; /* RW chunk/batch size (0 for auto) */
 } params_t;
 
 static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
@@ -187,8 +189,10 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
   "\n"									\
   "   Execution and multithreading parameters:\n"				\
   "\tthreads=[int]: number of threads to use (0 for auto CPU count) (0)\n"	\
-  "\ttimeout=[sec]: timeout in seconds (60.0)\n"				\
-  "\tdexp=[int]:    expected distance value for method=3 (alias: dest) (0)\n"				\
+  "\tnothrottle=[int]: disable automatic thread throttling (0)\n"		\
+  "\tchunk_size=[int]: RW batch chunk size (0 for auto) (0)\n"			\
+  "\ttimeout=[sec]: timeout in seconds, 0 for infinite (60.0)\n"		\
+  "\tdexp=[int]:    expected distance value for method=3 (alias: dest) (0)\n"	\
   "\n"									\
   "   Distance bounds parameters:\n"					\
   "\tdmin=[int]:    known lower bound on distance, inclusive (w starts from dmin in CC) (1)\n" \

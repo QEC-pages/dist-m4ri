@@ -84,9 +84,33 @@ Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ 
 Relevant parameters:
 - `dexp=[int]` (alias: `dest=[int]`): Expected code distance to guide target search depth and thread allocation.
 - `threads=[int]`: Number of worker threads (default: hardware concurrency).
-- `timeout=[sec]`: Maximum execution time in seconds (default: 60.0).
-- `steps=[int]`: Maximum total RW steps (default: 1000).
+- `nothrottle=[int]`: Disable automatic thread throttling (default: 0; CLI flag: `--no-throttle`).
+- `chunk_size=[int]` (alias: `batch=[int]`): RW step batch chunk size (default: 0 for automatic adaptive sizing).
+  When `chunk_size=0` (default in Python and binary), chunk size is chosen adaptively based on $n$ and step budget:
+  - Small codes ($n < 500$): 50 steps/chunk (250 for $\ge 10^3$ steps; 500 for $\ge 5 \times 10^4$ steps).
+  - Medium codes ($500 \le n < 5000$): 50 steps/chunk (100 for $\ge 10^4$ steps).
+  - Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps;
+    bounds timeout overshoot to $\le 2\text{--}3$s).
+- `timeout=[sec]`: Maximum execution time in seconds (default: 60.0; set to `0` for infinite / no timeout).
+- `steps=[int]`: Maximum total RW steps (default: 1000; set to `0` to run pure CC via bracketing coordinator).
 - `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
+
+### 4. Multithreading, Throttling & Batch Sizing
+To maximize throughput across both small codes and large circuit DEMs:
+- **Small-Code Throttling**: When $n < 100$ or $r \cdot n < 100,000$, threads are automatically clamped to $\le 4$
+  (and $\le 16$ for $n < 300$), eliminating thread creation and lock contention overhead.
+- **Large-Matrix Memory Throttling**: For massive matrices (e.g. circuit DEMs with $n > 20,000, r > 5,000$),
+  threads are automatically throttled so total dense working memory stays under ~1.5 GB, avoiding DRAM bus and
+  CPU cache thrashing.
+- **Adaptive RW Chunk Sizing**: Setting `chunk_size=0` (or omitting it) enables adaptive batching, reducing atomic CAS
+  contention by up to 10x during extended searches ($10^4$ or $10^5$ steps).
+- **Thread Starvation Prevention**: If `chunk_size` exceeds $\lceil \text{steps} / N_{\text{threads}} \rceil$, the chunk
+  is automatically clamped so that a single thread cannot monopolize all steps, ensuring all cores run concurrently.
+- **CSS Codeword Suffixing**: In CSS mode, specifying `outC="cws.nz"` automatically saves $X$-codewords to `cws_X.nz`
+  and $Z$-codewords to `cws_Z.nz` (preventing mixed sectors in a single file). Specifying `finC="cws.nz"` automatically
+  resolves `cws_X.nz` and `cws_Z.nz` (or separates mixed files in-flight).
+- **Manual Override**: Pass `nothrottle=1` (or `--no-throttle` in Python) and `chunk_size=N` to override automatic
+  heuristics.
 
 ---
 
