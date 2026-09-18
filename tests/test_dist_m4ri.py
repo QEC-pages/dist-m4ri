@@ -241,8 +241,10 @@ def test_persistent_json_cache(tmp_path):
 
     with open(json_file, "r") as f:
         data1 = json.load(f)
-    assert len(data1) == 1
-    key = list(data1.keys())[0]
+    assert data1.get("__version__") == dist_m4ri.__version__
+    cache_entries1 = {k: v for k, v in data1.items() if not k.startswith("__")}
+    assert len(cache_entries1) == 1
+    key = list(cache_entries1.keys())[0]
     assert data1[key]["rw_steps"] == 50
     assert data1[key]["dmax"] == d1
 
