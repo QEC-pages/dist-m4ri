@@ -548,6 +548,16 @@ def test_rw_ksub_kwin_min_hits(capsys):
         assert args["min_hits"] == 5
         assert args["cov_cws"] == 3
         assert args["refresh"] == 100
+
+        default_args = dist_m4ri.parse_cli_args(["method=1"])
+        assert default_args["cov_cws"] == 100
+
+        # Test method=3 with min_hits (stops only RW workers while CC proves exact distance)
+        d3, d3_info = dist_m4ri.compute_dem_distance(
+            dem=dem_file, method=3, num_steps=50000, min_hits=2, cov_cws=2, threads=4, seed=42
+        )
+        assert d3 == 3
+        assert d3_info[0] == 3 and d3_info[1] == 3
     finally:
         dist_m4ri.enable_distance_cache()
 

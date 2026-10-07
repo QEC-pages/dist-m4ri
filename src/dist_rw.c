@@ -84,11 +84,36 @@ int do_RW_dist(params_t * const p){
   int nu = 0;
   int ksub_eff = 0;
   if (p->ksub > 0) {
-    N_ker = mzd_nullspace(spaH0);
-    nu = N_ker ? N_ker->nrows : 0;
-    ksub_eff = minint(p->ksub, nu);
-    if (ksub_eff > 0) {
-      M_sub = mzd_init(ksub_eff, nvar);
+    if (2 * spaH0->rows < nvar) {
+      if (debug & 1) {
+        fprintf(stderr,
+                "# Warning: ksub=%d requested, but m=%d < n-m=%d (<= nu); "
+                "falling back to full-matrix RW (ksub=0)\n",
+                p->ksub, spaH0->rows, nvar - spaH0->rows);
+      }
+      p->ksub = 0;
+    } else {
+      N_ker = mzd_nullspace(spaH0);
+      nu = N_ker ? N_ker->nrows : 0;
+      if (spaH0->rows < nu || nu <= 0) {
+        if (debug & 1) {
+          fprintf(stderr,
+                  "# Warning: ksub=%d requested, but m=%d < nu=%d; "
+                  "falling back to full-matrix RW (ksub=0)\n",
+                  p->ksub, spaH0->rows, nu);
+        }
+        if (N_ker) {
+          mzd_free(N_ker);
+          N_ker = NULL;
+        }
+        nu = 0;
+        p->ksub = 0;
+      } else {
+        ksub_eff = minint(p->ksub, nu);
+        if (ksub_eff > 0) {
+          M_sub = mzd_init(ksub_eff, nvar);
+        }
+      }
     }
   }
 

@@ -668,7 +668,7 @@ def run_dist_m4ri(
     kwin: int = 0,
     win_mode: int = 0,
     min_hits: int = 0,
-    cov_cws: int = 1,
+    cov_cws: int = 100,
     refresh: int = 0,
     stop_event: Optional[threading.Event] = None
 ) -> Tuple[int, int, int]:
@@ -723,7 +723,7 @@ def run_dist_m4ri(
     if kwin > 0: cmd.append(f"kwin={kwin}")
     if win_mode != 0: cmd.append(f"win_mode={win_mode}")
     if min_hits > 0: cmd.append(f"min_hits={min_hits}")
-    if cov_cws != 1: cmd.append(f"cov_cws={cov_cws}")
+    if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh > 0: cmd.append(f"refresh={refresh}")
 
     if debug & 2:
@@ -809,7 +809,7 @@ def compute_classical_distance(
     kwin: int = 0,
     win_mode: int = 0,
     min_hits: int = 0,
-    cov_cws: int = 1,
+    cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
 ) -> Any:
@@ -1082,7 +1082,7 @@ def compute_quantum_distance(
     kwin: int = 0,
     win_mode: int = 0,
     min_hits: int = 0,
-    cov_cws: int = 1,
+    cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
 ) -> Any:
@@ -1409,7 +1409,7 @@ def compute_css_distance(
     kwin: int = 0,
     win_mode: int = 0,
     min_hits: int = 0,
-    cov_cws: int = 1,
+    cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
 ) -> Tuple[Any, ...]:
@@ -1870,7 +1870,7 @@ def compute_dem_distance(
     kwin: int = 0,
     win_mode: int = 0,
     min_hits: int = 0,
-    cov_cws: int = 1,
+    cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
 ) -> Tuple[Any, ...]:
@@ -2177,7 +2177,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "kwin": 0,
         "win_mode": 0,
         "min_hits": 0,
-        "cov_cws": 1,
+        "cov_cws": 100,
         "refresh": 0,
         "morehelp": False,
         "version": False,
@@ -2438,12 +2438,12 @@ Extra parameters (see --morehelp for details):
   start/cbeg/cend=N     Limit CC search to specific column(s) (-1: all)
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      RW batch chunk size (default: 0 for adaptive 25-500, alias: batch)
-  ksub=N (0)            RW subspace sketch dimension (0: full matrix, e.g. 32 or 64)
+  ksub=N (0)            RW subspace sketch dimension (0: full matrix; auto-disabled if m < nu)
   kwin=N (0)            RW localized window size around seed column (0: uniform, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
-  min_hits=N (0)        RW early stop when >= cov_cws min-weight cws hit >= N times
-  cov_cws=N (1)         Min distinct min-weight cws required for min_hits convergence
-  refresh=N (0)         Periodic N basis refresh interval in RW steps (when ksub > 0)
+  min_hits=N (0)        RW early stop when tracked min-weight cws hit >= N times
+  cov_cws=N (100)       Max distinct min-weight cws tracked for min_hits convergence
+  refresh=N (0)         Periodic N basis refresh interval in RW steps (auto 5000 when ksub > 0)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
   dW=N (0)              Extra weight window above dmin to collect codewords
   seed=N (0)            Random number generator seed
@@ -2507,7 +2507,7 @@ Search limits and stopping criteria:
   timeout=SEC           Execution timeout in seconds (default: 60.0; set 0 for infinite).
 
 Multithreading & throttling:
-  threads=N             Maximum number of worker threads to allocate (default: CPU core count).
+  threads=N             Maximum number of worker threads to allocate (default: min(CPU cores, 64)).
                         Subject to automatic thread throttling unless nothrottle=1 is specified:
                         - Small codes (n < 100 clamped to <= 4, n < 300 clamped to <= 16).
                         - Large memory matrices (dense working memory capped at ~1.5 GB).
@@ -2519,18 +2519,19 @@ Multithreading & throttling:
   ksub=N                Subspace sketch dimension for RW (default: 0 = full matrix).
                         Precomputes N = ker(H) once; each thread echelonizes a compact
                         ksub x n sampled subspace in L1/L2 cache (e.g. ksub=32 or 64).
+                        Automatically falls back to ksub=0 with a warning if m < nu = dim(ker H).
   kwin=N                Localized column permutation window size W around a random seed
                         column j0 (default: 0 = uniform permutation). Alias: win=N.
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
   min_hits=N            Empirical RW convergence stopping criterion (default: 0 = disabled).
-                        Stops RW early when >= cov_cws distinct min-weight codewords have
-                        each been independently found at least min_hits times.
-  cov_cws=N             Minimum distinct minimum-weight codewords required for min_hits
-                        convergence (default: 1; set <= 0 to require all found min-weight cws).
+                        Stops RW early when all tracked min-weight codewords (up to cov_cws)
+                        have each been independently found at least min_hits times.
+  cov_cws=N             Maximum distinct minimum-weight codewords tracked in hash for min_hits
+                        convergence (default: 100; set <= 0 to track all found min-weight cws).
   refresh=N             Periodic adaptive basis refresh interval in RW steps when ksub > 0
-                        (default: 0 = disabled). Re-echelonizes N and substitutes heavier
-                        basis rows with discovered minimum-weight codewords.
+                        (default: 5000 when ksub > 0, 0 to disable). Re-echelonizes N and
+                        substitutes heavier basis rows with discovered min-weight codewords.
 
 Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 5).

@@ -37,6 +37,9 @@ params_t prm={
   .codewords=NULL,
   .num_cws=0,
   .min_w=INT_MAX,
+  .min_w_cws=0,
+  .min_w_cov=0,
+  .min_w_hits=0,
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
@@ -53,7 +56,7 @@ params_t prm={
   .kwin=0,
   .win_mode=0,
   .min_hits=0,
-  .cov_cws=1,
+  .cov_cws=100,
   .refresh=0
 };
 
@@ -96,6 +99,7 @@ void var_init(int argc, char **argv, params_t * const p){
   }
 
   int debug_set=0;
+  int refresh_set=0;
 
   for(int i=1; i<argc; i++){
     if(sscanf(argv[i],"debug=%d",& dbg)==1){/** `debug` */
@@ -327,6 +331,7 @@ void var_init(int argc, char **argv, params_t * const p){
     }
     else if (sscanf(argv[i],"refresh=%d",&dbg)==1){
       p->refresh=dbg;
+      refresh_set=1;
       if (p->debug&4)
 	fprintf(stderr, "# read %s, refresh=%d\n",argv[i],p->refresh);
     }
@@ -336,6 +341,10 @@ void var_init(int argc, char **argv, params_t * const p){
       exit(-1);
     }
   } /* end parameter scan cycle */
+
+  if (!refresh_set && p->ksub > 0) {
+    p->refresh = 5000;
+  }
 
   if (p->noscan && p->method != 2) {
     ERROR("noscan=1 only works with method=2");
@@ -893,6 +902,10 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
   cw_vec_t *pvec = NULL;
   HASH_FIND(hh, p->codewords, arr, keylen, pvec);
   if (!pvec) {
+    if (weight == p->min_w && !p->outC && p->maxC == 0 && p->dW <= 0 &&
+        !(p->debug & 32) && p->cov_cws > 0 && p->min_w_cws >= p->cov_cws) {
+      return p->codewords;
+    }
     cw_vec_t *entry = malloc(sizeof(cw_vec_t) + keylen);
     if (!entry) ERROR("memory allocation");
     entry->weight = weight;
@@ -902,10 +915,13 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
     }
     HASH_ADD(hh, p->codewords, arr, keylen, entry);
     p->num_cws++;
-    
+
     // Update min_w and prune heavier codewords
     if (weight < p->min_w) {
       p->min_w = weight;
+      p->min_w_cws = 1;
+      p->min_w_hits = 1;
+      p->min_w_cov = (p->min_hits > 0 && 1 >= p->min_hits) ? 1 : 0;
       int prune_w = (p->dW >= 0) ? (p->min_w + p->dW) : p->min_w;
       cw_vec_t *cw, *tmp;
       HASH_ITER(hh, p->codewords, cw, tmp) {
@@ -915,35 +931,44 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
           p->num_cws--;
         }
       }
+    } else if (weight == p->min_w) {
+      p->min_w_cws++;
+      p->min_w_hits++;
+      if (p->min_hits > 0 && 1 >= p->min_hits) {
+        p->min_w_cov++;
+      }
     }
   } else {
     pvec->cnt++;
+    if (weight == p->min_w) {
+      p->min_w_hits++;
+      if (p->min_hits > 0 && pvec->cnt == p->min_hits) {
+        p->min_w_cov++;
+      }
+    }
   }
   return p->codewords;
 }
 
 int check_min_hits_convergence(const params_t * const p) {
-  if (p->min_hits <= 0 || p->min_w == INT_MAX || !p->codewords) {
+  if (p->min_hits <= 0 || p->min_w == INT_MAX || p->min_w_cws <= 0) {
     return 0;
   }
-  int total_min_w = 0;
-  int hit_min_w = 0;
-  cw_vec_t *cw, *tmp;
-  HASH_ITER(hh, p->codewords, cw, tmp) {
-    if (cw->weight == p->min_w) {
-      total_min_w++;
-      if (cw->cnt >= p->min_hits) {
-        hit_min_w++;
-      }
-    }
-  }
-  if (total_min_w == 0) {
+  int min_req = (p->cov_cws > 0) ? minint(p->cov_cws, 5) : 1;
+  if (p->min_w_cws < min_req) {
     return 0;
   }
-  if (p->cov_cws <= 0) {
-    return (hit_min_w == total_min_w) ? 1 : 0;
+  if (p->cov_cws > 0 && p->min_w_cov >= p->cov_cws) {
+    return 1;
   }
-  return (hit_min_w >= p->cov_cws) ? 1 : 0;
+  if (p->min_w_cov >= p->min_w_cws) {
+    return 1;
+  }
+  if (p->min_w_hits >= (long long int)p->min_w_cws * p->min_hits &&
+      p->min_w_cov * 2 >= p->min_w_cws) {
+    return 1;
+  }
+  return 0;
 }
 
 long long int nzlist_read(const char fnam[], params_t *p){

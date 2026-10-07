@@ -362,6 +362,14 @@ finL=$EXAMPLES_DIR/surf_d5_L.mmx steps=300 ksub=32 refresh=50 debug=0 threads=4"
 assert_output "$BIN method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 win=48 min_hits=3 refresh=50 debug=0" \
     0 "^3$" ""
 
+# Test 54: dist_m4ri ksub automatic fallback warning when m < nu (2m < n)
+assert_output "$BIN_FORK debug=1 method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 threads=4" \
+    0 "^1 3 [0-9]+$" "Warning: ksub=32 requested, but m=24 < n-m=197 \(<= nu\); falling back to full-matrix RW"
+
+# Test 55: dist_m4ri method=3 with min_hits stops only RW workers and lets CC finish exact proof
+assert_output "$BIN_FORK debug=1 method=3 fdem=$EXAMPLES_DIR/surf_d3.dem steps=50000 min_hits=2 cov_cws=2 threads=4" \
+    0 "^3 3 [0-9]+$" "RW convergence reached"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

@@ -68,6 +68,9 @@ typedef struct{
   cw_vec_t *codewords;
   long long int num_cws;
   int min_w;
+  int min_w_cws;  /* number of distinct codewords of weight min_w in hash */
+  int min_w_cov;  /* number of codewords of weight min_w with cnt >= min_hits */
+  long long int min_w_hits; /* total hits across codewords of weight min_w */
   char *fdem;
   double pmin;
   char *finH;
@@ -86,8 +89,8 @@ typedef struct{
   int kwin;       /* RW localized window size W (0 for uniform permutation) */
   int win_mode;   /* RW window mode: 0 = Tanner BFS, 1 = index proximity */
   int min_hits;   /* RW stopping criterion: min hits per min-weight cw (0 = off) */
-  int cov_cws;    /* RW stopping criterion: min distinct min-weight cws (default 1) */
-  int refresh;    /* RW steps interval for adaptive basis refresh (0 = off) */
+  int cov_cws;    /* RW stopping criterion: max min-weight cws tracked (default 100) */
+  int refresh;    /* RW steps interval for adaptive basis refresh (0 = off, auto 5000 if ksub>0) */
 } params_t;
 
 static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
@@ -173,9 +176,11 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
 /**
  * @brief Check whether the QDistRnd-style minimum hit count stopping condition is met.
  *
- * Returns 1 if p->min_hits > 0, at least max(1, p->cov_cws) distinct codewords of
- * weight p->min_w have been found, and every codeword of weight p->min_w has been
- * hit at least p->min_hits times. Otherwise returns 0.
+ * Returns 1 if p->min_hits > 0, at least min(p->cov_cws, 5) distinct codewords of
+ * weight p->min_w have been found (up to p->cov_cws), and every tracked codeword of
+ * weight p->min_w has been hit at least p->min_hits times (or the average hit count
+ * across tracked min-weight codewords reaches p->min_hits with at least half having
+ * cnt >= p->min_hits). Otherwise returns 0.
  *
  * @param p Pointer to the params_t structure.
  * @return 1 if convergence criterion is met, 0 otherwise.
@@ -246,8 +251,8 @@ void print_short_help(const char *prog);
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
-  "  cov_cws=[int] (1)      Min distinct min-wt cws required for min_hits stop\n" \
-  "  refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (0=off)\n" \
+  "  cov_cws=[int] (100)    Max min-wt cws tracked in hash for min_hits stop\n" \
+  "  refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (auto 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
   "  debug=[int] (3)        Debug bitmask (0: silent, 1: general, 2: verbose, ...)\n\n" \
   "Help options:\n" \
@@ -333,8 +338,8 @@ void print_short_help(const char *prog);
   "                     Collects codewords with weight up to min_w + dW.\n\n" \
   "Execution, multithreading, and timing:\n" \
   "  threads=[int]      Maximum number of worker threads to use (default: 0 =\n" \
-  "                     hardware concurrency). Subject to throttling for small\n" \
-  "                     codes or large matrices unless nothrottle=1 is set.\n" \
+  "                     hardware concurrency, capped at 64). Subject to throttling\n" \
+  "                     for small codes or large matrices unless nothrottle=1 is set.\n" \
   "  timeout=[sec]      Execution timeout in seconds (default: 60.0, 0 = infinite).\n" \
   "                     In method=3, dynamically guides CC vs RW thread balance.\n" \
   "  nothrottle=[0|1]   Disable automatic thread throttling (default: 0).\n" \
@@ -345,19 +350,21 @@ void print_short_help(const char *prog);
   "                     Alias: batch=[int].\n" \
   "  ksub=[int]         Subspace dimension sampled from ker(H) in RW (default: 0 =\n" \
   "                     original full-matrix RW). E.g. ksub=32 or 64 keeps working\n" \
-  "                     matrices inside L1/L2 cache for linear multicore scaling.\n" \
+  "                     matrices inside L1/L2 cache. Automatically falls back to\n" \
+  "                     ksub=0 (with a warning) if m < nu = dim(ker(H)).\n" \
   "  kwin=[int]         Localized column permutation window size W (default: 0 =\n" \
   "                     uniform random permutation; alias: win=[int]).\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
   "                     0: Tanner graph BFS neighbors around random seed column.\n" \
   "                     1: Contiguous index proximity window around seed column.\n" \
   "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 0 = off).\n" \
-  "                     Stops RW when at least cov_cws distinct minimum-weight\n" \
-  "                     codewords have each been found at least min_hits times.\n" \
-  "  cov_cws=[int]      Minimum distinct minimum-weight codewords required before\n" \
-  "                     evaluating the min_hits stopping criterion (default: 1).\n" \
+  "                     Stops RW when tracked minimum-weight codewords (up to\n" \
+  "                     cov_cws) have been found at least min_hits times.\n" \
+  "  cov_cws=[int]      Maximum number of minimum-weight codewords tracked in hash\n" \
+  "                     for the min_hits stopping criterion (default: 100).\n" \
   "  refresh=[int]      RW steps interval for adaptive ker(H) basis refresh via\n" \
-  "                     low-weight codeword exchange and re-echelonization (0=off).\n" \
+  "                     low-weight codeword exchange and re-echelonization\n" \
+  "                     (default: 5000 when ksub > 0, 0 = off).\n" \
   "  seed=[int]         Random number generator seed (default: 0 = initialize from\n" \
   "                     current time).\n\n" \
   "Debug output bitmap (debug=[int], default: 3):\n" \

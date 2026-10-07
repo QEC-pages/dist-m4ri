@@ -124,6 +124,7 @@ typedef struct {
   atomic_int dmax;             /* smallest weight codeword found (0 if none) */
   atomic_int cc_found_weight;  /* weight of codeword if CC found exact */
   atomic_bool stop_flag;       /* signals all threads to terminate */
+  atomic_bool rw_stop_flag;    /* signals RW workers to stop (in method 3) */
 
   /* RW state */
   long total_rw_steps;
@@ -267,7 +268,10 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
   const int win_mode = p->win_mode;
 
   for (int step = 0; step < n_steps; step++) {
-    if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) break;
+    if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+        atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+      break;
+    }
 
     if (kwin > 0 && kwin < nvar) {
       int seed_col = rand_uniform_thread(nvar, rng_state);
@@ -360,13 +364,19 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
             atomic_store(&ctx->stop_flag, true);
           }
           if (check_min_hits_convergence(p)) {
-            if ((p->debug & 1) && !atomic_load(&ctx->stop_flag)) {
+            int req = (p->cov_cws > 0) ? minint(p->cov_cws, 5) : 1;
+            if ((p->debug & 1) && !atomic_load(&ctx->stop_flag) &&
+                !atomic_load(&ctx->rw_stop_flag)) {
               fprintf(stderr,
                       "# RW convergence reached: >= %d min-weight (w=%d) cws "
-                      "each hit >= %d times\n",
-                      p->cov_cws > 1 ? p->cov_cws : 1, best, p->min_hits);
+                      "(cov=%d/%d) each hit >= %d times\n",
+                      req, best, p->min_w_cov, p->min_w_cws, p->min_hits);
             }
-            atomic_store(&ctx->stop_flag, true);
+            if (p->method == 1) {
+              atomic_store(&ctx->stop_flag, true);
+            } else {
+              atomic_store(&ctx->rw_stop_flag, true);
+            }
           }
           pthread_mutex_unlock(&ctx->cw_mutex);
         }
@@ -396,7 +406,10 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
   const mzd_t * const N = ctx->N_global;
 
   for (int step = 0; step < n_steps; step++) {
-    if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) break;
+    if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+        atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+      break;
+    }
 
     /* 1. Generate column permutation (localized window or uniform) */
     if (kwin > 0 && kwin < nvar) {
@@ -494,13 +507,19 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
             atomic_store(&ctx->stop_flag, true);
           }
           if (check_min_hits_convergence(p)) {
-            if ((p->debug & 1) && !atomic_load(&ctx->stop_flag)) {
+            int req = (p->cov_cws > 0) ? minint(p->cov_cws, 5) : 1;
+            if ((p->debug & 1) && !atomic_load(&ctx->stop_flag) &&
+                !atomic_load(&ctx->rw_stop_flag)) {
               fprintf(stderr,
                       "# RW convergence reached: >= %d min-weight (w=%d) cws "
-                      "each hit >= %d times\n",
-                      p->cov_cws > 1 ? p->cov_cws : 1, best, p->min_hits);
+                      "(cov=%d/%d) each hit >= %d times\n",
+                      req, best, p->min_w_cov, p->min_w_cws, p->min_hits);
             }
-            atomic_store(&ctx->stop_flag, true);
+            if (p->method == 1) {
+              atomic_store(&ctx->stop_flag, true);
+            } else {
+              atomic_store(&ctx->rw_stop_flag, true);
+            }
           }
           pthread_mutex_unlock(&ctx->cw_mutex);
         }
@@ -512,7 +531,8 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
   pthread_rwlock_unlock(&ctx->basis_rwlock);
 
   /* 5. Periodic adaptive basis refresh if enabled */
-  if (p->refresh > 0 && !atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
+  if (p->refresh > 0 && !atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) &&
+      !atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
     long done = atomic_load_explicit(&ctx->rw_steps_completed, memory_order_relaxed);
     long next_ref = atomic_load_explicit(&ctx->next_refresh_step, memory_order_relaxed);
     if (done >= next_ref && next_ref > 0) {
@@ -622,6 +642,7 @@ static void *worker_thread_func(void *arg) {
     if (ctx->p->method >= 2 && atomic_load(&ctx->cc_round_active)) {
       int active = atomic_load(&ctx->cc_active_workers);
       int target = atomic_load(&ctx->cc_target_workers);
+      if (atomic_load(&ctx->rw_stop_flag)) target = ctx->num_threads;
       if (active < target) {
         int col = atomic_fetch_add(&ctx->cc_col_next, 1);
         int end = ctx->cc_col_end;
@@ -667,7 +688,7 @@ static void *worker_thread_func(void *arg) {
     }
 
     /* 2. Try to take RW work if RW is active (method 1 or 3) */
-    if (enable_rw && !atomic_load(&ctx->stop_flag)) {
+    if (enable_rw && !atomic_load(&ctx->stop_flag) && !atomic_load(&ctx->rw_stop_flag)) {
       long cur_s = atomic_load(&ctx->rw_steps_started);
       if (cur_s < ctx->total_rw_steps) {
         long batch_size;
@@ -974,7 +995,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
     if (w > target_cc_w) {
       /* Let remaining RW steps finish */
-      while (!atomic_load(&ctx->stop_flag)) {
+      while (!atomic_load(&ctx->stop_flag) && !atomic_load(&ctx->rw_stop_flag)) {
         if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) break;
         if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
         usleep(1000);
@@ -1006,7 +1027,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
         fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting %d threads to RW\n",
                 w, t_cc_est / ctx->num_threads, remaining_time, ctx->num_threads);
       }
-      while (!atomic_load(&ctx->stop_flag)) {
+      while (!atomic_load(&ctx->stop_flag) && !atomic_load(&ctx->rw_stop_flag)) {
         if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) break;
         if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
         usleep(1000);
@@ -1016,7 +1037,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
     /* Calculate thread balancing */
     long steps_done = atomic_load(&ctx->rw_steps_completed);
-    long steps_rem = (ctx->total_rw_steps > steps_done) ? (ctx->total_rw_steps - steps_done) : 0;
+    long steps_rem = (!atomic_load(&ctx->rw_stop_flag) && ctx->total_rw_steps > steps_done)
+                     ? (ctx->total_rw_steps - steps_done) : 0;
 
     int n_cc;
     if (ctx->num_threads == 1) {
@@ -1172,12 +1194,28 @@ int main(int argc, char **argv) {
     nzlist_read(p->finC, p);
   }
 
+  /* Check ksub feasibility before thread throttling (require m >= nu >= n - m) */
+  if ((p->method & 1) && p->ksub > 0 && p->spaH) {
+    int nrows = p->spaH->rows;
+    int nvar = p->spaH->cols;
+    if (2 * nrows < nvar) {
+      if (p->debug & 1) {
+        fprintf(stderr,
+                "# Warning: ksub=%d requested, but m=%d < n-m=%d (<= nu); "
+                "falling back to full-matrix RW (ksub=0)\n",
+                p->ksub, nrows, nvar - nrows);
+      }
+      p->ksub = 0;
+    }
+  }
+
   /* Determine number of threads */
   int requested_threads = p->threads;
   int num_threads = p->threads;
   if (num_threads <= 0) {
     long nprocs = sysconf(_SC_NPROCESSORS_ONLN);
     num_threads = (nprocs > 0) ? (int)nprocs : 4;
+    if (num_threads > 64) num_threads = 64;
   }
 
   if (!p->nothrottle) {
@@ -1271,6 +1309,7 @@ int main(int argc, char **argv) {
 
   atomic_init(&ctx.cc_found_weight, 0);
   atomic_init(&ctx.stop_flag, false);
+  atomic_init(&ctx.rw_stop_flag, false);
   atomic_init(&ctx.rw_steps_started, 0);
   atomic_init(&ctx.rw_steps_completed, 0);
   atomic_init(&ctx.cc_weight, 1);
@@ -1290,7 +1329,18 @@ int main(int argc, char **argv) {
     double t_ker0 = get_time_sec();
     ctx.N_global = mzd_nullspace(p->spaH);
     ctx.nu = ctx.N_global ? ctx.N_global->nrows : 0;
-    if (p->debug & 2) {
+    if (p->spaH->rows < ctx.nu || ctx.nu <= 0) {
+      if (p->debug & 1) {
+        fprintf(stderr,
+                "# Warning: ksub=%d requested, but m=%d < nu=%d; "
+                "falling back to full-matrix RW (ksub=0)\n",
+                p->ksub, p->spaH->rows, ctx.nu);
+      }
+      safe_mzd_free(ctx.N_global);
+      ctx.N_global = NULL;
+      ctx.nu = 0;
+      p->ksub = 0;
+    } else if (p->debug & 2) {
       fprintf(stderr,
               "# computed ker(H) in %.4fs: nu=%d, n=%d, ksub=%d (eff=%d)\n",
               get_time_sec() - t_ker0, ctx.nu, p->spaH->cols, p->ksub,
