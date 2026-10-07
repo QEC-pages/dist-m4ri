@@ -74,10 +74,10 @@ int do_RW_dist(params_t * const p){
   /** 1. Construct random column permutation P */
   mzp_t * perm=mzp_init(nvar); /** identity column permutation */
   mzp_t * pivs=mzp_init(nvar); /** list of pivot columns */
-  mzp_t * pivs_srtd=mzp_init(nvar); /** list of pivot columns */
-  mzp_t * skip_pivs=mzp_init(nvar); /** list of pivot columns */
-  if((!pivs) || (!perm))
+  word * piv_mask=calloc(mH->width, sizeof(word)); /** bitmask of pivot columns */
+  if((!pivs) || (!perm) || (!piv_mask))
     ERROR("memory allocation failed!\n");
+  int eff_nrows = spaH0->rows;
 
   mzd_t *N_ker = NULL;
   mzd_t *M_sub = NULL;
@@ -205,32 +205,16 @@ int do_RW_dist(params_t * const p){
     }
 
     /** full row echelon form of `H` (gauss) using the order in `perm` */
-    int rank=0;
-    for(int i=0; i< nvar; i++){
-      int col=perm->values[i];
-      int ret=gauss_one(mH, col, rank);
-      if(ret)
-        pivs->values[rank++]=col;
+    memset(piv_mask, 0, mH->width * sizeof(word));
+    int rank = 0;
+    for (int i = 0; i < nvar && rank < eff_nrows; i++) {
+      int col = perm->values[i];
+      if (gauss_one_rows(mH, col, rank, eff_nrows)) {
+        pivs->values[rank++] = col;
+        piv_mask[col >> 6] |= (word)1 << (col & 63);
+      }
     }
-
-    /** construct skip-pivot permutation */
-    pivs_srtd = mzp_copy(pivs_srtd,pivs);
-    qsort(pivs_srtd->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
-    int end=-1, num=0;
-    for(int i=0; i < rank; i++){
-      int beg = end + 1;
-      end = pivs_srtd->values[i];
-      for(int j = beg; j < end; j++)
-	skip_pivs->values[num++] = j;
-    }
-    for(int j = end + 1 ; j < nvar; j++)
-      skip_pivs->values[num++] = j;
-    
-#ifndef NDEBUG
-    if (num + rank != nvar)
-      ERROR("mismatch: rank=%d and num=%d do not add to nvar=%d\n",rank,num,nvar);
-#endif
-    skip_pivs->length = num;
+    eff_nrows = rank;
 
 #ifndef NEW
 # define NEW 1
@@ -245,10 +229,11 @@ int do_RW_dist(params_t * const p){
      *  [   a2  1     b2 ]     [b1  0  b2 b3 1 ]
      *  [   a3     1  b3 ]
      */
-    int k = nvar - rank;
-    for (int ir=0; ir< k; ir++){ /** each row in the dual matrix */
+    for (int col = 0, ir = 0; col < nvar; col++){ /** each row in the dual matrix */
+      if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
+      ir++;
       int cnt=0; /** how many non-zero elements */
-      const int col = ee[cnt++] = skip_pivs->values[ir];
+      ee[cnt++] = col;
       int limit = nvar + 1;
       int cur_d = (minW <= nvar) ? minW : 0;
       if (cur_d > 0) {
@@ -286,16 +271,17 @@ int do_RW_dist(params_t * const p){
 #else /** NEW==1, use transposed `H` -- the `fastest` version of the code*/
       word * rawrow = mzd_row(mHT,col);  
       rci_t j=-1;
+      const int active_width = (rank + 63) >> 6;
       while(cnt < limit){/** `cw` of no interest */
-	j=nextelement(rawrow,mHT->width,j);
-	if(j==-1) // empty line after simplification
+	j=nextelement(rawrow,active_width,j);
+	if(j==-1 || j >= rank) // empty line after simplification
 	  break; 
 	ee[cnt++] = pivs->values[j++];
       }
 #endif /* NEW */              
       if (cnt < limit){
 	/** sort the column indices */
-	qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
+	rci_quick_sort(ee, cnt);
 #ifndef NDEBUG
 	/** expensive: verify orthogonality */
 	if(sparse_syndrome_non_zero(spaH0, cnt, ee)){
@@ -354,10 +340,7 @@ int do_RW_dist(params_t * const p){
   free(visited_cols);
   free(visited_checks);
   free(col_queue);
-  if(skip_pivs)
-    mzp_free(skip_pivs);
-  if(pivs_srtd)
-    mzp_free(pivs_srtd);
+  free(piv_mask);
   mzp_free(perm);
   mzp_free(pivs);
   free(ee);

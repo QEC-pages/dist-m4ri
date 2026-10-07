@@ -119,6 +119,12 @@ typedef struct{    /*  */
 
 typedef struct { int a; int b; } int_pair;
 
+#define SORT_NAME rci
+#define SORT_TYPE rci_t
+#define SORT_CMP(x, y) ((x) - (y))
+#define SORT_DEF static inline
+#include "sort.h"
+
 
 #if defined(__cplusplus) && !defined (_MSC_VER)
 extern "C" {
@@ -420,36 +426,59 @@ static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const co
 }
 
 /**
+ * @brief Perform one step of Gaussian elimination on column idx of M
+ *        restricted to the first nrows_eff rows.
+ * @param M Dense matrix.
+ * @param idx Column index to eliminate.
+ * @param begrow Starting row index.
+ * @param nrows_eff Active row count to scan and eliminate.
+ * @return Number of pivots found (0 or 1).
+ */
+static inline int gauss_one_rows(mzd_t *M, const int idx, const int begrow,
+                                 const rci_t nrows_eff) {
+  if (begrow >= nrows_eff) return 0;
+  const wi_t word_idx = idx >> 6;
+  const word bit_mask = (word)1 << (idx & 63);
+  const wi_t width = M->width;
+  const wi_t rowstride = M->rowstride;
+  word *row_j = mzd_row(M, begrow);
+  for (rci_t j = begrow; j < nrows_eff; ++j, row_j += rowstride) {
+    if (row_j[word_idx] & bit_mask) {
+      if (j != begrow) {
+        mzd_row_swap(M, begrow, j);
+      }
+      const word * const __restrict piv_row = mzd_row(M, begrow);
+      word * __restrict dst_row = M->data;
+      for (rci_t ii = 0; ii < begrow; ++ii, dst_row += rowstride) {
+        if (dst_row[word_idx] & bit_mask) {
+          for (wi_t w = 0; w < width; ++w) {
+            dst_row[w] ^= piv_row[w];
+          }
+        }
+      }
+      dst_row += rowstride;
+      for (rci_t ii = begrow + 1; ii < nrows_eff; ++ii, dst_row += rowstride) {
+        if (dst_row[word_idx] & bit_mask) {
+          for (wi_t w = 0; w < width; ++w) {
+            dst_row[w] ^= piv_row[w];
+          }
+        }
+      }
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/**
  * @brief Perform one step of Gaussian elimination on column idx of M.
  * @param M Dense matrix.
  * @param idx Column index to eliminate.
  * @param begrow Starting row index.
  * @return Number of pivots found (0 or 1).
  */
-static inline int gauss_one(mzd_t *M, const int idx, const int begrow){
-  /** note: force-inlining actually slows it down (`???`) */
-  rci_t startrow = begrow;
-  rci_t pivots = 0;
-  const rci_t i = idx;
-  //  for (rci_t i = startcol; i < endcol ; ++i) {
-  for(rci_t j = startrow ; j < M->nrows; ++j) {
-    if (mzd_read_bit(M, j, i)) {
-      mzd_row_swap(M, startrow, j);
-      ++pivots;
-      for(rci_t ii = 0 ;  ii < M->nrows; ++ii) {
-        if (ii != startrow) {
-          if (mzd_read_bit(M, ii, i)) {
-            mzd_row_add_offset(M, ii, startrow,0);
-          }
-        }
-      }
-      startrow = startrow + 1;
-      break;
-    }
-  }
-  //  }
-  return pivots; /** 0 or 1 only */
-  // if one, need to update the current pivot list
+static inline int gauss_one(mzd_t *M, const int idx, const int begrow) {
+  return gauss_one_rows(M, idx, begrow, M->nrows);
 }
 
 /**

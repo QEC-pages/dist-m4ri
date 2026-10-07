@@ -319,7 +319,8 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
 /* Run RW batch */
 static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
                          mzd_t *mH, mzd_t *mHT, rci_t *ee,
-                         mzp_t *perm, mzp_t *pivs, mzp_t *pivs_srtd, mzp_t *skip_pivs,
+                         mzp_t *perm, mzp_t *pivs, word *piv_mask,
+                         int *eff_nrows_ptr,
                          int *visited_cols, int *visited_checks, int *col_queue,
                          int *visit_marker, uint64_t *rng_state, int tid) {
   params_t * const p = ctx->p;
@@ -328,6 +329,7 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
   const int classical = p->classical;
   const int kwin = p->kwin;
   const int win_mode = p->win_mode;
+  int eff_nrows = *eff_nrows_ptr;
 
   for (int step = 0; step < n_steps; step++) {
     if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
@@ -347,36 +349,25 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       perm = perm_p_trans(perm, pivs, 0);
     }
 
+    memset(piv_mask, 0, mH->width * sizeof(word));
     int rank = 0;
-    for (int i = 0; i < nvar; i++) {
+    for (int i = 0; i < nvar && rank < eff_nrows; i++) {
       int col = perm->values[i];
-      int ret = gauss_one(mH, col, rank);
-      if (ret) {
+      if (gauss_one_rows(mH, col, rank, eff_nrows)) {
         pivs->values[rank++] = col;
+        piv_mask[col >> 6] |= (word)1 << (col & 63);
       }
     }
-
-    pivs_srtd = mzp_copy(pivs_srtd, pivs);
-    qsort(pivs_srtd->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
-    int end = -1, num = 0;
-    for (int i = 0; i < rank; i++) {
-      int beg = end + 1;
-      end = pivs_srtd->values[i];
-      for (int j = beg; j < end; j++) {
-        skip_pivs->values[num++] = j;
-      }
-    }
-    for (int j = end + 1; j < nvar; j++) {
-      skip_pivs->values[num++] = j;
-    }
-    skip_pivs->length = num;
+    eff_nrows = rank;
+    *eff_nrows_ptr = eff_nrows;
 
     mzd_transpose(mHT, mH);
 
-    int k = nvar - rank;
-    for (int ir = 0; ir < k; ir++) {
+    const int active_width = (rank + 63) >> 6;
+    for (int col = 0; col < nvar; col++) {
+      if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
       int cnt = 0;
-      const int col = ee[cnt++] = skip_pivs->values[ir];
+      ee[cnt++] = col;
       int limit = nvar + 1;
       int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
       if (cur_dmax > 0) {
@@ -390,13 +381,13 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       word *rawrow = mzd_row(mHT, col);
       rci_t j = -1;
       while (cnt < limit) {
-        j = nextelement(rawrow, mHT->width, j);
+        j = nextelement(rawrow, active_width, j);
         if (j == -1 || j >= rank) break;
         ee[cnt++] = pivs->values[j++];
       }
 
       if (cnt < limit) {
-        qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
+        rci_quick_sort(ee, cnt);
         int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
         if (nz) {
           pthread_mutex_lock(&ctx->cw_mutex);
@@ -646,8 +637,8 @@ static void *worker_thread_func(void *arg) {
   rci_t *ee = NULL;
   mzp_t *perm = NULL;
   mzp_t *pivs = NULL;
-  mzp_t *pivs_srtd = NULL;
-  mzp_t *skip_pivs = NULL;
+  word *piv_mask = NULL;
+  int eff_nrows = ctx->p->spaH->rows;
   int *visited_cols = NULL;
   int *visited_checks = NULL;
   int *col_queue = NULL;
@@ -672,8 +663,7 @@ static void *worker_thread_func(void *arg) {
     } else {
       mH = safe_mzd_from_csr(NULL, ctx->p->spaH);
       mHT_rw = safe_mzd_init(nvar, ctx->p->spaH->rows);
-      pivs_srtd = safe_mzp_init(nvar);
-      skip_pivs = safe_mzp_init(nvar);
+      piv_mask = calloc(mH->width, sizeof(word));
     }
   }
 
@@ -803,7 +793,7 @@ static void *worker_thread_func(void *arg) {
             }
           } else {
             run_rw_steps(ctx, n_steps, mH, mHT_rw, ee, perm, pivs,
-                         pivs_srtd, skip_pivs, visited_cols, visited_checks,
+                         piv_mask, &eff_nrows, visited_cols, visited_checks,
                          col_queue, &visit_marker, &rng_state, tid);
           }
           did_work = true;
@@ -818,8 +808,7 @@ static void *worker_thread_func(void *arg) {
   }
 
   if (enable_rw) {
-    safe_mzp_free(skip_pivs);
-    safe_mzp_free(pivs_srtd);
+    free(piv_mask);
     safe_mzp_free(perm);
     safe_mzp_free(pivs);
     free(ee);

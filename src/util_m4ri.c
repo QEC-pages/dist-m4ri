@@ -499,12 +499,11 @@ csr_t *csr_init(csr_t *mat, int rows, int cols, int nzmax){
   return mat;
 }
 
-/* helper function */
-static int cmp_int_pairs(const void *p1, const void *p2){
-  if ((((int_pair *) p1)->a)!=(((int_pair *) p2)->a))
-    return  ((((int_pair *) p1)->a)-(((int_pair *) p2)->a));    
-  return ((((int_pair *) p1)->b)-(((int_pair *) p2)->b));
-}
+#define SORT_NAME int_pair
+#define SORT_TYPE int_pair
+#define SORT_CMP(x, y) (((x).a != (y).a) ? ((x).a - (y).a) : ((x).b - (y).b))
+#define SORT_DEF static inline
+#include "sort.h"
 
 /**
  *  compress a CSR matrix  
@@ -518,7 +517,7 @@ void csr_compress(csr_t *mat){
     pairs[i].a=mat->p[i];
     pairs[i].b=mat->i[i];
   }
-  qsort(pairs,nz,sizeof(int_pair),cmp_int_pairs);
+  int_pair_quick_sort(pairs, nz);
   int i, j=0;
   for(i=0;i<mat->rows;i++){
     mat->p[i]=j;
@@ -534,7 +533,7 @@ void csr_compress(csr_t *mat){
 
 csr_t * csr_from_pairs(csr_t *mat, const int nz, int_pair * const prs, const int nrows, const int ncols){
   mat = csr_init(mat, nrows, ncols, nz);
-  qsort(prs, nz, sizeof(int_pair), cmp_int_pairs);
+  int_pair_quick_sort(prs, nz);
   int i, j=0;
   for(i=0; i < nrows; i++){
     mat->p[i]=j;
