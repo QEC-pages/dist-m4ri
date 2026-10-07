@@ -47,7 +47,8 @@ two_vec_t *errors=NULL;
  * @param max_col_wt maximum column weight (used to predict early termination)
  * @param mH matrix `H` (check matrix of the code or `Hx` for a CSS code)
  * @param mHT matrix `H` transposed
- * @param mL matrix `L=Lx` for a CSS code, or `NULL` for a classical binary code, used to check whether zero-syndrome error is trivial or not
+ * @param mL matrix `L=Lx` for a CSS code, or `NULL` for a classical binary code,
+ *           used to check whether zero-syndrome error is trivial or not
  * @param p_swei minimum syndrome weight array
  * @param debug bitmap 
  */
@@ -75,9 +76,23 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
   }
 #endif   
   const int col_min=urr->vec[0]; /** all valid positions should be to the right of here */
+  int current_limit = w_limit;
+  if (p->min_w != INT_MAX && p->dW >= 0) {
+    current_limit = minint(w_limit, p->min_w + p->dW);
+  }
+  const int syn_w_wei = syn[w]->wei;
+  const int rem = current_limit - (w + 1);
+  const int max_reach = rem * max_col_wt + (smax > 0 ? smax : 0);
+
   for(int i1 = mH->p[row]; i1 < mH->p[row+1]; i1++){
     const int col = mH->i[i1];
     if(col > col_min){
+      const int col_wt = mHT->p[col+1] - mHT->p[col];
+      if (w + 1 == current_limit) {
+        if (abs(syn_w_wei - col_wt) > (smax > 0 ? smax : 0)) continue;
+      } else {
+        if (syn_w_wei - col_wt > max_reach) continue;
+      }
       int pos = one_ordered_search(err, col);
       if(pos == -1){ /** not there */
 	urr->vec[w] = col;
@@ -96,18 +111,15 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	  one_vec_print(syn[w+1]);
 	}
 	int result = 0;
-        int current_limit = w_limit;
         if (p->min_w != INT_MAX && p->dW >= 0) {
           current_limit = minint(w_limit, p->min_w + p->dW);
         }
 	if (err->wei < current_limit){
-	  if (swei){ /** go up */
-//	    if(swei <= (w_limit - err->wei)*max_col_wt){ /** reachable goal? */
+	  if (swei > 0 && swei <= (current_limit - err->wei) * max_col_wt + (smax > 0 ? smax : 0)){
 	      result = start_CC_recurs(err,urr,syn,w_limit,max_col_wt,
 				       mH,mHT,p);
 	      if(result == 1)
 		return 1;
-//	    }
 	  }
 	  // swei == 0 means it is a degenerate vector
 	  // do not go up in this case 

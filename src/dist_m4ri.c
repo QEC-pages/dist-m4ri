@@ -119,20 +119,20 @@ typedef struct {
   double start_time;
   int dexp;
 
-  /* Distance bounds */
-  atomic_int dmin;             /* dmin-1 is max cluster size analyzed without success */
-  atomic_int dmax;             /* smallest weight codeword found (0 if none) */
-  atomic_int cc_found_weight;  /* weight of codeword if CC found exact */
-  atomic_bool stop_flag;       /* signals all threads to terminate */
-  atomic_bool rw_stop_flag;    /* signals RW workers to stop (in method 3) */
+  /* Distance bounds & stop flags (cache-line isolated for read-mostly access) */
+  _Alignas(64) atomic_int dmin; /* dmin-1 is max cluster size analyzed without success */
+  atomic_int dmax;              /* smallest weight codeword found (0 if none) */
+  atomic_int cc_found_weight;   /* weight of codeword if CC found exact */
+  atomic_bool stop_flag;        /* signals all threads to terminate */
+  atomic_bool rw_stop_flag;     /* signals RW workers to stop (in method 3) */
 
-  /* RW state */
-  long total_rw_steps;
+  /* RW state (cache-line isolated from CC and read-mostly bounds) */
+  _Alignas(64) long total_rw_steps;
   atomic_long rw_steps_started;
   atomic_long rw_steps_completed;
 
-  /* CC state for current weight */
-  atomic_int cc_weight;
+  /* CC state for current weight (cache-line isolated) */
+  _Alignas(64) atomic_int cc_weight;
   atomic_int cc_col_next;
   int cc_col_beg;
   int cc_col_end;
@@ -176,20 +176,121 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   }
   params_t * const p = ctx->p;
   const int w = err->wei;
-  int row = syn[w]->vec[0];
+  int current_limit = w_limit;
+  int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+  if (cur_dmax > 0 && p->dW >= 0) {
+    current_limit = minint(w_limit, cur_dmax + p->dW);
+  }
+  if (w >= current_limit) {
+    return 0;
+  }
+
+  const one_vec_t * const syn_w = syn[w];
+  const int syn_w_wei = syn_w->wei;
+  const int row = syn_w->vec[0];
   const csr_t * const mL = p->spaL;
   const int col_min = urr->vec[0];
 
-  for (int i1 = mH->p[row]; i1 < mH->p[row+1]; i1++) {
+  /* Leaf level: w + 1 == current_limit */
+  if (w + 1 == current_limit) {
+    int max_leaf_swei = 0;
+    if (p->smax > 0 && current_limit < MAX_W) {
+      int cur_min = warg->min_swei[current_limit] - 1;
+      max_leaf_swei = (cur_min < p->smax) ? (cur_min > 0 ? cur_min : 0) : p->smax;
+    }
+
+    for (int i1 = mH->p[row]; i1 < mH->p[row + 1]; i1++) {
+      const int col = mH->i[i1];
+      if (col <= col_min) continue;
+
+      const int p_beg = mHT->p[col];
+      const int col_wt = mHT->p[col + 1] - p_beg;
+      if (abs(syn_w_wei - col_wt) > max_leaf_swei) continue;
+
+      int swei;
+      if (max_leaf_swei == 0) {
+        /* Only swei == 0 is of interest: check if mHT[col] == syn[w] */
+        if (mHT->i[p_beg] != row ||
+            mHT->i[p_beg + col_wt - 1] != syn_w->vec[col_wt - 1]) {
+          continue;
+        }
+        if (memcmp(syn_w->vec, &mHT->i[p_beg], (size_t)col_wt * sizeof(int)) != 0) {
+          continue;
+        }
+        if (one_ordered_search(err, col) != -1) continue;
+        swei = 0;
+      } else {
+        if (one_ordered_search(err, col) != -1) continue;
+        syn[w + 1]->wei = 0;
+        swei = one_csr_row_combine(syn[w + 1], syn_w, mHT, col);
+        if (swei > 0) {
+          if (swei <= max_leaf_swei) {
+            warg->min_swei[w + 1] = swei;
+            int cur_min = swei - 1;
+            max_leaf_swei = (cur_min < p->smax) ? (cur_min > 0 ? cur_min : 0) : p->smax;
+          }
+          continue;
+        }
+      }
+
+      /* swei == 0: insert col into err to verify against mL and record codeword */
+      int pos = one_ordered_ins(err, col);
+      int nz = (!mL) || sparse_syndrome_non_zero(mL, err->wei, err->vec);
+      if (nz) {
+        bool stop = false;
+        pthread_mutex_lock(&ctx->cw_mutex);
+        p->codewords = codeword_add_maybe(p, err->vec, err->wei);
+        int cur_d = atomic_load(&ctx->dmax);
+        if (p->min_w < cur_d || cur_d == 0) {
+          atomic_store(&ctx->dmax, p->min_w);
+        }
+        int cur_cc_found = atomic_load(&ctx->cc_found_weight);
+        if (cur_cc_found == 0 || err->wei < cur_cc_found) {
+          atomic_store(&ctx->cc_found_weight, err->wei);
+        }
+        if (!p->outC && p->maxC == 0) {
+          atomic_store(&ctx->stop_flag, true);
+          stop = true;
+        }
+        if (p->maxC && p->num_cws >= p->maxC) {
+          atomic_store(&ctx->stop_flag, true);
+          stop = true;
+        }
+        pthread_mutex_unlock(&ctx->cw_mutex);
+
+        if (stop) {
+          one_ordered_pos_del(err, col, pos);
+          return 1;
+        }
+      }
+      one_ordered_pos_del(err, col, pos);
+    }
+    return 0;
+  }
+
+  /* Internal level: w + 1 < current_limit */
+  const int rem = current_limit - (w + 1);
+  int max_s_needed = 0;
+  if (p->smax > 0) {
+    if (p->noscan || p->dmin > 1) {
+      max_s_needed = p->smax;
+    } else if (current_limit < MAX_W) {
+      int cur_min = warg->min_swei[current_limit] - 1;
+      max_s_needed = (cur_min < p->smax) ? (cur_min > 0 ? cur_min : 0) : p->smax;
+    }
+  }
+  const int max_reach = rem * max_col_wt + max_s_needed;
+
+  for (int i1 = mH->p[row]; i1 < mH->p[row + 1]; i1++) {
     const int col = mH->i[i1];
     if (col > col_min) {
+      const int col_wt = mHT->p[col + 1] - mHT->p[col];
+      if (syn_w_wei - col_wt > max_reach) continue;
+
       int pos = one_ordered_search(err, col);
       if (pos == -1) {
-        urr->vec[w] = col;
-        urr->wei++;
-        pos = one_ordered_ins(err, col);
-        syn[w+1]->wei = 0;
-        int swei = one_csr_row_combine(syn[w+1], syn[w], mHT, col);
+        syn[w + 1]->wei = 0;
+        int swei = one_csr_row_combine(syn[w + 1], syn_w, mHT, col);
 
         if (p->smax && swei > 0 && swei <= p->smax && (w + 1 < MAX_W)) {
           if (swei < warg->min_swei[w + 1]) {
@@ -197,57 +298,18 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
           }
         }
 
-        int current_limit = w_limit;
-        int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
-        if (cur_dmax > 0 && p->dW >= 0) {
-          current_limit = minint(w_limit, cur_dmax + p->dW);
-        }
-
-        if (err->wei < current_limit) {
-          if (swei) {
-            int result = start_CC_recurs_mt(err, urr, syn, w_limit, max_col_wt,
-                                            mH, mHT, warg);
-            if (result == 1) {
-              urr->wei--;
-              one_ordered_pos_del(err, col, pos);
-              return 1;
-            }
-          }
-        } else {
-          if (!swei) {
-            int nz = (!mL) || sparse_syndrome_non_zero(mL, err->wei, err->vec);
-            if (nz) {
-              bool stop = false;
-              pthread_mutex_lock(&ctx->cw_mutex);
-              p->codewords = codeword_add_maybe(p, err->vec, err->wei);
-              int cur_d = atomic_load(&ctx->dmax);
-              if (p->min_w < cur_d || cur_d == 0) {
-                atomic_store(&ctx->dmax, p->min_w);
-              }
-              int cur_cc_found = atomic_load(&ctx->cc_found_weight);
-              if (cur_cc_found == 0 || err->wei < cur_cc_found) {
-                atomic_store(&ctx->cc_found_weight, err->wei);
-              }
-              if (!p->outC && p->maxC == 0) {
-                atomic_store(&ctx->stop_flag, true);
-                stop = true;
-              }
-              if (p->maxC && p->num_cws >= p->maxC) {
-                atomic_store(&ctx->stop_flag, true);
-                stop = true;
-              }
-              pthread_mutex_unlock(&ctx->cw_mutex);
-
-              if (stop) {
-                urr->wei--;
-                one_ordered_pos_del(err, col, pos);
-                return 1;
-              }
-            }
+        if (swei > 0 && swei <= max_reach) {
+          urr->vec[w] = col;
+          urr->wei++;
+          pos = one_ordered_ins(err, col);
+          int result = start_CC_recurs_mt(err, urr, syn, w_limit, max_col_wt,
+                                          mH, mHT, warg);
+          urr->wei--;
+          one_ordered_pos_del(err, col, pos);
+          if (result == 1) {
+            return 1;
           }
         }
-        urr->wei--;
-        one_ordered_pos_del(err, col, pos);
       }
     }
   }
@@ -639,48 +701,59 @@ static void *worker_thread_func(void *arg) {
     bool did_work = false;
 
     /* 1. Try to take CC work if CC is active (method 2 or 3) */
-    if (ctx->p->method >= 2 && atomic_load(&ctx->cc_round_active)) {
-      int active = atomic_load(&ctx->cc_active_workers);
-      int target = atomic_load(&ctx->cc_target_workers);
-      if (atomic_load(&ctx->rw_stop_flag)) target = ctx->num_threads;
-      if (active < target) {
-        int col = atomic_fetch_add(&ctx->cc_col_next, 1);
-        int end = ctx->cc_col_end;
-        if (col <= end) {
-          atomic_fetch_add(&ctx->cc_active_workers, 1);
-          int w = atomic_load(&ctx->cc_weight);
-
-          err->vec[0] = urr->vec[0] = col;
-          err->wei = urr->wei = 1;
-          syn[1]->wei = 0;
-          int swei = one_csr_row_combine(syn[1], syn[0], ctx->mHT_cc, col);
-
-          if (ctx->p->smax && swei > 0 && swei <= ctx->p->smax) {
-            if (swei < warg->min_swei[1]) {
-              warg->min_swei[1] = swei;
+    if (ctx->p->method >= 2 && atomic_load_explicit(&ctx->cc_round_active, memory_order_acquire)) {
+      int active = atomic_load_explicit(&ctx->cc_active_workers, memory_order_relaxed);
+      int target = atomic_load_explicit(&ctx->cc_target_workers, memory_order_relaxed);
+      if (atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+        target = ctx->num_threads;
+      }
+      if (active < target &&
+          atomic_load_explicit(&ctx->cc_col_next, memory_order_relaxed) <= ctx->cc_col_end) {
+        if (atomic_compare_exchange_weak(&ctx->cc_active_workers, &active, active + 1)) {
+          int w = atomic_load_explicit(&ctx->cc_weight, memory_order_relaxed);
+          int end = ctx->cc_col_end;
+          while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
+            if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
+              atomic_store(&ctx->stop_flag, true);
+              break;
             }
-          }
+            int col = atomic_fetch_add_explicit(&ctx->cc_col_next, 1, memory_order_relaxed);
+            if (col > end) break;
 
-          if (w > 1) {
-            if (swei) {
-              start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W, ctx->p->spaH, ctx->mHT_cc, warg);
-            }
-          } else {
-            if (!swei) {
-              int nz = (!ctx->p->spaL) || sparse_syndrome_non_zero(ctx->p->spaL, 1, err->vec);
-              if (nz) {
-                pthread_mutex_lock(&ctx->cw_mutex);
-                ctx->p->codewords = codeword_add_maybe(ctx->p, err->vec, 1);
-                atomic_store(&ctx->cc_found_weight, 1);
-                atomic_store(&ctx->dmin, 1);
-                atomic_store(&ctx->dmax, 1);
-                atomic_store(&ctx->stop_flag, true);
-                pthread_mutex_unlock(&ctx->cw_mutex);
+            err->vec[0] = urr->vec[0] = col;
+            err->wei = urr->wei = 1;
+            syn[1]->wei = 0;
+            int swei = one_csr_row_combine(syn[1], syn[0], ctx->mHT_cc, col);
+
+            if (ctx->p->smax && swei > 0 && swei <= ctx->p->smax) {
+              if (swei < warg->min_swei[1]) {
+                warg->min_swei[1] = swei;
               }
             }
+
+            if (w > 1) {
+              if (swei > 0 && swei <= (w - 1) * ctx->max_col_W + ctx->p->smax) {
+                start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W,
+                                   ctx->p->spaH, ctx->mHT_cc, warg);
+              }
+            } else {
+              if (!swei) {
+                int nz = (!ctx->p->spaL) ||
+                         sparse_syndrome_non_zero(ctx->p->spaL, 1, err->vec);
+                if (nz) {
+                  pthread_mutex_lock(&ctx->cw_mutex);
+                  ctx->p->codewords = codeword_add_maybe(ctx->p, err->vec, 1);
+                  atomic_store(&ctx->cc_found_weight, 1);
+                  atomic_store(&ctx->dmin, 1);
+                  atomic_store(&ctx->dmax, 1);
+                  atomic_store(&ctx->stop_flag, true);
+                  pthread_mutex_unlock(&ctx->cw_mutex);
+                }
+              }
+            }
+            err->wei = urr->wei = 0;
           }
-          err->wei = urr->wei = 0;
-          atomic_fetch_sub(&ctx->cc_active_workers, 1);
+          atomic_fetch_sub_explicit(&ctx->cc_active_workers, 1, memory_order_release);
           did_work = true;
           continue;
         }
