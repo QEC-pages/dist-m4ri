@@ -198,7 +198,7 @@ void print_short_help(const char *prog);
 
 #define SHORT_HELP \
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
-  "Usage: %s method=[1|2|3] [parameter=value ...]\n\n" \
+  "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
   "  method, finH, finG, finL, fin, fdem, pmin, classical, css,\n" \
   "  steps, wmin, wmax, dmin, dmax, dexp (dest), smax, start, cbeg,\n" \
@@ -211,11 +211,11 @@ void print_short_help(const char *prog);
 
 #define USAGE \
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
-  "Usage: %s method=[1|2|3] [parameter=value ...]\n\n" \
-  "Required parameter:\n" \
+  "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
+  "Calculation method:\n" \
   "  method=[int]       1: Random Window (RW) algorithm (upper bound)\n" \
   "                     2: Connected Cluster (CC) algorithm (lower bound / exact)\n" \
-  "                     3: Bracketing mode (concurrent RW and CC)\n\n" \
+  "                     3: Bracketing mode (concurrent RW and CC) (default: 3)\n\n" \
   "Input matrices (Matrix Market .mmx/.mtx format or Stim DEM):\n" \
   "  finH=[file]        Parity check matrix H (classical) or Hx (CSS quantum)\n" \
   "  finG=[file]        Hz check matrix (quantum CSS code only)\n" \
@@ -230,22 +230,22 @@ void print_short_help(const char *prog);
   "  dmax=[int]         Known upper bound on distance (RW ignores cw wt >= dmax) (0)\n" \
   "  dexp=[int]         Expected distance for method=3 thread allocation (alias: dest) (0)\n\n" \
   "Search limits and stopping criteria:\n" \
-  "  steps=[int]        Maximum RW decoding steps / information sets (1000)\n" \
+  "  steps=[int]        Maximum RW decoding steps / information sets (100000)\n" \
   "  wmax=[int]         Maximum cluster weight to search in CC (0=until bound/timeout)\n" \
   "  wmin=[int]         Stop immediately if cw with weight <= wmin is found (1)\n" \
-  "  min_hits=[int]     Stop RW when min-wt cws (at least cov_cws) hit >= min_hits (0)\n" \
+  "  min_hits=[int]     Stop RW when min-wt cws (at least cov_cws) hit >= min_hits (5)\n" \
   "  timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)\n\n" \
   "Multithreading and RW optimization:\n" \
   "  threads=[int]      Max worker threads to use (0: auto CPU count) (0)\n" \
   "  ksub=[int]         Subspace dimension sampled from ker(H) for RW (0: full H) (0)\n" \
-  "  kwin=[int]         Localized column permutation window size W (0: uniform) (0)\n\n" \
+  "  kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)\n\n" \
   "Codeword collection:\n" \
   "  outC=[file]        Export found minimum-weight codewords to file (.nz format)\n" \
   "  finC=[file]        Import initial codewords from file (.nz format)\n" \
   "  maxC=[int]         Maximum number of codewords to collect (0 for unlimited) (0)\n" \
   "  dW=[int]           Collect codewords up to weight dmin + dW (default: 0)\n\n" \
   "Extra parameters (see --morehelp for details):\n" \
-  "  smax=[int] (5)         Max syndrome weight for confinement profile (0 to disable)\n" \
+  "  smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)\n" \
   "  noscan=[0|1] (0)       CC method 2: start directly at wmax, skip scanning w<wmax\n" \
   "  start/cbeg/cend=[int]  Limit CC search to specific column(s) (-1: all)\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
@@ -262,9 +262,9 @@ void print_short_help(const char *prog);
 
 #define MORE_HELP \
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
-  "Usage: %s method=[1|2|3] [parameter=value ...]\n\n" \
-  "Required parameter:\n" \
-  "  method=[int]       Bitmap / identifier for calculation method (no default):\n" \
+  "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
+  "Calculation method:\n" \
+  "  method=[int]       Bitmap / identifier for calculation method (default: 3):\n" \
   "                     1: Random Window (RW) algorithm (upper bound)\n" \
   "                        Finds an upper bound on distance by testing random\n" \
   "                        information sets. Fast for finding small codewords.\n" \
@@ -312,16 +312,16 @@ void print_short_help(const char *prog);
   "                     between CC and RW and estimate search feasibility.\n\n" \
   "Search limits and Connected Cluster (CC) options:\n" \
   "  steps=[int]        Maximum number of RW decoding steps / information sets\n" \
-  "                     (default: 1000). Ignored in method=2.\n" \
+  "                     (default: 100000). Ignored in method=2.\n" \
   "  wmin=[int]         Minimum distance threshold (default: 1).\n" \
   "                     If a codeword of weight w <= wmin is found, execution\n" \
   "                     terminates immediately. Useful for screening codes.\n" \
   "  wmax=[int]         Maximum cluster weight to analyze in CC (default: 0).\n" \
   "                     In method=2, CC terminates after checking weight wmax.\n" \
   "                     0 means continue until codeword found, bounds meet, or timeout.\n" \
-  "  smax=[int]         Maximum syndrome weight for confinement profile (default: 5).\n" \
+  "  smax=[int]         Maximum syndrome weight for confinement profile (default: 0).\n" \
   "                     When smax > 0, tracks minimum syndrome weights for each\n" \
-  "                     error weight. Set smax=0 to disable confinement calculation.\n" \
+  "                     error weight. When smax=0, confinement is not computed.\n" \
   "  noscan=[0|1]       1: Start CC directly at weight wmax, skipping scan over\n" \
   "                     weights w < wmax (default: 0). Only valid for method=2.\n" \
   "  start=[int]        Restrict CC search to start column index (default: -1).\n" \
@@ -353,11 +353,11 @@ void print_short_help(const char *prog);
   "                     matrices inside L1/L2 cache. Automatically falls back to\n" \
   "                     ksub=0 (with a warning) if m < nu = dim(ker(H)).\n" \
   "  kwin=[int]         Localized column permutation window size W (default: 0 =\n" \
-  "                     uniform random permutation; alias: win=[int]).\n" \
+  "                     automatic hybrid window/uniform for n>=500; alias: win=[int]).\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
   "                     0: Tanner graph BFS neighbors around random seed column.\n" \
   "                     1: Contiguous index proximity window around seed column.\n" \
-  "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 0 = off).\n" \
+  "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off).\n" \
   "                     Stops RW when tracked minimum-weight codewords (up to\n" \
   "                     cov_cws) have been found at least min_hits times.\n" \
   "  cov_cws=[int]      Maximum number of minimum-weight codewords tracked in hash\n" \

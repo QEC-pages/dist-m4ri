@@ -562,6 +562,28 @@ def test_rw_ksub_kwin_min_hits(capsys):
         dist_m4ri.enable_distance_cache()
 
 
+def test_add_noise_and_noiseless_circuit():
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    # Create a noiseless surface code circuit
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=2,
+        distance=3,
+        after_clifford_depolarization=0.0
+    )
+    assert not dist_m4ri.has_noise(circuit)
+    noisy = dist_m4ri.add_noise(circuit, p=0.001)
+    assert dist_m4ri.has_noise(noisy)
+
+    # compute_dem_distance should automatically add noise if given a noiseless circuit
+    dist_m4ri.clear_distance_cache()
+    dist, d_info = dist_m4ri.compute_dem_distance(circuit=circuit, threads=4)
+    assert dist == 3
+    assert d_info[0] == 3 and d_info[1] == 3
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

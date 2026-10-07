@@ -337,9 +337,16 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       break;
     }
 
-    if (kwin > 0 && kwin < nvar) {
+    int eff_kwin = kwin;
+    int eff_win_mode = win_mode;
+    if (eff_kwin == 0 && nvar >= 500 && (step & 1) == 1) {
+      eff_kwin = minint(512, (nvar * 3) / 4);
+      eff_win_mode = 1;
+    }
+
+    if (eff_kwin > 0 && eff_kwin < nvar) {
       int seed_col = rand_uniform_thread(nvar, rng_state);
-      localized_window_perm(perm, nvar, seed_col, kwin, win_mode,
+      localized_window_perm(perm, nvar, seed_col, eff_kwin, eff_win_mode,
                             p->spaH, ctx->mHT_cc,
                             visited_cols, visited_checks, col_queue,
                             visit_marker, rng_state);
@@ -465,9 +472,16 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
     }
 
     /* 1. Generate column permutation (localized window or uniform) */
-    if (kwin > 0 && kwin < nvar) {
+    int eff_kwin = kwin;
+    int eff_win_mode = win_mode;
+    if (eff_kwin == 0 && nvar >= 500 && (step & 1) == 1) {
+      eff_kwin = minint(512, (nvar * 3) / 4);
+      eff_win_mode = 1;
+    }
+
+    if (eff_kwin > 0 && eff_kwin < nvar) {
       int seed_col = rand_uniform_thread(nvar, rng_state);
-      localized_window_perm(perm, nvar, seed_col, kwin, win_mode,
+      localized_window_perm(perm, nvar, seed_col, eff_kwin, eff_win_mode,
                             p->spaH, ctx->mHT_cc,
                             visited_cols, visited_checks, col_queue,
                             visit_marker, rng_state);
@@ -481,7 +495,7 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
     const int marker = *visit_marker;
     for (int i = 0; i < ksub; i++) {
       int r = rand_uniform_thread(nu, rng_state);
-      if (kwin > 0 && kwin < nvar && visited_cols) {
+      if (eff_kwin > 0 && eff_kwin < nvar && visited_cols) {
         for (int attempt = 0; attempt < 4; attempt++) {
           const word *raw_n = mzd_row_cons(N, r);
           int j_bit = nextelement(raw_n, N->width, -1);
@@ -651,7 +665,7 @@ static void *worker_thread_func(void *arg) {
     ee = malloc((nvar + 2) * sizeof(rci_t));
     perm = safe_mzp_init(nvar);
     pivs = safe_mzp_init(nvar);
-    if (ctx->p->kwin > 0) {
+    if (ctx->p->kwin > 0 || nvar >= 500) {
       visited_cols = calloc(nvar, sizeof(int));
       visited_checks = calloc(ctx->p->spaH->rows, sizeof(int));
       col_queue = calloc(nvar, sizeof(int));
@@ -1110,7 +1124,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     } else if (t_cc_est < 0.005) {
       n_cc = (ctx->num_threads >= 4) ? 2 : 1;
     } else {
-      double t_rw_total_1t = (double)steps_rem * ctx->avg_rw_step_time;
+      long eff_steps_rem = (cur_dmax > 0 && steps_rem > 2000) ? 2000 : steps_rem;
+      double t_rw_total_1t = (double)eff_steps_rem * ctx->avg_rw_step_time;
       double t_cc_total_1t = t_cc_est;
       double est_accum = t_cc_est;
       for (int k = w + 1; k <= target_cc_w && k <= w + 2; k++) {

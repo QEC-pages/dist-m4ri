@@ -370,6 +370,21 @@ assert_output "$BIN_FORK debug=1 method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=2
 assert_output "$BIN_FORK debug=1 method=3 fdem=$EXAMPLES_DIR/surf_d3.dem steps=50000 min_hits=2 cov_cws=2 threads=4" \
     0 "^3 3 [0-9]+$" "RW convergence reached"
 
+# Test 56: default method=3 and smax=0 warning in .mtx mode under debug&1==1
+assert_output \
+    "$BIN_FORK debug=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 threads=4 steps=200" \
+    0 "^5 5 [0-9]+$" "Warning: smax=0, confinement profile is not computed"
+
+# Test 57: no smax=0 warning in DEM mode under debug&1==1
+echo "Running Test 57: no smax=0 warning in DEM mode"
+STDERR_DEM=$(mktemp)
+$BIN_FORK debug=1 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=4 > /dev/null 2> "$STDERR_DEM"
+if grep -q "confinement profile is not computed" "$STDERR_DEM"; then
+    echo "  [FAIL] Unexpected smax=0 warning in DEM mode"
+    FAILED=1
+fi
+rm -f "$STDERR_DEM"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

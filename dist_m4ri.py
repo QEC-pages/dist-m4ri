@@ -23,7 +23,7 @@ import tempfile
 import threading
 import subprocess
 from pathlib import Path
-from typing import List, Tuple, Union, Optional, Dict, Any
+from typing import List, Tuple, Union, Optional, Dict, Any, Set
 
 _codedistance_mod = None
 _stim_mod = None
@@ -667,7 +667,7 @@ def run_dist_m4ri(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
-    min_hits: int = 0,
+    min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
     stop_event: Optional[threading.Event] = None
@@ -722,7 +722,7 @@ def run_dist_m4ri(
     if ksub > 0: cmd.append(f"ksub={ksub}")
     if kwin > 0: cmd.append(f"kwin={kwin}")
     if win_mode != 0: cmd.append(f"win_mode={win_mode}")
-    if min_hits > 0: cmd.append(f"min_hits={min_hits}")
+    if min_hits is not None and min_hits >= 0: cmd.append(f"min_hits={min_hits}")
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh > 0: cmd.append(f"refresh={refresh}")
 
@@ -771,6 +771,123 @@ def _matrix_to_file(matrix, extension: str = ".mtx", temp_dir: str = "tmp") -> s
     return path
 
 
+def has_noise(circuit: Any) -> bool:
+    """Checks if a Stim circuit contains any noise instructions."""
+    try:
+        stim = _get_stim()
+    except ImportError:
+        return False
+    if not isinstance(circuit, stim.Circuit):
+        return False
+    noisy_gate_names = {
+        "DEPOLARIZE1", "DEPOLARIZE2", "PAULI_CHANNEL_1", "PAULI_CHANNEL_2",
+        "X_ERROR", "Y_ERROR", "Z_ERROR", "E", "ELSE_CORRELATED_ERROR"
+    }
+    for inst in circuit:
+        if isinstance(inst, stim.CircuitRepeatBlock):
+            if has_noise(inst.body_copy()):
+                return True
+        elif inst.name in noisy_gate_names:
+            return True
+    return False
+
+
+def _add_noise_recursive(
+    circuit: Any, p: float, num_qubits: int, active_qubits: Set[int]
+) -> Any:
+    """Recursively adds phenomenological noise to a Stim circuit."""
+    stim = _get_stim()
+    noisy_circuit = stim.Circuit()
+    annotations = {
+        "QUBIT_COORDS", "DETECTOR", "OBSERVABLE_INCLUDE", "TICK", "SHIFT_COORDS"
+    }
+    for inst in circuit:
+        if isinstance(inst, stim.CircuitRepeatBlock):
+            noisy_body = _add_noise_recursive(
+                inst.body_copy(), p, num_qubits, active_qubits
+            )
+            noisy_circuit.append(
+                stim.CircuitRepeatBlock(inst.repeat_count, noisy_body)
+            )
+        elif inst.name == "TICK":
+            idle_qubits = set(range(num_qubits)) - active_qubits
+            if idle_qubits:
+                noisy_circuit.append(
+                    "DEPOLARIZE1", sorted(list(idle_qubits)), 0.1 * p
+                )
+            noisy_circuit.append(inst)
+            active_qubits.clear()
+        else:
+            if inst.name not in annotations:
+                for t in inst.targets_copy():
+                    if t.value >= 0:
+                        active_qubits.add(t.value)
+
+            qubit_targets = [
+                t.value for t in inst.targets_copy() if t.value >= 0
+            ]
+            if inst.name == "RX":
+                noisy_circuit.append(inst)
+                if qubit_targets:
+                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
+            elif inst.name in ["R", "RZ", "RY"]:
+                noisy_circuit.append(inst)
+                if qubit_targets:
+                    noisy_circuit.append("X_ERROR", qubit_targets, p)
+            elif inst.name == "MX":
+                if qubit_targets:
+                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
+                noisy_circuit.append(inst)
+            elif inst.name in ["M", "MZ", "MY"]:
+                if qubit_targets:
+                    noisy_circuit.append("X_ERROR", qubit_targets, p)
+                noisy_circuit.append(inst)
+            elif inst.name == "MRX":
+                if qubit_targets:
+                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
+                noisy_circuit.append(inst)
+                if qubit_targets:
+                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
+            elif inst.name in ["MR", "MRZ", "MRY"]:
+                if qubit_targets:
+                    noisy_circuit.append("X_ERROR", qubit_targets, p)
+                noisy_circuit.append(inst)
+                if qubit_targets:
+                    noisy_circuit.append("X_ERROR", qubit_targets, p)
+            else:
+                noisy_circuit.append(inst)
+                if inst.name in [
+                    "I", "X", "Y", "Z", "H", "S", "S_DAG",
+                    "SQRT_X", "SQRT_X_DAG", "SQRT_Y", "SQRT_Y_DAG",
+                    "SQRT_Z", "SQRT_Z_DAG"
+                ]:
+                    noisy_circuit.append(
+                        "DEPOLARIZE1", inst.targets_copy(), 0.1 * p
+                    )
+                elif inst.name in [
+                    "CX", "CY", "CZ", "SWAP", "XCZ", "YCX", "YCY", "YCZ"
+                ]:
+                    noisy_circuit.append("DEPOLARIZE2", inst.targets_copy(), p)
+    return noisy_circuit
+
+
+def add_noise(circuit: Any, p: float = 0.001) -> Any:
+    """Adds phenomenological depolarizing & Pauli noise to a Stim circuit."""
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+    num_qubits = circuit.num_qubits
+    active_qubits: Set[int] = set()
+    noisy_circuit = _add_noise_recursive(circuit, p, num_qubits, active_qubits)
+    if active_qubits:
+        final_idle_qubits = set(range(num_qubits)) - active_qubits
+        if final_idle_qubits:
+            noisy_circuit.append(
+                "DEPOLARIZE1", sorted(list(final_idle_qubits)), p
+            )
+    return noisy_circuit
+
+
 def compute_classical_distance(
     H: Any,
     dist_m4ri: Optional[str] = None,
@@ -808,7 +925,7 @@ def compute_classical_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
-    min_hits: int = 0,
+    min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
@@ -1081,7 +1198,7 @@ def compute_quantum_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
-    min_hits: int = 0,
+    min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
@@ -1408,7 +1525,7 @@ def compute_css_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
-    min_hits: int = 0,
+    min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
@@ -1869,7 +1986,7 @@ def compute_dem_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
-    min_hits: int = 0,
+    min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
     **kwargs
@@ -1913,9 +2030,22 @@ def compute_dem_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
 
+    if dem is not None and isinstance(dem, (str, Path)) and str(dem).endswith(".stim"):
+        circuit = dem
+        dem = None
+
     if dem is None and circuit is not None:
+        if isinstance(circuit, (str, Path)):
+            stim = _get_stim()
+            circuit = stim.Circuit.from_file(str(circuit))
         if hasattr(circuit, 'detector_error_model'):
-            dem = circuit.detector_error_model(decompose_errors=True)
+            if not has_noise(circuit):
+                p_noise = float(kwargs.get("p_noise", 0.001))
+                circuit = add_noise(circuit, p=p_noise)
+            try:
+                dem = circuit.detector_error_model(decompose_errors=True)
+            except Exception:
+                dem = circuit.detector_error_model(decompose_errors=False)
         else:
             raise ValueError("Provided circuit object does not have detector_error_model() method.")
 
@@ -2176,7 +2306,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "ksub": 0,
         "kwin": 0,
         "win_mode": 0,
-        "min_hits": 0,
+        "min_hits": None,
         "cov_cws": 100,
         "refresh": 0,
         "morehelp": False,
@@ -2244,7 +2374,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 val = "1"
         else:
             if os.path.exists(arg):
-                if arg.endswith(".dem"):
+                if arg.endswith(".dem") or arg.endswith(".stim"):
                     args["fdem"] = arg
                 elif arg.endswith(".mmx") or arg.endswith(".mtx"):
                     if args["finH"] is None:
@@ -2414,9 +2544,10 @@ Method and distance bounds:
   dexp=N                Expected distance estimate (alias: dest) (default: 0)
 
 Search limits and stopping criteria:
-  steps=N               Maximum RW steps / information sets (default: 1000 in method 3)
+  steps=N               Maximum RW steps / information sets (default: 100000)
   wmax=N                Maximum cluster weight to search in CC (0=until bound/timeout)
   wmin=N                Stop immediately if cw with weight <= wmin is found (default: 1)
+  min_hits=N            Stop RW when tracked min-weight cws hit >= N times (default: 5)
   timeout=SEC           Execution timeout in seconds, 0 for infinite (default: 60.0)
 
 Multithreading & execution:
@@ -2433,15 +2564,14 @@ Codeword collection & caching:
   --verbose / -v        Output detailed explanations of bounds, steps, and cache status
 
 Extra parameters (see --morehelp for details):
-  smax=N (5)            Max syndrome weight for CC confinement profile (0 to disable)
+  smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
   noscan=1 (0)          CC method 2: start directly at wmax, skip scanning w<wmax
   start/cbeg/cend=N     Limit CC search to specific column(s) (-1: all)
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      RW batch chunk size (default: 0 for adaptive 25-500, alias: batch)
   ksub=N (0)            RW subspace sketch dimension (0: full matrix; auto-disabled if m < nu)
-  kwin=N (0)            RW localized window size around seed column (0: uniform, alias: win)
+  kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
-  min_hits=N (0)        RW early stop when tracked min-weight cws hit >= N times
   cov_cws=N (100)       Max distinct min-weight cws tracked for min_hits convergence
   refresh=N (0)         Periodic N basis refresh interval in RW steps (auto 5000 when ksub > 0)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
@@ -2500,7 +2630,7 @@ Distance bounds and guidance:
 
 Search limits and stopping criteria:
   steps=N               Maximum number of RW steps / information sets across all threads
-                        (default: 1000 in method 3; positive required for method 1).
+                        (default: 100000).
   wmax=N                Maximum cluster weight to analyze in CC (default: 0 = until bound/timeout).
   wmin=N                Minimum distance threshold (default: 1).
                         If a codeword of weight w <= wmin is discovered, search halts immediately.
@@ -2521,10 +2651,11 @@ Multithreading & throttling:
                         ksub x n sampled subspace in L1/L2 cache (e.g. ksub=32 or 64).
                         Automatically falls back to ksub=0 with a warning if m < nu = dim(ker H).
   kwin=N                Localized column permutation window size W around a random seed
-                        column j0 (default: 0 = uniform permutation). Alias: win=N.
+                        column j0 (default: 0 = automatic hybrid window/uniform for n>=500).
+                        Alias: win=N.
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
-  min_hits=N            Empirical RW convergence stopping criterion (default: 0 = disabled).
+  min_hits=N            Empirical RW convergence stopping criterion (default: 5, 0 = disabled).
                         Stops RW early when all tracked min-weight codewords (up to cov_cws)
                         have each been independently found at least min_hits times.
   cov_cws=N             Maximum distinct minimum-weight codewords tracked in hash for min_hits
@@ -2534,9 +2665,9 @@ Multithreading & throttling:
                         substitutes heavier basis rows with discovered min-weight codewords.
 
 Connected Cluster (CC) search options:
-  smax=N                Maximum syndrome weight for confinement profile (default: 5).
+  smax=N                Maximum syndrome weight for confinement profile (default: 0).
                         When smax > 0, tracks minimum syndrome weights for each error weight.
-                        Set smax=0 to disable confinement calculation.
+                        When smax=0, confinement is not computed.
   noscan=1              Start CC directly at weight wmax, skipping weights w < wmax (default: 0).
                         Only valid for method=2.
   start=N               Restrict CC search to start column index N (equiv: cbeg=N cend=N).

@@ -6,11 +6,11 @@
 
 params_t prm={
   .debug=3,
-  .method=0,
+  .method=3,
   .classical=-1,
-  .steps=1000,
+  .steps=100000,
   .css=1,
-  .smax=5,
+  .smax=0,
   .wmax=0,
   .dmin=0,
   .dmax=0,
@@ -55,7 +55,7 @@ params_t prm={
   .ksub=0,
   .kwin=0,
   .win_mode=0,
-  .min_hits=0,
+  .min_hits=5,
   .cov_cws=100,
   .refresh=0
 };
@@ -100,6 +100,7 @@ void var_init(int argc, char **argv, params_t * const p){
 
   int debug_set=0;
   int refresh_set=0;
+  int steps_set=0;
 
   for(int i=1; i<argc; i++){
     if(sscanf(argv[i],"debug=%d",& dbg)==1){/** `debug` */
@@ -211,6 +212,7 @@ void var_init(int argc, char **argv, params_t * const p){
     }
     else if (sscanf(argv[i],"steps=%d",&dbg)==1){
       p->steps=dbg;
+      steps_set=1;
       if (p->debug&4)
 	fprintf(stderr, "# read %s, steps=%d\n",argv[i],p->steps);
     }
@@ -409,7 +411,7 @@ void var_init(int argc, char **argv, params_t * const p){
   }
 
   if (p->method == 2) {
-    if (p->steps != 1000) {
+    if (steps_set) {
       fprintf(stderr, "# WARNING: steps=%d is ignored for CC method\n", p->steps);
     }
   }
@@ -561,7 +563,10 @@ void var_init(int argc, char **argv, params_t * const p){
       print_short_help(argv[0]);
       exit(-1);
   }
-  
+
+  if ((p->debug & 1) && !p->fdem && (p->method & 2) && p->smax == 0) {
+    fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
+  }
 }
 
 void var_kill(params_t * const p){

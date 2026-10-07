@@ -5,13 +5,13 @@
 `dist-m4ri` is a high-performance multithreaded C program and Python library for computing and bracketing the minimum
 distance of binary classical linear codes, quantum CSS codes, and Stim Detector Error Models (DEMs).
 
-The program implements three main methods:
+The program implements three main methods (with `method=3` as the default):
 
 - **Method 1 (`method=1`) - Random Window (RW) Algorithm**: Multithreaded random information set search to find
   low-weight non-trivial codewords and establish an **upper distance bound** $d_{\max}$.
 - **Method 2 (`method=2`) - Connected Cluster (CC) Algorithm**: Multithreaded exhaustive depth-first cluster
   enumeration to compute **exact distance** or establish a certified **lower distance bound** $d_{\min}$.
-- **Method 3 (`method=3`) - Bracketing Mode (Artillery Fork / Вилка)**: Concurrently runs CC and RW on multiple
+- **Method 3 (`method=3`, default) - Bracketing Mode (Artillery Fork / Вилка)**: Concurrently runs CC and RW on multiple
   threads, dynamically balancing CPU cores between CC and RW based on current bounds $[d_{\min}, d_{\max}]$, distance
   estimate (`dexp`/`dest`), remaining RW steps, timeout, and the measured scaling characteristics of CC.
 
@@ -59,7 +59,19 @@ and extract candidate dual-row codewords. When a lighter codeword is discovered,
 the global upper bound $d_{\max}$ and prune heavier entries.
 
 Relevant parameters:
-- `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 1).
+- `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 100000).
+- `min_hits=[int]`: QDistRnd-style automatic convergence stopping criterion (default: 5; set 0 to disable). Stops RW
+  when tracked minimum-weight codewords (up to `cov_cws=100`) have been rediscovered at least `min_hits` times.
+- `cov_cws=[int]`: Maximum number of minimum-weight codewords tracked in the hash table for `min_hits` convergence
+  (default: 100).
+- `kwin=[int]` (alias: `win=[int]`): Localized column permutation window size $W$ (default: 0 for automatic hybrid
+  50% uniform / 50% contiguous index window when $n \ge 500$).
+- `win_mode=[0|1]`: Window construction mode when `kwin > 0`: `0` for Tanner graph BFS neighborhood, `1` for contiguous
+  column index window (default: 0).
+- `ksub=[int]`: Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for full-matrix
+  RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$).
+- `refresh=[int]`: RW step interval for adaptive $\ker(H)$ basis refresh via low-weight codeword exchange and
+  re-echelonization (default: 5000 when `ksub > 0`, 0 to disable).
 - `wmin=[int]`: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found).
 - `threads=[int]`: Maximum number of POSIX worker threads to run (default: number of CPU cores; subject to automatic
   throttling unless `nothrottle=1` is specified).
@@ -77,9 +89,10 @@ Relevant parameters:
 - `noscan=[int]`: If set to 1, start CC directly at $w_{\max}$ without scanning smaller weights.
 - `cbeg=[int]`, `cend=[int]`: Column range $[c_{\text{beg}}, c_{\text{end}}]$ to limit the CC search space.
 - `start=[int]`: Set $c_{\text{beg}} = c_{\text{end}} = \text{start}$ (useful for cyclic or symmetric codes).
-- `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 5; set 0 to disable).
+- `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning;
+  set e.g. `smax=5` to compute confinement).
 
-### 3. Bracketing Mode (`method=3`)
+### 3. Bracketing Mode (`method=3`, default)
 Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to
 determine the exact code distance as quickly as possible.
 
@@ -99,7 +112,9 @@ determine the exact code distance as quickly as possible.
      speed.
    - **Heavier rounds**: As $w$ grows toward $d_{\exp}$, $T_{\text{CC}}$ increases and additional threads are shifted
      to CC to ensure both algorithms converge on the exact distance simultaneously.
-3. **Adaptive Early Cutoff**:
+3. **Adaptive Early Cutoff & RW Convergence**:
+   - When RW satisfies the `min_hits` convergence criterion, RW workers stop early and yield 100% of threads to CC
+     to finish certifying $d_{\min}$.
    - If CC reaches $w > d_{\exp}$ before a codeword is found, CC halts and yields 100% of threads to RW.
    - If a projected CC round is estimated to exceed the remaining `timeout`, the coordinator terminates CC early and
      devotes remaining time entirely to RW.
@@ -116,7 +131,8 @@ Relevant parameters:
   - Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps;
     bounds timeout overshoot to $\le 2\text{--}3$s).
 - `timeout=[sec]`: Maximum execution time in seconds (default: 60.0; set to `0` for infinite / no timeout).
-- `steps=[int]`: Maximum total RW steps (default: 1000; set to `0` to run pure CC via bracketing coordinator).
+- `steps=[int]`: Maximum total RW steps (default: 100000; set to `0` to run pure CC via bracketing coordinator).
+- `min_hits=[int]`: Minimum hit count per minimum-weight codeword for early RW termination (default: 5; 0 to disable).
 - `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
 
 ### 4. Multithreading, Throttling & Batch Sizing
@@ -141,11 +157,12 @@ By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid ov
 
 ## Confinement Profile
 
-With `smax > 0` (default: `smax=5`), the CC algorithm tracks the minimum non-zero syndrome weight observed for each
-cluster weight $w$:
+By default, `smax=0` (confinement tracking disabled for maximum CC speed; in `.mtx` mode with `debug&1`, a notice is
+logged to `stderr`). When `smax > 0` (e.g. `smax=5`), the CC algorithm tracks the minimum non-zero syndrome weight
+observed for each cluster weight $w$:
 
 ```bash
-$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 debug=0 threads=4
+$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 smax=5 debug=0 threads=4
 # confinement: 1,1,1,1
 5 0 0
 ```
@@ -191,12 +208,12 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 ```text
 $ ./src/dist_m4ri --help
 ./src/dist_m4ri (version 0.9.0): calculate distance of a classical or quantum CSS code
-Usage: ./src/dist_m4ri method=[1|2|3] [parameter=value ...]
+Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
-Required parameter:
+Calculation method:
   method=[int]       1: Random Window (RW) algorithm (upper bound)
                      2: Connected Cluster (CC) algorithm (lower bound / exact)
-                     3: Bracketing mode (concurrent RW and CC)
+                     3: Bracketing mode (concurrent RW and CC) (default: 3)
 
 Input matrices (Matrix Market .mmx/.mtx format or Stim DEM):
   finH=[file]        Parity check matrix H (classical) or Hx (CSS quantum)
@@ -214,14 +231,16 @@ Distance bounds and guidance:
   dexp=[int]         Expected distance for method=3 thread allocation (alias: dest) (0)
 
 Search limits and stopping criteria:
-  steps=[int]        Maximum RW decoding steps / information sets (1000)
+  steps=[int]        Maximum RW decoding steps / information sets (100000)
   wmax=[int]         Maximum cluster weight to search in CC (0=until bound/timeout)
   wmin=[int]         Stop immediately if cw with weight <= wmin is found (1)
+  min_hits=[int]     Stop RW when min-wt cws (at least cov_cws) hit >= min_hits (5)
   timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)
 
-Multithreading:
+Multithreading and RW optimization:
   threads=[int]      Max worker threads to use (0: auto CPU count) (0)
-                     (subject to throttling unless nothrottle=1)
+  ksub=[int]         Subspace dimension sampled from ker(H) for RW (0: full H) (0)
+  kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)
 
 Codeword collection:
   outC=[file]        Export found minimum-weight codewords to file (.nz format)
@@ -230,14 +249,16 @@ Codeword collection:
   dW=[int]           Collect codewords up to weight dmin + dW (default: 0)
 
 Extra parameters (see --morehelp for details):
-  smax=[int] (5)         Max syndrome weight for confinement profile (0 to disable)
+  smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)
   noscan=[0|1] (0)       CC method 2: start directly at wmax, skip scanning w<wmax
   start/cbeg/cend=[int]  Limit CC search to specific column(s) (-1: all)
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
+  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
+  cov_cws=[int] (100)    Max min-wt cws tracked in hash for min_hits stop
+  refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (auto 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]
   debug=[int] (3)        Debug bitmask (0: silent, 1: general, 2: verbose, ...)
-  css=[int] (1)          Reserved for future use
 
 Help options:
   -h, --help         Display this help message (commonly used parameters)
@@ -254,16 +275,16 @@ codewords, `debug=32` for matrix dumps).
 ### CLI Examples
 
 ```bash
-# 1. Classical linear code using 8 threads in bracketing mode
-$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8 debug=0
-8 8 2340
+# 1. Classical linear code using 8 threads in bracketing mode (method=3 is default)
+$ ./src/dist_m4ri finH=./examples/c204H.mmx dest=10 steps=100000 threads=8 debug=0
+8 8 150
 
 # 2. Stim Detector Error Model (DEM) with timeout and codeword export
-$ ./src/dist_m4ri method=3 fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4 debug=0
-3 3 1000
+$ ./src/dist_m4ri fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4 debug=0
+3 3 50
 
-# 3. Quantum CSS code (Hx and Lx) using pure CC search up to wmax=5
-$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=5 debug=0 threads=4
+# 3. Quantum CSS code (Hx and Lx) using pure CC search up to wmax=5 with confinement
+$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=5 smax=5 debug=0 threads=4
 # confinement: 1,1,1,1,1
 5 5 0
 ```
@@ -281,7 +302,10 @@ interoperability without manual threading overhead.
   matrix, or `.mtx` file).
 - `compute_css_distance(Hx, Hz, Lx=None, Lz=None, ...)`: Distance $d = \min(d_X, d_Z)$ of a CSS quantum code.
 - `compute_dem_distance(dem=None, circuit=None, ...)`: Minimum distance directly from a `stim.DetectorErrorModel`,
-  `stim.Circuit`, or `.dem` file.
+  `stim.Circuit`, `.dem` file, or `.stim` circuit file (automatically adding phenomenological noise via `add_noise` if
+  the `.stim` circuit contains no noise instructions).
+- `has_noise(circuit)` / `add_noise(circuit, noise_prob=0.001)`: Inspects a `stim.Circuit` for noise instructions and
+  injects phenomenological `DEPOLARIZE1` / `DEPOLARIZE2` / reset-flip / measurement-flip noise into noiseless circuits.
 - `read_sparse_vectors(filepath)`: Parses NZLIST files into lists of 0-based integer support indices.
 - Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`.
 - Optional solver backend: `solver="codedistance"` (uses the `codedistance` library if installed).
@@ -344,7 +368,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (46 tests)
+# Run full C test suite (57 tests)
 make test
 ```
 
@@ -353,6 +377,12 @@ make test
 ```bash
 pytest tests/test_dist_m4ri.py -v
 ```
+
+### Benchmark Suite (`benchmark/`)
+
+The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes ($d \in [6, 36]$) and Stim circuits
+(Gross code, Mitten codes, honeycomb/color codes, bivariate bicycle codes) along with instructions for generating full
+and stripped DEMs via `dist_m4ri.add_noise`.
 
 ---
 

@@ -123,7 +123,7 @@ int do_RW_dist(params_t * const p){
   int *col_queue = NULL;
   int visit_marker = 0;
   uint64_t rng_state = (uint64_t)p->seed + 0x517cc1b727220a95ULL;
-  if (p->kwin > 0 && p->kwin < nvar) {
+  if ((p->kwin > 0 && p->kwin < nvar) || nvar >= 500) {
     mHT_csr = csr_transpose(NULL, spaH0);
     visited_cols = calloc(nvar, sizeof(int));
     visited_checks = calloc(spaH0->rows, sizeof(int));
@@ -131,9 +131,15 @@ int do_RW_dist(params_t * const p){
   }
 
   for (int ii=0; ii< steps; ii++){
-    if (p->kwin > 0 && p->kwin < nvar) {
+    int eff_kwin = p->kwin;
+    int eff_win_mode = p->win_mode;
+    if (eff_kwin == 0 && nvar >= 500 && (ii & 1) == 1) {
+      eff_kwin = minint(512, (nvar * 3) / 4);
+      eff_win_mode = 1;
+    }
+    if (eff_kwin > 0 && eff_kwin < nvar) {
       int seed_col = rand_uniform(nvar);
-      localized_window_perm(perm, nvar, seed_col, p->kwin, p->win_mode,
+      localized_window_perm(perm, nvar, seed_col, eff_kwin, eff_win_mode,
                             spaH0, mHT_csr, visited_cols, visited_checks,
                             col_queue, &visit_marker, &rng_state);
     } else {
