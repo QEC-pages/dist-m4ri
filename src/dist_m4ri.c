@@ -144,6 +144,12 @@ typedef struct {
   /* Codeword synchronization */
   pthread_mutex_t cw_mutex;
 
+  /* Subspace sketching (ksub) state */
+  mzd_t *N_global;
+  int nu;
+  pthread_rwlock_t basis_rwlock;
+  atomic_long next_refresh_step;
+
   /* Timing stats */
   double cc_time_per_weight[MAX_W];
   double avg_rw_step_time;
@@ -251,18 +257,29 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
 static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
                          mzd_t *mH, mzd_t *mHT, rci_t *ee,
                          mzp_t *perm, mzp_t *pivs, mzp_t *pivs_srtd, mzp_t *skip_pivs,
-                         uint64_t *rng_state, int tid) {
+                         int *visited_cols, int *visited_checks, int *col_queue,
+                         int *visit_marker, uint64_t *rng_state, int tid) {
   params_t * const p = ctx->p;
   const csr_t * const spaL0 = p->spaL;
   const int nvar = p->spaH->cols;
   const int classical = p->classical;
+  const int kwin = p->kwin;
+  const int win_mode = p->win_mode;
 
   for (int step = 0; step < n_steps; step++) {
     if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) break;
 
-    pivs = mzp_rand_thread(pivs, nvar, rng_state);
-    mzp_set_ui(perm, 1);
-    perm = perm_p_trans(perm, pivs, 0);
+    if (kwin > 0 && kwin < nvar) {
+      int seed_col = rand_uniform_thread(nvar, rng_state);
+      localized_window_perm(perm, nvar, seed_col, kwin, win_mode,
+                            p->spaH, ctx->mHT_cc,
+                            visited_cols, visited_checks, col_queue,
+                            visit_marker, rng_state);
+    } else {
+      pivs = mzp_rand_thread(pivs, nvar, rng_state);
+      mzp_set_ui(perm, 1);
+      perm = perm_p_trans(perm, pivs, 0);
+    }
 
     int rank = 0;
     for (int i = 0; i < nvar; i++) {
@@ -297,7 +314,7 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       int limit = nvar + 1;
       int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
       if (cur_dmax > 0) {
-        if ((p->outC || p->maxC || p->dW > 0) && p->dW >= 0) {
+        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
           limit = minint(limit, cur_dmax + p->dW + 1);
         } else {
           limit = minint(limit, cur_dmax);
@@ -324,9 +341,12 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
           if (old_dmax == 0 || best < old_dmax) {
             atomic_store(&ctx->dmax, best);
             if (p->debug & 16) {
-              int num_rw = (ctx->p->method == 1) ? ctx->num_threads : (ctx->num_threads - atomic_load(&ctx->cc_target_workers));
+              int num_rw = (ctx->p->method == 1) ? ctx->num_threads
+                           : (ctx->num_threads - atomic_load(&ctx->cc_target_workers));
               if (num_rw < 1) num_rw = 1;
-              fprintf(stderr, "# [thread %d] RW found new upper bound cw of weight %d (using %d RW threads)\n", tid, best, num_rw);
+              fprintf(stderr,
+                      "# [thread %d] RW found new upper bound cw of weight %d "
+                      "(using %d RW threads)\n", tid, best, num_rw);
             }
             int cur_dmin = atomic_load(&ctx->dmin);
             if (cur_dmin > 0 && best <= cur_dmin) {
@@ -339,11 +359,186 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
           if (p->maxC && p->num_cws >= p->maxC) {
             atomic_store(&ctx->stop_flag, true);
           }
+          if (check_min_hits_convergence(p)) {
+            if ((p->debug & 1) && !atomic_load(&ctx->stop_flag)) {
+              fprintf(stderr,
+                      "# RW convergence reached: >= %d min-weight (w=%d) cws "
+                      "each hit >= %d times\n",
+                      p->cov_cws > 1 ? p->cov_cws : 1, best, p->min_hits);
+            }
+            atomic_store(&ctx->stop_flag, true);
+          }
           pthread_mutex_unlock(&ctx->cw_mutex);
         }
       }
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
+  }
+}
+
+/* Run compact subspace RW batch (ksub > 0) */
+static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
+                              mzd_t *M_sub, rci_t *ee, mzp_t *perm, mzp_t *pivs,
+                              int *visited_cols, int *visited_checks, int *col_queue,
+                              int *visit_marker, uint64_t *rng_state, int tid) {
+  params_t * const p = ctx->p;
+  const csr_t * const spaL0 = p->spaL;
+  const int nvar = p->spaH->cols;
+  const int classical = p->classical;
+  const int nu = ctx->nu;
+  const int ksub = M_sub->nrows;
+  const int kwin = p->kwin;
+  const int win_mode = p->win_mode;
+
+  if (nu <= 0 || ksub <= 0 || !ctx->N_global) return;
+
+  pthread_rwlock_rdlock(&ctx->basis_rwlock);
+  const mzd_t * const N = ctx->N_global;
+
+  for (int step = 0; step < n_steps; step++) {
+    if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) break;
+
+    /* 1. Generate column permutation (localized window or uniform) */
+    if (kwin > 0 && kwin < nvar) {
+      int seed_col = rand_uniform_thread(nvar, rng_state);
+      localized_window_perm(perm, nvar, seed_col, kwin, win_mode,
+                            p->spaH, ctx->mHT_cc,
+                            visited_cols, visited_checks, col_queue,
+                            visit_marker, rng_state);
+    } else {
+      pivs = mzp_rand_thread(pivs, nvar, rng_state);
+      mzp_set_ui(perm, 1);
+      perm = perm_p_trans(perm, pivs, 0);
+    }
+
+    /* 2. Sample ksub rows from N into M_sub (with optional window overlap preference) */
+    const int marker = *visit_marker;
+    for (int i = 0; i < ksub; i++) {
+      int r = rand_uniform_thread(nu, rng_state);
+      if (kwin > 0 && kwin < nvar && visited_cols) {
+        for (int attempt = 0; attempt < 4; attempt++) {
+          const word *raw_n = mzd_row_cons(N, r);
+          int j_bit = nextelement(raw_n, N->width, -1);
+          int overlaps = 0;
+          while (j_bit >= 0 && j_bit < nvar) {
+            if (visited_cols[j_bit] == marker) {
+              overlaps = 1;
+              break;
+            }
+            j_bit = nextelement(raw_n, N->width, j_bit + 1);
+          }
+          if (overlaps) break;
+          r = rand_uniform_thread(nu, rng_state);
+        }
+      }
+      mzd_copy_row(M_sub, i, N, r);
+    }
+
+    /* 3. Echelonize M_sub directly in L1/L2 cache using permuted column order */
+    int rank = 0;
+    for (int i = 0; i < nvar && rank < ksub; i++) {
+      int col = perm->values[i];
+      if (gauss_one(M_sub, col, rank)) {
+        rank++;
+      }
+    }
+
+    /* 4. Extract candidate codewords directly from reduced rows (already in sorted order) */
+    for (int ir = 0; ir < rank; ir++) {
+      int cnt = 0;
+      int limit = nvar + 1;
+      int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+      if (cur_dmax > 0) {
+        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
+          limit = minint(limit, cur_dmax + p->dW + 1);
+        } else {
+          limit = minint(limit, cur_dmax);
+        }
+      }
+
+      word *rawrow = mzd_row(M_sub, ir);
+      rci_t j = -1;
+      while (cnt < limit) {
+        j = nextelement(rawrow, M_sub->width, j);
+        if (j == -1 || j >= nvar) break;
+        ee[cnt++] = j++;
+      }
+
+      if (cnt > 0 && cnt < limit) {
+        int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
+        if (nz) {
+          pthread_mutex_lock(&ctx->cw_mutex);
+          p->codewords = codeword_add_maybe(p, ee, cnt);
+          if (cnt < p->min_w) p->min_w = cnt;
+          int best = p->min_w;
+          int old_dmax = atomic_load(&ctx->dmax);
+          if (old_dmax == 0 || best < old_dmax) {
+            atomic_store(&ctx->dmax, best);
+            if (p->debug & 16) {
+              int num_rw = (ctx->p->method == 1) ? ctx->num_threads
+                           : (ctx->num_threads - atomic_load(&ctx->cc_target_workers));
+              if (num_rw < 1) num_rw = 1;
+              fprintf(stderr,
+                      "# [thread %d] RW (ksub=%d) found new upper bound cw of weight %d "
+                      "(using %d RW threads)\n", tid, ksub, best, num_rw);
+            }
+            int cur_dmin = atomic_load(&ctx->dmin);
+            if (cur_dmin > 0 && best <= cur_dmin) {
+              atomic_store(&ctx->stop_flag, true);
+            }
+          }
+          if (p->wmin > 0 && best <= p->wmin) {
+            atomic_store(&ctx->stop_flag, true);
+          }
+          if (p->maxC && p->num_cws >= p->maxC) {
+            atomic_store(&ctx->stop_flag, true);
+          }
+          if (check_min_hits_convergence(p)) {
+            if ((p->debug & 1) && !atomic_load(&ctx->stop_flag)) {
+              fprintf(stderr,
+                      "# RW convergence reached: >= %d min-weight (w=%d) cws "
+                      "each hit >= %d times\n",
+                      p->cov_cws > 1 ? p->cov_cws : 1, best, p->min_hits);
+            }
+            atomic_store(&ctx->stop_flag, true);
+          }
+          pthread_mutex_unlock(&ctx->cw_mutex);
+        }
+      }
+    }
+    atomic_fetch_add(&ctx->rw_steps_completed, 1);
+  }
+
+  pthread_rwlock_unlock(&ctx->basis_rwlock);
+
+  /* 5. Periodic adaptive basis refresh if enabled */
+  if (p->refresh > 0 && !atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
+    long done = atomic_load_explicit(&ctx->rw_steps_completed, memory_order_relaxed);
+    long next_ref = atomic_load_explicit(&ctx->next_refresh_step, memory_order_relaxed);
+    if (done >= next_ref && next_ref > 0) {
+      if (atomic_compare_exchange_strong(&ctx->next_refresh_step, &next_ref,
+                                         done + p->refresh)) {
+        int cw_wt = 0;
+        pthread_mutex_lock(&ctx->cw_mutex);
+        if (p->codewords && p->min_w < nvar) {
+          cw_vec_t *cw, *tmp;
+          HASH_ITER(hh, p->codewords, cw, tmp) {
+            if (cw->weight == p->min_w) {
+              cw_wt = cw->weight;
+              for (int k = 0; k < cw_wt; k++) ee[k] = cw->arr[k];
+              break;
+            }
+          }
+        }
+        pthread_mutex_unlock(&ctx->cw_mutex);
+
+        pthread_rwlock_wrlock(&ctx->basis_rwlock);
+        pthread_mutex_lock(&m4ri_mem_mutex);
+        refresh_nullspace_basis(ctx->N_global, cw_wt > 0 ? ee : NULL, cw_wt, rng_state);
+        pthread_mutex_unlock(&m4ri_mem_mutex);
+        pthread_rwlock_unlock(&ctx->basis_rwlock);
+      }
+    }
   }
 }
 
@@ -354,6 +549,8 @@ static void *worker_thread_func(void *arg) {
   int tid = warg->tid;
   const int nvar = ctx->p->spaH->cols;
   const bool enable_rw = (ctx->p->method & 1) != 0;
+  const bool use_ksub = enable_rw && (ctx->p->ksub > 0);
+  const int ksub_eff = (use_ksub && ctx->nu > 0) ? minint(ctx->p->ksub, ctx->nu) : 0;
 
   /* Initialize min_swei for this thread */
   for (int i = 0; i < MAX_W; i++) {
@@ -363,21 +560,39 @@ static void *worker_thread_func(void *arg) {
   /* Thread-local RW matrices (allocated safely only if RW is enabled) */
   mzd_t *mH = NULL;
   mzd_t *mHT_rw = NULL;
+  mzd_t *M_sub = NULL;
   rci_t *ee = NULL;
   mzp_t *perm = NULL;
   mzp_t *pivs = NULL;
   mzp_t *pivs_srtd = NULL;
   mzp_t *skip_pivs = NULL;
-  uint64_t rng_state = (uint64_t)ctx->p->seed + (uint64_t)tid * 0x9e3779b97f4a7c15ULL + 0x517cc1b727220a95ULL;
+  int *visited_cols = NULL;
+  int *visited_checks = NULL;
+  int *col_queue = NULL;
+  int visit_marker = 0;
+  uint64_t rng_state = (uint64_t)ctx->p->seed
+                       + (uint64_t)tid * 0x9e3779b97f4a7c15ULL
+                       + 0x517cc1b727220a95ULL;
 
   if (enable_rw) {
-    mH = safe_mzd_from_csr(NULL, ctx->p->spaH);
-    mHT_rw = safe_mzd_init(nvar, ctx->p->spaH->rows);
     ee = malloc((nvar + 2) * sizeof(rci_t));
     perm = safe_mzp_init(nvar);
     pivs = safe_mzp_init(nvar);
-    pivs_srtd = safe_mzp_init(nvar);
-    skip_pivs = safe_mzp_init(nvar);
+    if (ctx->p->kwin > 0) {
+      visited_cols = calloc(nvar, sizeof(int));
+      visited_checks = calloc(ctx->p->spaH->rows, sizeof(int));
+      col_queue = calloc(nvar, sizeof(int));
+    }
+    if (use_ksub) {
+      if (ksub_eff > 0) {
+        M_sub = safe_mzd_init(ksub_eff, nvar);
+      }
+    } else {
+      mH = safe_mzd_from_csr(NULL, ctx->p->spaH);
+      mHT_rw = safe_mzd_init(nvar, ctx->p->spaH->rows);
+      pivs_srtd = safe_mzp_init(nvar);
+      skip_pivs = safe_mzp_init(nvar);
+    }
   }
 
   /* Thread-local CC memory */
@@ -484,7 +699,19 @@ static void *worker_thread_func(void *arg) {
         if (target_s > ctx->total_rw_steps) target_s = ctx->total_rw_steps;
         if (atomic_compare_exchange_weak(&ctx->rw_steps_started, &cur_s, target_s)) {
           int n_steps = (int)(target_s - cur_s);
-          run_rw_steps(ctx, n_steps, mH, mHT_rw, ee, perm, pivs, pivs_srtd, skip_pivs, &rng_state, tid);
+          if (use_ksub) {
+            if (ksub_eff > 0) {
+              run_rw_steps_ksub(ctx, n_steps, M_sub, ee, perm, pivs,
+                                visited_cols, visited_checks, col_queue,
+                                &visit_marker, &rng_state, tid);
+            } else {
+              atomic_fetch_add(&ctx->rw_steps_completed, n_steps);
+            }
+          } else {
+            run_rw_steps(ctx, n_steps, mH, mHT_rw, ee, perm, pivs,
+                         pivs_srtd, skip_pivs, visited_cols, visited_checks,
+                         col_queue, &visit_marker, &rng_state, tid);
+          }
           did_work = true;
           continue;
         }
@@ -502,6 +729,10 @@ static void *worker_thread_func(void *arg) {
     safe_mzp_free(perm);
     safe_mzp_free(pivs);
     free(ee);
+    free(visited_cols);
+    free(visited_checks);
+    free(col_queue);
+    safe_mzd_free(M_sub);
     safe_mzd_free(mHT_rw);
     safe_mzd_free(mH);
   }
@@ -629,10 +860,14 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
         w_limit = minint(wmax, cw_found + ctx->p->dW);
         if (ctx->p->debug & 1) {
           if (w == cw_found) {
-            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): found min-weight codewords (dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
+            fprintf(stderr,
+                    "# CC round w=%d finished in %.3fs (%d CC threads): found min-weight codewords "
+                    "(dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
                     w, cc_dur, ctx->num_threads, cw_found, w_limit, ctx->p->dW, ctx->p->num_cws);
           } else if (round_completed) {
-            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+            fprintf(stderr,
+                    "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed "
+                    "(dmin=%d, total %lld cws)\n",
                     w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
           }
         }
@@ -640,7 +875,9 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
         if (ctx->p->debug & 1) {
           if (w > cw_found) {
             if (round_completed) {
-              fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+              fprintf(stderr,
+                      "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed "
+                      "(dmin=%d, total %lld cws)\n",
                       w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
             }
           } else {
@@ -815,7 +1052,9 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_round_active, 1);
 
     if (ctx->p->debug & 2) {
-      fprintf(stderr, "# CC round w=%d started: %d CC threads, %d RW threads (bounds [%d, %d], rem_rw=%ld, rem_time=%.2fs)\n",
+      fprintf(stderr,
+              "# CC round w=%d started: %d CC threads, %d RW threads "
+              "(bounds [%d, %d], rem_rw=%ld, rem_time=%.2fs)\n",
               w, n_cc, n_rw, cur_dmin, cur_dmax, steps_rem, remaining_time);
     }
 
@@ -846,13 +1085,18 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       atomic_store(&ctx->dmin, cw_found);
       atomic_store(&ctx->dmax, cw_found);
 
-      if (ctx->p->outC && ctx->p->dW > 0 && w < minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW)) {
+      int max_w_lim = minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW);
+      if (ctx->p->outC && ctx->p->dW > 0 && w < max_w_lim) {
         if (ctx->p->debug & 1) {
           if (w == cw_found) {
-            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): found codewords (dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
-                    w, cc_dur, n_cc, n_rw, cw_found, minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW), ctx->p->dW, ctx->p->num_cws);
+            fprintf(stderr,
+                    "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): found codewords "
+                    "(dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
+                    w, cc_dur, n_cc, n_rw, cw_found, max_w_lim, ctx->p->dW, ctx->p->num_cws);
           } else if (round_completed) {
-            fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+            fprintf(stderr,
+                    "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): "
+                    "extra dW round completed (dmin=%d, total %lld cws)\n",
                     w, cc_dur, n_cc, n_rw, cw_found, ctx->p->num_cws);
           }
         }
@@ -860,7 +1104,9 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
         if (ctx->p->debug & 1) {
           if (w > cw_found) {
             if (round_completed) {
-              fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+              fprintf(stderr,
+                      "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): "
+                      "extra dW round completed (dmin=%d, total %lld cws)\n",
                       w, cc_dur, n_cc, n_rw, cw_found, ctx->p->num_cws);
             }
           } else {
@@ -874,7 +1120,9 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     } else if (cur_dmax > 0 && cur_dmin >= cur_dmax) {
       /* Extra dW round completed */
       if (round_completed && (ctx->p->debug & 1)) {
-        fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): extra dW round completed (dmin=%d, total %lld cws)\n",
+        fprintf(stderr,
+                "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): "
+                "extra dW round completed (dmin=%d, total %lld cws)\n",
                 w, cc_dur, n_cc, n_rw, cur_dmin, ctx->p->num_cws);
       }
       if (!round_completed) {
@@ -946,10 +1194,11 @@ int main(int argc, char **argv) {
     }
 
     /* 2. Large-matrix memory throttling: prevent DRAM bus & L3 cache thrashing */
-    if (nrows > 0 && nvar > 0) {
+    int eff_rows = (p->ksub > 0 && p->ksub < nrows) ? p->ksub : nrows;
+    if (eff_rows > 0 && nvar > 0) {
       size_t words_H = ((size_t)nvar + 63) / 64;
-      size_t bytes_H = (size_t)nrows * words_H * 8;
-      size_t words_HT = ((size_t)nrows + 63) / 64;
+      size_t bytes_H = (size_t)eff_rows * words_H * 8;
+      size_t words_HT = ((size_t)eff_rows + 63) / 64;
       size_t bytes_HT = (size_t)nvar * words_HT * 8;
       size_t dense_bytes_per_thread = bytes_H + bytes_HT;
 
@@ -1029,11 +1278,25 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.cc_active_workers, 0);
   atomic_init(&ctx.cc_target_workers, 0);
   atomic_init(&ctx.cc_round_active, 0);
+  atomic_init(&ctx.next_refresh_step, p->refresh > 0 ? p->refresh : 0);
 
   pthread_mutex_init(&ctx.cw_mutex, NULL);
+  pthread_rwlock_init(&ctx.basis_rwlock, NULL);
 
   ctx.mHT_cc = csr_transpose(NULL, p->spaH);
   ctx.max_col_W = csr_max_row_wght(ctx.mHT_cc);
+
+  if ((p->method & 1) && p->ksub > 0) {
+    double t_ker0 = get_time_sec();
+    ctx.N_global = mzd_nullspace(p->spaH);
+    ctx.nu = ctx.N_global ? ctx.N_global->nrows : 0;
+    if (p->debug & 2) {
+      fprintf(stderr,
+              "# computed ker(H) in %.4fs: nu=%d, n=%d, ksub=%d (eff=%d)\n",
+              get_time_sec() - t_ker0, ctx.nu, p->spaH->cols, p->ksub,
+              minint(p->ksub, ctx.nu));
+    }
+  }
 
   /* Allocate and launch worker threads */
   ctx.threads = malloc(num_threads * sizeof(pthread_t));
@@ -1115,7 +1378,9 @@ int main(int argc, char **argv) {
         fprintf(stderr, "\n");
       }
       if (skipped) {
-        fprintf(stderr, "# Note: Some weights were skipped in confinement profile. Try increasing smax (current: %d)\n", p->smax);
+        fprintf(stderr,
+                "# Note: Some weights were skipped in confinement profile. "
+                "Try increasing smax (current: %d)\n", p->smax);
       }
     }
   }
@@ -1146,9 +1411,11 @@ int main(int argc, char **argv) {
   }
 
   /* Cleanup */
+  safe_mzd_free(ctx.N_global);
   csr_free(ctx.mHT_cc);
   free(ctx.threads);
   free(args);
+  pthread_rwlock_destroy(&ctx.basis_rwlock);
   pthread_mutex_destroy(&ctx.cw_mutex);
 
   var_kill(p);

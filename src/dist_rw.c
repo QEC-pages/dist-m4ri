@@ -32,7 +32,8 @@
  * @param dW weight increment from the minimum found
  * @param p pointer to global parameters structure
  * @param classical set to `1` for classical code (do not use `L` matrix), `0` otherwise  
- * @return minimum `weight` of a CW found (or `-weigt` if early termination condition is reached). Or `0` if no codewords wit `w<wmax` have been found.
+ * @return minimum `weight` of a CW found (or `-weight` if early termination condition is reached),
+ *         or `0` if no codewords with `w<wmax` have been found.
  */
 int do_RW_dist(params_t * const p){
   const csr_t * const spaH0 = p->spaH;
@@ -78,10 +79,105 @@ int do_RW_dist(params_t * const p){
   if((!pivs) || (!perm))
     ERROR("memory allocation failed!\n");
 
+  mzd_t *N_ker = NULL;
+  mzd_t *M_sub = NULL;
+  int nu = 0;
+  int ksub_eff = 0;
+  if (p->ksub > 0) {
+    N_ker = mzd_nullspace(spaH0);
+    nu = N_ker ? N_ker->nrows : 0;
+    ksub_eff = minint(p->ksub, nu);
+    if (ksub_eff > 0) {
+      M_sub = mzd_init(ksub_eff, nvar);
+    }
+  }
+
+  csr_t *mHT_csr = NULL;
+  int *visited_cols = NULL;
+  int *visited_checks = NULL;
+  int *col_queue = NULL;
+  int visit_marker = 0;
+  uint64_t rng_state = (uint64_t)p->seed + 0x517cc1b727220a95ULL;
+  if (p->kwin > 0 && p->kwin < nvar) {
+    mHT_csr = csr_transpose(NULL, spaH0);
+    visited_cols = calloc(nvar, sizeof(int));
+    visited_checks = calloc(spaH0->rows, sizeof(int));
+    col_queue = calloc(nvar, sizeof(int));
+  }
+
   for (int ii=0; ii< steps; ii++){
-    pivs=mzp_rand(pivs); /** random pivots LAPAC-style */
-    mzp_set_ui(perm,1);
-    perm=perm_p_trans(perm,pivs,0); /**< corresponding permutation */
+    if (p->kwin > 0 && p->kwin < nvar) {
+      int seed_col = rand_uniform(nvar);
+      localized_window_perm(perm, nvar, seed_col, p->kwin, p->win_mode,
+                            spaH0, mHT_csr, visited_cols, visited_checks,
+                            col_queue, &visit_marker, &rng_state);
+    } else {
+      pivs=mzp_rand(pivs); /** random pivots LAPAC-style */
+      mzp_set_ui(perm,1);
+      perm=perm_p_trans(perm,pivs,0); /**< corresponding permutation */
+    }
+
+    if (p->ksub > 0) {
+      if (ksub_eff <= 0) break;
+      for (int i = 0; i < ksub_eff; i++) {
+        int r = rand_uniform(nu);
+        mzd_copy_row(M_sub, i, N_ker, r);
+      }
+      int rank = 0;
+      for (int i = 0; i < nvar && rank < ksub_eff; i++) {
+        int col = perm->values[i];
+        if (gauss_one(M_sub, col, rank)) {
+          rank++;
+        }
+      }
+      for (int ir = 0; ir < rank; ir++) {
+        int cnt = 0;
+        int limit = nvar + 1;
+        int cur_d = (minW <= nvar) ? minW : 0;
+        if (cur_d > 0) {
+          if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
+            limit = minint(limit, cur_d + p->dW + 1);
+          } else {
+            limit = minint(limit, cur_d);
+          }
+        }
+        word *rawrow = mzd_row(M_sub, ir);
+        rci_t j = -1;
+        while (cnt < limit) {
+          j = nextelement(rawrow, M_sub->width, j);
+          if (j == -1 || j >= nvar) break;
+          ee[cnt++] = j++;
+        }
+        if (cnt > 0 && cnt < limit) {
+          int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
+          if (nz) {
+            p->codewords = codeword_add_maybe(p, ee, cnt);
+            if (cnt < minW) minW = cnt;
+            if (p->maxC && p->num_cws >= p->maxC) goto alldone;
+            if (check_min_hits_convergence(p)) goto alldone;
+            if (minW <= wmin) {
+              minW = -minW;
+              goto alldone;
+            }
+          }
+        }
+      }
+      if (p->refresh > 0 && (ii + 1) % p->refresh == 0) {
+        int cw_wt = 0;
+        if (p->codewords && p->min_w < nvar) {
+          cw_vec_t *cw, *tmp;
+          HASH_ITER(hh, p->codewords, cw, tmp) {
+            if (cw->weight == p->min_w) {
+              cw_wt = cw->weight;
+              for (int k = 0; k < cw_wt; k++) ee[k] = cw->arr[k];
+              break;
+            }
+          }
+        }
+        refresh_nullspace_basis(N_ker, cw_wt > 0 ? ee : NULL, cw_wt, &rng_state);
+      }
+      continue;
+    }
 
     /** full row echelon form of `H` (gauss) using the order in `perm` */
     int rank=0;
@@ -131,7 +227,7 @@ int do_RW_dist(params_t * const p){
       int limit = nvar + 1;
       int cur_d = (minW <= nvar) ? minW : 0;
       if (cur_d > 0) {
-        if ((p->outC || p->maxC || p->dW > 0) && p->dW >= 0) {
+        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
           limit = minint(limit, cur_d + p->dW + 1);
         } else {
           limit = minint(limit, cur_d);
@@ -207,6 +303,9 @@ int do_RW_dist(params_t * const p){
           if (p->maxC && p->num_cws >= p->maxC) {
             goto alldone;
           }
+          if (check_min_hits_convergence(p)) {
+            goto alldone;
+          }
 	  if (minW <= wmin){ /** early termination condition */
 	    minW = - minW;   /** this distance value is of little interest; */
 	    goto alldone; /** stop right away */
@@ -224,6 +323,12 @@ int do_RW_dist(params_t * const p){
  alldone: /** early termination label */
 
   /** clean up */
+  if (M_sub) mzd_free(M_sub);
+  if (N_ker) mzd_free(N_ker);
+  if (mHT_csr) csr_free(mHT_csr);
+  free(visited_cols);
+  free(visited_checks);
+  free(col_queue);
   if(skip_pivs)
     mzp_free(skip_pivs);
   if(pivs_srtd)
@@ -283,7 +388,8 @@ int main(int argc, char **argv){
         if (prm.method == 1) 
           printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
         else
-          printf("RW algorithm upper bound for the distance d=%d (early termination due to wmin=%d)\n", prm.dist_max, prm.wmin);
+          printf("RW algorithm upper bound for the distance d=%d "
+                 "(early termination due to wmin=%d)\n", prm.dist_max, prm.wmin);
       }
       printf("%d\n",prm.dist_max);
       prm.dist_min = prm.dist_max;

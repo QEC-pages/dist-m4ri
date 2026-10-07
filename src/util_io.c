@@ -48,7 +48,13 @@ params_t prm={
   .dexp=0,
   .timeout=60.0,
   .nothrottle=0,
-  .chunk_size=0
+  .chunk_size=0,
+  .ksub=0,
+  .kwin=0,
+  .win_mode=0,
+  .min_hits=0,
+  .cov_cws=1,
+  .refresh=0
 };
 
 params_t * const p = &prm;
@@ -294,6 +300,36 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	fprintf(stderr, "# read %s, chunk_size=%d\n",argv[i],p->chunk_size);
     }
+    else if (sscanf(argv[i],"ksub=%d",&dbg)==1){
+      p->ksub=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, ksub=%d\n",argv[i],p->ksub);
+    }
+    else if (sscanf(argv[i],"kwin=%d",&dbg)==1 || sscanf(argv[i],"win=%d",&dbg)==1){
+      p->kwin=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, kwin=%d\n",argv[i],p->kwin);
+    }
+    else if (sscanf(argv[i],"win_mode=%d",&dbg)==1){
+      p->win_mode=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, win_mode=%d\n",argv[i],p->win_mode);
+    }
+    else if (sscanf(argv[i],"min_hits=%d",&dbg)==1){
+      p->min_hits=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, min_hits=%d\n",argv[i],p->min_hits);
+    }
+    else if (sscanf(argv[i],"cov_cws=%d",&dbg)==1){
+      p->cov_cws=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, cov_cws=%d\n",argv[i],p->cov_cws);
+    }
+    else if (sscanf(argv[i],"refresh=%d",&dbg)==1){
+      p->refresh=dbg;
+      if (p->debug&4)
+	fprintf(stderr, "# read %s, refresh=%d\n",argv[i],p->refresh);
+    }
     else{ /* unrecognized option */
       fprintf(stderr, "%s: unrecognized parameter \"%s\" at position %d\n\n", argv[0], argv[i], i);
       print_short_help(argv[0]);
@@ -352,10 +388,14 @@ void var_init(int argc, char **argv, params_t * const p){
     ERROR("cbeg=%d cannot be larger than cend=%d\n", p->cbeg, p->cend);
   }
   if (p->noscan && p->smax > 0) {
-    fprintf(stderr, "# WARNING: smax=%d disabled (set to 0) because noscan=1 skips small cluster weights\n", p->smax);
+    fprintf(stderr,
+            "# WARNING: smax=%d disabled (set to 0) because noscan=1 skips small cluster weights\n",
+            p->smax);
     p->smax = 0;
   } else if (p->dmin > 1 && p->smax > 0) {
-    fprintf(stderr, "# WARNING: smax=%d disabled (set to 0) because dmin=%d skips small cluster weights\n", p->smax, p->dmin);
+    fprintf(stderr,
+            "# WARNING: smax=%d disabled (set to 0) because dmin=%d skips small cluster weights\n",
+            p->smax, p->dmin);
     p->smax = 0;
   }
 
@@ -502,7 +542,8 @@ void var_init(int argc, char **argv, params_t * const p){
   } else {
     if (p->spaL == NULL) {
       ERROR("L matrix (logical operators) is required for quantum code (classical=0).\n"
-            "Provide finL, fdem, or finG to construct it. Alternatively, set classical=1 to find the distance of the stabilizer code as a classical code.");
+            "Provide finL, fdem, or finG to construct it. Alternatively, set classical=1 "
+            "to find the distance of the stabilizer code as a classical code.");
     }
   }
 
@@ -881,6 +922,30 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
   return p->codewords;
 }
 
+int check_min_hits_convergence(const params_t * const p) {
+  if (p->min_hits <= 0 || p->min_w == INT_MAX || !p->codewords) {
+    return 0;
+  }
+  int total_min_w = 0;
+  int hit_min_w = 0;
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    if (cw->weight == p->min_w) {
+      total_min_w++;
+      if (cw->cnt >= p->min_hits) {
+        hit_min_w++;
+      }
+    }
+  }
+  if (total_min_w == 0) {
+    return 0;
+  }
+  if (p->cov_cws <= 0) {
+    return (hit_min_w == total_min_w) ? 1 : 0;
+  }
+  return (hit_min_w >= p->cov_cws) ? 1 : 0;
+}
+
 long long int nzlist_read(const char fnam[], params_t *p){
   long long int count = 0, lineno;
   long long int skipped_invalid = 0;
@@ -927,7 +992,9 @@ long long int nzlist_read(const char fnam[], params_t *p){
   }
   fclose(f);
   if (skipped_invalid > 0) {
-    fprintf(stderr, "# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n", skipped_invalid);
+    fprintf(stderr,
+            "# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n",
+            skipped_invalid);
   }
   if(p->debug&1)
     fprintf(stderr, "# read %lld codewords from %s, total %lld\n",count, fnam, p->num_cws);

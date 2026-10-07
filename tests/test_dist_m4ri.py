@@ -525,6 +525,33 @@ def test_cache_versioning(tmp_path):
     assert "code_test" in dist_m4ri._distance_cache
 
 
+def test_rw_ksub_kwin_min_hits(capsys):
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        d, d_info = dist_m4ri.compute_dem_distance(
+            dem=dem_file, method=1, num_steps=2000, ksub=32, kwin=48,
+            win_mode=0, min_hits=3, cov_cws=2, refresh=50, threads=4, seed=42
+        )
+        assert d == 3
+        assert d_info[1] == 3
+        assert 0 < d_info[2] < 2000
+
+        args = dist_m4ri.parse_cli_args([
+            "method=1", "ksub=64", "win=128", "win_mode=1",
+            "min_hits=5", "cov_cws=3", "refresh=100"
+        ])
+        assert args["ksub"] == 64
+        assert args["kwin"] == 128
+        assert args["win_mode"] == 1
+        assert args["min_hits"] == 5
+        assert args["cov_cws"] == 3
+        assert args["refresh"] == 100
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

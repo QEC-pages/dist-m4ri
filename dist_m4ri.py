@@ -369,8 +369,11 @@ def get_sparse_array_state(A) -> str:
 
 def create_unique_file(directory: Union[str, Path] = "tmp", extension: str = ".tmp") -> str:
     """Creates a unique temporary file path and ensures the parent directory exists."""
-    os.makedirs(directory, exist_ok=True)
-    fd, path = tempfile.mkstemp(suffix=extension, dir=directory)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        fd, path = tempfile.mkstemp(suffix=extension, dir=directory)
+    except OSError:
+        fd, path = tempfile.mkstemp(suffix=extension)
     os.close(fd)
     return path
 
@@ -661,6 +664,12 @@ def run_dist_m4ri(
     debug: int = 0,
     nothrottle: bool = False,
     chunk_size: int = 0,
+    ksub: int = 0,
+    kwin: int = 0,
+    win_mode: int = 0,
+    min_hits: int = 0,
+    cov_cws: int = 1,
+    refresh: int = 0,
     stop_event: Optional[threading.Event] = None
 ) -> Tuple[int, int, int]:
     """
@@ -710,6 +719,12 @@ def run_dist_m4ri(
     if seed != 0: cmd.append(f"seed={seed}")
     if nothrottle: cmd.append("nothrottle=1")
     if chunk_size > 0: cmd.append(f"chunk_size={chunk_size}")
+    if ksub > 0: cmd.append(f"ksub={ksub}")
+    if kwin > 0: cmd.append(f"kwin={kwin}")
+    if win_mode != 0: cmd.append(f"win_mode={win_mode}")
+    if min_hits > 0: cmd.append(f"min_hits={min_hits}")
+    if cov_cws != 1: cmd.append(f"cov_cws={cov_cws}")
+    if refresh > 0: cmd.append(f"refresh={refresh}")
 
     if debug & 2:
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
@@ -790,6 +805,12 @@ def compute_classical_distance(
     verbose: bool = False,
     nothrottle: bool = False,
     chunk_size: int = 0,
+    ksub: int = 0,
+    kwin: int = 0,
+    win_mode: int = 0,
+    min_hits: int = 0,
+    cov_cws: int = 1,
+    refresh: int = 0,
     **kwargs
 ) -> Any:
     """
@@ -952,7 +973,13 @@ def compute_classical_distance(
             seed=seed,
             debug=debug,
             nothrottle=nothrottle,
-            chunk_size=chunk_size
+            chunk_size=chunk_size,
+            ksub=ksub,
+            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+            win_mode=win_mode,
+            min_hits=min_hits,
+            cov_cws=cov_cws,
+            refresh=refresh
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -1051,6 +1078,12 @@ def compute_quantum_distance(
     verbose: bool = False,
     nothrottle: bool = False,
     chunk_size: int = 0,
+    ksub: int = 0,
+    kwin: int = 0,
+    win_mode: int = 0,
+    min_hits: int = 0,
+    cov_cws: int = 1,
+    refresh: int = 0,
     **kwargs
 ) -> Any:
     """
@@ -1253,7 +1286,13 @@ def compute_quantum_distance(
             seed=seed,
             debug=debug,
             nothrottle=nothrottle,
-            chunk_size=chunk_size
+            chunk_size=chunk_size,
+            ksub=ksub,
+            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+            win_mode=win_mode,
+            min_hits=min_hits,
+            cov_cws=cov_cws,
+            refresh=refresh
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -1366,6 +1405,12 @@ def compute_css_distance(
     verbose: bool = False,
     nothrottle: bool = False,
     chunk_size: int = 0,
+    ksub: int = 0,
+    kwin: int = 0,
+    win_mode: int = 0,
+    min_hits: int = 0,
+    cov_cws: int = 1,
+    refresh: int = 0,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -1644,7 +1689,13 @@ def compute_css_distance(
                 seed=seed,
                 debug=debug,
                 nothrottle=nothrottle,
-                chunk_size=chunk_size
+                chunk_size=chunk_size,
+                ksub=ksub,
+                kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+                win_mode=win_mode,
+                min_hits=min_hits,
+                cov_cws=cov_cws,
+                refresh=refresh
             )
             dist_Z = dmin_z if (dmin_z == dmax_z or dmax_z == 0) else dmax_z
             if (do_cws or outC) and outZ and os.path.exists(outZ):
@@ -1679,7 +1730,13 @@ def compute_css_distance(
                 seed=seed,
                 debug=debug,
                 nothrottle=nothrottle,
-                chunk_size=chunk_size
+                chunk_size=chunk_size,
+                ksub=ksub,
+                kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+                win_mode=win_mode,
+                min_hits=min_hits,
+                cov_cws=cov_cws,
+                refresh=refresh
             )
             dist_X = dmin_x if (dmin_x == dmax_x or dmax_x == 0) else dmax_x
             if (do_cws or outC) and outX and os.path.exists(outX):
@@ -1809,6 +1866,12 @@ def compute_dem_distance(
     verbose: bool = False,
     nothrottle: bool = False,
     chunk_size: int = 0,
+    ksub: int = 0,
+    kwin: int = 0,
+    win_mode: int = 0,
+    min_hits: int = 0,
+    cov_cws: int = 1,
+    refresh: int = 0,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -1990,7 +2053,13 @@ def compute_dem_distance(
             seed=seed,
             debug=debug,
             nothrottle=nothrottle,
-            chunk_size=chunk_size
+            chunk_size=chunk_size,
+            ksub=ksub,
+            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+            win_mode=win_mode,
+            min_hits=min_hits,
+            cov_cws=cov_cws,
+            refresh=refresh
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -2104,6 +2173,12 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "verbose": False,
         "nothrottle": False,
         "chunk_size": 0,
+        "ksub": 0,
+        "kwin": 0,
+        "win_mode": 0,
+        "min_hits": 0,
+        "cov_cws": 1,
+        "refresh": 0,
         "morehelp": False,
         "version": False,
         "unrecognized": [],
@@ -2267,6 +2342,18 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 )
             elif key_lower in ("chunk_size", "chunksize", "batch", "chunk"):
                 args["chunk_size"] = int(val)
+            elif key_lower == "ksub":
+                args["ksub"] = int(val)
+            elif key_lower in ("kwin", "win"):
+                args["kwin"] = int(val)
+            elif key_lower in ("win_mode", "winmode"):
+                args["win_mode"] = int(val)
+            elif key_lower in ("min_hits", "minhits"):
+                args["min_hits"] = int(val)
+            elif key_lower in ("cov_cws", "covcws"):
+                args["cov_cws"] = int(val)
+            elif key_lower == "refresh":
+                args["refresh"] = int(val)
             else:
                 args["unrecognized"].append(arg)
 
@@ -2294,7 +2381,8 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 Allowed parameters:
   fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, classical,
   method, dmin, dmax, dexp (dest), steps, wmin, wmax, timeout,
-  threads, nothrottle, chunk_size (batch), smax, noscan, start,
+  threads, nothrottle, chunk_size (batch), ksub, kwin (win),
+  win_mode, min_hits, cov_cws, refresh, smax, noscan, start,
   cbeg, cend, finC, outC, maxC, dW, seed, debug, solver, cache,
   --no-cache, --verbose, --cws
 
@@ -2350,6 +2438,12 @@ Extra parameters (see --morehelp for details):
   start/cbeg/cend=N     Limit CC search to specific column(s) (-1: all)
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      RW batch chunk size (default: 0 for adaptive 25-500, alias: batch)
+  ksub=N (0)            RW subspace sketch dimension (0: full matrix, e.g. 32 or 64)
+  kwin=N (0)            RW localized window size around seed column (0: uniform, alias: win)
+  win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
+  min_hits=N (0)        RW early stop when >= cov_cws min-weight cws hit >= N times
+  cov_cws=N (1)         Min distinct min-weight cws required for min_hits convergence
+  refresh=N (0)         Periodic N basis refresh interval in RW steps (when ksub > 0)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
   dW=N (0)              Extra weight window above dmin to collect codewords
   seed=N (0)            Random number generator seed
@@ -2422,6 +2516,21 @@ Multithreading & throttling:
                         Forces allocation of the exact number of threads requested.
   chunk_size=N          RW batch chunk size per thread (default: 0 = adaptive 25-500).
                         Alias: batch=N.
+  ksub=N                Subspace sketch dimension for RW (default: 0 = full matrix).
+                        Precomputes N = ker(H) once; each thread echelonizes a compact
+                        ksub x n sampled subspace in L1/L2 cache (e.g. ksub=32 or 64).
+  kwin=N                Localized column permutation window size W around a random seed
+                        column j0 (default: 0 = uniform permutation). Alias: win=N.
+  win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
+                        (default), 1 = contiguous column index window.
+  min_hits=N            Empirical RW convergence stopping criterion (default: 0 = disabled).
+                        Stops RW early when >= cov_cws distinct min-weight codewords have
+                        each been independently found at least min_hits times.
+  cov_cws=N             Minimum distinct minimum-weight codewords required for min_hits
+                        convergence (default: 1; set <= 0 to require all found min-weight cws).
+  refresh=N             Periodic adaptive basis refresh interval in RW steps when ksub > 0
+                        (default: 0 = disabled). Re-echelonizes N and substitutes heavier
+                        basis rows with discovered minimum-weight codewords.
 
 Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 5).
@@ -2535,7 +2644,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 debug=args["debug"],
                 verbose=args["verbose"],
                 nothrottle=args["nothrottle"],
-                chunk_size=args["chunk_size"]
+                chunk_size=args["chunk_size"],
+                ksub=args["ksub"],
+                kwin=args["kwin"],
+                win_mode=args["win_mode"],
+                min_hits=args["min_hits"],
+                cov_cws=args["cov_cws"],
+                refresh=args["refresh"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res
@@ -2582,7 +2697,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 debug=args["debug"],
                 verbose=args["verbose"],
                 nothrottle=args["nothrottle"],
-                chunk_size=args["chunk_size"]
+                chunk_size=args["chunk_size"],
+                ksub=args["ksub"],
+                kwin=args["kwin"],
+                win_mode=args["win_mode"],
+                min_hits=args["min_hits"],
+                cov_cws=args["cov_cws"],
+                refresh=args["refresh"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, dx_info, dz_info, cws_x, cws_z = res
@@ -2660,7 +2781,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 debug=args["debug"],
                 verbose=args["verbose"],
                 nothrottle=args["nothrottle"],
-                chunk_size=args["chunk_size"]
+                chunk_size=args["chunk_size"],
+                ksub=args["ksub"],
+                kwin=args["kwin"],
+                win_mode=args["win_mode"],
+                min_hits=args["min_hits"],
+                cov_cws=args["cov_cws"],
+                refresh=args["refresh"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res
@@ -2706,7 +2833,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 debug=args["debug"],
                 verbose=args["verbose"],
                 nothrottle=args["nothrottle"],
-                chunk_size=args["chunk_size"]
+                chunk_size=args["chunk_size"],
+                ksub=args["ksub"],
+                kwin=args["kwin"],
+                win_mode=args["win_mode"],
+                min_hits=args["min_hits"],
+                cov_cws=args["cov_cws"],
+                refresh=args["refresh"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res

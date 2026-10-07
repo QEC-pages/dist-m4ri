@@ -530,6 +530,35 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
    * @return Pointer to the constructed sparse logical matrix Lx.
    */
   csr_t * Lx_for_CSS_code(const csr_t * const Hx, const csr_t *const Hz);
+
+  /**
+   * @brief Compute the null space basis N = ker(H) of dimension nu x n.
+   *
+   * Uses M4RI's mzd_kernel_left_pluq to find X such that H * X = 0, and
+   * returns N = X^T of size (n - rank(H)) x n.
+   *
+   * @param H Sparse parity check matrix in CSR form.
+   * @return Newly allocated dense matrix N, or NULL if kernel is trivial.
+   */
+  mzd_t * mzd_nullspace(const csr_t * const H);
+
+  /**
+   * @brief Construct a column permutation with a localized window at the front.
+   *
+   * Places kwin columns around seed_col (via Tanner BFS if win_mode == 0, or
+   * contiguous index proximity if win_mode == 1) in perm->values[0 .. kwin-1],
+   * internally shuffled, followed by the shuffled remaining columns.
+   */
+  void localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode,
+                             const csr_t *spaH, const csr_t *mHT,
+                             int *visited_cols, int *visited_checks, int *col_queue,
+                             int *visit_marker, uint64_t *rng_state);
+
+  /**
+   * @brief Refresh the null space basis N under a random column permutation
+   *        and optionally inject a low-weight codeword via Steinitz exchange.
+   */
+  void refresh_nullspace_basis(mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *rng_state);
   
 #if defined(__cplusplus) && !defined (_MSC_VER)
 }

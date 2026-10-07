@@ -908,3 +908,178 @@ csr_t * Lx_for_CSS_code(const csr_t * const Hx, const csr_t *const Hz){
   mzd_free(mat);
   return ans;
 }
+
+mzd_t * mzd_nullspace(const csr_t * const H) {
+  if (!H) return NULL;
+  mzd_t *mH = mzd_from_csr(NULL, H);
+  mzd_t *X = mzd_kernel_left_pluq(mH, 0);
+  mzd_free(mH);
+  if (!X) return NULL;
+  mzd_t *N = mzd_transpose(NULL, X);
+  mzd_free(X);
+  return N;
+}
+
+static inline uint64_t util_splitmix64(uint64_t *state) {
+  uint64_t z = (*state += 0x9e3779b97f4a7c15ULL);
+  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+  return z ^ (z >> 31);
+}
+
+static inline int util_rand_uniform(int max, uint64_t *state) {
+  if (max <= 1) return 0;
+  return (int)(util_splitmix64(state) % (uint64_t)max);
+}
+
+void localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode,
+                           const csr_t *spaH, const csr_t *mHT,
+                           int *visited_cols, int *visited_checks, int *col_queue,
+                           int *visit_marker, uint64_t *rng_state) {
+  if (kwin <= 0 || kwin >= nvar || !visited_cols) {
+    for (int i = 0; i < nvar; i++) perm->values[i] = i;
+    for (int i = 0; i < nvar - 1; i++) {
+      int j = i + util_rand_uniform(nvar - i, rng_state);
+      SWAPINT(perm->values[i], perm->values[j]);
+    }
+    return;
+  }
+
+  (*visit_marker)++;
+  int marker = *visit_marker;
+  if (marker <= 0) {
+    memset(visited_cols, 0, (size_t)nvar * sizeof(int));
+    if (spaH && visited_checks) {
+      memset(visited_checks, 0, (size_t)spaH->rows * sizeof(int));
+    }
+    *visit_marker = marker = 1;
+  }
+
+  int count = 0;
+  if (win_mode == 0 && spaH && mHT && visited_checks && col_queue) {
+    int head = 0, tail = 0;
+    visited_cols[seed_col] = marker;
+    col_queue[tail++] = seed_col;
+    perm->values[count++] = seed_col;
+
+    while (count < kwin) {
+      if (head < tail) {
+        int col = col_queue[head++];
+        for (int p_idx = mHT->p[col]; p_idx < mHT->p[col + 1] && count < kwin; p_idx++) {
+          int chk = mHT->i[p_idx];
+          if (visited_checks[chk] != marker) {
+            visited_checks[chk] = marker;
+            for (int h_idx = spaH->p[chk]; h_idx < spaH->p[chk + 1] && count < kwin; h_idx++) {
+              int c_adj = spaH->i[h_idx];
+              if (visited_cols[c_adj] != marker) {
+                visited_cols[c_adj] = marker;
+                col_queue[tail++] = c_adj;
+                perm->values[count++] = c_adj;
+              }
+            }
+          }
+        }
+      } else {
+        int r_start = util_rand_uniform(nvar, rng_state);
+        int found = -1;
+        for (int offset = 0; offset < nvar; offset++) {
+          int cand = (r_start + offset) % nvar;
+          if (visited_cols[cand] != marker) {
+            found = cand;
+            break;
+          }
+        }
+        if (found == -1) break;
+        visited_cols[found] = marker;
+        col_queue[tail++] = found;
+        perm->values[count++] = found;
+      }
+    }
+  } else {
+    for (int i = 0; i < kwin; i++) {
+      int col = (seed_col + i) % nvar;
+      visited_cols[col] = marker;
+      perm->values[count++] = col;
+    }
+  }
+
+  int win_actual = count;
+  for (int i = 0; i < win_actual - 1; i++) {
+    int j = i + util_rand_uniform(win_actual - i, rng_state);
+    SWAPINT(perm->values[i], perm->values[j]);
+  }
+
+  int rem_idx = win_actual;
+  for (int col = 0; col < nvar; col++) {
+    if (visited_cols[col] != marker) {
+      perm->values[rem_idx++] = col;
+    }
+  }
+  for (int i = win_actual; i < nvar - 1; i++) {
+    int j = i + util_rand_uniform(nvar - i, rng_state);
+    SWAPINT(perm->values[i], perm->values[j]);
+  }
+}
+
+void refresh_nullspace_basis(mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *rng_state) {
+  if (!N || N->nrows == 0 || N->ncols == 0) return;
+  const rci_t nu = N->nrows;
+  const rci_t n = N->ncols;
+
+  mzp_t *pivs = mzp_init(n);
+  mzp_t *perm = mzp_init(n);
+  rci_t *piv_cols = malloc((size_t)nu * sizeof(rci_t));
+  if (!pivs || !perm || !piv_cols) {
+    if (pivs) mzp_free(pivs);
+    if (perm) mzp_free(perm);
+    free(piv_cols);
+    return;
+  }
+
+  for (int i = 0; i <= (int)n - 2; i++) {
+    pivs->values[i] = i + util_rand_uniform(n - i, rng_state);
+  }
+  pivs->values[n - 1] = n - 1;
+
+  mzp_set_ui(perm, 1);
+  perm = perm_p_trans(perm, pivs, 0);
+
+  rci_t rank = 0;
+  for (rci_t i = 0; i < n && rank < nu; i++) {
+    int col = perm->values[i];
+    if (gauss_one(N, col, rank)) {
+      piv_cols[rank++] = col;
+    }
+  }
+
+  int target_row = -1;
+  size_t max_row_wt = 0;
+  if (cw_arr && cw_wt > 0) {
+    for (rci_t r = 0; r < rank; r++) {
+      int orig_col = piv_cols[r];
+      for (int k = 0; k < cw_wt; k++) {
+        if (cw_arr[k] == orig_col) {
+          size_t r_wt = mzd_weight_row(N, r);
+          if (r_wt > (size_t)cw_wt && r_wt > max_row_wt) {
+            max_row_wt = r_wt;
+            target_row = r;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (target_row >= 0 && cw_arr && cw_wt > 0) {
+    mzd_row_clear_offset(N, target_row, 0);
+    for (int k = 0; k < cw_wt; k++) {
+      if (cw_arr[k] >= 0 && cw_arr[k] < n) {
+        mzd_write_bit(N, target_row, cw_arr[k], 1);
+      }
+    }
+  }
+
+  free(piv_cols);
+  mzp_free(perm);
+  mzp_free(pivs);
+}
