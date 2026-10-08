@@ -264,11 +264,35 @@ def test_persistent_json_cache(tmp_path):
     # CSS persistent caching
     hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     hz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    # First run with method=2 up to wmax=3 (lower bound dmin=4, dmax=0): must NOT be treated as exact
+    d_css_lb, dx_lb, dz_lb = dist_m4ri.compute_css_distance(
+        Hx=hx_file, Hz=hx_file, Lz=hz_file, Lx=hz_file,
+        method=2, wmax=3, threads=4, cache_file=json_file
+    )
+    assert d_css_lb == 4
+    assert dx_lb == [4, 0, 0]
+    assert dz_lb == [4, 0, 0]
+    entry_css_lb = dist_m4ri.get_cached_distance(Hx=hx_file, Hz=hx_file, Lx=hz_file, Lz=hz_file, cache_file=json_file)
+    assert entry_css_lb["dmin"] == 4
+    assert entry_css_lb["dmax"] == 0
+
+    # Second run with method=1 (RW): must execute RW (not falsely hit exact cache) and merge bounds [4, 5, steps]
+    d_css_rw, dx_rw, dz_rw = dist_m4ri.compute_css_distance(
+        Hx=hx_file, Hz=hx_file, Lz=hz_file, Lx=hz_file,
+        method=1, num_steps=50, min_hits=0, threads=4, cache_file=json_file
+    )
+    assert d_css_rw == 5
+    assert dx_rw[0] == 4 and dx_rw[1] == 5 and dx_rw[2] >= 50
+    assert dz_rw[0] == 4 and dz_rw[1] == 5 and dz_rw[2] >= 50
+
+    # Third run with method=3: certifies exact d=5 -> [5, 5, 0]
     d_css, dx_info, dz_info = dist_m4ri.compute_css_distance(
         Hx=hx_file, Hz=hx_file, Lz=hz_file, Lx=hz_file,
         d_exp=5, threads=4, cache_file=json_file
     )
     assert d_css == 5
+    assert dx_info == [5, 5, 0]
+    assert dz_info == [5, 5, 0]
     with open(json_file, "r") as f:
         data_css = json.load(f)
     assert len(data_css) >= 2
@@ -374,8 +398,8 @@ def test_cli_verbose_mode(capsys):
     h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
     ret = dist_m4ri.main([
-        "--verbose", "method=2", f"finH={h_file}", f"finL={l_file}",
-        "wmax=5", "threads=4"
+        "--verbose", "--no-cache", "method=3", f"finH={h_file}", f"finL={l_file}",
+        "wmax=5", "threads=4", "min_hits=3", "cov_cws=5"
     ])
     assert ret == 0
     captured = capsys.readouterr()
@@ -383,6 +407,10 @@ def test_cli_verbose_mode(capsys):
     assert "Lower bound" in captured.out
     assert "Upper bound" in captured.out
     assert "Random window steps" in captured.out
+    assert "Codewords accumulated:" in captured.out
+    assert "hits min =" in captured.out
+    assert "avg =" in captured.out
+    assert "stdev =" in captured.out
 
 
 def test_check_finc_outc():

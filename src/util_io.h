@@ -187,6 +187,26 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
  */
 int check_min_hits_convergence(const params_t * const p);
 
+/**
+ * @brief Compute hit count statistics (min, max, avg, stdev) for minimum-weight codewords.
+ *
+ * @param p Pointer to the params_t structure.
+ * @param min_cnt Output minimum hit count.
+ * @param max_cnt Output maximum hit count.
+ * @param avg_cnt Output average hit count.
+ * @param stdev_cnt Output standard deviation of hit counts.
+ */
+void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cnt,
+                             double *avg_cnt, double *stdev_cnt);
+
+/**
+ * @brief Print accumulated codeword and hit statistics to the given stream.
+ *
+ * @param stream Output stream (typically stderr).
+ * @param p Pointer to the params_t structure.
+ */
+void print_codeword_stats(FILE *stream, const params_t * const p);
+
 #define DIST_M4RI_VERSION "0.9.0"
 
 /**

@@ -378,7 +378,8 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       int limit = nvar + 1;
       int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
       if (cur_dmax > 0) {
-        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
+        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0 || (p->debug & 1)) &&
+            p->dW >= 0) {
           limit = minint(limit, cur_dmax + p->dW + 1);
         } else {
           limit = minint(limit, cur_dmax);
@@ -427,10 +428,15 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
             int req = (p->cov_cws > 0) ? minint(p->cov_cws, 5) : 1;
             if ((p->debug & 1) && !atomic_load(&ctx->stop_flag) &&
                 !atomic_load(&ctx->rw_stop_flag)) {
+              int c_min = 0, c_max = 0;
+              double c_avg = 0.0, c_std = 0.0;
+              compute_min_w_hit_stats(p, &c_min, &c_max, &c_avg, &c_std);
               fprintf(stderr,
                       "# RW convergence reached: >= %d min-weight (w=%d) cws "
-                      "(cov=%d/%d) each hit >= %d times\n",
-                      req, best, p->min_w_cov, p->min_w_cws, p->min_hits);
+                      "(cov=%d/%d) each hit >= %d times "
+                      "(hits min=%d, max=%d, avg=%.2f, stdev=%.2f)\n",
+                      req, best, p->min_w_cov, p->min_w_cws, p->min_hits,
+                      c_min, c_max, c_avg, c_std);
             }
             if (p->method == 1) {
               atomic_store(&ctx->stop_flag, true);
@@ -529,7 +535,8 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
       int limit = nvar + 1;
       int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
       if (cur_dmax > 0) {
-        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
+        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0 || (p->debug & 1)) &&
+            p->dW >= 0) {
           limit = minint(limit, cur_dmax + p->dW + 1);
         } else {
           limit = minint(limit, cur_dmax);
@@ -577,10 +584,15 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
             int req = (p->cov_cws > 0) ? minint(p->cov_cws, 5) : 1;
             if ((p->debug & 1) && !atomic_load(&ctx->stop_flag) &&
                 !atomic_load(&ctx->rw_stop_flag)) {
+              int c_min = 0, c_max = 0;
+              double c_avg = 0.0, c_std = 0.0;
+              compute_min_w_hit_stats(p, &c_min, &c_max, &c_avg, &c_std);
               fprintf(stderr,
                       "# RW convergence reached: >= %d min-weight (w=%d) cws "
-                      "(cov=%d/%d) each hit >= %d times\n",
-                      req, best, p->min_w_cov, p->min_w_cws, p->min_hits);
+                      "(cov=%d/%d) each hit >= %d times "
+                      "(hits min=%d, max=%d, avg=%.2f, stdev=%.2f)\n",
+                      req, best, p->min_w_cov, p->min_w_cws, p->min_hits,
+                      c_min, c_max, c_avg, c_std);
             }
             if (p->method == 1) {
               atomic_store(&ctx->stop_flag, true);
@@ -1301,10 +1313,13 @@ int main(int argc, char **argv) {
     int nrows = p->spaH ? p->spaH->rows : 0;
     unsigned long long n_elements = (unsigned long long)nrows * (unsigned long long)nvar;
 
-    /* 1. Small-code throttling: avoid thread spawn/join and lock overhead */
-    if (nvar < 100 || n_elements < 100000ULL) {
+    /* 1. Small-code throttling: avoid thread spawn/join overhead on tiny workloads */
+    double rw_work = (p->method & 1)
+                     ? ((double)n_elements * (double)(p->steps > 0 ? p->steps : 1))
+                     : 0.0;
+    if (nvar < 60 || (n_elements < 20000ULL && rw_work < 5.0e7)) {
       if (num_threads > 4) num_threads = 4;
-    } else if (nvar < 300 || n_elements < 500000ULL) {
+    } else if ((nvar < 150 || n_elements < 100000ULL) && rw_work < 2.0e8) {
       if (num_threads > 16) num_threads = 16;
     }
 
@@ -1515,6 +1530,10 @@ int main(int argc, char **argv) {
   long reported_rw_steps = 0;
   if (p->method != 2 && cc_found == 0) {
     reported_rw_steps = atomic_load(&ctx.rw_steps_completed);
+  }
+
+  if (p->debug & 1) {
+    print_codeword_stats(stderr, p);
   }
 
   /* Output to stdout: dmin dmax rw_steps */

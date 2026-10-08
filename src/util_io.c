@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <string.h>
+#include <math.h>
 #include "util_io.h"
 
 params_t prm={
@@ -321,7 +322,7 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	fprintf(stderr, "# read %s, win_mode=%d\n",argv[i],p->win_mode);
     }
-    else if (sscanf(argv[i],"min_hits=%d",&dbg)==1){
+    else if (sscanf(argv[i],"min_hits=%d",&dbg)==1 || sscanf(argv[i],"max_hits=%d",&dbg)==1){
       p->min_hits=dbg;
       if (p->debug&4)
 	fprintf(stderr, "# read %s, min_hits=%d\n",argv[i],p->min_hits);
@@ -953,6 +954,109 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
     }
   }
   return p->codewords;
+}
+
+void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cnt,
+                             double *avg_cnt, double *stdev_cnt) {
+  *min_cnt = 0;
+  *max_cnt = 0;
+  *avg_cnt = 0.0;
+  *stdev_cnt = 0.0;
+  if (!p || !p->codewords || p->min_w == INT_MAX) return;
+
+  long long n_cws = 0;
+  long long total_hits = 0;
+  int c_min = INT_MAX;
+  int c_max = 0;
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    if (cw->weight == p->min_w) {
+      n_cws++;
+      total_hits += cw->cnt;
+      if (cw->cnt < c_min) c_min = cw->cnt;
+      if (cw->cnt > c_max) c_max = cw->cnt;
+    }
+  }
+  if (n_cws <= 0) return;
+
+  double avg = (double)total_hits / (double)n_cws;
+  double sum_sq = 0.0;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    if (cw->weight == p->min_w) {
+      double diff = (double)cw->cnt - avg;
+      sum_sq += diff * diff;
+    }
+  }
+  *min_cnt = c_min;
+  *max_cnt = c_max;
+  *avg_cnt = avg;
+  *stdev_cnt = sqrt(sum_sq / (double)n_cws);
+}
+
+void print_codeword_stats(FILE *stream, const params_t * const p) {
+  if (!stream || !p) return;
+  if (p->num_cws <= 0 || !p->codewords || p->min_w == INT_MAX) {
+    fprintf(stream, "# codewords accumulated: total=0\n");
+    return;
+  }
+
+  int min_w = p->min_w;
+  int max_w = min_w;
+  long long n_min_w = 0;
+  long long hits_min_w = 0;
+  long long cov_min_w = 0;
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    if (cw->weight > max_w) max_w = cw->weight;
+    if (cw->weight == min_w) {
+      n_min_w++;
+      hits_min_w += cw->cnt;
+      if (p->min_hits > 0 && cw->cnt >= p->min_hits) cov_min_w++;
+    }
+  }
+
+  int min_cnt = 0, max_cnt = 0;
+  double avg_cnt = 0.0, stdev_cnt = 0.0;
+  compute_min_w_hit_stats(p, &min_cnt, &max_cnt, &avg_cnt, &stdev_cnt);
+
+  fprintf(stream,
+          "# codewords accumulated: total=%lld, min_w=%d: cws=%lld, total_hits=%lld, "
+          "hits min=%d, max=%d, avg=%.2f, stdev=%.2f",
+          p->num_cws, min_w, n_min_w, hits_min_w,
+          min_cnt, max_cnt, avg_cnt, stdev_cnt);
+  if (p->min_hits > 0) {
+    fprintf(stream, ", hits>=%d: %lld/%lld (cov_cws=%d)",
+            p->min_hits, cov_min_w, n_min_w, p->cov_cws);
+  }
+  fprintf(stream, "\n");
+
+  for (int w = min_w + 1; w <= max_w; w++) {
+    long long n_w = 0, hits_w = 0;
+    int c_min = INT_MAX, c_max = 0;
+    HASH_ITER(hh, p->codewords, cw, tmp) {
+      if (cw->weight == w) {
+        n_w++;
+        hits_w += cw->cnt;
+        if (cw->cnt < c_min) c_min = cw->cnt;
+        if (cw->cnt > c_max) c_max = cw->cnt;
+      }
+    }
+    if (n_w > 0) {
+      double avg_w = (double)hits_w / (double)n_w;
+      double sum_sq = 0.0;
+      HASH_ITER(hh, p->codewords, cw, tmp) {
+        if (cw->weight == w) {
+          double diff = (double)cw->cnt - avg_w;
+          sum_sq += diff * diff;
+        }
+      }
+      double stdev_w = sqrt(sum_sq / (double)n_w);
+      fprintf(stream,
+              "# codewords w=%d: cws=%lld, total_hits=%lld, "
+              "hits min=%d, max=%d, avg=%.2f, stdev=%.2f\n",
+              w, n_w, hits_w, c_min, c_max, avg_w, stdev_w);
+    }
+  }
 }
 
 int check_min_hits_convergence(const params_t * const p) {

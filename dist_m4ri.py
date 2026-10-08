@@ -75,6 +75,8 @@ def __getattr__(name: str) -> Any:
 _distance_cache: Dict[str, Any] = {}
 _use_distance_cache: bool = True
 _distance_cache_file: Optional[str] = None
+_last_run_stats: Dict[str, Any] = {}
+_last_css_stats: Dict[str, Dict[str, Any]] = {"X": {}, "Z": {}}
 
 # Aliases for backward compatibility with vecdec.py
 _css_distance_cache = _distance_cache
@@ -115,6 +117,11 @@ def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str
                         f"(current {__version__}); ignoring incompatible cache.\n"
                     )
                     return _distance_cache
+                # Sanitize any legacy CSS cache entries where dmax was set from dmin when dmax_X == dmax_Z == 0
+                for k, v in data.items():
+                    if isinstance(v, dict) and k.startswith("css:"):
+                        if v.get("dmax_X", 0) == 0 and v.get("dmax_Z", 0) == 0 and "dmax_X" in v:
+                            v["dmax"] = 0
                 _distance_cache.update(data)
         except Exception as e:
             sys.stderr.write(f"# Warning: Failed to load distance cache from {target_file}: {e}\n")
@@ -209,7 +216,65 @@ def format_bounds_str(bounds: List[int]) -> str:
     return f"{dmin} {dmax} {num_rw}"
 
 
-def explain_bounds(bounds: List[int], method: Optional[int] = None, label: str = "") -> str:
+def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
+    """Parses codeword and hit statistics from dist_m4ri stderr output."""
+    import re
+    stats: Dict[str, Any] = {"extra_weights": [], "rw_converged": False}
+    if not stderr:
+        return stats
+    for line in stderr.splitlines():
+        line_s = line.strip()
+        if "RW convergence reached:" in line_s:
+            stats["rw_converged"] = True
+        if line_s.startswith("# codewords accumulated: total=0"):
+            stats["total_cws"] = 0
+        elif line_s.startswith("# codewords accumulated:"):
+            m = re.search(
+                r"total=(\d+),\s*min_w=(\d+):\s*cws=(\d+),\s*total_hits=(\d+),\s*"
+                r"hits min=(\d+),\s*max=(\d+),\s*avg=([0-9.]+),\s*stdev=([0-9.]+)",
+                line_s
+            )
+            if m:
+                stats["total_cws"] = int(m.group(1))
+                stats["min_w"] = int(m.group(2))
+                stats["cws"] = int(m.group(3))
+                stats["total_hits"] = int(m.group(4))
+                stats["hits_min"] = int(m.group(5))
+                stats["hits_max"] = int(m.group(6))
+                stats["hits_avg"] = float(m.group(7))
+                stats["hits_stdev"] = float(m.group(8))
+            m_cov = re.search(
+                r"hits>=(\d+):\s*(\d+)/(\d+)\s*\(cov_cws=(\d+)\)", line_s
+            )
+            if m_cov:
+                stats["min_hits"] = int(m_cov.group(1))
+                stats["cov_cnt"] = int(m_cov.group(2))
+                stats["cov_cws"] = int(m_cov.group(4))
+        elif line_s.startswith("# codewords w="):
+            m_w = re.search(
+                r"w=(\d+):\s*cws=(\d+),\s*total_hits=(\d+),\s*"
+                r"hits min=(\d+),\s*max=(\d+),\s*avg=([0-9.]+),\s*stdev=([0-9.]+)",
+                line_s
+            )
+            if m_w:
+                stats["extra_weights"].append({
+                    "w": int(m_w.group(1)),
+                    "cws": int(m_w.group(2)),
+                    "total_hits": int(m_w.group(3)),
+                    "hits_min": int(m_w.group(4)),
+                    "hits_max": int(m_w.group(5)),
+                    "hits_avg": float(m_w.group(6)),
+                    "hits_stdev": float(m_w.group(7)),
+                })
+    return stats
+
+
+def explain_bounds(
+    bounds: List[int],
+    method: Optional[int] = None,
+    label: str = "",
+    stats: Optional[Dict[str, Any]] = None
+) -> str:
     """
     Returns a human-readable explanation of [dmin, dmax, num_rw] following README.md.
 
@@ -217,6 +282,7 @@ def explain_bounds(bounds: List[int], method: Optional[int] = None, label: str =
         bounds: [dmin, dmax, rw_steps] list.
         method: Optional solver method (1=RW, 2=CC, 3=Bracketing).
         label: Optional prefix/label (e.g. "dX", "dZ", "").
+        stats: Optional dictionary of codeword and hit statistics parsed from dist_m4ri.
 
     Returns:
         Multi-line formatted explanation string.
@@ -253,6 +319,31 @@ def explain_bounds(bounds: List[int], method: Optional[int] = None, label: str =
                      f"is an exhaustive search that does not perform random information set (RW) sampling.")
         else:
             lines.append(f"  {prefix}Random window steps (rw_steps = 0): 0 completed random information set steps.")
+
+    if stats and "total_cws" in stats:
+        if stats["total_cws"] > 0:
+            lines.append(
+                f"  {prefix}Codewords accumulated: {stats['total_cws']} distinct "
+                f"(w = {stats['min_w']}: {stats['cws']} codewords, {stats['total_hits']} total hits; "
+                f"hits min = {stats['hits_min']}, max = {stats['hits_max']}, "
+                f"avg = {stats['hits_avg']:.2f}, stdev = {stats['hits_stdev']:.2f})."
+            )
+            if stats.get("min_hits", 0) > 0:
+                conv_str = "CONVERGED" if stats.get("rw_converged") else "not converged"
+                lines.append(
+                    f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}, "
+                    f"cov_cws = {stats['cov_cws']}): {stats['cov_cnt']}/{stats['cws']} "
+                    f"min-weight codewords hit >= {stats['min_hits']} times ({conv_str})."
+                )
+            for ew in stats.get("extra_weights", []):
+                lines.append(
+                    f"  {prefix}Codewords (w = {ew['w']}): {ew['cws']} codewords, "
+                    f"{ew['total_hits']} total hits; hits min = {ew['hits_min']}, "
+                    f"max = {ew['hits_max']}, avg = {ew['hits_avg']:.2f}, "
+                    f"stdev = {ew['hits_stdev']:.2f}."
+                )
+        else:
+            lines.append(f"  {prefix}Codewords accumulated: 0 distinct non-trivial codewords found.")
 
     return "\n".join(lines)
 
@@ -670,6 +761,7 @@ def run_dist_m4ri(
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
+    verbose: bool = False,
     stop_event: Optional[threading.Event] = None
 ) -> Tuple[int, int, int]:
     """
@@ -678,6 +770,7 @@ def run_dist_m4ri(
     Returns:
         tuple (dmin, dmax, rw_steps)
     """
+    global _last_run_stats
     exec_path = find_dist_m4ri_binary(dist_m4ri_path)
 
     finC = check_finc_outc(finC, outC, verbose=False)
@@ -688,7 +781,8 @@ def run_dist_m4ri(
         elif timeout <= 0.0:
             raise ValueError("either parameter wmax>0 or timeout>0 should be specified for CC method=2.")
 
-    cmd = [exec_path, f"debug={debug}", f"method={method}"]
+    eff_debug = (debug | 3) if verbose else debug
+    cmd = [exec_path, f"debug={eff_debug}", f"method={method}"]
 
     if finH: cmd.append(f"finH={finH}")
     if finG: cmd.append(f"finG={finG}")
@@ -726,7 +820,7 @@ def run_dist_m4ri(
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh > 0: cmd.append(f"refresh={refresh}")
 
-    if debug & 2:
+    if verbose or (eff_debug & 2):
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -747,6 +841,10 @@ def run_dist_m4ri(
 
     if proc.returncode != 0:
         raise RuntimeError(f"dist_m4ri failed with exit code {proc.returncode}:\n{stderr}")
+
+    _last_run_stats = _parse_stderr_stats(stderr)
+    if (verbose or eff_debug > 0) and stderr:
+        print(stderr.rstrip())
 
     return parse_dist_m4ri_output(stdout)
 
@@ -1096,7 +1194,8 @@ def compute_classical_distance(
             win_mode=win_mode,
             min_hits=min_hits,
             cov_cws=cov_cws,
-            refresh=refresh
+            refresh=refresh,
+            verbose=verbose
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -1409,7 +1508,8 @@ def compute_quantum_distance(
             win_mode=win_mode,
             min_hits=min_hits,
             cov_cws=cov_cws,
-            refresh=refresh
+            refresh=refresh,
+            verbose=verbose
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -1648,22 +1748,28 @@ def compute_css_distance(
                 code_key = f"{code_key}:Lx={lx_state}:Lz={lz_state}"
             cached_entry = _distance_cache.get(code_key)
             if cached_entry is not None:
-                # If exact distance is already proven and not asking for more codewords
-                if cached_entry.get("dmin", 0) > 0 and cached_entry.get("dmin") == cached_entry.get("dmax"):
+                c_dmin_x = cached_entry.get("dmin_X", cached_entry.get("dmin", 0))
+                c_dmax_x = cached_entry.get("dmax_X", cached_entry.get("dmax", 0))
+                c_dmin_z = cached_entry.get("dmin_Z", cached_entry.get("dmin", 0))
+                c_dmax_z = cached_entry.get("dmax_Z", cached_entry.get("dmax", 0))
+                x_exact = (not can_compute_X) or (c_dmin_x > 0 and c_dmin_x == c_dmax_x)
+                z_exact = (not can_compute_Z) or (c_dmin_z > 0 and c_dmin_z == c_dmax_z)
+                # If exact distance is already proven for all requested sectors and not asking for more codewords
+                if x_exact and z_exact and (c_dmax_x > 0 or c_dmax_z > 0):
                     if not (do_cws or outC) or (cached_entry.get("cws_X") and cached_entry.get("cws_Z")):
                         dx_res = cached_entry.get(
                             "dX",
                             format_bounds_list(
-                                cached_entry.get("dmin_X", 0),
-                                cached_entry.get("dmax_X", 0),
+                                c_dmin_x,
+                                c_dmax_x,
                                 cached_entry.get("rw_steps_X", 0)
                             )
                         )
                         dz_res = cached_entry.get(
                             "dZ",
                             format_bounds_list(
-                                cached_entry.get("dmin_Z", 0),
-                                cached_entry.get("dmax_Z", 0),
+                                c_dmin_z,
+                                c_dmax_z,
                                 cached_entry.get("rw_steps_Z", 0)
                             )
                         )
@@ -1704,15 +1810,6 @@ def compute_css_distance(
                     print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached CSS bounds: "
                           f"dmin={cached_entry.get('dmin', 0)}, dmax={cached_entry.get('dmax', 0)}; "
                           f"continuing search)")
-                # Seed bounds from cache
-                if eff_dmax == 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = cached_entry["dmax"]
-                elif eff_dmax > 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = min(eff_dmax, cached_entry["dmax"])
-                if eff_dmin <= 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = cached_entry["dmin"]
-                elif eff_dmin > 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = max(eff_dmin, cached_entry["dmin"])
             else:
                 if verbose:
                     print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
@@ -1778,6 +1875,23 @@ def compute_css_distance(
                 finC_Z = check_finc_outc(finC, outC_Z_name, verbose=False)
                 finC_X = check_finc_outc(finC, outC_X_name, verbose=False)
 
+        # Seed sector-specific bounds from cache if available
+        eff_dmin_z, eff_dmax_z = eff_dmin, eff_dmax
+        eff_dmin_x, eff_dmax_x = eff_dmin, eff_dmax
+        if cached_entry is not None:
+            cz_min = cached_entry.get("dmin_Z", cached_entry.get("dmin", 0))
+            cz_max = cached_entry.get("dmax_Z", cached_entry.get("dmax", 0))
+            cx_min = cached_entry.get("dmin_X", cached_entry.get("dmin", 0))
+            cx_max = cached_entry.get("dmax_X", cached_entry.get("dmax", 0))
+            if cz_min > 1:
+                eff_dmin_z = max(eff_dmin_z, cz_min) if eff_dmin_z > 1 else cz_min
+            if cz_max > 0:
+                eff_dmax_z = min(eff_dmax_z, cz_max) if eff_dmax_z > 0 else cz_max
+            if cx_min > 1:
+                eff_dmin_x = max(eff_dmin_x, cx_min) if eff_dmin_x > 1 else cx_min
+            if cx_max > 0:
+                eff_dmax_x = min(eff_dmax_x, cx_max) if eff_dmax_x > 0 else cx_max
+
         # Z-distance: Hx as finH, Hz as finG (or Lx as finL dual logical operators)
         if can_compute_Z:
             dmin_z, dmax_z, rw_steps_z = run_dist_m4ri(
@@ -1787,8 +1901,8 @@ def compute_css_distance(
                 finG=file_Hz if file_Lx is None else None,
                 finL=file_Lx,
                 finC=finC_Z,
-                dmin=eff_dmin,
-                dmax=eff_dmax,
+                dmin=eff_dmin_z,
+                dmax=eff_dmax_z,
                 wmin=wmin,
                 wmax=wmax,
                 smax=smax,
@@ -1812,8 +1926,10 @@ def compute_css_distance(
                 win_mode=win_mode,
                 min_hits=min_hits,
                 cov_cws=cov_cws,
-                refresh=refresh
+                refresh=refresh,
+                verbose=verbose
             )
+            _last_css_stats["Z"] = dict(_last_run_stats)
             dist_Z = dmin_z if (dmin_z == dmax_z or dmax_z == 0) else dmax_z
             if (do_cws or outC) and outZ and os.path.exists(outZ):
                 cws_Z = read_sparse_vectors(outZ)
@@ -1828,8 +1944,8 @@ def compute_css_distance(
                 finG=file_Hx if file_Lz is None else None,
                 finL=file_Lz,
                 finC=finC_X,
-                dmin=eff_dmin,
-                dmax=eff_dmax,
+                dmin=eff_dmin_x,
+                dmax=eff_dmax_x,
                 wmin=wmin,
                 wmax=wmax,
                 smax=smax,
@@ -1853,12 +1969,36 @@ def compute_css_distance(
                 win_mode=win_mode,
                 min_hits=min_hits,
                 cov_cws=cov_cws,
-                refresh=refresh
+                refresh=refresh,
+                verbose=verbose
             )
+            _last_css_stats["X"] = dict(_last_run_stats)
             dist_X = dmin_x if (dmin_x == dmax_x or dmax_x == 0) else dmax_x
             if (do_cws or outC) and outX and os.path.exists(outX):
                 cws_X = read_sparse_vectors(outX)
                 cws_X.sort(key=len)
+
+        if _use_distance_cache and cached_entry is not None:
+            if can_compute_Z:
+                pz_min = cached_entry.get("dmin_Z", 0)
+                pz_max = cached_entry.get("dmax_Z", 0)
+                pz_rw = cached_entry.get("rw_steps_Z", 0)
+                dmin_z = max(pz_min, dmin_z)
+                dmax_z = min(pz_max, dmax_z) if (pz_max > 0 and dmax_z > 0) else (dmax_z if dmax_z > 0 else pz_max)
+                if dmax_z > 0 and dmin_z >= dmax_z:
+                    dmin_z = dmax_z
+                rw_steps_z = 0 if (dmin_z > 0 and dmin_z == dmax_z) else (pz_rw + rw_steps_z)
+                dist_Z = dmin_z if (dmin_z == dmax_z or dmax_z == 0) else dmax_z
+            if can_compute_X:
+                px_min = cached_entry.get("dmin_X", 0)
+                px_max = cached_entry.get("dmax_X", 0)
+                px_rw = cached_entry.get("rw_steps_X", 0)
+                dmin_x = max(px_min, dmin_x)
+                dmax_x = min(px_max, dmax_x) if (px_max > 0 and dmax_x > 0) else (dmax_x if dmax_x > 0 else px_max)
+                if dmax_x > 0 and dmin_x >= dmax_x:
+                    dmin_x = dmax_x
+                rw_steps_x = 0 if (dmin_x > 0 and dmin_x == dmax_x) else (px_rw + rw_steps_x)
+                dist_X = dmin_x if (dmin_x == dmax_x or dmax_x == 0) else dmax_x
 
         dX_info = format_bounds_list(dmin_x, dmax_x, rw_steps_x) if can_compute_X else None
         dZ_info = format_bounds_list(dmin_z, dmax_z, rw_steps_z) if can_compute_Z else None
@@ -1881,18 +2021,17 @@ def compute_css_distance(
         res_tuple = (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws else (dist, dX_info, dZ_info)
 
         if _use_distance_cache and code_key is not None:
-            prev_steps = cached_entry.get("rw_steps", 0) if cached_entry else 0
-            prev_dmax = cached_entry.get("dmax", 0) if cached_entry else 0
-            prev_dmin = cached_entry.get("dmin", 0) if cached_entry else 0
+            total_rw_steps = (rw_steps_z if can_compute_Z else 0) + (rw_steps_x if can_compute_X else 0)
 
-            run_steps = (rw_steps_z if can_compute_Z else 0) + (rw_steps_x if can_compute_X else 0)
-            total_rw_steps = prev_steps + run_steps
-
-            curr_dmax = dist if dist > 0 else 0
-            best_dmax = (
-                min(prev_dmax, curr_dmax) if (prev_dmax > 0 and curr_dmax > 0)
-                else (curr_dmax if curr_dmax > 0 else prev_dmax)
-            )
+            curr_dmax = 0
+            if can_compute_Z and can_compute_X:
+                if dmax_z > 0 and dmax_x > 0:
+                    curr_dmax = min(dmax_z, dmax_x)
+            elif can_compute_Z:
+                curr_dmax = dmax_z
+            elif can_compute_X:
+                curr_dmax = dmax_x
+            best_dmax = curr_dmax
 
             curr_dmin = 0
             if can_compute_Z and can_compute_X:
@@ -1901,7 +2040,7 @@ def compute_css_distance(
                 curr_dmin = dmin_z
             elif can_compute_X:
                 curr_dmin = dmin_x
-            best_dmin = max(prev_dmin, curr_dmin)
+            best_dmin = curr_dmin
 
             combined_cws_x = list(cached_entry.get("cws_X", [])) if cached_entry else []
             if cws_X:
@@ -2035,17 +2174,31 @@ def compute_dem_distance(
         dem = None
 
     if dem is None and circuit is not None:
+        circuit_src = str(circuit) if isinstance(circuit, (str, Path)) else "stim.Circuit"
         if isinstance(circuit, (str, Path)):
             stim = _get_stim()
             circuit = stim.Circuit.from_file(str(circuit))
         if hasattr(circuit, 'detector_error_model'):
+            noise_added = False
+            p_noise = float(kwargs.get("p_noise", 0.001))
             if not has_noise(circuit):
-                p_noise = float(kwargs.get("p_noise", 0.001))
                 circuit = add_noise(circuit, p=p_noise)
+                noise_added = True
             try:
                 dem = circuit.detector_error_model(decompose_errors=True)
+                decomp_used = True
             except Exception:
                 dem = circuit.detector_error_model(decompose_errors=False)
+                decomp_used = False
+            if verbose:
+                noise_msg = (
+                    f"added phenomenological noise (p={p_noise})"
+                    if noise_added else "existing noise detected"
+                )
+                print(
+                    f"[dist_m4ri] Converted '{circuit_src}' to DEM "
+                    f"({noise_msg}, decompose_errors={decomp_used})"
+                )
         else:
             raise ValueError("Provided circuit object does not have detector_error_model() method.")
 
@@ -2189,7 +2342,8 @@ def compute_dem_distance(
             win_mode=win_mode,
             min_hits=min_hits,
             cov_cws=cov_cws,
-            refresh=refresh
+            refresh=refresh,
+            verbose=verbose
         )
 
         dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
@@ -2478,7 +2632,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["kwin"] = int(val)
             elif key_lower in ("win_mode", "winmode"):
                 args["win_mode"] = int(val)
-            elif key_lower in ("min_hits", "minhits"):
+            elif key_lower in ("min_hits", "minhits", "max_hits", "maxhits"):
                 args["min_hits"] = int(val)
             elif key_lower in ("cov_cws", "covcws"):
                 args["cov_cws"] = int(val)
@@ -2793,7 +2947,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
             if args["verbose"]:
                 print("=== DEM Distance Results ===")
-                print(explain_bounds(d_info, method=args["method"], label="DEM"))
+                print(explain_bounds(
+                    d_info, method=args["method"], label="DEM", stats=_last_run_stats
+                ))
                 print(f"  Summary bounds: {format_bounds_str(d_info)}")
             print(format_bounds_str(d_info))
             return 0
@@ -2860,11 +3016,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print("=== CSS Quantum Code Distance Results ===")
                 if dx_info:
                     print("--- X-Component Distance (dX) ---")
-                    print(explain_bounds(dx_info, method=args["method"], label="dX"))
+                    print(explain_bounds(
+                        dx_info, method=args["method"], label="dX",
+                        stats=_last_css_stats.get("X")
+                    ))
                     print(f"  dX bounds: {format_bounds_str(dx_info)}")
                 if dz_info:
                     print("--- Z-Component Distance (dZ) ---")
-                    print(explain_bounds(dz_info, method=args["method"], label="dZ"))
+                    print(explain_bounds(
+                        dz_info, method=args["method"], label="dZ",
+                        stats=_last_css_stats.get("Z")
+                    ))
                     print(f"  dZ bounds: {format_bounds_str(dz_info)}")
                 print("--- Overall CSS Code Distance ---")
                 print(f"  d = min(dX, dZ) = {dist}{exact_tag}")
@@ -2930,7 +3092,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
             if args["verbose"]:
                 print("=== Quantum Code Distance Results (Single-Sided) ===")
-                print(explain_bounds(d_info, method=args["method"], label="Quantum"))
+                print(explain_bounds(
+                    d_info, method=args["method"], label="Quantum", stats=_last_run_stats
+                ))
                 print(f"  Summary bounds: {format_bounds_str(d_info)}")
             print(format_bounds_str(d_info))
             return 0
@@ -2982,7 +3146,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
             if args["verbose"]:
                 print("=== Classical Code Distance Results ===")
-                print(explain_bounds(d_info, method=args["method"], label="Classical"))
+                print(explain_bounds(
+                    d_info, method=args["method"], label="Classical", stats=_last_run_stats
+                ))
                 print(f"  Summary bounds: {format_bounds_str(d_info)}")
             print(format_bounds_str(d_info))
             return 0
