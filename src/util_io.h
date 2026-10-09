@@ -23,13 +23,32 @@
 
 #define _maybe_unused __attribute__((unused))
 
+/* Debug output bitmap (`debug=[int]`, see MORE_HELP), sorted by usability (lower bits are more informative).
+ * Diagnostic output goes to stderr (the legacy dist_m4ri_old also prints to stdout).  Multiple `debug=` arguments
+ * are OR-combined, the first one replaces the default DBG_DEFAULT.  Bits 512, 1024, and 8192..32768 are reserved;
+ * bits 65536 and above are reserved for the Python wrapper dist_m4ri.py (ignored by the binaries).
+ * (util_hash.h uses the literal value of DBG_LEGACY, as it may be included first.) */
+#define DBG_SUMMARY   1    /**< input summary, warnings, stop reason, codeword and hit statistics, export */
+#define DBG_PROGRESS  2    /**< run plan, finished CC rounds, new upper bounds, bounds changes, RW convergence */
+#define DBG_STATUS    4    /**< periodic status (after 1, 2, 4, ... s, then every 60 s); legacy: every 1000 RW steps */
+#define DBG_TIMING    8    /**< thread allocation and timing: throttling, CC round planning and work, waits */
+#define DBG_PARAMS    16   /**< code parameters rank(H), rank(L) or rank(G), k (dense elimination at startup) */
+#define DBG_CODEWORDS 32   /**< support of each new lightest codeword (RW, CC, finC) */
+#define DBG_ARGS      64   /**< command-line arguments, rng seed, files read */
+#define DBG_MATRICES  128  /**< dump the matrices H, G, L (if n < 150 unless DBG_LARGE) */
+#define DBG_CWDUMP    256  /**< dump all codewords in hash with their hit counts at the end */
+#define DBG_LARGE     2048 /**< no size cutoff for the matrices and codeword supports */
+#define DBG_LEGACY    4096 /**< dist_m4ri_old only: CC recursion and confinement hash traces */
+#define DBG_DEFAULT   (DBG_SUMMARY | DBG_PROGRESS)
+#define DBG_CW_MAX    25   /**< without DBG_LARGE, at most this many positions of a codeword support are printed */
+
 //static const int max_row_wt=10; 
 
 #define MAX_W 100 
 struct CW_VEC_T;
 typedef struct CW_VEC_T cw_vec_t;
 typedef struct{
-  int debug; /* debug information */ 
+  int debug; /* debug output bitmap, see DBG_SUMMARY etc. (default DBG_DEFAULT) */
   int classical; /* 1 for a classical code, i.e., no `G=Hz` matrix*/
   int css; /* 1: css, 0: non-css -- currently not supported */
   int method; /* bitmap. 1: random window; 2: cluster; 3: both */
@@ -42,10 +61,8 @@ typedef struct{
   int dmin; /** known lower bound on distance (w starts from dmin in CC) */
   int dmax; /** known upper bound on distance (RW ignores codewords of weight >= dmax unless collecting or for
                 `min_hits`) */
-  int wmin; /** min distance below which we are not interested 
-		if w <= wmin found in RW, terminate immediately 
-		start clusters with `wmin` for `CC`
-	     */
+  int wmin; /** min distance below which we are not interested: once a codeword of weight w <= wmin is found, the
+                run ends immediately (not when collecting codewords with outC or maxC) */
   int noscan; /** 1: start CC directly with wmax (no scan over w).  Expert option: the
                   result is a certified lower bound only if `dmin=wmax` is supplied */
   int seed;/* rng seed, set=0 for automatic */
@@ -335,12 +352,41 @@ void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cn
 /**
  * @brief Print accumulated codeword and hit statistics to the given stream.
  *
+ * One line for the minimum weight (with the `min_hits` statistic), and one line for each heavier weight class in
+ * hash; without DBG_LARGE in `p->debug`, the weight classes after the 4 lightest heavier ones share one line.
+ *
  * @param stream Output stream (typically stderr).
  * @param p Pointer to the params_t structure.
  */
 void print_codeword_stats(FILE *stream, const params_t * const p);
 
-#define DIST_M4RI_VERSION "0.10.2"
+/**
+ * @brief Print the support of a codeword (1-based column indices) in one line, for DBG_CODEWORDS.
+ *
+ * Prints `prefix`, the weight, and the first DBG_CW_MAX positions (all of them with DBG_LARGE).
+ *
+ * @param stream Output stream (typically stderr).
+ * @param prefix Line prefix, e.g., "# RW codeword".
+ * @param arr Sorted 0-based column indices.
+ * @param weight Number of indices.
+ * @param debug Debug bitmap (DBG_LARGE: no size cutoff).
+ */
+void print_codeword_support(FILE *stream, const char *prefix, const int arr[], const int weight, const int debug);
+
+/**
+ * @brief Print a binary CSR matrix row by row ('1': nonzero, '.': zero), for DBG_MATRICES.
+ *
+ * Nothing is printed without DBG_MATRICES in `debug`; for n >= 150 columns, only the size is printed unless
+ * DBG_LARGE is set.
+ *
+ * @param stream Output stream (typically stderr).
+ * @param M The matrix.
+ * @param name Name of the matrix, e.g., "H".
+ * @param debug Debug bitmap.
+ */
+void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
+
+#define DIST_M4RI_VERSION "0.11.0"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -380,7 +426,7 @@ void print_short_help(const char *prog);
   "  classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)\n\n" \
   "Distance bounds and guidance:\n" \
   "  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)\n" \
-  "  dmax=[int]         Known upper bound on distance (RW ignores cw wt >= dmax) (0)\n" \
+  "  dmax=[int]         Known upper bound on distance (CC up to w=dmax-1 only) (0)\n" \
   "  dexp=[int]         Expected distance for method=3 thread allocation (alias: dest) (0)\n\n" \
   "Search limits and stopping criteria:\n" \
   "  steps=[int]        Maximum RW decoding steps / information sets (100000)\n" \
@@ -408,7 +454,7 @@ void print_short_help(const char *prog);
   "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
   "  refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (auto 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
-  "  debug=[int] (3)        Debug bitmask (0: silent, 1: general, 2: verbose, ...)\n\n" \
+  "  debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)\n\n" \
   "Help options:\n" \
   "  -h, --help         Display this help message (commonly used parameters)\n" \
   "  --morehelp         Display full help with all parameter descriptions\n" \
@@ -460,8 +506,10 @@ void print_short_help(const char *prog);
   "  dmin=[int]         Known certified lower bound on distance (default: 1).\n" \
   "                     In CC (method 2/3), cluster search begins at w = dmin.\n" \
   "  dmax=[int]         Known upper bound on distance (default: 0).\n" \
-  "                     In RW (method 1/3), codewords of weight >= dmax are ignored\n" \
-  "                     unless collecting codewords or needed for min_hits.\n" \
+  "                     CC (method 2/3) ends once dmin = dmax (with outC, after the\n" \
+  "                     rounds w = dmax..dmax+dW).  In RW (method 1/3), codewords\n" \
+  "                     of weight >= dmax are ignored unless collecting codewords\n" \
+  "                     or needed for min_hits.\n" \
   "  dexp=[int]         Expected code distance (alias: dest) (default: 0).\n" \
   "                     Hint for method=3 (bracketing): as long as RW has found no\n" \
   "                     codeword, CC rounds at w > dexp run only on threads which\n" \
@@ -476,7 +524,8 @@ void print_short_help(const char *prog);
   "                     outC or maxC). Useful for screening codes.\n" \
   "  wmax=[int]         Maximum cluster weight to analyze in CC (default: 0).\n" \
   "                     In method=2, CC terminates after checking weight wmax.\n" \
-  "                     0 means continue until codeword found, bounds meet, or timeout.\n" \
+  "                     0 means continue until a codeword is found, the bounds\n" \
+  "                     meet, or timeout (method=2 then needs timeout>0 or dmax>0).\n" \
   "  smax=[int]         Maximum syndrome weight for confinement profile (default: 0).\n" \
   "                     When smax > 0, tracks minimum syndrome weights for each\n" \
   "                     error weight. When smax=0, confinement is not computed.\n" \
@@ -565,19 +614,34 @@ void print_short_help(const char *prog);
   "  seed=[int]         Random number generator seed (default: 0 = initialize from\n" \
   "                     current time).\n\n" \
   "Debug output bitmap (debug=[int], default: 3):\n" \
-  "  The debug parameter accepts a bitmask controlling diagnostic output to stderr:\n" \
-  "    0    : Clear entire debug bitmap (completely silent execution)\n" \
-  "    1    : General progress and round summary information (on by default)\n" \
-  "    2    : Detailed thread allocation and timing information (on by default)\n" \
-  "    4    : Command-line argument parsing diagnostics\n" \
-  "    8    : Progress reports every 1000 RW steps\n" \
-  "    16   : Output new minimum-weight codewords as they are found\n" \
-  "    32   : Dump matrices and full codeword lists\n" \
-  "    64   : Debug confinement hash table updates (swei changes)\n" \
-  "    128  : Debug duplicate syndromes in confinement hash (debug build)\n" \
-  "    2048 : Allow large matrix and vector output (bypasses size cutoff)\n" \
-  "  Multiple debug arguments are XOR-combined (except debug=0 which clears all).\n" \
-  "  Tip: Place debug=0 as the first argument to silence all diagnostic output.\n\n" \
+  "  Diagnostic output goes to stderr (stdout only has the result line); lower\n" \
+  "  bits are more informative.  The value is decimal or hexadecimal (0x...).\n" \
+  "  Multiple debug arguments are OR-combined, where the first one replaces the\n" \
+  "  default: e.g., debug=0 alone is silent, while debug=4 and debug=0 debug=4\n" \
+  "  both give only the periodic status.\n" \
+  "    0    : Silent: errors and warnings on the validity of the result (expert\n" \
+  "           options, invalid finC codewords) only, and the confinement\n" \
+  "           profile with smax > 0\n" \
+  "    1    : Summary (default): input matrices, warnings, stop reason,\n" \
+  "           codeword and hit statistics, RW information sets, export\n" \
+  "    2    : Progress (default): run plan (threads, steps, timeout, seed),\n" \
+  "           finished CC rounds, new upper bounds, RW convergence\n" \
+  "    4    : Periodic status (after 1, 2, 4, ... s, then every 60 s): bounds,\n" \
+  "           RW steps and rate, <n>, progress of the current CC round\n" \
+  "    8    : Thread allocation and timing: throttling, CC round planning and\n" \
+  "           re-planning, waits for RW, predicted vs measured CC work\n" \
+  "    16   : Code parameters rank(H), rank(L) or rank(G), and k (dense\n" \
+  "           elimination at startup, slow for large matrices)\n" \
+  "    32   : Support (1-based) of each new lightest codeword (RW, CC, finC)\n" \
+  "    64   : Command-line arguments, rng seed, and files read\n" \
+  "    128  : Matrices H, G, L (if n < 150, unless 2048 is set)\n" \
+  "    256  : All codewords in hash with their hit counts (at the end)\n" \
+  "    2048 : No size cutoff for matrices and codeword supports\n" \
+  "    4096 : dist_m4ri_old only: CC recursion and confinement hash traces\n" \
+  "  Bits 512, 1024, and 8192 to 32768 are reserved.  Bits 65536 and above are\n" \
+  "  reserved for the Python wrapper dist_m4ri.py (ignored by the binary).\n" \
+  "  E.g., debug=7 adds the periodic status to the default output, and debug=11\n" \
+  "  the thread allocation and timing.\n\n" \
   "Output format (stdout):\n" \
   "  Standard output produces a single line with three space-separated integers:\n" \
   "    dmin dmax rw_steps\n" \
@@ -586,7 +650,8 @@ void print_short_help(const char *prog);
   "               If CC finds an exact minimum-weight codeword, dmin = dmax = weight.\n" \
   "               With the expert options noscan, start, or cbeg/cend, see the\n" \
   "               warnings above for the validity of dmin.\n" \
-  "    dmax     : Smallest weight of any codeword found (0 if no codeword found).\n" \
+  "    dmax     : Smallest weight of a codeword found (by RW or CC, or read with\n" \
+  "               finC), or the supplied dmax if smaller (0 if none).\n" \
   "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n\n" \
   "Help options:\n" \
   "  -h, --help         Display help for commonly used parameters (fits 80 rows)\n" \

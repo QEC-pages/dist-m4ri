@@ -309,9 +309,18 @@ assert_output \
 finL=$EXAMPLES_DIR/surf_d5_L.mmx dmin=4 dmax=5 timeout=5 debug=0 threads=4" \
     0 "^5 5 [0-9]+$" ""
 
-# Test 40: conflicting debug parameters error
-assert_output "$BIN debug=1 debug=2 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2" \
-    255 "" "debug parameter specified multiple times with conflicting values"
+# Test 40: multiple debug arguments are OR-combined (decimal or hexadecimal), the first one replaces the default;
+# debug=0 alone is silent; invalid values are rejected
+assert_output "$BIN_FORK debug=1 debug=0x40 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2 threads=2" \
+    0 "^3 0 0$" "^# debug=65 \(0x41\)$"
+assert_output "$BIN debug=1 debug=2 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2" 0 "^-2$" ""
+assert_output "$BIN_FORK debug=-1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2" 255 "" "invalid 'debug=-1'"
+echo "Running Test 40: debug=0 is silent"
+ERR40=$($BIN_FORK debug=0 method=3 fdem=$EXAMPLES_DIR/surf_d3.dem threads=2 2>&1 >/dev/null)
+if [ -n "$ERR40" ]; then
+    echo "  [FAIL] Test 40: debug=0 gives stderr '$ERR40'"
+    FAILED=1
+fi
 
 # Test 41: dist_m4ri error on no arguments (short help)
 assert_output "$BIN_FORK" 255 "" "Allowed parameters:"
@@ -333,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.10.2" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.11.0" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.10.2" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.11.0" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -367,7 +376,7 @@ assert_output "$BIN_FORK debug=1 method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=2
     0 "^1 3 [0-9]+$" "Warning: ksub=32 requested, but m=24 < n-m=197 \(<= nu\); falling back to full-matrix RW"
 
 # Test 55: dist_m4ri method=3 with min_hits stops only RW workers and lets CC finish exact proof
-assert_output "$BIN_FORK debug=1 method=3 fdem=$EXAMPLES_DIR/surf_d3.dem steps=50000 min_hits=2 cov_cws=2 threads=4" \
+assert_output "$BIN_FORK debug=3 method=3 fdem=$EXAMPLES_DIR/surf_d3.dem steps=50000 min_hits=2 cov_cws=2 threads=4" \
     0 "^3 3 [0-9]+$" "RW convergence reached"
 
 # Test 56: default method=3 and smax=0 warning in .mtx mode under debug&1==1
@@ -447,7 +456,7 @@ CWS70=$(mktemp --suffix=.nz)
 for EXTRA in "outC=$CWS70" "maxC=1000"; do
     OUT70=$(mktemp)
     ERR70=$(mktemp)
-    $BIN_FORK method=2 $S3 $EXTRA timeout=10 debug=1 threads=2 > "$OUT70" 2> "$ERR70"
+    $BIN_FORK method=2 $S3 $EXTRA timeout=10 debug=3 threads=2 > "$OUT70" 2> "$ERR70"
     if ! grep -q -E "^3 3 0$" "$OUT70" || grep -q "extra dW round" "$ERR70" || \
        ! grep -q "CC found min-weight codeword: d=3" "$ERR70"; then
         echo "  [FAIL] $EXTRA: stdout '$(cat "$OUT70")', stderr '$(cat "$ERR70")'"
@@ -464,7 +473,7 @@ fi
 echo "Running Test 71: method=2 skips the round w=dmax once dmin=dmax"
 OUT71=$(mktemp)
 ERR71=$(mktemp)
-$BIN_FORK method=2 $S5 dmax=5 wmax=5 debug=3 threads=4 > "$OUT71" 2> "$ERR71"
+$BIN_FORK method=2 $S5 dmax=5 wmax=5 debug=11 threads=4 > "$OUT71" 2> "$ERR71"
 if ! grep -q -E "^5 5 0$" "$OUT71" || grep -q "searching w=5" "$ERR71" || \
    ! grep -q "bounds coincide: dmin = dmax = 5" "$ERR71"; then
     echo "  [FAIL] dmax=5: stdout '$(cat "$OUT71")', stderr '$(cat "$ERR71")'"
@@ -479,25 +488,25 @@ assert_output "$BIN_FORK method=2 $S5 finC=$CWS72 timeout=10 debug=1 threads=4" 
     0 "^5 5 0$" "bounds coincide: dmin = dmax = 5"
 rm -f "$CWS70" "$CWS72"
 
-# Test 73: method=3 with few RW steps limits only the RW threads, CC rounds use all threads
-assert_output "$BIN_FORK method=3 $S5 steps=10 threads=8 debug=3" \
+# Test 73: method=3 with few RW steps limits only the RW threads, CC rounds use all threads (debug=11: timing)
+assert_output "$BIN_FORK method=3 $S5 steps=10 threads=8 debug=11" \
     0 "^5 5 [0-9]+$" "RW limited to 1 of 8 threads"
-assert_output "$BIN_FORK method=3 $S5 steps=10 threads=8 debug=3" \
+assert_output "$BIN_FORK method=3 $S5 steps=10 threads=8 debug=11" \
     0 "^5 5 [0-9]+$" "CC round w=4 started: 8 CC threads"
 
 # Test 74: method=3 with steps=0 runs pure CC on all threads without RW threads
-assert_output "$BIN_FORK method=3 $S5 steps=0 threads=4 debug=3" 0 "^5 5 0$" "steps=0, no RW"
+assert_output "$BIN_FORK method=3 $S5 steps=0 threads=4 debug=11" 0 "^5 5 0$" "steps=0, no RW"
 
 # Test 75: method=3 with a low dexp: CC rounds w > dexp are paused (not ended) until RW finds a codeword
 assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/c1920H.mmx dexp=2 timeout=2 threads=4 debug=0" \
     0 "^([4-9]|[1-9][0-9]) [0-9]+ [0-9]+$" ""
 
 # Test 76: method=3: the round w=dmax-1, which certifies dmin=dmax, runs on all threads
-assert_output "$BIN_FORK method=3 $S5 dmax=5 threads=8 nothrottle=1 debug=3" \
+assert_output "$BIN_FORK method=3 $S5 dmax=5 threads=8 nothrottle=1 debug=11" \
     0 "^5 5 [0-9]+$" "CC round w=4 started: 8 CC threads"
 
 # Test 77: method=3 with a supplied dmin: the first CC round (work not known yet) runs on half of the threads
-assert_output "$BIN_FORK method=3 $S5 dmin=3 min_hits=0 threads=8 nothrottle=1 debug=3" \
+assert_output "$BIN_FORK method=3 $S5 dmin=3 min_hits=0 threads=8 nothrottle=1 debug=11" \
     0 "^5 5 [0-9]+$" "CC round w=3 started: 4 CC threads"
 
 # Test 78: min_hits with a single codeword (classical [5,1] repetition code, k=1): RW converges after a few steps
@@ -600,6 +609,90 @@ if $BIN_FORK method=1 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx 
     echo "  [FAIL] Test 83: unexpected hit-count warning for QX150"
     FAILED=1
 fi
+
+# Debug bits (see --morehelp): 4 status, 8 timing, 16 code parameters, 32 codewords, 64 arguments, 128 matrices,
+# 256 codeword dump; with debug=1, the reason why the run ended
+
+# Test 84: periodic status (debug=4) after 1 s, without the summary lines
+echo "Running Test 84: periodic status line (debug=4)"
+OUT84=$(mktemp)
+ERR84=$(mktemp)
+$BIN_FORK method=1 $S5 steps=100000000 min_hits=0 timeout=1.5 threads=2 debug=4 > "$OUT84" 2> "$ERR84"
+if ! grep -q -E "^1 5 [0-9]+$" "$OUT84" || \
+   ! grep -q -E "^# status 1\.[0-9]s: bounds \[1, 5\]; RW: [0-9]+ of 100000000 steps" "$ERR84" || \
+   grep -q -E "^# (input|stopped)" "$ERR84"; then
+    echo "  [FAIL] Test 84: stdout '$(cat "$OUT84")', stderr '$(cat "$ERR84")'"
+    FAILED=1
+fi
+rm -f "$OUT84" "$ERR84"
+
+# Test 85: code parameters (debug=16): ranks of H and L (or G), and k
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=16" 0 "^3 3 0$" \
+    "^# code parameters: n=221, rank\(H\)=24, dim ker\(H\)=197, rank\(L\)=1, k=rank\(\[H;L\]\)-rank\(H\)=1 "
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx wmax=2 threads=2 debug=16" \
+    0 "^3 0 0$" "rank\(H\)=59, dim ker\(H\)=91, rank\(G\)=59, k=n-rank\(H\)-rank\(G\)=32 "
+
+# Test 86: codeword supports (debug=32), matrices (debug=128), and the codeword dump (debug=256) for the classical
+# [5,1] repetition code (one thread, fixed seed)
+REP86=$(mktemp --suffix=.mtx)
+cat << 'EOF' > "$REP86"
+%%MatrixMarket matrix coordinate integer general
+4 5 8
+1 1 1
+1 2 1
+2 2 1
+2 3 1
+3 3 1
+3 4 1
+4 4 1
+4 5 1
+EOF
+echo "Running Test 86: codeword supports, matrices, and codeword dump (debug=0x1a0)"
+OUT86=$(mktemp)
+ERR86=$(mktemp)
+$BIN_FORK method=1 finH=$REP86 steps=100 seed=3 threads=1 debug=0x1a0 > "$OUT86" 2> "$ERR86"
+if ! grep -q -E "^1 5 [0-9]+$" "$OUT86" || \
+   ! grep -q "RW codeword of weight 5 (1-based columns): 1 2 3 4 5$" "$ERR86" || \
+   ! grep -q "^# matrix H: 4 x 5, 8 nonzeros" "$ERR86" || ! grep -q "^# \.\.11\.$" "$ERR86" || \
+   ! grep -q -E "^# cw: \[ 1 2 3 4 5 \] cnt=[0-9]+$" "$ERR86"; then
+    echo "  [FAIL] Test 86: stdout '$(cat "$OUT86")', stderr '$(cat "$ERR86")'"
+    FAILED=1
+fi
+rm -f "$REP86" "$OUT86" "$ERR86"
+
+# Test 87: command-line arguments (debug=64) are echoed, also those before the debug argument
+assert_output "$BIN_FORK wmax=3 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem seed=5 threads=2 debug=64" 0 "^3 3 0$" \
+    "^# read wmax=3, wmax=3$"
+assert_output "$BIN_FORK wmax=3 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem seed=5 threads=2 debug=64" 0 "^3 3 0$" \
+    "^# initializing rng from seed=5$"
+
+# Test 88: the reason why the run ended (debug=1)
+assert_output "$BIN_FORK method=1 $S5 steps=100000000 min_hits=0 timeout=0.3 threads=2 debug=1" 0 "^1 5 [0-9]+$" \
+    "^# stopped after [0-9.]+s: timeout=0\.3s reached, [0-9]+ of 100000000 RW steps done$"
+assert_output "$BIN_FORK method=1 $S5 steps=100 min_hits=0 threads=2 debug=1" 0 "^1 [0-9]+ 100$" \
+    "^# stopped after [0-9.]+s: all 100 RW steps done$"
+assert_output "$BIN_FORK method=2 $S5 wmax=3 threads=2 debug=1" 0 "^4 0 0$" \
+    "^# stopped after [0-9.]+s: CC done up to w=3$"
+assert_output "$BIN_FORK method=1 $S5 wmin=5 steps=100000 threads=2 debug=1" 0 "^1 [1-5] [0-9]+$" \
+    "^# stopped after [0-9.]+s: found a codeword of weight [1-5] <= wmin=5$"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=1" 0 "^3 3 0$" \
+    "^# stopped after [0-9.]+s: CC found min-weight codeword: d=3$"
+CWS88=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem dW=1 wmax=4 outC=$CWS88 threads=2 debug=1" \
+    0 "^3 3 0$" "^# stopped after [0-9.]+s: CC enumerated all codewords of weight 3\.\.4 \(for outC\)$"
+rm -f "$CWS88"
+assert_output "$BIN_FORK method=3 $S5 dmin=5 dmax=5 threads=2 debug=1" 0 "^5 5 0$" \
+    "^# stopped: bounds coincide: dmin = dmax = 5 \(supplied, no search\)$"
+
+# Test 89: predicted vs measured CC work (debug=8)
+assert_output "$BIN_FORK method=2 $S5 wmax=4 threads=2 debug=8" 0 "^5 0 0$" \
+    "^# CC round w=4 work: [0-9.e+-]+ thread-s measured, [0-9.e+-]+ thread-s predicted"
+
+# Test 90: method=2 without wmax and timeout: a known upper bound dmax suffices (CC ends once dmin=dmax), otherwise
+# an error
+assert_output "$BIN_FORK method=2 $S5 dmax=5 timeout=0 threads=2 debug=0" 0 "^5 5 0$" ""
+assert_output "$BIN_FORK method=2 $S5 timeout=0 threads=2 debug=0" 255 "" \
+    "either parameter wmax>0, dmax>0, or timeout>0 should be specified for CC method=2"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

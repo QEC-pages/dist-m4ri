@@ -113,6 +113,130 @@ static int cmp_int(const void *a, const void *b){
   return (x > y) - (x < y);
 }
 
+/** @brief Parse the value `str` of the argument `arg` = `debug=...`: a non-negative decimal or hexadecimal (0x...)
+ *  integer (no octal: a leading zero is ignored) */
+static int parse_debug_value(const char * const str, const char * const arg){
+  const int hex = (str[0] == '0') && ((str[1] == 'x') || (str[1] == 'X'));
+  const char * const digits = hex ? str + 2 : str;
+  char *end = NULL;
+  errno = 0;
+  const long val = strtol(digits, &end, hex ? 16 : 10);
+  if ((end == digits) || (*end != '\0') || errno || (val < 0) || (val > INT_MAX))
+    ERROR("invalid '%s': expected a non-negative decimal or hexadecimal (0x...) integer", arg);
+  return (int) val;
+}
+
+/** @brief Number of nonzero entries of a CSR matrix (compressed or pair form) */
+static int csr_nnz(const csr_t * const M){
+  return (M->nz == -1) ? M->p[M->rows] : M->nz;
+}
+
+/** @brief Maximum column weight of a CSR matrix in compressed form (0 otherwise) */
+static int csr_max_col_wght(const csr_t * const M){
+  if ((M->nz != -1) || (M->cols <= 0)) return 0;
+  int *cnt = calloc(M->cols, sizeof(int));
+  if (!cnt)
+    ERROR("memory allocation");
+  int wmax = 0;
+  for (int j = 0; j < M->p[M->rows]; j++)
+    if (++cnt[M->i[j]] > wmax)
+      wmax = cnt[M->i[j]];
+  free(cnt);
+  return wmax;
+}
+
+void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug){
+  if (!(debug & DBG_MATRICES) || !M || !stream) return;
+  fprintf(stream, "# matrix %s: %d x %d, %d nonzeros", name, M->rows, M->cols, csr_nnz(M));
+  if ((M->cols >= 150) && !(debug & DBG_LARGE)) {
+    fprintf(stream, " (not shown for n >= 150 without debug bit 2048)\n");
+    return;
+  }
+  fprintf(stream, " ('1': nonzero, '.': zero)\n");
+  char *row = malloc(M->cols + 1);
+  if (!row)
+    ERROR("memory allocation");
+  mzd_t *D = mzd_from_csr(NULL, M);
+  for (int i = 0; i < M->rows; i++) {
+    for (int j = 0; j < M->cols; j++)
+      row[j] = mzd_read_bit(D, i, j) ? '1' : '.';
+    row[M->cols] = '\0';
+    fprintf(stream, "# %s\n", row);
+  }
+  mzd_free(D);
+  free(row);
+}
+
+/** @brief One line of the input summary: size, number of nonzeros, and maximum row and column weights of a matrix */
+static void print_matrix_summary(FILE *stream, const char name[], const csr_t * const M, const char note[]){
+  fprintf(stream, "#   %s: %d x %d%s, %d nonzeros, max row weight %d, max column weight %d\n", name, M->rows, M->cols,
+          note, csr_nnz(M), (M->nz == -1) ? csr_max_row_wght(M) : 0, csr_max_col_wght(M));
+}
+
+/** @brief DBG_SUMMARY: the code type, its length n, the input files, and the input matrices */
+static void print_input_summary(FILE *stream, const params_t * const p){
+  const char * const type = p->classical ? "classical code" : (p->fdem ? "detector error model" : "quantum CSS code");
+  fprintf(stream, "# input: %s, n=%d (", type, p->nvar);
+  if (p->fdem) {
+    fprintf(stream, "fdem='%s'", p->fdem);
+    if (p->pmin > 0.0)
+      fprintf(stream, ", pmin=%g", p->pmin);
+  } else {
+    fprintf(stream, "finH='%s'", p->finH);
+    if (p->finG)
+      fprintf(stream, ", finG='%s'", p->finG);
+    if (p->finL)
+      fprintf(stream, ", finL='%s'", p->finL);
+  }
+  fprintf(stream, ")\n");
+  print_matrix_summary(stream, "H", p->spaH, p->fdem ? " (detectors)" : "");
+  if (p->spaG)
+    print_matrix_summary(stream, "G", p->spaG, "");
+  if (p->spaL)
+    print_matrix_summary(stream, "L", p->spaL, p->fdem ? " (observables)" : (p->finL ? "" : " (from H and G)"));
+}
+
+/** @brief Rank of a binary CSR matrix (dense elimination) */
+static int csr_rank(const csr_t * const M){
+  mzd_t *D = mzd_from_csr(NULL, M);
+  const int rank = mzd_echelonize(D, 0);
+  mzd_free(D);
+  return rank;
+}
+
+/** @brief DBG_PARAMS: the ranks of the input matrices and the number k of encoded (qu)bits (dense elimination) */
+static void print_code_params(FILE *stream, const params_t * const p){
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  const int n = p->nvar;
+  const int rank_H = csr_rank(p->spaH);
+  int k;
+  char buf[128];
+  if (p->classical || !p->spaL) {
+    k = n - rank_H;
+    snprintf(buf, sizeof(buf), "k=n-rank(H)=%d", k);
+  } else if (p->spaG) { /* CSS code with H=Hx and G=Hz */
+    const int rank_G = csr_rank(p->spaG);
+    k = n - rank_H - rank_G;
+    snprintf(buf, sizeof(buf), "rank(G)=%d, k=n-rank(H)-rank(G)=%d", rank_G, k);
+  } else { /* the logical operators L independent of the rows of H */
+    mzd_t *mH = mzd_from_csr(NULL, p->spaH);
+    mzd_t *mL = mzd_from_csr(NULL, p->spaL);
+    mzd_t *mHL = mzd_stack(NULL, mH, mL);
+    const int rank_L = mzd_echelonize(mL, 0);
+    k = mzd_echelonize(mHL, 0) - rank_H;
+    mzd_free(mHL);
+    mzd_free(mL);
+    mzd_free(mH);
+    snprintf(buf, sizeof(buf), "rank(L)=%d, k=rank([H;L])-rank(H)=%d", rank_L, k);
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+  fprintf(stream, "# code parameters: n=%d, rank(H)=%d, dim ker(H)=%d, %s (%.3g s)\n", n, rank_H, n - rank_H, buf,
+          (double)(t1.tv_sec - t0.tv_sec) + 1e-9 * (double)(t1.tv_nsec - t0.tv_nsec));
+  if (k <= 0)
+    fprintf(stream, "# Warning: k=%d, there are no non-trivial codewords\n", k);
+}
+
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
@@ -145,23 +269,27 @@ void var_init(int argc, char **argv, params_t * const p){
     exit(-1);
   }
 
-  int debug_set=0;
   int refresh_set=0;
   int steps_set=0;
 
-  for(int i=1; i<argc; i++){
-    if(sscanf(argv[i],"debug=%d",& dbg)==1){/** `debug` */
-      if(debug_set && p->debug != dbg){
-        ERROR("debug parameter specified multiple times with conflicting values (%d vs %d)\n", p->debug, dbg);
-      }
-      p->debug = dbg;
+  /* `debug` is parsed first, so that DBG_ARGS applies to all arguments: the first `debug=` argument replaces the
+   * default, further ones are OR-combined (e.g., `debug=0` alone is silent, `debug=0 debug=4` the same as `debug=4`) */
+  int debug_set=0;
+  for (int i = 1; i < argc; i++)
+    if (0 == strncmp(argv[i], "debug=", 6)) {
+      const int val = parse_debug_value(argv[i] + 6, argv[i]);
+      p->debug = debug_set ? (p->debug | val) : val;
       debug_set = 1;
-      if(p->debug&4)
-	fprintf(stderr, "# read %s, debug=%d octal=%o\n",argv[i],p->debug,p->debug);
+    }
+  if (p->debug & DBG_ARGS)
+    fprintf(stderr, "# debug=%d (0x%x)%s\n", p->debug, (unsigned int) p->debug, debug_set ? "" : " (default)");
+
+  for(int i=1; i<argc; i++){
+    if (0 == strncmp(argv[i], "debug=", 6)){ /** `debug`: already parsed above */
     }
     else if (sscanf(argv[i],"css=%d",&dbg)==1){
       p->css=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, css=%d\n",argv[i],p->css);
     }
     else if (0==strncmp(argv[i],"finH=",5)){ /** `finH` */
@@ -169,8 +297,8 @@ void var_init(int argc, char **argv, params_t * const p){
         p->finH = argv[i]+5;
       else
         p->finH = argv[++i]; /**< allow space before file name */
-      if (p->debug&4)
-	fprintf(stderr, "# read %s, finH=%s; setting finH=\"\"\n",argv[i],p->finH);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, finH=%s; setting fin=\"\"\n",argv[i],p->finH);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finL=",5)){ /** `finL` */
@@ -178,8 +306,8 @@ void var_init(int argc, char **argv, params_t * const p){
         p->finL = argv[i]+5;
       else
         p->finL = argv[++i]; /**< allow space before file name */
-      if (p->debug&4)
-	fprintf(stderr, "# read %s, finL=%s; setting finL=\"\"\n",argv[i],p->finL);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, finL=%s; setting fin=\"\"\n",argv[i],p->finL);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finG=",5)){/** `finG` degeneracy generator matrix */
@@ -187,8 +315,8 @@ void var_init(int argc, char **argv, params_t * const p){
         p->finG = argv[i]+5;
       else
         p->finG = argv[++i]; /**< allow space before file name */
-      if (p->debug&4)
-	fprintf(stderr, "# read %s, finG=%s; setting finG=\"\"\n",argv[i],p->finG);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, finG=%s; setting fin=\"\"\n",argv[i],p->finG);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"fin=",4)){
@@ -209,7 +337,7 @@ void var_init(int argc, char **argv, params_t * const p){
     }
     else if (sscanf(argv[i],"method=%d",&dbg)==1){
       p->method=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, method=%d\n",argv[i],p->method);
       if( (p->method<=0) || (p->method>3)) {
         fprintf(stderr, "%s: unsupported method=%d specified\n\n", argv[0], p->method);
@@ -219,58 +347,58 @@ void var_init(int argc, char **argv, params_t * const p){
     }
     else if (sscanf(argv[i],"smax=%d",&dbg)==1){
       p->smax=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, smax=%d\n",argv[i],p->smax);
     }
     else if (sscanf(argv[i],"wmax=%d",&dbg)==1){
       p->wmax=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, wmax=%d\n",argv[i],p->wmax);
     }
     else if (sscanf(argv[i],"dmin=%d",&dbg)==1){
       p->dmin=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dmin=%d\n",argv[i],p->dmin);
     }
     else if (sscanf(argv[i],"dmax=%d",&dbg)==1){
       p->dmax=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dmax=%d\n",argv[i],p->dmax);
     }
     else if (0==strncmp(argv[i],"start=",6)){ /** `start=a,b,c` list of CC start columns */
       parse_start_list(argv[i]+6, p);
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, start_num=%d\n",argv[i],p->start_num);
     }
     else if (sscanf(argv[i],"cbeg=%d",&dbg)==1){
       p->cbeg=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, cbeg=%d\n",argv[i],p->cbeg);
     }
     else if (sscanf(argv[i],"cend=%d",&dbg)==1){
       p->cend=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, cend=%d\n",argv[i],p->cend);
     }
     else if (sscanf(argv[i],"wmin=%d",&dbg)==1){
       p->wmin=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, wmin=%d\n",argv[i],p->wmin);
     }
     else if (sscanf(argv[i],"steps=%d",&dbg)==1){
       p->steps=dbg;
       steps_set=1;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, steps=%d\n",argv[i],p->steps);
     }
     else if (sscanf(argv[i],"seed=%d",&dbg)==1){
       p->seed=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, seed=%d\n",argv[i],p->seed);      
     }    
     else if (sscanf(argv[i],"noscan=%d",&dbg)==1){
       p->noscan=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, noscan=%d\n",argv[i],p->noscan);
     }
     else if (0==strncmp(argv[i],"fdem=",5)){
@@ -278,12 +406,12 @@ void var_init(int argc, char **argv, params_t * const p){
         p->fdem = argv[i]+5;
       else
         p->fdem = argv[++i];
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, fdem=%s\n",argv[i],p->fdem);
     }
     else if (sscanf(argv[i],"pmin=%lg",&prob)==1){
       p->pmin=prob;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, pmin=%g\n",argv[i],p->pmin);
     }
     else if (0==strncmp(argv[i],"finC=",5)){
@@ -291,7 +419,7 @@ void var_init(int argc, char **argv, params_t * const p){
         p->finC = argv[i]+5;
       else
         p->finC = argv[++i];
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finC=%s\n",argv[i],p->finC);
     }
     else if (0==strncmp(argv[i],"outC=",5)){
@@ -299,89 +427,89 @@ void var_init(int argc, char **argv, params_t * const p){
         p->outC = argv[i]+5;
       else
         p->outC = argv[++i];
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, outC=%s\n",argv[i],p->outC);
     }
     else if (sscanf(argv[i],"maxC=%lld",&dbg_ll)==1){
       p->maxC=dbg_ll;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, maxC=%lld\n",argv[i],p->maxC);
     }
     else if (sscanf(argv[i],"dW=%d",&dbg)==1){
       p->dW=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dW=%d\n",argv[i],p->dW);
     }
     else if (sscanf(argv[i],"classical=%d",&dbg)==1){
       p->classical=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, classical=%d\n",argv[i],p->classical);
     }
     else if (sscanf(argv[i],"threads=%d",&dbg)==1){
       p->threads=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, threads=%d\n",argv[i],p->threads);
     }
     else if (sscanf(argv[i],"dexp=%d",&dbg)==1){
       p->dexp=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dexp=%d\n",argv[i],p->dexp);
     }
     else if (sscanf(argv[i],"dest=%d",&dbg)==1){
       p->dexp=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dest=%d (alias for dexp)\n",argv[i],p->dexp);
     }
     else if (sscanf(argv[i],"timeout=%lf",&prob)==1){
       p->timeout=prob;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, timeout=%g\n",argv[i],p->timeout);
     }
     else if (sscanf(argv[i],"nothrottle=%d",&dbg)==1){
       p->nothrottle=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, nothrottle=%d\n",argv[i],p->nothrottle);
     }
     else if (strcmp(argv[i], "--no-throttle") == 0 || strcmp(argv[i], "-no-throttle") == 0
              || strcmp(argv[i], "nothrottle") == 0) {
       p->nothrottle=1;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, nothrottle=1\n",argv[i]);
     }
     else if (sscanf(argv[i],"chunk_size=%d",&dbg)==1 || sscanf(argv[i],"batch=%d",&dbg)==1){
       p->chunk_size=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, chunk_size=%d\n",argv[i],p->chunk_size);
     }
     else if (sscanf(argv[i],"ksub=%d",&dbg)==1){
       p->ksub=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, ksub=%d\n",argv[i],p->ksub);
     }
     else if (sscanf(argv[i],"kwin=%d",&dbg)==1 || sscanf(argv[i],"win=%d",&dbg)==1){
       p->kwin=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, kwin=%d\n",argv[i],p->kwin);
     }
     else if (sscanf(argv[i],"win_mode=%d",&dbg)==1){
       p->win_mode=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, win_mode=%d\n",argv[i],p->win_mode);
     }
     else if (sscanf(argv[i],"min_hits=%d",&dbg)==1 || sscanf(argv[i],"max_hits=%d",&dbg)==1){
       p->min_hits=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, min_hits=%d\n",argv[i],p->min_hits);
     }
     else if (sscanf(argv[i],"cov_cws=%d",&dbg)==1){
       p->cov_cws=dbg;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, cov_cws=%d\n",argv[i],p->cov_cws);
     }
     else if (sscanf(argv[i],"refresh=%d",&dbg)==1){
       p->refresh=dbg;
       refresh_set=1;
-      if (p->debug&4)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, refresh=%d\n",argv[i],p->refresh);
     }
     else{ /* unrecognized option */
@@ -480,7 +608,7 @@ void var_init(int argc, char **argv, params_t * const p){
       ERROR("memory allocation");
     sprintf(s,"%s%s",p->fin,swit>0?"Z.mtx":"X.mtx");
     p->finH=s;
-    if (p->debug & 2)
+    if (p->debug & DBG_ARGS)
       fprintf(stderr, "# read 'fin=%s'; " //"since switch=%d "
 	     "assigning \n# finH=%s\n# finG=%s\n",
 	     p->fin,// swit,
@@ -493,15 +621,14 @@ void var_init(int argc, char **argv, params_t * const p){
     p->nvar = p->spaH->cols;
     p->n0 = p->nvar;
     p->nchk = p->spaL->rows;
+    csr_dump(stderr, p->spaH, "H", p->debug);
+    csr_dump(stderr, p->spaL, "L", p->debug);
   } else {
     if (p->finH){
       p->spaH=csr_mm_read(p->finH,p->spaH,0);
-      if(p->debug&1)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read H <- file '%s'\n",p->finH);
-      if(p->debug&32){
-	if((p->spaH->cols<150)||(p->debug&2048))
-	  csr_print(p->spaH,"H");
-      }
+      csr_dump(stderr, p->spaH, "H", p->debug);
     }
     else
       ERROR("need to specify H=Hx input file name; use fin=[str] or finH=[str]\n");
@@ -513,24 +640,18 @@ void var_init(int argc, char **argv, params_t * const p){
     if(p->finG){
       if (p->classical == -1) p->classical = 0;
       p->spaG=csr_mm_read(p->finG,p->spaG,0);
-      if(p->debug&1)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read G <- file '%s'\n",p->finG);
       if(csr_csr_mul_non_zero(p->spaH, p->spaG))
 	 ERROR("rows of H and G matrices are not orthogonal");
-      if(p->debug&32){
-	if((p->spaG->cols<150)||(p->debug&2048))
-	  csr_print(p->spaG,"G");
-      }
+      csr_dump(stderr, p->spaG, "G", p->debug);
     } 
     else if (p->finL){
       if (p->classical == -1) p->classical = 0;
       p->spaL=csr_mm_read(p->finL,p->spaL,0);
-      if(p->debug&1)
+      if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read L <- file '%s'\n",p->finL);
-      if(p->debug&32){
-	if((p->spaL->cols<150)||(p->debug&2048))
-	  csr_print(p->spaL,"L");
-      }
+      csr_dump(stderr, p->spaL, "L", p->debug);
       p->nchk = p->spaL->rows;
     } 
     else{
@@ -541,8 +662,9 @@ void var_init(int argc, char **argv, params_t * const p){
 
   if(p->method & 2){ /* CC */
     if ((p->wmax<=0) && ((p->method & 1 )==0)) {
-      if (p->timeout <= 0.0) {
-        ERROR("either parameter wmax>0 or timeout>0 should be specified for CC method=%d", p->method);
+      /* the CC rounds end with the timeout, or at the latest once the bounds coincide (w = dmax - 1) */
+      if (p->timeout <= 0.0 && p->dmax <= 0) {
+        ERROR("either parameter wmax>0, dmax>0, or timeout>0 should be specified for CC method=%d", p->method);
       }
       p->wmax = MAX_W - 1;
     }
@@ -554,10 +676,10 @@ void var_init(int argc, char **argv, params_t * const p){
 
   if (p->seed<=0){
     p->seed = time(NULL) - 1000 * p->seed + 10*getpid();
-    if(p->debug&4)
+    if (p->debug & DBG_ARGS)
       fprintf(stderr, "# initializing rng from time(NULL), seed=%d\n",p->seed);
   }
-  else if(p->debug&4)
+  else if (p->debug & DBG_ARGS)
     fprintf(stderr, "# initializing rng from seed=%d\n",p->seed);
 
   srand(p->seed);
@@ -594,6 +716,7 @@ void var_init(int argc, char **argv, params_t * const p){
     /** WARNING: this does not necessarily have minimal row weights */
     p->spaL = Lx_for_CSS_code(p->spaH,p->spaG);
     p->nchk = p->spaL->rows;
+    csr_dump(stderr, p->spaL, "L (from H and G)", p->debug);
   }
 
   if (p->classical) {
@@ -601,7 +724,7 @@ void var_init(int argc, char **argv, params_t * const p){
       ERROR("Conflict: classical=1 specified, but finL or finG was also provided.");
     }
     if (p->spaL != NULL) {
-      if (p->debug & 1) {
+      if (p->debug & DBG_SUMMARY) {
         fprintf(stderr, "# Warning: classical=1 specified, discarding L matrix (logical operators)\n");
       }
       p->spaL = csr_free(p->spaL);
@@ -620,7 +743,12 @@ void var_init(int argc, char **argv, params_t * const p){
       exit(-1);
   }
 
-  if ((p->debug & 1) && !p->fdem && (p->method & 2) && p->smax == 0) {
+  if (p->debug & DBG_SUMMARY)
+    print_input_summary(stderr, p);
+  if (p->debug & DBG_PARAMS)
+    print_code_params(stderr, p);
+
+  if ((p->debug & DBG_SUMMARY) && !p->fdem && (p->method & 2) && p->smax == 0) {
     fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
   }
 
@@ -882,7 +1010,7 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
       ERROR("Unmatched '}' in DEM file %s at line %d\n", fnam, line_idx);
   }
 
-  if(debug & 1)
+  if (debug & DBG_ARGS)
     fprintf(stderr, "# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
   if((r<=0)||(k<=0)||(n<=0))
     ERROR("invalid DEM file %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
@@ -1208,6 +1336,9 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
   const int w_lo = p->min_w;
   const int w_hi = (p->cw_max_w > w_lo) ? p->cw_max_w : w_lo;
   cw_class_stats_t *cs = cw_class_stats(p, w_lo, w_hi);
+  /* without DBG_LARGE, at most 4 heavier weight classes are shown individually, the others in one line */
+  int shown = 0, rest_classes = 0, rest_lo = 0, rest_hi = 0, rest_min = INT_MAX, rest_max = 0;
+  long long rest_cws = 0, rest_hits = 0;
   for (int w = w_lo; w <= w_hi; w++) {
     const cw_class_stats_t * const c = &cs[w - w_lo];
     if (c->n <= 0) continue;
@@ -1226,13 +1357,25 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
                 st.avg, st.set_cws, st.w_lo, st.w_hi, p->min_hits, p->cov_cws);
       }
       fprintf(stream, "\n");
-    } else {
+    } else if ((p->debug & DBG_LARGE) || (shown < 4)) {
+      shown++;
       fprintf(stream,
               "# codewords w=%d: cws=%lld, total_hits=%lld, "
               "hits min=%d, max=%d, avg=%.2f, stdev=%.2f\n",
               w, c->n, c->hits, c->c_min, c->c_max, avg, stdev);
+    } else {
+      if (rest_classes++ == 0) rest_lo = w;
+      rest_hi = w;
+      rest_cws += c->n;
+      rest_hits += c->hits;
+      if (c->c_min < rest_min) rest_min = c->c_min;
+      if (c->c_max > rest_max) rest_max = c->c_max;
     }
   }
+  if (rest_classes > 0)
+    fprintf(stream, "# codewords w=%d..%d: cws=%lld in %d weight classes, total_hits=%lld, hits min=%d, max=%d "
+            "(each class with debug bit 2048)\n", rest_lo, rest_hi, rest_cws, rest_classes, rest_hits, rest_min,
+            rest_max);
   free(cs);
 }
 
@@ -1427,9 +1570,33 @@ long long int nzlist_read(const char fnam[], params_t *p){
             "to L)\n",
             skipped_invalid);
   }
-  if(p->debug&1)
-    fprintf(stderr, "# read %lld codewords from %s, total %lld\n",count, fnam, p->num_cws);
+  if (p->debug & DBG_SUMMARY) {
+    fprintf(stderr, "# read %lld codewords from %s, total %lld", count, fnam, p->num_cws);
+    if (p->min_w != INT_MAX)
+      fprintf(stderr, ", min weight %d", p->min_w);
+    fprintf(stderr, "\n");
+  }
+  if ((p->debug & DBG_CODEWORDS) && (p->min_w != INT_MAX)) { /* a lightest codeword (the hash holds only finC ones) */
+    cw_vec_t *cw, *tmp;
+    HASH_ITER(hh, p->codewords, cw, tmp) {
+      if (cw->weight == p->min_w) {
+        print_codeword_support(stderr, "# finC: lightest codeword", cw->arr, cw->weight, p->debug);
+        break;
+      }
+    }
+  }
   return count; 
+}
+
+void print_codeword_support(FILE *stream, const char *prefix, const int arr[], const int weight, const int debug){
+  if (!stream) return;
+  const int max = ((debug & DBG_LARGE) || (weight <= DBG_CW_MAX)) ? weight : DBG_CW_MAX;
+  fprintf(stream, "%s of weight %d (1-based columns):", prefix, weight);
+  for (int i = 0; i < max; i++)
+    fprintf(stream, " %d", arr[i] + 1);
+  if (max < weight)
+    fprintf(stream, " ... (%d more)", weight - max);
+  fprintf(stream, "\n");
 }
 
 long long int nzlist_write(const char fnam[], const char comment[], params_t *p){

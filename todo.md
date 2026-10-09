@@ -99,7 +99,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   each weight class of the representative set (zero-truncated Poisson); a warning if they are strongly non-uniform.
 - [x] **Information-Set Estimate** (Python `--verbose`, and in the binary with the hit uniformity warning): with
   uniform random information sets, a codeword of weight $w$ is found per RW step with probability
-  $P_1(w) = w\binom{n-w}{k-1}/\binom{n}{k}$, $k = n - \mathrm{rank}\,H$; also the RW steps / time for a 1% miss
+  $P_1(w) = w\binom{n-w}{s-1}/\binom{n}{s}$, $s = n - \mathrm{rank}\,H$; also the RW steps / time for a 1% miss
   probability (and the extrapolation of $e^{-\langle n\rangle}$ to 1%).
 - [ ] **Proper estimate for matrices with many small-weight dual vectors**: see Task 6.
 
@@ -149,9 +149,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] **Trivial Codeword Statistics**:
   - Maintain counters of trivial codewords (stabilizers in quantum codes) of weights below $w_{\max}$ to monitor code
     degeneracy profile and ISD efficiency.
-- [ ] **Sorting Optimization**:
-  - Replace generic `qsort` on codeword support arrays `ee` with a small-array insertion sort or counting sort (since
-    coordinates are already bounded by $n$ and array lengths are small, $w \le 100$).
+- [x] **Sorting Optimization**:
+  - The codeword supports `ee` are sorted with the type-specific `rci_quick_sort` from `sort.h` (bitonic sort for up
+    to 16 elements) instead of the generic `qsort`; with `ksub > 0`, the supports are extracted already sorted.
 - [ ] **Sparse Gaussian Elimination**:
   - Evaluate whether sparse elimination (e.g. CSR row combining) can outperform dense bit-matrices for very large,
     highly sparse DEMs where $k_{\text{sub}}$ is small.
@@ -168,10 +168,11 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 ## 3. Operational Modes Reference
 
 ### Mode: Distance Verification
-- Given a suspected distance bound $d$ (e.g., $d = 10$), run with `method=1 wmax=10 wmin=9`.
-- The program skips verification for codewords of weight $\ge 10$ and terminates immediately upon discovering any valid
-  non-trivial codeword of weight $\le 9$ (outputting `-9`).
-- If no codewords are found below $w_{\max}$, outputs `0`.
+- Given a suspected distance $d$ (e.g., $d = 10$), run `method=1 dmax=10 wmin=9 min_hits=0`.
+- RW ignores codewords of weight $\ge 10$ and ends as soon as it finds a non-trivial codeword of weight $w \le 9$
+  (output `1 w S`; with `debug&1`, the stop line `found a codeword of weight w <= wmin=9`).
+- If no lighter codeword is found in the `steps` RW steps, the output is `1 10 S` (the supplied upper bound).
+  (The legacy `dist_m4ri_old method=1 wmax=10 wmin=9` outputs `-w` or `0`.)
 
 ### Mode: Upper Bound Search with Hit-Count Saturation
 - Run RW with `method=1 steps=N min_hits=M cov_cws=K`.
@@ -179,13 +180,23 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   reaches $M$, both for the minimum-weight codewords and for the representative set of $K$ lowest-weight codewords.
 
 ### More debug bits
-- Detailed timing information (measured / predicted values, reasons for termination)
-- ranks of the matrices and their sizes and code dimensions (to avoid doing rank in python)
-  - [x] Partly done: after RW, with `debug&1`, the binary prints `# RW information sets: n=..., rank(H)=...,
+- [x] Debug bits reorganized by usability (see README "Debug Output" and `--morehelp`): 1 summary (input summary,
+  stop reason), 2 progress (run plan with the seed), 4 periodic status (1, 2, 4, ... s, then every 60 s), 8 thread
+  allocation and timing, 16 code parameters, 32 codeword supports, 64 arguments, 128 matrices, 256 codeword dump,
+  2048 no size cutoff, 4096 legacy traces; bits from 65536 for the Python wrapper (command lines, cache, circuits,
+  keep temporary files). Repeated `debug=` arguments are OR-combined (hexadecimal values accepted).
+- [x] Detailed timing information (measured / predicted values, reasons for termination): debug bits 8 and 1.
+- [x] ranks of the matrices and their sizes and code dimensions (to avoid doing rank in python)
+  - [x] After RW, with `debug&1`, the binary prints `# RW information sets: n=..., rank(H)=...,
     steps=... (uniform permutations: ...), ksub=..., ... s/step per thread, ... RW threads` (parsed by Python).
-  - [ ] Not yet: ranks of $L$ / $G$, code dimension $k$, and `method=2` (no RW).
+  - [x] With `debug&16`, the binary prints rank(H), rank(L) or rank(G), and k (dense elimination at startup); sizes,
+    numbers of nonzeros, and maximum row and column weights are in the input summary (`debug&1`).
+  - [ ] Python could parse the `# code parameters:` line instead of computing ranks itself.
 - [x] in addition, print estimated prob to find (miss) a single codeword of given
   weight based on the number of information sets and the n and distance found with RW.
   - Done: Python `--verbose`, and the binary with the hit uniformity warning (Task 4); a proper estimate for DEMs
     is still open (Task 6).
+- [ ] The periodic status shows that in `method=3` a CC round can wait for a whole RW batch before any CC thread
+  starts (e.g., `c1920H.mmx`: 100 RW steps of 6.6 ms per batch, i.e., 0.66 s): smaller RW batches while CC rounds
+  are short, or an RW batch interruption when a CC round starts.
 

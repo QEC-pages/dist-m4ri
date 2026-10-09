@@ -340,6 +340,43 @@ def test_cli_argument_parsing():
     assert args3["classical"] == 0
 
 
+def test_debug_bits(capsys):
+    # debug values: decimal or hexadecimal (no octal), OR-combined in the CLI
+    assert dist_m4ri.parse_debug_value("0x10004") == dist_m4ri.PY_DBG_COMMANDS | 4
+    assert dist_m4ri.parse_debug_value("011") == 11
+    for bad in ("-1", "0x", "abc", "1.5"):
+        with pytest.raises(ValueError):
+            dist_m4ri.parse_debug_value(bad)
+    args = dist_m4ri.parse_cli_args(["fdem=model.dem", "debug=1", "debug=0x10000"])
+    assert args["debug"] == 1 | dist_m4ri.PY_DBG_COMMANDS
+    # the Python bits are not passed to the binary: the command line is echoed with debug=0 (binary silent)
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    res = dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, threads=2, debug=dist_m4ri.PY_DBG_COMMANDS)
+    assert res == (3, 3, 0)
+    out = capsys.readouterr().out
+    assert " debug=0 method=2 " in out and "Finished in" in out
+    assert "# input:" not in out
+    # binary summary bit: the input summary and the reason why the run ended
+    dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, threads=2, debug=1)
+    out = capsys.readouterr().out
+    assert "# input: detector error model, n=221" in out
+    assert "CC found min-weight codeword: d=3" in out
+    # keep (and list) the temporary files
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.int8)
+        d = dist_m4ri.compute_classical_distance(H, method=2, wmax=3, threads=1, debug=dist_m4ri.PY_DBG_KEEP_FILES)
+        assert d == 3
+        out = capsys.readouterr().out
+        kept = [line.split("Kept temporary file: ", 1)[1] for line in out.splitlines() if "Kept temporary" in line]
+        assert kept and all(os.path.exists(f) for f in kept)
+        for f in kept:
+            os.remove(f)
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
 def test_quantum_cache_separation():
     dist_m4ri.clear_distance_cache()
     dist_m4ri.enable_distance_cache()
@@ -534,7 +571,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.10.2" in captured.out
+    assert "0.11.0" in captured.out
 
 
 def test_cli_binary_compatibility_silent(capsys):
@@ -543,7 +580,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.10.2" in captured.out
+    assert "0.11.0" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -562,7 +599,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.10.2" in older_warn
+    assert "expected >= 0.11.0" in older_warn
 
 
 def test_cache_versioning(tmp_path):

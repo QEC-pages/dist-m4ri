@@ -28,7 +28,47 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.10.2"
+__version__ = "0.11.0"
+
+# Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
+# status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
+# 256: codeword dump, 2048: no size cutoff; see its --morehelp), the higher bits are used by the Python wrapper only.
+PY_DBG_COMMANDS = 1 << 16    # echo the dist_m4ri command lines and their run times
+PY_DBG_CACHE = 1 << 17       # cache messages
+PY_DBG_CIRCUITS = 1 << 18    # Stim circuit to DEM conversion details
+PY_DBG_KEEP_FILES = 1 << 19  # keep (and list) the temporary matrix, codeword, and DEM files
+BIN_DBG_MASK = 0xFFFF        # the debug bits passed to the dist_m4ri binary
+VERBOSE_DEBUG = 3 | PY_DBG_COMMANDS | PY_DBG_CACHE  # debug bits implied by verbose=True (--verbose)
+
+
+def parse_debug_value(val: Union[str, int]) -> int:
+    """
+    Parses a debug bitmap value: a non-negative decimal or hexadecimal (0x...) integer, as in the dist_m4ri binary
+    (no octal: leading zeros are ignored).
+
+    Args:
+        val: The value, e.g., "3" or "0x10004", or an int.
+
+    Returns:
+        The debug bitmap.
+
+    Raises:
+        ValueError: If the value is not a non-negative integer.
+    """
+    msg = f"invalid debug={val!r}: expected a non-negative decimal or hexadecimal (0x...) integer"
+    if isinstance(val, bool):
+        raise ValueError(msg)
+    if isinstance(val, int):
+        value = val
+    else:
+        s = str(val).strip()
+        try:
+            value = int(s[2:], 16) if s.lower().startswith("0x") else int(s, 10)
+        except ValueError:
+            raise ValueError(msg) from None
+    if value < 0:
+        raise ValueError(msg)
+    return value
 
 
 def _get_codedistance():
@@ -352,7 +392,7 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 stats["rw_step_time"] = float(m_rw.group(6))
                 stats["rw_threads"] = int(m_rw.group(7))
             continue
-        if "RW convergence reached:" in line_s:
+        if "RW convergence reached" in line_s:  # progress line (debug & 2) or the stop reason (debug & 1)
             stats["rw_converged"] = True
         if line_s.startswith("# codewords accumulated: total=0"):
             stats["total_cws"] = 0
@@ -656,6 +696,21 @@ def create_unique_file(directory: Union[str, Path] = "tmp", extension: str = ".t
         fd, path = tempfile.mkstemp(suffix=extension)
     os.close(fd)
     return path
+
+
+def _remove_temp_files(files: Sequence[Optional[str]], debug: int = 0) -> None:
+    """Removes the temporary files `files` (None entries are skipped); with the debug bit PY_DBG_KEEP_FILES, the
+    files are kept and listed instead."""
+    for f in files:
+        if not f or not os.path.exists(f):
+            continue
+        if debug & PY_DBG_KEEP_FILES:
+            print(f"[dist_m4ri] Kept temporary file: {f}")
+            continue
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 
 def read_sparse_vectors(filepath: str) -> List[List[int]]:
@@ -1280,6 +1335,11 @@ def run_dist_m4ri(
         noscan / cbeg / cend: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
 
+    Debug output:
+        debug: Debug bitmap; the bits in BIN_DBG_MASK are passed to the binary (its diagnostic output on stderr
+            is printed), and PY_DBG_COMMANDS echoes the command line and the run time.  verbose=True implies
+            the bits VERBOSE_DEBUG.
+
     Returns:
         tuple (dmin, dmax, rw_steps)
     """
@@ -1297,10 +1357,11 @@ def run_dist_m4ri(
         if dmax > 0:
             wmax = dmax
         elif timeout <= 0.0:
-            raise ValueError("either parameter wmax>0 or timeout>0 should be specified for CC method=2.")
+            raise ValueError("either parameter wmax>0, dmax>0, or timeout>0 should be specified for CC method=2.")
 
-    eff_debug = (debug | 3) if verbose else debug
-    cmd = [exec_path, f"debug={eff_debug}", f"method={method}"]
+    eff_debug = (debug | VERBOSE_DEBUG) if verbose else debug
+    bin_debug = eff_debug & BIN_DBG_MASK  # the higher bits are used by the Python wrapper only
+    cmd = [exec_path, f"debug={bin_debug}", f"method={method}"]
 
     if finH: cmd.append(f"finH={finH}")
     if finG: cmd.append(f"finG={finG}")
@@ -1335,9 +1396,10 @@ def run_dist_m4ri(
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh > 0: cmd.append(f"refresh={refresh}")
 
-    if verbose or (eff_debug & 2):
+    if eff_debug & PY_DBG_COMMANDS:
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
 
+    t_start = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     if stop_event is not None:
@@ -1354,11 +1416,14 @@ def run_dist_m4ri(
     else:
         stdout, stderr = proc.communicate()
 
+    if eff_debug & PY_DBG_COMMANDS:
+        print(f"[dist_m4ri] Finished in {time.time() - t_start:.3f} s (exit code {proc.returncode})")
+
     if proc.returncode != 0:
         raise RuntimeError(f"dist_m4ri failed with exit code {proc.returncode}:\n{stderr}")
 
     _last_run_stats = _parse_stderr_stats(stderr)
-    if (verbose or eff_debug > 0) and stderr:
+    if (verbose or bin_debug > 0) and stderr:
         print(stderr.rstrip())
 
     return parse_dist_m4ri_output(stdout)
@@ -1408,7 +1473,7 @@ def has_noise(circuit: Any) -> bool:
 def _add_noise_recursive(
     circuit: Any, p: float, num_qubits: int, active_qubits: Set[int]
 ) -> Any:
-    """Recursively adds phenomenological noise to a Stim circuit."""
+    """Recursively adds uniform circuit-level noise to a Stim circuit (see add_noise())."""
     stim = _get_stim()
     noisy_circuit = stim.Circuit()
     annotations = {
@@ -1485,7 +1550,18 @@ def _add_noise_recursive(
 
 
 def add_noise(circuit: Any, p: float = 0.001) -> Any:
-    """Adds phenomenological depolarizing & Pauli noise to a Stim circuit."""
+    """
+    Adds uniform circuit-level noise to a Stim circuit: DEPOLARIZE2(p) after two-qubit gates, DEPOLARIZE1(p/10) after
+    single-qubit gates and on the idle qubits in each TICK, and X (Z) flips with probability p after Z-basis (X-basis)
+    resets and before measurements.
+
+    Args:
+        circuit: stim.Circuit or path to a .stim file.
+        p: Noise strength (for the distance, only which errors are possible matters).
+
+    Returns:
+        The noisy stim.Circuit.
+    """
     stim = _get_stim()
     if isinstance(circuit, (str, Path)):
         circuit = stim.Circuit.from_file(str(circuit))
@@ -2871,7 +2947,7 @@ def compute_classical_distance(
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
-        debug: Debug level flags.
+        debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
 
     Returns:
@@ -2936,7 +3012,7 @@ def compute_classical_distance(
                                   f"(found cached exact distance for '{code_key}')")
                             print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
                                   f"bounds={format_bounds_str(d_info)}")
-                        elif debug & 4:
+                        elif debug & PY_DBG_CACHE:
                             print("[dist_m4ri] Cache hit for classical distance (exact distance known)!")
                         cws_res = cached_entry.get("cws", [])
                         if outC and cws_res:
@@ -3076,10 +3152,7 @@ def compute_classical_distance(
         return (dist, cws) if do_cws else dist
 
     finally:
-        for f in temp_files:
-            if os.path.exists(f):
-                try: os.remove(f)
-                except OSError: pass
+        _remove_temp_files(temp_files, debug)
 
 
 def compute_quantum_distance(
@@ -3169,7 +3242,7 @@ def compute_quantum_distance(
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
-        debug: Debug level flags.
+        debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
 
     Returns:
@@ -3254,7 +3327,7 @@ def compute_quantum_distance(
                                   f"(found cached exact distance for '{code_key}')")
                             print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
                                   f"bounds={format_bounds_str(d_info)}")
-                        elif debug & 4:
+                        elif debug & PY_DBG_CACHE:
                             print("[dist_m4ri] Cache hit for quantum distance (exact distance known)!")
                         cws_res = cached_entry.get("cws", [])
                         if outC and cws_res:
@@ -3411,10 +3484,7 @@ def compute_quantum_distance(
         return (dist, cws) if do_cws else dist
 
     finally:
-        for f in temp_files:
-            if os.path.exists(f):
-                try: os.remove(f)
-                except OSError: pass
+        _remove_temp_files(temp_files, debug)
 
 
 def _split_css_filename(filepath: Optional[str], sector: str) -> Optional[str]:
@@ -3517,7 +3587,7 @@ def compute_css_distance(
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
-        debug: Debug level flags.
+        debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
 
     Returns:
@@ -3642,7 +3712,7 @@ def compute_css_distance(
                                   f"(found cached exact CSS distance for '{code_key}')")
                             print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
                                   f"dX={format_bounds_str(dx_res)}, dZ={format_bounds_str(dz_res)}")
-                        elif debug & 4:
+                        elif debug & PY_DBG_CACHE:
                             print("[dist_m4ri] Cache hit for CSS distance (exact distance known)!")
                         cws_x = cached_entry.get("cws_X", [])
                         cws_z = cached_entry.get("cws_Z", [])
@@ -3950,10 +4020,7 @@ def compute_css_distance(
         return res_tuple
 
     finally:
-        for f in temp_files:
-            if f and os.path.exists(f):
-                try: os.remove(f)
-                except OSError: pass
+        _remove_temp_files(temp_files, debug)
 
 
 def _resolve_stim_dem_out_path(
@@ -4101,7 +4168,7 @@ def compute_dem_distance(
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
-        debug: Debug level flags.
+        debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
         simple: If True (default for CSS .stim circuits), keep only primary-basis detectors.
         full: If True, keep all detectors in .stim circuits.
@@ -4130,6 +4197,7 @@ def compute_dem_distance(
         )
 
     saved_dem_path: Optional[str] = None
+    circ_verbose = verbose or bool(debug & PY_DBG_CIRCUITS)  # Stim circuit to DEM conversion details
 
     if dem is None and circuit is not None:
         circuit_src = str(circuit) if isinstance(circuit, (str, Path)) else "stim.Circuit"
@@ -4149,7 +4217,7 @@ def compute_dem_distance(
                     )
 
             circuit, empty_removed = remove_empty_detectors(circuit)
-            if empty_removed > 0 and verbose:
+            if empty_removed > 0 and circ_verbose:
                 print(
                     f"[dist_m4ri] Removed {empty_removed} empty DETECTOR(s) "
                     f"from '{circuit_src}'"
@@ -4182,11 +4250,11 @@ def compute_dem_distance(
                 circuit, stripped_det, kept_det = strip_minority_detectors(
                     circuit,
                     eff_basis,
-                    verbose=verbose,
+                    verbose=circ_verbose,
                     thorough=True,
                     thorough_res=t_res
                 )
-            elif simple is True and not is_css_circ and verbose:
+            elif simple is True and not is_css_circ and circ_verbose:
                 print(
                     f"[dist_m4ri] Warning: --simple requested, but '{circuit_src}' "
                     "is not classified as a CSS circuit; keeping all detectors."
@@ -4194,7 +4262,7 @@ def compute_dem_distance(
 
             mode_tag = "_simp" if (use_simple and is_css_circ) else "_full"
 
-            if verbose:
+            if circ_verbose:
                 mode_str = (
                     "simple (primary-basis detectors only)"
                     if (use_simple and is_css_circ)
@@ -4235,7 +4303,7 @@ def compute_dem_distance(
             )
             if stim_out_path is not None:
                 circuit.to_file(stim_out_path)
-                if verbose:
+                if circ_verbose:
                     print(f"[dist_m4ri] Saved Stim circuit to '{stim_out_path}'")
 
             try:
@@ -4244,15 +4312,20 @@ def compute_dem_distance(
             except Exception:
                 dem = circuit.detector_error_model(decompose_errors=False)
                 decomp_used = False
-            if verbose:
+            if circ_verbose:
                 noise_msg = (
-                    f"added phenomenological noise (p={p_noise})"
+                    f"added circuit-level noise (p={p_noise})"
                     if noise_added else "existing noise detected"
                 )
                 print(
                     f"[dist_m4ri] Converted '{circuit_src}' to DEM "
                     f"({noise_msg}, decompose_errors={decomp_used})"
                 )
+                if all(hasattr(dem, a) for a in ("num_detectors", "num_observables", "num_errors")):
+                    print(
+                        f"[dist_m4ri] DEM size: {dem.num_detectors} detectors, {dem.num_observables} observables, "
+                        f"{dem.num_errors} error mechanisms"
+                    )
 
             dem_out_path = _resolve_stim_dem_out_path(
                 out_dem, circuit_src, mode_tag, ".dem", out_dir=out_dir
@@ -4266,7 +4339,7 @@ def compute_dem_distance(
                     with open(dem_out_path, 'w') as f_dem:
                         f_dem.write(str(dem))
                 saved_dem_path = dem_out_path
-                if verbose:
+                if circ_verbose:
                     print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
         else:
             raise ValueError("Provided circuit object does not have detector_error_model() method.")
@@ -4287,7 +4360,7 @@ def compute_dem_distance(
                 with open(dem_out_path, 'w') as f_dem:
                     f_dem.write(str(dem))
             saved_dem_path = dem_out_path
-            if verbose:
+            if circ_verbose:
                 print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
 
     if dem is None:
@@ -4352,7 +4425,7 @@ def compute_dem_distance(
                                   f"(found cached exact DEM distance for '{code_key}')")
                             print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
                                   f"bounds={format_bounds_str(d_info)}")
-                        elif debug & 4:
+                        elif debug & PY_DBG_CACHE:
                             print("[dist_m4ri] Cache hit for DEM distance (exact distance known)!")
                         cws_res = cached_entry.get("cws", [])
                         if outC and cws_res:
@@ -4495,10 +4568,7 @@ def compute_dem_distance(
         return dist, d_info
 
     finally:
-        for f in temp_files:
-            if f and os.path.exists(f):
-                try: os.remove(f)
-                except OSError: pass
+        _remove_temp_files(temp_files, debug)
 
 
 def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
@@ -4810,7 +4880,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             elif key_lower == "seed":
                 args["seed"] = int(val)
             elif key_lower in ("debug", "dbg"):
-                args["debug"] = int(val)
+                args["debug"] |= parse_debug_value(val)  # OR-combined (the default is 0)
             elif key_lower == "solver":
                 args["solver"] = val
             elif key_lower in ("verbose", "v"):
@@ -4937,8 +5007,8 @@ Input matrices & models:
 
 Method and distance bounds:
   method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
-  dmin=N                Certified lower bound, inclusive (default: 0)
-  dmax=N                Known upper bound, inclusive (default: 0)
+  dmin=N                Certified lower bound, inclusive (CC starts from dmin) (default: 0)
+  dmax=N                Known upper bound, inclusive (CC up to w=dmax-1 only) (default: 0)
   dexp=N                Expected distance estimate (alias: dest) (default: 0)
 
 Search limits and stopping criteria:
@@ -4976,7 +5046,7 @@ Extra parameters (see --morehelp for details):
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
   dW=N (0)              Extra weight window above dmin to collect codewords
   seed=N (0)            Random number generator seed
-  debug=N (0)           Debug bitmask passed to dist_m4ri binary
+  debug=N (0)           Debug bitmap, OR-combined (1: summary, 2: progress, 4: status, ...)
 
 Help options:
   -h, --help            Display this help message (commonly used parameters)
@@ -5040,7 +5110,9 @@ Distance bounds and guidance:
   dmin=N                Known certified lower bound on distance (default: 0).
                         CC search begins at weight w = max(1, dmin).
   dmax=N                Known upper bound on distance (default: 0).
-                        RW ignores candidate codewords of weight >= dmax.
+                        CC ends once dmin = dmax (with outC, after the rounds w = dmax..dmax+dW);
+                        RW ignores candidate codewords of weight >= dmax unless collecting codewords
+                        or needed for min_hits.
   dexp=N                Expected code distance estimate (alias: dest) (default: 0).
                         Hint for method=3: as long as RW has found no codeword, CC rounds at
                         w > dexp run only on threads which cannot run RW (CC pauses if RW can
@@ -5049,7 +5121,8 @@ Distance bounds and guidance:
 Search limits and stopping criteria:
   steps=N               Maximum number of RW steps / information sets across all threads
                         (default: 100000).
-  wmax=N                Maximum cluster weight to analyze in CC (default: 0 = until bound/timeout).
+  wmax=N                Maximum cluster weight to analyze in CC (default: 0 = until bound/timeout;
+                        with method=2, a known dmax is used as wmax).
   wmin=N                Minimum distance threshold (default: 1).
                         If a codeword of weight w <= wmin is discovered, search halts immediately
                         (not when collecting codewords with outC or maxC).
@@ -5061,7 +5134,9 @@ Search limits and stopping criteria:
 Multithreading & throttling:
   threads=N             Maximum number of worker threads to allocate (default: min(CPU cores, 64)).
                         Subject to automatic thread throttling unless nothrottle=1 is specified:
-                        - Small codes (n < 100 clamped to <= 4, n < 300 clamped to <= 16).
+                        - Small codes (<= 4 threads for n < 60, or for m*n < 2e4 with a small RW
+                          workload m*n*steps < 5e7; otherwise <= 16 threads for n < 150 or
+                          m*n < 1e5, if m*n*steps < 2e8; m: number of rows of H).
                         - Large memory matrices (dense RW working memory capped at ~1.5 GB).
                         - Small RW step counts (RW threads clamped to <= (steps + 9) / 10).
                         The last two limits apply to RW threads only: CC (method=2) is not
@@ -5149,15 +5224,28 @@ Distance caching (Python CLI):
 General options:
   solver=NAME           Distance calculation engine: 'dist_m4ri' (default) or 'codedistance'.
   --verbose / -v        Enable verbose output with detailed explanations of bounds,
-                        timings, steps, and cache status.  For a RW upper bound which is not
-                        certified, also estimates the probability that a lighter codeword was
-                        missed (from the average hits <n>, and from uniform random information
-                        sets with n, rank(H), and the RW steps), with the RW steps and time
-                        needed for a 1% miss probability.
+                        timings, steps, and cache status (implies the debug bits 1, 2,
+                        65536, and 131072).  For a RW upper bound which is not certified,
+                        also estimates the probability that a lighter codeword was missed
+                        (from the average hits <n>, and from uniform random information sets
+                        with n, rank(H), and the RW steps), with the RW steps and time needed
+                        for a 1% miss probability.
   seed=N                Random number generator seed (default: 0 = current time).
-  debug=N               Debug bitmask passed directly to the dist_m4ri binary (default: 0).
-                        (0: silent, 1: general, 2: verbose/threads, 4: args, 8: progress,
-                         16: codewords, 32: matrices, 64: hash updates, 2048: large matrices).
+  debug=N               Debug bitmap (default: 0), a decimal or hexadecimal (0x...) integer;
+                        multiple debug arguments are OR-combined.  Bits 1 to 32768 are passed
+                        to the dist_m4ri binary, which prints diagnostic output to stderr (see
+                        its --morehelp; lower bits are more informative):
+                          1: summary (input matrices, stop reason, codeword statistics),
+                          2: progress (run plan, finished CC rounds, new upper bounds),
+                          4: periodic status (after 1, 2, 4, ... s, then every 60 s),
+                          8: thread allocation and timing, 16: code parameters (ranks, k),
+                          32: codeword supports, 64: arguments, 128: matrices,
+                          256: codeword dump, 2048: no size cutoff.
+                        Bits 65536 and above are used by the Python wrapper only:
+                          65536: dist_m4ri command lines and run times,
+                          131072: cache messages,
+                          262144: Stim circuit to DEM conversion details,
+                          524288: keep (and list) the temporary files.
 
 Help options:
   -h, --help            Display summary help message (fits 80 rows).

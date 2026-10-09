@@ -64,7 +64,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
   const int smax = p->smax;
   const int debug = p->debug;
 #ifndef NDEBUG  
-  if(debug&64){
+  if(debug & DBG_LEGACY){
     printf("starting CC recurs w=%d row=%d:\n urr: ",w,row);
     one_vec_print(urr);
     printf(" err: ");
@@ -100,7 +100,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	urr->vec[w] = col;
 	urr->wei++;
 #ifndef NDEBUG
-	if(debug&64){
+	if(debug & DBG_LEGACY){
 	  printf(" pos=%d urr: ",pos);
 	  one_vec_print(urr);
 	}
@@ -108,7 +108,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	pos = one_ordered_ins(err,col);
 	syn[w+1]->wei=0;
 	int swei = one_csr_row_combine(syn[w+1],syn[w], mHT, col);
-	if(debug&64){
+	if(debug & DBG_LEGACY){
 	  printf(" syn: ");
 	  one_vec_print(syn[w+1]);
 	}
@@ -131,7 +131,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	  if(!swei){
 	    if((!mL) ||  /** classical code */
 	       (sparse_syndrome_non_zero(mL, err->wei, err->vec))){
-	      if(debug&32){
+	      if(debug & DBG_LEGACY){
 		printf("swei=%d *** success ***\n",swei);
 		one_vec_print(err);
 		one_vec_print(syn[w+1]);
@@ -146,7 +146,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	    }
 	  }
 	  else if(swei <= smax){/** update p_swei if not in hash yet */
-	    if(debug&64){
+	    if(debug & DBG_LEGACY){
 	      printf("# try adding to the hash ewei=%d swei=%d smax=%d p_swei[%d]=%d\n",err->wei,swei,smax,w+1,p_swei[w+1]);
 	    }
 	    //	    
@@ -155,14 +155,14 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 	}
 	urr->wei--;
 	one_ordered_pos_del(err,col,pos);
-	if(debug&32){
+	if(debug & DBG_LEGACY){
 	  printf("xerr: ");
 	  one_vec_print(err);
 	}
       }
     }
   }
-  if(debug&32)
+  if(debug & DBG_LEGACY)
     printf("exiting CC recurs\n\n");
   return 0; /** nothing found */
 }
@@ -182,10 +182,7 @@ int do_CC_dist(params_t * const p){
   const int nvar = mH->cols;
 
   csr_t * const mHT = csr_transpose(NULL,mH);
-  if(debug&32){
-    if((mHT->cols<150)||(debug&2048))
-      csr_print(mHT,"HT");
-  }
+  csr_dump(stderr, mHT, "HT", debug);
   int max_col_W = csr_max_row_wght(mHT);
   
   one_vec_t *err = calloc(1, sizeof(one_vec_t)+sizeof(int)*wmax);  
@@ -224,14 +221,14 @@ int do_CC_dist(params_t * const p){
     if (p->start_num > 0) { /** expert `start` list: unlimited clusters from the listed columns */
       beg = 0;
       end = p->start_num - 1;
-      if(debug&2)
+      if(debug & DBG_PROGRESS)
         printf("# recursively searching for w=%d codewords wmax=%d from %d listed start column(s)\n",
                w, wmax, p->start_num);
     }
     else {
       beg = (p->cbeg >= 0) ? p->cbeg : 0;
       end = (p->cend >= 0) ? minint(p->cend, nvar - w) : nvar - w;
-      if(debug&2)
+      if(debug & DBG_PROGRESS)
         printf("# recursively searching for w=%d codewords wmax=%d beg=%d end=%d\n",w,wmax,beg,end);
     }
     for(int k = beg; k <= end; k++){ /* start column position (or its index in the `start` list) */
@@ -275,7 +272,7 @@ int do_CC_dist(params_t * const p){
       printf("-%d\n", w);
       fflush(stdout);
     } else if (p->min_w <= w && p->dW >= 0 && w <= w_limit_dynamic) {
-      if (debug & 1) {
+      if (debug & DBG_SUMMARY) {
         fprintf(stderr, "# CC round w=%d finished: searched with dW=%d (min_w=%d, total %lld codewords)\n",
                 w, p->dW, p->min_w, p->num_cws);
       }
@@ -288,9 +285,9 @@ int do_CC_dist(params_t * const p){
     assert(  0 == sparse_syndrome_non_zero(mH, err->wei, err->vec)); 
     if(mL) assert(sparse_syndrome_non_zero(mL, err->wei, err->vec)); 
 #endif     
-    if(debug&16){
+    if (debug & DBG_CODEWORDS){
       printf("# wmax=%d found cw of weight %d: [",wmax,result);
-      int max = ((result<50) || (debug&2048)) ? result : 50 ;
+      int max = ((result<50) || (debug & DBG_LARGE)) ? result : 50 ;
       for(int i=0; i< max; i++)
 	printf("%d%s",err->vec[i], i+1!=max?" ": (result==max ? "]\n" : "...]\n"));
     }
@@ -307,7 +304,7 @@ int do_CC_dist(params_t * const p){
 
   if(smax){
     int skipped = 0;
-    if(debug){
+    if (debug & DBG_SUMMARY){
       for(int i=1;i<=wmax; i++) {
         if(p_swei[i] <= mH->rows) {
           printf("# w=%d min non-zero syndrome weight %d\n",i,p_swei[i]);
