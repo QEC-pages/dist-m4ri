@@ -28,6 +28,11 @@
  * A CC codeword gives dmin=dmax only if found in a round where all lower weights have been
  * analyzed (flag `cc_exact`).
  *
+ * Threads: every worker can run CC rounds, while RW runs only on workers 0..rw_threads-1.  Thread
+ * throttling (unless nothrottle=1) limits the RW workers by the memory of their dense matrices and by
+ * the step count; in method=3 this limits only the RW share, and CC rounds can use all workers.
+ * A worker without RW work (RW steps all claimed, RW stopped by min_hits) joins the current CC round.
+ *
  * All debugging messages and confinement profile are sent to stderr.
  *
  * author: Leonid Pryadko <leonid.pryadko@ucr.edu>
@@ -125,6 +130,7 @@ static inline mzp_t * mzp_rand_thread(mzp_t *q, rci_t length, uint64_t *state) {
 typedef struct {
   params_t *p;
   int num_threads;
+  int rw_threads; /* workers 0..rw_threads-1 may run RW (dense RW matrices); all workers may run CC */
   double timeout;
   double start_time;
   int dexp;
@@ -143,15 +149,13 @@ typedef struct {
   atomic_long rw_steps_completed;
 
   /* CC state for current weight (cache-line isolated) */
-  _Alignas(64) atomic_int cc_weight;
-  atomic_int cc_col_next;
-  int cc_col_beg;
-  int cc_col_end;
+  _Alignas(64) atomic_llong cc_next; /* weight of the current CC round and next start index, see `cc_pack()` */
   csr_t *mHT_cc;
   int max_col_W;
   atomic_int cc_active_workers;
   atomic_int cc_target_workers;
   atomic_int cc_round_active;
+  atomic_llong cc_busy_ns;           /* total CC thread time in ns (all rounds), for the method-3 timing model */
 
   /* Codeword synchronization */
   pthread_mutex_t cw_mutex;
@@ -175,6 +179,29 @@ typedef struct {
   int tid;
   int min_swei[MAX_W];
 } worker_arg_t;
+
+/* A CC round at weight w hands out start indices i = beg..end one at a time.  The weight and the next start index
+ * are packed into the single atomic word `cc_next`, so that a worker always processes a claimed start index with
+ * the weight of the round it belongs to, even if it joins just as the coordinator publishes the next round. */
+#define CC_IDX_BITS 32
+static inline long long cc_pack(const int w, const int idx) {
+  return ((long long)w << CC_IDX_BITS) | (long long)(unsigned int)idx;
+}
+static inline int cc_unpack_w(const long long v) { return (int)(v >> CC_IDX_BITS); }
+static inline int cc_unpack_idx(const long long v) { return (int)(v & 0xffffffffLL); }
+
+/* First start index of a CC round: index into the expert `start` list, or the first start column (cbeg) */
+static inline int cc_round_beg(const params_t * const p) {
+  return (p->start_num > 0) ? 0 : ((p->cbeg >= 0) ? p->cbeg : 0);
+}
+
+/* Last start index of a CC round at weight w: a cluster started at column i only uses columns > i, so it
+ * starts at column n-w at the latest (expert `start` list: all listed columns, clusters are unlimited) */
+static inline int cc_round_end(const params_t * const p, const int w) {
+  if (p->start_num > 0) return p->start_num - 1;
+  const int nvar = p->spaH->cols;
+  return (p->cend >= 0) ? minint(p->cend, nvar - w) : (nvar - w);
+}
 
 /* Recursive CC worker function (interruptible) */
 static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
@@ -420,7 +447,7 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
             atomic_store(&ctx->dmax, best);
             if (p->debug & 16) {
               int num_rw = (ctx->p->method == 1) ? ctx->num_threads
-                           : (ctx->num_threads - atomic_load(&ctx->cc_target_workers));
+                           : minint(ctx->rw_threads, ctx->num_threads - atomic_load(&ctx->cc_target_workers));
               if (num_rw < 1) num_rw = 1;
               fprintf(stderr,
                       "# [thread %d] RW found new upper bound cw of weight %d "
@@ -576,7 +603,7 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
             atomic_store(&ctx->dmax, best);
             if (p->debug & 16) {
               int num_rw = (ctx->p->method == 1) ? ctx->num_threads
-                           : (ctx->num_threads - atomic_load(&ctx->cc_target_workers));
+                           : minint(ctx->rw_threads, ctx->num_threads - atomic_load(&ctx->cc_target_workers));
               if (num_rw < 1) num_rw = 1;
               fprintf(stderr,
                       "# [thread %d] RW (ksub=%d) found new upper bound cw of weight %d "
@@ -660,7 +687,8 @@ static void *worker_thread_func(void *arg) {
   distfork_ctx_t *ctx = warg->ctx;
   int tid = warg->tid;
   const int nvar = ctx->p->spaH->cols;
-  const bool enable_rw = (ctx->p->method & 1) != 0;
+  /* only workers 0..rw_threads-1 run RW (method 1 or 3) and allocate dense RW matrices; all workers may run CC */
+  const bool enable_rw = ((ctx->p->method & 1) != 0) && (tid < ctx->rw_threads);
   const bool use_ksub = enable_rw && (ctx->p->ksub > 0);
   const int ksub_eff = (use_ksub && ctx->nu > 0) ? minint(ctx->p->ksub, ctx->nu) : 0;
 
@@ -733,21 +761,26 @@ static void *worker_thread_func(void *arg) {
     if (ctx->p->method >= 2 && atomic_load_explicit(&ctx->cc_round_active, memory_order_acquire)) {
       int active = atomic_load_explicit(&ctx->cc_active_workers, memory_order_relaxed);
       int target = atomic_load_explicit(&ctx->cc_target_workers, memory_order_relaxed);
-      if (atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+      /* A worker without RW work joins any CC round: method 2, a CC-only worker (tid >= rw_threads), RW stopped by
+       * `min_hits`, or all RW steps already claimed by other workers (it would otherwise idle until the round ends) */
+      if (!enable_rw || atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed) ||
+          atomic_load_explicit(&ctx->rw_steps_started, memory_order_relaxed) >= ctx->total_rw_steps) {
         target = ctx->num_threads;
       }
-      if (active < target &&
-          atomic_load_explicit(&ctx->cc_col_next, memory_order_relaxed) <= ctx->cc_col_end) {
+      const long long next = atomic_load_explicit(&ctx->cc_next, memory_order_relaxed);
+      if (active < target && cc_unpack_idx(next) <= cc_round_end(ctx->p, cc_unpack_w(next))) {
         if (atomic_compare_exchange_weak(&ctx->cc_active_workers, &active, active + 1)) {
-          int w = atomic_load_explicit(&ctx->cc_weight, memory_order_relaxed);
-          int end = ctx->cc_col_end;
+          const double t_join = get_time_sec();
           while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
             if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
               atomic_store(&ctx->stop_flag, true);
               break;
             }
-            int idx = atomic_fetch_add_explicit(&ctx->cc_col_next, 1, memory_order_relaxed);
-            if (idx > end) break;
+            /* claim the next start index together with the weight of its round */
+            const long long claim = atomic_fetch_add_explicit(&ctx->cc_next, 1, memory_order_relaxed);
+            const int w = cc_unpack_w(claim);
+            const int idx = cc_unpack_idx(claim);
+            if (idx > cc_round_end(ctx->p, w)) break;
             /* with the expert `start` list, `idx` enumerates the listed start columns */
             const int col = (ctx->p->start_num > 0) ? ctx->p->start_list[idx] : idx;
 
@@ -785,6 +818,9 @@ static void *worker_thread_func(void *arg) {
             }
             err->wei = urr->wei = 0;
           }
+          /* CC thread time (added before leaving the round, so the coordinator sees it once the round is over) */
+          atomic_fetch_add_explicit(&ctx->cc_busy_ns, (long long)((get_time_sec() - t_join) * 1e9),
+                                    memory_order_relaxed);
           atomic_fetch_sub_explicit(&ctx->cc_active_workers, 1, memory_order_release);
           did_work = true;
           continue;
@@ -814,9 +850,9 @@ static void *worker_thread_func(void *arg) {
             else batch_size = 25;
           }
         }
-        /* Prevent thread starvation: ensure chunk size doesn't monopolize steps across threads */
-        if (ctx->num_threads > 1 && ctx->total_rw_steps > 0) {
-          long max_chunk = (ctx->total_rw_steps + ctx->num_threads - 1) / ctx->num_threads;
+        /* Prevent thread starvation: ensure chunk size doesn't monopolize steps across the RW threads */
+        if (ctx->rw_threads > 1 && ctx->total_rw_steps > 0) {
+          long max_chunk = (ctx->total_rw_steps + ctx->rw_threads - 1) / ctx->rw_threads;
           if (max_chunk >= 1 && batch_size > max_chunk) {
             batch_size = max_chunk;
           }
@@ -891,9 +927,12 @@ static void run_method1_coordinator(distfork_ctx_t *ctx) {
 
 /* Method 2 coordinator */
 static void run_method2_coordinator(distfork_ctx_t *ctx) {
-  const int nvar = ctx->p->spaH->cols;
   const int wmax = ctx->p->wmax;
   const int w_start = ctx->p->noscan ? wmax : (ctx->p->dmin > 1 ? ctx->p->dmin : 1);
+  /* with outC or maxC, CC does not stop at the first codeword but collects all codewords of a round */
+  const bool collecting = (ctx->p->outC != NULL) || (ctx->p->maxC > 0);
+  /* with outC and dW > 0, extra CC rounds export the codewords of weight up to d + dW */
+  const int extra_w = (ctx->p->outC && ctx->p->dW > 0) ? ctx->p->dW : 0;
 
   if (ctx->p->debug & 2) {
     fprintf(stderr, "# running method=2 (multithreaded CC) with %d threads, w_start=%d wmax=%d\n",
@@ -901,16 +940,23 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
   }
 
   int w_limit = wmax;
-  if (ctx->p->dmax > 0) {
-    if (ctx->p->outC && ctx->p->dW > 0) {
-      w_limit = minint(wmax > 0 ? wmax : ctx->p->dmax + ctx->p->dW, ctx->p->dmax + ctx->p->dW);
-    } else {
-      w_limit = minint(wmax > 0 ? wmax : ctx->p->dmax, ctx->p->dmax);
-    }
-  }
-
-  for (int w = w_start; w <= w_limit; w++) {
+  for (int w = w_start; ; w++) {
     if (atomic_load(&ctx->stop_flag)) break;
+    /* The current upper bound dmax (given, read from finC, or found by CC) limits the rounds: since the CC kernel
+     * caps the cluster weight at dmax + dW, a round w > dmax + extra_w would only enumerate the same clusters
+     * again.  Unless codewords are collected, the round w = dmax is not needed once dmin = dmax. */
+    const int cur_dmax = atomic_load(&ctx->dmax);
+    if (cur_dmax > 0) {
+      if (!collecting && atomic_load(&ctx->dmin) >= cur_dmax) {
+        if (ctx->p->debug & 1) {
+          fprintf(stderr, "# bounds coincide: dmin = dmax = %d (CC round w=%d not needed)\n", cur_dmax, w);
+        }
+        break;
+      }
+      w_limit = minint(w_limit, cur_dmax + extra_w);
+    }
+    if (w > w_limit) break;
+
     double now = get_time_sec();
     double remaining_time = ctx->timeout - (now - ctx->start_time);
     if (ctx->timeout > 0.0 && remaining_time <= 0.0) {
@@ -939,22 +985,13 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       }
     }
 
-    int beg, end;
-    if (ctx->p->start_num > 0) { /* expert `start` list: enumerate all listed columns (unlimited clusters) */
-      beg = 0;
-      end = ctx->p->start_num - 1;
-    } else {
-      beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
-      end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
-    }
+    const int beg = cc_round_beg(ctx->p);
+    const int end = cc_round_end(ctx->p, w);
     /* all weights below w analyzed (or a supplied dmin): a codeword of weight w found is exact */
     const bool certified = (w == atomic_load(&ctx->dmin));
 
-    atomic_store(&ctx->cc_weight, w);
-    ctx->cc_col_beg = beg;
-    ctx->cc_col_end = end;
-    atomic_store(&ctx->cc_col_next, beg);
     atomic_store(&ctx->cc_target_workers, ctx->num_threads);
+    atomic_store(&ctx->cc_next, cc_pack(w, beg));
     atomic_store(&ctx->cc_round_active, 1);
 
     double cc_start = get_time_sec();
@@ -976,7 +1013,7 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
         atomic_store(&ctx->stop_flag, true);
         break;
       }
-      if (atomic_load(&ctx->cc_col_next) > end && atomic_load(&ctx->cc_active_workers) == 0) {
+      if (cc_unpack_idx(atomic_load(&ctx->cc_next)) > end && atomic_load(&ctx->cc_active_workers) == 0) {
         round_completed = true;
         break;
       }
@@ -998,40 +1035,28 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     if (exact) {
       atomic_store(&ctx->dmin, cw_found);
       atomic_store(&ctx->dmax, cw_found);
-
-      if (ctx->p->outC && ctx->p->dW > 0 && w < minint(wmax, cw_found + ctx->p->dW)) {
-        w_limit = minint(wmax, cw_found + ctx->p->dW);
-        if (ctx->p->debug & 1) {
-          if (w == cw_found) {
-            fprintf(stderr,
-                    "# CC round w=%d finished in %.3fs (%d CC threads): found min-weight codewords "
-                    "(dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
-                    w, cc_dur, ctx->num_threads, cw_found, w_limit, ctx->p->dW, ctx->p->num_cws);
-          } else if (round_completed) {
-            fprintf(stderr,
-                    "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed "
-                    "(dmin=%d, total %lld cws)\n",
-                    w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
-          }
+      /* the distance is known: no rounds beyond w = cw_found + extra_w */
+      w_limit = minint(w_limit, cw_found + extra_w);
+      const bool more_rounds = round_completed && (w < w_limit);
+      if (ctx->p->debug & 1) {
+        if (w == cw_found && more_rounds) {
+          fprintf(stderr,
+                  "# CC round w=%d finished in %.3fs (%d CC threads): found min-weight codewords "
+                  "(dmin=%d, continuing up to w=%d for dW=%d, total %lld cws)\n",
+                  w, cc_dur, ctx->num_threads, cw_found, w_limit, ctx->p->dW, ctx->p->num_cws);
+        } else if (w == cw_found) {
+          fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads, total %lld cws)\n",
+                  cw_found, ctx->num_threads, ctx->p->num_cws);
+        } else if (round_completed) {
+          fprintf(stderr,
+                  "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed "
+                  "(dmin=%d, total %lld cws)\n",
+                  w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
         }
-      } else {
-        if (ctx->p->debug & 1) {
-          if (w > cw_found) {
-            if (round_completed) {
-              fprintf(stderr,
-                      "# CC round w=%d finished in %.3fs (%d CC threads): extra dW round completed "
-                      "(dmin=%d, total %lld cws)\n",
-                      w, cc_dur, ctx->num_threads, cw_found, ctx->p->num_cws);
-            }
-          } else {
-            fprintf(stderr, "# CC found min-weight codeword: d=%d (using %d CC threads, total %lld cws)\n",
-                    cw_found, ctx->num_threads, ctx->p->num_cws);
-          }
-        }
-        if (w >= w_limit || !round_completed) {
-          atomic_store(&ctx->stop_flag, true);
-          break;
-        }
+      }
+      if (!more_rounds) {
+        atomic_store(&ctx->stop_flag, true);
+        break;
       }
     } else if (cw_found > 0) {
       /* noscan=1 without dmin=wmax: lower weights not scanned, the codeword only gives an upper bound */
@@ -1080,13 +1105,13 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     return;
   }
 
-  /* Initial RW probe to measure average step time */
+  /* Initial RW probe to measure average step time (no CC round yet: the `rw_threads` RW workers run RW) */
   double t_rw_start = get_time_sec();
   usleep(2000);
   double t_rw_dur = get_time_sec() - t_rw_start;
   long initial_steps = atomic_load(&ctx->rw_steps_completed);
-  if (initial_steps > 0) {
-    ctx->avg_rw_step_time = (t_rw_dur * (double)ctx->num_threads) / (double)initial_steps;
+  if (initial_steps > 0 && ctx->rw_threads > 0) {
+    ctx->avg_rw_step_time = (t_rw_dur * (double)ctx->rw_threads) / (double)initial_steps;
   } else {
     ctx->avg_rw_step_time = 0.00005;
   }
@@ -1163,7 +1188,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     if (ctx->timeout > 0.0 && (t_cc_est / ctx->num_threads > remaining_time * 1.5)) {
       if (ctx->p->debug & 2) {
         fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting %d threads to RW\n",
-                w, t_cc_est / ctx->num_threads, remaining_time, ctx->num_threads);
+                w, t_cc_est / ctx->num_threads, remaining_time, ctx->rw_threads);
       }
       while (!atomic_load(&ctx->stop_flag) && !atomic_load(&ctx->rw_stop_flag)) {
         if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) break;
@@ -1177,11 +1202,13 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     long steps_done = atomic_load(&ctx->rw_steps_completed);
     long steps_rem = (!atomic_load(&ctx->rw_stop_flag) && ctx->total_rw_steps > steps_done)
                      ? (ctx->total_rw_steps - steps_done) : 0;
+    /* all RW steps claimed: the RW workers join the CC round once their current batch is done */
+    const bool rw_all_claimed = (atomic_load(&ctx->rw_steps_started) >= ctx->total_rw_steps);
 
     int n_cc;
     if (ctx->num_threads == 1) {
       n_cc = 1;
-    } else if (steps_rem == 0) {
+    } else if (steps_rem == 0 || rw_all_claimed) {
       n_cc = ctx->num_threads;
     } else if (t_cc_est < 0.005) {
       n_cc = (ctx->num_threads >= 4) ? 2 : 1;
@@ -1199,25 +1226,21 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       if (n_cc < 1) n_cc = 1;
       if (n_cc >= ctx->num_threads && steps_rem > 0) n_cc = ctx->num_threads - 1;
     }
+    /* only `rw_threads` workers can run RW (memory / steps limits): the other workers always run CC */
+    if (ctx->num_threads - n_cc > ctx->rw_threads) {
+      n_cc = ctx->num_threads - ctx->rw_threads;
+    }
 
     int n_rw = ctx->num_threads - n_cc;
 
-    int beg, end;
-    if (ctx->p->start_num > 0) { /* expert `start` list: enumerate all listed columns (unlimited clusters) */
-      beg = 0;
-      end = ctx->p->start_num - 1;
-    } else {
-      beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
-      end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
-    }
+    const int beg = cc_round_beg(ctx->p);
+    const int end = cc_round_end(ctx->p, w);
     /* all weights below w analyzed (or a supplied dmin): a codeword of weight w found is exact */
     const bool certified = (w == atomic_load(&ctx->dmin));
 
-    atomic_store(&ctx->cc_weight, w);
-    ctx->cc_col_beg = beg;
-    ctx->cc_col_end = end;
-    atomic_store(&ctx->cc_col_next, beg);
     atomic_store(&ctx->cc_target_workers, n_cc);
+    const long long busy_ns0 = atomic_load(&ctx->cc_busy_ns);
+    atomic_store(&ctx->cc_next, cc_pack(w, beg));
     atomic_store(&ctx->cc_round_active, 1);
 
     if (ctx->p->debug & 2) {
@@ -1235,7 +1258,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
         atomic_store(&ctx->stop_flag, true);
         break;
       }
-      if (atomic_load(&ctx->cc_col_next) > end && atomic_load(&ctx->cc_active_workers) == 0) {
+      if (cc_unpack_idx(atomic_load(&ctx->cc_next)) > end && atomic_load(&ctx->cc_active_workers) == 0) {
         round_completed = true;
         break;
       }
@@ -1246,7 +1269,9 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
     double cc_dur = get_time_sec() - cc_start;
     if (w < MAX_W) {
-      ctx->cc_time_per_weight[w] = cc_dur * (double)n_cc;
+      /* CC work of the round in thread-seconds, as measured by the workers: the number of CC threads may exceed
+       * n_cc (CC-only workers, and RW workers that ran out of RW steps join the round) */
+      ctx->cc_time_per_weight[w] = 1e-9 * (double)(atomic_load(&ctx->cc_busy_ns) - busy_ns0);
     }
 
     int cw_found = atomic_load(&ctx->cc_found_weight);
@@ -1336,6 +1361,37 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
   }
 }
 
+/* Maximum number of RW workers for thread throttling (all workers in method 1, the RW share in method 3):
+ * - dense memory: a full-matrix RW worker holds dense copies of H (m x n) and of its transpose (n x m), a worker
+ *   with ksub > 0 only the sampled subspace matrix (ksub x n).  Above 15 MB per worker, the total is kept at
+ *   ~1.5 GB (2 to 32 workers) to prevent DRAM bus and L3 cache thrashing;
+ * - small step counts: at most ceil(steps/10) RW workers. */
+static int rw_thread_cap(const params_t * const p) {
+  int cap = INT_MAX;
+  const int nvar = p->nvar;
+  const int nrows = p->spaH ? p->spaH->rows : 0;
+  if (nrows > 0 && nvar > 0) {
+    const size_t words_n = ((size_t)nvar + 63) / 64;
+    size_t dense_bytes_per_thread;
+    if (p->ksub > 0) {
+      dense_bytes_per_thread = (size_t)minint(p->ksub, nrows) * words_n * 8;
+    } else {
+      dense_bytes_per_thread = (size_t)nrows * words_n * 8 + (size_t)nvar * (((size_t)nrows + 63) / 64) * 8;
+    }
+    if (dense_bytes_per_thread > 15ULL * 1024 * 1024) {
+      int max_mem_threads = (int)((1536ULL * 1024 * 1024) / dense_bytes_per_thread);
+      if (max_mem_threads < 2) max_mem_threads = 2;
+      if (max_mem_threads > 32) max_mem_threads = 32;
+      cap = max_mem_threads;
+    }
+  }
+  if (p->steps > 0) {
+    const int max_step_threads = (int)(((long)p->steps + 9) / 10);
+    cap = minint(cap, max_step_threads);
+  }
+  return cap;
+}
+
 int main(int argc, char **argv) {
   params_t * const p = &prm;
 
@@ -1368,6 +1424,9 @@ int main(int argc, char **argv) {
     num_threads = (nprocs > 0) ? (int)nprocs : 4;
     if (num_threads > 64) num_threads = 64;
   }
+  /* Workers which may run RW (each allocates dense RW matrices): all workers in method 1, none in method 2.
+   * In method 3, the RW share may be limited further while CC rounds can use all workers. */
+  int rw_threads = 0;
 
   if (!p->nothrottle) {
     /* Thread throttling for small codes and large-memory matrices */
@@ -1385,37 +1444,34 @@ int main(int argc, char **argv) {
       if (num_threads > 16) num_threads = 16;
     }
 
-    /* 2. Large-matrix memory throttling: prevent DRAM bus & L3 cache thrashing */
-    int eff_rows = (p->ksub > 0 && p->ksub < nrows) ? p->ksub : nrows;
-    if (eff_rows > 0 && nvar > 0) {
-      size_t words_H = ((size_t)nvar + 63) / 64;
-      size_t bytes_H = (size_t)eff_rows * words_H * 8;
-      size_t words_HT = ((size_t)eff_rows + 63) / 64;
-      size_t bytes_HT = (size_t)nvar * words_HT * 8;
-      size_t dense_bytes_per_thread = bytes_H + bytes_HT;
-
-      /* If dense memory per thread exceeds 15 MB, cap total memory at ~1.5 GB */
-      if (dense_bytes_per_thread > 15ULL * 1024 * 1024) {
-        int max_mem_threads = (int)((1536ULL * 1024 * 1024) / dense_bytes_per_thread);
-        if (max_mem_threads < 2) max_mem_threads = 2;
-        if (max_mem_threads > 32) max_mem_threads = 32;
-        if (num_threads > max_mem_threads) num_threads = max_mem_threads;
-      }
-    }
-
-    /* 3. Steps throttling for RW: don't spawn more threads than needed for small step counts */
-    if ((p->method & 1) && p->steps > 0) {
-      int max_step_threads = (p->steps + 9) / 10;
-      if (max_step_threads < 1) max_step_threads = 1;
-      if (num_threads > max_step_threads) num_threads = max_step_threads;
+    /* 2. Large-matrix memory throttling and 3. steps throttling: these limit only the RW workers, i.e., all
+     *    workers in method 1 and the RW share in method 3; CC (method 2, CC rounds in method 3) is not limited */
+    if (p->method & 1) {
+      const int rw_cap = rw_thread_cap(p);
+      if (p->method == 1 && num_threads > rw_cap) num_threads = rw_cap;
+      rw_threads = minint(num_threads, rw_cap);
     }
 
     if (requested_threads > 0 && num_threads != requested_threads && (p->debug & 2)) {
       fprintf(stderr, "# Note: throttled threads from %d to %d (n=%d, r=%d)\n",
               requested_threads, num_threads, nvar, nrows);
     }
-  } else if (p->debug & 2) {
-    fprintf(stderr, "# Thread throttling disabled (nothrottle=1); running with %d threads\n", num_threads);
+  } else {
+    if (p->method & 1) rw_threads = num_threads;
+    if (p->debug & 2) {
+      fprintf(stderr, "# Thread throttling disabled (nothrottle=1); running with %d threads\n", num_threads);
+    }
+  }
+  if (p->method == 3 && p->steps == 0) {
+    rw_threads = 0; /* no RW steps: pure CC through the bracketing coordinator, no RW matrices needed */
+  }
+  if (p->method == 3 && rw_threads < num_threads && (p->debug & 2)) {
+    if (rw_threads == 0) {
+      fprintf(stderr, "# Note: steps=0, no RW; CC rounds use all %d threads\n", num_threads);
+    } else {
+      fprintf(stderr, "# Note: RW limited to %d of %d threads (memory, steps); CC rounds can use all threads\n",
+              rw_threads, num_threads);
+    }
   }
 
   double timeout = (p->timeout > 0.0) ? p->timeout : 0.0;
@@ -1424,6 +1480,7 @@ int main(int argc, char **argv) {
   memset(&ctx, 0, sizeof(ctx));
   ctx.p = p;
   ctx.num_threads = num_threads;
+  ctx.rw_threads = rw_threads;
   ctx.timeout = timeout;
   ctx.start_time = get_time_sec();
   ctx.dexp = p->dexp;
@@ -1467,11 +1524,11 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.rw_stop_flag, false);
   atomic_init(&ctx.rw_steps_started, 0);
   atomic_init(&ctx.rw_steps_completed, 0);
-  atomic_init(&ctx.cc_weight, 1);
-  atomic_init(&ctx.cc_col_next, 0);
+  atomic_init(&ctx.cc_next, cc_pack(0, 0));
   atomic_init(&ctx.cc_active_workers, 0);
   atomic_init(&ctx.cc_target_workers, 0);
   atomic_init(&ctx.cc_round_active, 0);
+  atomic_init(&ctx.cc_busy_ns, 0);
   atomic_init(&ctx.next_refresh_step, p->refresh > 0 ? p->refresh : 0);
 
   pthread_mutex_init(&ctx.cw_mutex, NULL);
@@ -1480,7 +1537,7 @@ int main(int argc, char **argv) {
   ctx.mHT_cc = csr_transpose(NULL, p->spaH);
   ctx.max_col_W = csr_max_row_wght(ctx.mHT_cc);
 
-  if ((p->method & 1) && p->ksub > 0) {
+  if ((p->method & 1) && p->ksub > 0 && ctx.rw_threads > 0) {
     double t_ker0 = get_time_sec();
     ctx.N_global = mzd_nullspace(p->spaH);
     ctx.nu = ctx.N_global ? ctx.N_global->nrows : 0;
@@ -1495,6 +1552,17 @@ int main(int argc, char **argv) {
       ctx.N_global = NULL;
       ctx.nu = 0;
       p->ksub = 0;
+      if (!p->nothrottle) { /* full-matrix RW workers need more memory: re-apply the RW thread limit */
+        const int rw_cap = rw_thread_cap(p);
+        if (p->method == 1 && num_threads > rw_cap) {
+          num_threads = rw_cap;
+          ctx.num_threads = rw_cap;
+        }
+        if (ctx.rw_threads > rw_cap) ctx.rw_threads = rw_cap;
+        if (p->debug & 2) {
+          fprintf(stderr, "# Note: %d threads, %d of them for RW (full-matrix RW)\n", num_threads, ctx.rw_threads);
+        }
+      }
     } else if (p->debug & 2) {
       fprintf(stderr,
               "# computed ker(H) in %.4fs: nu=%d, n=%d, ksub=%d (eff=%d)\n",

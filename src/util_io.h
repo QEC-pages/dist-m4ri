@@ -210,7 +210,7 @@ void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cn
  */
 void print_codeword_stats(FILE *stream, const params_t * const p);
 
-#define DIST_M4RI_VERSION "0.10.0"
+#define DIST_M4RI_VERSION "0.10.1"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -385,6 +385,9 @@ void print_short_help(const char *prog);
   "                     Aliases: --no-throttle, -no-throttle, nothrottle.\n" \
   "                     By default, threads are throttled for very small codes or\n" \
   "                     large matrices to avoid cache and memory bus thrashing.\n" \
+  "                     The limits for large matrices (dense RW memory) and for\n" \
+  "                     small step counts (ceil(steps/10)) apply to RW threads only;\n" \
+  "                     in method=3, CC rounds can use all threads.\n" \
   "  chunk_size=[int]   RW batch chunk size per worker (default: 0 = adaptive).\n" \
   "                     Alias: batch=[int].\n" \
   "  ksub=[int]         Subspace dimension sampled from ker(H) in RW (default: 0 =\n" \

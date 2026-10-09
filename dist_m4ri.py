@@ -28,7 +28,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"
 
 
 def _get_codedistance():
@@ -4871,8 +4871,10 @@ Multithreading & throttling:
   threads=N             Maximum number of worker threads to allocate (default: min(CPU cores, 64)).
                         Subject to automatic thread throttling unless nothrottle=1 is specified:
                         - Small codes (n < 100 clamped to <= 4, n < 300 clamped to <= 16).
-                        - Large memory matrices (dense working memory capped at ~1.5 GB).
-                        - Small RW step counts (clamped to <= (steps + 9) / 10).
+                        - Large memory matrices (dense RW working memory capped at ~1.5 GB).
+                        - Small RW step counts (RW threads clamped to <= (steps + 9) / 10).
+                        The last two limits apply to RW threads only: CC (method=2) is not
+                        limited, and in method=3 CC rounds can use all threads.
   nothrottle=1          Disable automatic thread throttling (also --no-throttle).
                         Forces allocation of the exact number of threads requested.
   chunk_size=N          RW batch chunk size per thread (default: 0 = adaptive 25-500).

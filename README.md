@@ -83,6 +83,9 @@ is grown using only columns $j > i$, so that every codeword is found starting fr
 distributed dynamically among worker threads via lock-free atomic queues.
 If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `outC` is specified, CC exhausts all
 columns for weight $w$ to collect all unique minimum-weight codewords.
+The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
+$w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
+soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`).
 
 Relevant parameters:
 - `wmax=[int]`: Maximum cluster weight to search (optional if `timeout>0` or `dmax>0` is specified; otherwise required
@@ -162,6 +165,8 @@ determine the exact code distance as quickly as possible.
      and dynamically splits threads at each round:
      $$N_{\text{CC}} = \text{round}(N_{\text{threads}} \times \text{ratio}),$$
      $$N_{\text{RW}} = N_{\text{threads}} - N_{\text{CC}}$$
+     where $N_{\text{RW}}$ cannot exceed the number of threads allowed to run RW (see
+     [Multithreading, Throttling & Batch Sizing](#4-multithreading-throttling--batch-sizing)).
    - **Small $d_{\exp}$**: CC requires little work, so only 1–2 threads run CC while the majority maximize RW sampling
      speed.
    - **Heavier rounds**: As $w$ grows toward $d_{\exp}$, $T_{\text{CC}}$ increases and additional threads are shifted
@@ -169,6 +174,8 @@ determine the exact code distance as quickly as possible.
 3. **Adaptive Early Cutoff & RW Convergence**:
    - When RW satisfies the `min_hits` convergence criterion, RW workers stop early and yield 100% of threads to CC
      to finish certifying $d_{\min}$.
+   - Likewise, once all RW `steps` have been claimed, RW threads join the current CC round instead of waiting for it
+     to finish. The CC work of each round is measured as the total CC thread time.
    - If CC reaches $w > d_{\exp}$ before a codeword is found, CC halts and yields 100% of threads to RW.
    - If a projected CC round is estimated to exceed the remaining `timeout`, the coordinator terminates CC early and
      devotes remaining time entirely to RW.
@@ -194,13 +201,19 @@ The parameter `threads=[int]` specifies the **maximum** number of worker threads
 By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid overhead and resource thrashing:
 - **Small-Code Throttling**: When $n < 100$ or $r \cdot n < 100,000$, threads are automatically clamped to $\le 4$
   (and $\le 16$ for $n < 300$), eliminating thread creation and lock contention overhead.
-- **Large-Matrix Memory Throttling**: For massive matrices (e.g. circuit DEMs with $n > 20,000, r > 5,000$),
-  threads are automatically throttled so total dense working memory stays under ~1.5 GB, avoiding DRAM bus and
-  CPU cache thrashing.
+- **Large-Matrix Memory Throttling (RW threads only)**: For massive matrices (e.g. circuit DEMs with
+  $n > 20,000, r > 5,000$), the number of RW threads is automatically limited so that their total dense working memory
+  (copies of $H$ and $H^T$ per RW thread, or the `ksub` $\times n$ subspace matrix with `ksub>0`) stays under ~1.5 GB,
+  avoiding DRAM bus and CPU cache thrashing. CC needs no dense matrices: `method=2` is not limited, and in `method=3`
+  only the RW share is limited, while CC rounds can use all threads.
+- **Small Step Counts (RW threads only)**: At most $\lceil \text{steps} / 10 \rceil$ threads run RW (all threads in
+  `method=1`, the RW share in `method=3`, where CC rounds can still use all threads; `steps=0` in `method=3` runs pure
+  CC without RW threads).
 - **Adaptive RW Chunk Sizing**: Setting `chunk_size=0` (or omitting it) enables adaptive batching, reducing atomic CAS
   contention by up to 10x during extended searches ($10^4$ or $10^5$ steps).
-- **Thread Starvation Prevention**: If `chunk_size` exceeds $\lceil \text{steps} / N_{\text{threads}} \rceil$, the chunk
-  is automatically clamped so that a single thread cannot monopolize all steps, ensuring all cores run concurrently.
+- **Thread Starvation Prevention**: If `chunk_size` exceeds $\lceil \text{steps} / N_{\text{RW}} \rceil$, where
+  $N_{\text{RW}}$ is the number of RW threads, the chunk is automatically clamped so that a single thread cannot
+  monopolize all steps, ensuring all cores run concurrently.
 - **CSS Codeword Suffixing**: In CSS mode, specifying `outC="cws.nz"` automatically saves $X$-codewords to `cws_X.nz`
   and $Z$-codewords to `cws_Z.nz` (preventing mixed sectors in a single file). Specifying `finC="cws.nz"` automatically
   resolves `cws_X.nz` and `cws_Z.nz` (or separates mixed files in-flight).
@@ -261,7 +274,7 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.10.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.10.1): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -446,7 +459,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (69 tests)
+# Run full C test suite (74 tests)
 make test
 ```
 

@@ -333,10 +333,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.10.0" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.10.1" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.10.0" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.10.1" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -440,6 +440,53 @@ if ! grep -q -E "^5 5 0$" "$OUT69" || grep -q "WARNING: start" "$ERR69"; then
     FAILED=1
 fi
 rm -f "$OUT69" "$ERR69"
+
+# Test 70: method=2 collecting codewords (outC or maxC, no wmax): no CC rounds after the distance is found
+echo "Running Test 70: method=2 with outC / maxC stops after the round w=d"
+CWS70=$(mktemp --suffix=.nz)
+for EXTRA in "outC=$CWS70" "maxC=1000"; do
+    OUT70=$(mktemp)
+    ERR70=$(mktemp)
+    $BIN_FORK method=2 $S3 $EXTRA timeout=10 debug=1 threads=2 > "$OUT70" 2> "$ERR70"
+    if ! grep -q -E "^3 3 0$" "$OUT70" || grep -q "extra dW round" "$ERR70" || \
+       ! grep -q "CC found min-weight codeword: d=3" "$ERR70"; then
+        echo "  [FAIL] $EXTRA: stdout '$(cat "$OUT70")', stderr '$(cat "$ERR70")'"
+        FAILED=1
+    fi
+    rm -f "$OUT70" "$ERR70"
+done
+if [ ! -s "$CWS70" ]; then
+    echo "  [FAIL] Test 70: codewords file is empty"
+    FAILED=1
+fi
+
+# Test 71: method=2 with a known upper bound dmax: no CC round w=dmax once dmin=dmax
+echo "Running Test 71: method=2 skips the round w=dmax once dmin=dmax"
+OUT71=$(mktemp)
+ERR71=$(mktemp)
+$BIN_FORK method=2 $S5 dmax=5 wmax=5 debug=3 threads=4 > "$OUT71" 2> "$ERR71"
+if ! grep -q -E "^5 5 0$" "$OUT71" || grep -q "searching w=5" "$ERR71" || \
+   ! grep -q "bounds coincide: dmin = dmax = 5" "$ERR71"; then
+    echo "  [FAIL] dmax=5: stdout '$(cat "$OUT71")', stderr '$(cat "$ERR71")'"
+    FAILED=1
+fi
+rm -f "$OUT71" "$ERR71"
+
+# Test 72: method=2 with the upper bound dmax from finC codewords (no wmax): same as Test 71
+CWS72=$(mktemp --suffix=.nz)
+$BIN_FORK method=2 $S5 wmax=5 outC=$CWS72 debug=0 threads=4 > /dev/null 2>&1
+assert_output "$BIN_FORK method=2 $S5 finC=$CWS72 timeout=10 debug=1 threads=4" \
+    0 "^5 5 0$" "bounds coincide: dmin = dmax = 5"
+rm -f "$CWS70" "$CWS72"
+
+# Test 73: method=3 with few RW steps limits only the RW threads, CC rounds use all threads
+assert_output "$BIN_FORK method=3 $S5 steps=10 threads=8 debug=3" \
+    0 "^5 5 [0-9]+$" "RW limited to 1 of 8 threads"
+assert_output "$BIN_FORK method=3 $S5 steps=10 threads=8 debug=3" \
+    0 "^5 5 [0-9]+$" "CC round w=4 started: 8 CC threads"
+
+# Test 74: method=3 with steps=0 runs pure CC on all threads without RW threads
+assert_output "$BIN_FORK method=3 $S5 steps=0 threads=4 debug=3" 0 "^5 5 0$" "steps=0, no RW"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
