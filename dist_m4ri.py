@@ -986,6 +986,1294 @@ def add_noise(circuit: Any, p: float = 0.001) -> Any:
     return noisy_circuit
 
 
+def remove_empty_detectors(circuit: Any) -> Tuple[Any, int]:
+    """Removes DETECTOR instructions that have no measurement record targets."""
+    stim = _get_stim()
+    new_circuit = stim.Circuit()
+    removed = 0
+    for inst in circuit:
+        if isinstance(inst, stim.CircuitRepeatBlock):
+            body, r = remove_empty_detectors(inst.body_copy())
+            removed += r * inst.repeat_count
+            new_circuit.append(stim.CircuitRepeatBlock(inst.repeat_count, body))
+        elif inst.name == "DETECTOR":
+            rec_targets = [
+                t for t in inst.targets_copy()
+                if t.is_measurement_record_target
+            ]
+            if not rec_targets:
+                removed += 1
+            else:
+                new_circuit.append(inst)
+        else:
+            new_circuit.append(inst)
+    return new_circuit, removed
+
+
+def has_repeat_block(circuit: Any) -> bool:
+    """Checks if a Stim circuit contains at least one REPEAT block."""
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+    if not isinstance(circuit, stim.Circuit):
+        return False
+    for inst in circuit:
+        if isinstance(inst, stim.CircuitRepeatBlock):
+            return True
+    return False
+
+
+def set_circuit_rounds(circuit: Any, rounds: int) -> Any:
+    """Sets the repeat_count of CircuitRepeatBlocks in a Stim circuit.
+
+    For circuits with a single repeat block, sets its repeat_count to rounds.
+    For circuits with two repeat blocks (e.g. preamble + periodic body),
+    adjusts them to achieve total requested rounds.
+
+    Args:
+        circuit: A stim.Circuit instance.
+        rounds: The new repetition count to set for repeat blocks. If <= 0,
+            repeat blocks are omitted.
+
+    Returns:
+        A new stim.Circuit instance with modified repeat counts.
+    """
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+    if not isinstance(circuit, stim.Circuit):
+        return circuit
+    if rounds < 0:
+        raise ValueError(f"Invalid rounds={rounds}; must be >= 0.")
+
+    top_blocks = [
+        inst.repeat_count for inst in circuit
+        if isinstance(inst, stim.CircuitRepeatBlock)
+    ]
+    if len(top_blocks) > 1:
+        sys.stderr.write(
+            f"# Warning: Circuit has {len(top_blocks)} repeat blocks "
+            f"({top_blocks}) which may not be handled correctly by this "
+            "script.\n"
+        )
+
+    new_circuit = stim.Circuit()
+    if len(top_blocks) == 2:
+        preamble = top_blocks[0]
+        b1_count = min(preamble, rounds)
+        b2_count = max(0, rounds - preamble)
+        block_idx = 0
+        for inst in circuit:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                cnt = b1_count if block_idx == 0 else b2_count
+                block_idx += 1
+                if cnt > 0:
+                    new_body = set_circuit_rounds(inst.body_copy(), cnt)
+                    new_circuit.append(stim.CircuitRepeatBlock(cnt, new_body))
+            else:
+                new_circuit.append(inst)
+    else:
+        for inst in circuit:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                if rounds > 0:
+                    new_body = set_circuit_rounds(inst.body_copy(), rounds)
+                    new_circuit.append(
+                        stim.CircuitRepeatBlock(rounds, new_body)
+                    )
+            else:
+                new_circuit.append(inst)
+    return new_circuit
+
+
+def count_circuit_rounds(circuit: Any) -> int:
+    """Returns total repeat count of all repeat blocks in circuit, or 1 if unrolled."""
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+    if not isinstance(circuit, stim.Circuit):
+        return 1
+    blocks = [
+        inst.repeat_count for inst in circuit
+        if isinstance(inst, stim.CircuitRepeatBlock)
+    ]
+    if len(blocks) > 1:
+        sys.stderr.write(
+            f"# Warning: Circuit has {len(blocks)} repeat blocks "
+            f"({blocks}) which may not be handled correctly by this "
+            "script.\n"
+        )
+    return sum(blocks) if blocks else 1
+
+
+def detect_basis(
+    circuit: Any,
+    filepath: Optional[Union[str, Path]] = None,
+    basis_arg: Optional[str] = None
+) -> str:
+    """Determines the primary memory basis ('X' or 'Z') of a Stim circuit."""
+    if basis_arg is not None and str(basis_arg).upper() in ["X", "Z"]:
+        return str(basis_arg).upper()
+
+    if filepath is not None:
+        stem = Path(filepath).stem.upper()
+        parts = stem.replace("-", "_").split("_")
+        if "X" in parts or "HX" in parts or stem.endswith("X"):
+            return "X"
+        if "Z" in parts or "HZ" in parts or stem.endswith("Z"):
+            return "Z"
+
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+
+    rx_count = 0
+    rz_count = 0
+    for inst in circuit:
+        if isinstance(inst, stim.CircuitRepeatBlock):
+            break
+        if inst.name == "RX":
+            rx_count += len(inst.targets_copy())
+        elif inst.name in ["R", "RZ"]:
+            rz_count += len(inst.targets_copy())
+        elif inst.name in ["M", "MX", "MZ", "MR", "MRX", "MRZ"]:
+            break
+    if rx_count > rz_count:
+        return "X"
+    if rz_count > rx_count:
+        return "Z"
+
+    mx_count = 0
+    mz_count = 0
+    for inst in reversed(list(circuit)):
+        if isinstance(inst, stim.CircuitRepeatBlock):
+            break
+        if inst.name in ["MX", "MRX"]:
+            mx_count += len(inst.targets_copy())
+        elif inst.name in ["M", "MZ", "MR", "MRZ"]:
+            mz_count += len(inst.targets_copy())
+    if mx_count > mz_count:
+        return "X"
+    return "Z"
+
+
+def track_circuit_carriers(circuit: Any) -> List[List[int]]:
+    """Dynamically tracks logical syndrome carriers across the circuit to measurements.
+
+    Accounts for physical qubit permutations via SWAP, CXSWAP, CZSWAP, ISWAP,
+    and ISWAP_DAG gates, as well as CNOT/CZ syndrome handoffs onto fresh ancilla
+    or routing qubits.
+
+    Returns:
+        meas_carriers: List mapping each measurement index to a list of initial
+            logical qubit IDs whose syndrome or state is carried into that
+            measurement.
+    """
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+    num_qubits = circuit.num_qubits
+    phys_to_log = {q: q for q in range(num_qubits)}
+
+    tot_resets: Dict[int, int] = {q: 0 for q in range(num_qubits)}
+    tot_meas: Dict[int, int] = {q: 0 for q in range(num_qubits)}
+
+    def pass1(block: Any, p_to_l: Dict[int, int], mult: int = 1) -> None:
+        for inst in block:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                rep_count = inst.repeat_count
+                body = inst.body_copy()
+                map_copy = dict(p_to_l)
+                for sub_inst in body:
+                    if not isinstance(sub_inst, stim.CircuitRepeatBlock):
+                        if sub_inst.name in [
+                            "SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"
+                        ]:
+                            t_vals = [
+                                t.value for t in sub_inst.targets_copy()
+                                if t.is_qubit_target
+                            ]
+                            for idx in range(0, len(t_vals), 2):
+                                q1, q2 = t_vals[idx], t_vals[idx + 1]
+                                map_copy[q1], map_copy[q2] = (
+                                    map_copy[q2], map_copy[q1]
+                                )
+                if map_copy == p_to_l:
+                    pass1(body, p_to_l, mult * rep_count)
+                else:
+                    for _ in range(rep_count):
+                        pass1(body, p_to_l, mult)
+                continue
+            name = inst.name
+            t_vals = [
+                t.value for t in inst.targets_copy() if t.is_qubit_target
+            ]
+            if name in [
+                "R", "RX", "RY", "RZ", "MR", "MRX", "MRY", "MRZ"
+            ]:
+                for q in t_vals:
+                    tot_resets[p_to_l[q]] += mult
+            if name in [
+                "M", "MX", "MY", "MZ", "MR", "MRX", "MRY", "MRZ"
+            ]:
+                for q in t_vals:
+                    tot_meas[p_to_l[q]] += mult
+            if name in ["SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"]:
+                for idx in range(0, len(t_vals), 2):
+                    q1, q2 = t_vals[idx], t_vals[idx + 1]
+                    p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
+
+    pass1(circuit, dict(phys_to_log), 1)
+    max_resets = max(tot_resets.values()) if tot_resets else 0
+    max_meas = max(tot_meas.values()) if tot_meas else 0
+    data_log = set()
+    for q in range(num_qubits):
+        if max_resets > 1:
+            if tot_resets[q] <= 1:
+                data_log.add(q)
+        elif max_meas > 1:
+            if tot_meas[q] <= 1:
+                data_log.add(q)
+
+    active_carriers: Dict[int, Set[int]] = {
+        q: {q} for q in range(num_qubits)
+    }
+    fresh_anc: Set[int] = set(range(num_qubits)) - data_log
+    meas_carriers: List[List[int]] = []
+
+    def pass2(block: Any, p_to_l: Dict[int, int]) -> None:
+        for inst in block:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                rep_count = inst.repeat_count
+                body = inst.body_copy()
+                if rep_count <= 0:
+                    continue
+                map_copy = dict(p_to_l)
+                for sub_inst in body:
+                    if not isinstance(sub_inst, stim.CircuitRepeatBlock):
+                        if sub_inst.name in [
+                            "SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"
+                        ]:
+                            t_vals = [
+                                t.value for t in sub_inst.targets_copy()
+                                if t.is_qubit_target
+                            ]
+                            for idx in range(0, len(t_vals), 2):
+                                q1, q2 = t_vals[idx], t_vals[idx + 1]
+                                map_copy[q1], map_copy[q2] = (
+                                    map_copy[q2], map_copy[q1]
+                                )
+                if map_copy == p_to_l:
+                    idx0 = len(meas_carriers)
+                    pass2(body, p_to_l)
+                    idx1 = len(meas_carriers)
+                    if rep_count > 1 and idx1 > idx0:
+                        body_carriers = meas_carriers[idx0:idx1]
+                        meas_carriers.extend(body_carriers * (rep_count - 1))
+                else:
+                    for _ in range(rep_count):
+                        pass2(body, p_to_l)
+                continue
+            name = inst.name
+            t_vals = [
+                t.value for t in inst.targets_copy() if t.is_qubit_target
+            ]
+            if name in ["R", "RX", "RY", "RZ"]:
+                for q in t_vals:
+                    lq = p_to_l[q]
+                    active_carriers[lq] = {lq}
+                    if lq not in data_log:
+                        fresh_anc.add(lq)
+            elif name in ["M", "MX", "MY", "MZ"]:
+                for q in t_vals:
+                    lq = p_to_l[q]
+                    meas_carriers.append(sorted(list(active_carriers[lq])))
+            elif name in ["MR", "MRX", "MRY", "MRZ"]:
+                for q in t_vals:
+                    lq = p_to_l[q]
+                    meas_carriers.append(sorted(list(active_carriers[lq])))
+                    active_carriers[lq] = {lq}
+                    if lq not in data_log:
+                        fresh_anc.add(lq)
+            elif name in [
+                "CX", "ZCX", "CY", "ZCY", "CZ", "ZCZ",
+                "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ"
+            ]:
+                for idx in range(0, len(t_vals), 2):
+                    q1, q2 = t_vals[idx], t_vals[idx + 1]
+                    l1, l2 = p_to_l[q1], p_to_l[q2]
+                    if l1 not in data_log and l2 not in data_log:
+                        if l2 in fresh_anc and l1 not in fresh_anc:
+                            active_carriers[l2] = set(active_carriers[l1])
+                            fresh_anc.discard(l2)
+                        elif l1 in fresh_anc and l2 not in fresh_anc:
+                            active_carriers[l1] = set(active_carriers[l2])
+                            fresh_anc.discard(l1)
+                        else:
+                            comb = active_carriers[l1] | active_carriers[l2]
+                            active_carriers[l1] = set(comb)
+                            active_carriers[l2] = set(comb)
+                            fresh_anc.discard(l1)
+                            fresh_anc.discard(l2)
+                    elif l1 in data_log and l2 not in data_log:
+                        fresh_anc.discard(l2)
+                    elif l2 in data_log and l1 not in data_log:
+                        fresh_anc.discard(l1)
+            elif name == "SWAP":
+                for idx in range(0, len(t_vals), 2):
+                    q1, q2 = t_vals[idx], t_vals[idx + 1]
+                    p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
+            elif name in ["CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"]:
+                for idx in range(0, len(t_vals), 2):
+                    q1, q2 = t_vals[idx], t_vals[idx + 1]
+                    l1, l2 = p_to_l[q1], p_to_l[q2]
+                    if l1 in data_log and l2 not in data_log:
+                        fresh_anc.discard(l2)
+                    elif l2 in data_log and l1 not in data_log:
+                        fresh_anc.discard(l1)
+                    p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
+
+    pass2(circuit, dict(phys_to_log))
+    return meas_carriers
+
+
+def _rewrite_circuit_internal(
+    circ: Any,
+    phys_to_log: Dict[int, int],
+    active_gates_count: Dict[int, int]
+) -> Any:
+    """Rewrites a Stim circuit by tracking SWAPs virtually."""
+    stim = _get_stim()
+    new_circ = stim.Circuit()
+    non_active_instructions = {
+        "QUBIT_COORDS", "SHIFT_COORDS", "TICK",
+        "DETECTOR", "OBSERVABLE_INCLUDE", "MPAD"
+    }
+
+    for inst in circ:
+        if isinstance(inst, stim.CircuitRepeatBlock):
+            rep_count = inst.repeat_count
+            body = inst.body_copy()
+            map_copy = dict(phys_to_log)
+            for sub_inst in body:
+                if not isinstance(sub_inst, stim.CircuitRepeatBlock):
+                    if sub_inst.name in [
+                        "SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"
+                    ]:
+                        targets = sub_inst.targets_copy()
+                        for idx in range(0, len(targets), 2):
+                            q1 = targets[idx].value
+                            q2 = targets[idx + 1].value
+                            map_copy[q1], map_copy[q2] = (
+                                map_copy[q2], map_copy[q1]
+                            )
+            if map_copy == phys_to_log:
+                new_body = _rewrite_circuit_internal(
+                    body, phys_to_log, active_gates_count
+                )
+                new_circ.append(stim.CircuitRepeatBlock(rep_count, new_body))
+            else:
+                for _ in range(rep_count):
+                    unrolled_body = _rewrite_circuit_internal(
+                        body, phys_to_log, active_gates_count
+                    )
+                    new_circ += unrolled_body
+            continue
+
+        name = inst.name
+        targets = inst.targets_copy()
+        args = inst.gate_args_copy()
+
+        if name == "SWAP":
+            for idx in range(0, len(targets), 2):
+                q1 = targets[idx].value
+                q2 = targets[idx + 1].value
+                phys_to_log[q1], phys_to_log[q2] = (
+                    phys_to_log[q2], phys_to_log[q1]
+                )
+        elif name == "CXSWAP":
+            cx_targets = []
+            for idx in range(0, len(targets), 2):
+                q1 = targets[idx].value
+                q2 = targets[idx + 1].value
+                l1 = phys_to_log[q1]
+                l2 = phys_to_log[q2]
+                cx_targets.extend([l1, l2])
+                active_gates_count[l1] = active_gates_count.get(l1, 0) + 1
+                active_gates_count[l2] = active_gates_count.get(l2, 0) + 1
+                phys_to_log[q1], phys_to_log[q2] = (
+                    phys_to_log[q2], phys_to_log[q1]
+                )
+            new_circ.append("CX", cx_targets, args)
+        elif name == "CZSWAP":
+            cz_targets = []
+            for idx in range(0, len(targets), 2):
+                q1 = targets[idx].value
+                q2 = targets[idx + 1].value
+                l1 = phys_to_log[q1]
+                l2 = phys_to_log[q2]
+                cz_targets.extend([l1, l2])
+                active_gates_count[l1] = active_gates_count.get(l1, 0) + 1
+                active_gates_count[l2] = active_gates_count.get(l2, 0) + 1
+                phys_to_log[q1], phys_to_log[q2] = (
+                    phys_to_log[q2], phys_to_log[q1]
+                )
+            new_circ.append("CZ", cz_targets, args)
+        elif name in ["ISWAP", "ISWAP_DAG"]:
+            cz_targets = []
+            s_targets = []
+            for idx in range(0, len(targets), 2):
+                q1 = targets[idx].value
+                q2 = targets[idx + 1].value
+                l1 = phys_to_log[q1]
+                l2 = phys_to_log[q2]
+                cz_targets.extend([l1, l2])
+                s_targets.extend([l1, l2])
+                active_gates_count[l1] = active_gates_count.get(l1, 0) + 1
+                active_gates_count[l2] = active_gates_count.get(l2, 0) + 1
+                phys_to_log[q1], phys_to_log[q2] = (
+                    phys_to_log[q2], phys_to_log[q1]
+                )
+            new_circ.append("CZ", cz_targets)
+            s_gate = "S" if name == "ISWAP" else "S_DAG"
+            new_circ.append(s_gate, s_targets)
+        else:
+            new_targets = []
+            for t in targets:
+                if t.is_qubit_target:
+                    l_q = phys_to_log[t.value]
+                    if name not in non_active_instructions:
+                        active_gates_count[l_q] = (
+                            active_gates_count.get(l_q, 0) + 1
+                        )
+                    if t.is_inverted_result_target:
+                        new_targets.append(stim.target_inv(l_q))
+                    else:
+                        new_targets.append(l_q)
+                elif t.is_x_target:
+                    l_q = phys_to_log[t.value]
+                    if name not in non_active_instructions:
+                        active_gates_count[l_q] = (
+                            active_gates_count.get(l_q, 0) + 1
+                        )
+                    new_targets.append(stim.target_x(l_q))
+                elif t.is_y_target:
+                    l_q = phys_to_log[t.value]
+                    if name not in non_active_instructions:
+                        active_gates_count[l_q] = (
+                            active_gates_count.get(l_q, 0) + 1
+                        )
+                    new_targets.append(stim.target_y(l_q))
+                elif t.is_z_target:
+                    l_q = phys_to_log[t.value]
+                    if name not in non_active_instructions:
+                        active_gates_count[l_q] = (
+                            active_gates_count.get(l_q, 0) + 1
+                        )
+                    new_targets.append(stim.target_z(l_q))
+                else:
+                    new_targets.append(t)
+            new_circ.append(name, new_targets, args)
+    return new_circ
+
+
+def classify_qubits_thorough(
+    circuit: Any,
+    verbose: bool = False,
+    basis_arg: Optional[str] = None,
+    filepath: Optional[Union[str, Path]] = None
+) -> Dict[str, Any]:
+    """Classifies qubits and checks via virtual SWAP rewriting and Pauli basis tracking.
+
+    Tracks both ancilla stabilizer evolution and data qubit initial basis
+    evolution through 1-qubit and 2-qubit Clifford gates. Supports standard
+    CSS codes as well as locally basis-rotated CSS codes (such as XZZX codes)
+    via 2-coloring of the check-data Pauli compatibility graph.
+
+    Returns:
+        Dictionary with keys:
+        - 'x_ancillas': Sorted list of X-type (or X-sector) ancilla qubit IDs.
+        - 'z_ancillas': Sorted list of Z-type (or Z-sector) ancilla qubit IDs.
+        - 'data_qubits': Sorted list of data qubit IDs.
+        - 'routing_qubits': Sorted list of idle/routing qubit IDs.
+        - 'rotated_data_qubits': Sorted list of data qubits with rotated local basis.
+        - 'is_css': True if the circuit implements a (possibly locally rotated) CSS code.
+        - 'is_rotated_css': True if CSS only after local data basis rotations (e.g. XZZX).
+        - 'basis': Primary memory basis ('X' or 'Z').
+        - 'rewritten_circuit': Circuit with SWAPs virtually eliminated.
+    """
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        if filepath is None:
+            filepath = circuit
+        circuit = stim.Circuit.from_file(str(circuit))
+
+    all_qubits_set: Set[int] = set()
+
+    def collect_qubits(blk: Any) -> None:
+        for inst in blk:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                collect_qubits(inst.body_copy())
+            else:
+                for t in inst.targets_copy():
+                    if (
+                        t.is_qubit_target or t.is_x_target
+                        or t.is_y_target or t.is_z_target
+                    ):
+                        all_qubits_set.add(t.value)
+
+    collect_qubits(circuit)
+    max_q = max(all_qubits_set) if all_qubits_set else -1
+    phys_to_log = {q: q for q in range(max_q + 1)}
+    active_gates_count = {q: 0 for q in all_qubits_set}
+
+    def cap_repeats(blk: Any) -> Any:
+        out = stim.Circuit()
+        for inst in blk:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                out.append(
+                    stim.CircuitRepeatBlock(
+                        min(inst.repeat_count, 2),
+                        cap_repeats(inst.body_copy())
+                    )
+                )
+            else:
+                out.append(inst)
+        return out
+
+    capped_circuit = cap_repeats(circuit)
+    rewritten_circ = _rewrite_circuit_internal(
+        capped_circuit, phys_to_log, active_gates_count
+    )
+    routing_qubits = {
+        q for q, count in active_gates_count.items() if count == 0
+    }
+    active_qubits = all_qubits_set - routing_qubits
+
+    flat_circ = rewritten_circ.flattened()
+
+    tot_resets: Dict[int, int] = {q: 0 for q in active_qubits}
+    tot_meas: Dict[int, int] = {q: 0 for q in active_qubits}
+    meas_records: List[int] = []
+    used_in_detector: Set[int] = set()
+    used_in_observable: Set[int] = set()
+    first_detector_seen = False
+    meas_before_first_det: Set[int] = set()
+    r1_single_det_anc: Set[int] = set()
+    multi_det_groups: List[Set[int]] = []
+
+    for inst in flat_circ:
+        name = inst.name
+        targets = inst.targets_copy()
+        if name in ["R", "RX", "RY", "RZ"]:
+            for t in targets:
+                if t.is_qubit_target and t.value in tot_resets:
+                    tot_resets[t.value] += 1
+        elif name in ["M", "MX", "MY", "MZ"]:
+            for t in targets:
+                if t.is_qubit_target:
+                    if t.value in tot_meas:
+                        tot_meas[t.value] += 1
+                    meas_records.append(t.value)
+                    if not first_detector_seen:
+                        meas_before_first_det.add(t.value)
+        elif name in ["MR", "MRX", "MRY", "MRZ"]:
+            for t in targets:
+                if t.is_qubit_target:
+                    if t.value in tot_resets:
+                        tot_resets[t.value] += 1
+                    if t.value in tot_meas:
+                        tot_meas[t.value] += 1
+                    meas_records.append(t.value)
+                    if not first_detector_seen:
+                        meas_before_first_det.add(t.value)
+        elif name == "DETECTOR":
+            first_detector_seen = True
+            recs = [
+                meas_records[len(meas_records) + t.value]
+                for t in targets
+                if t.is_measurement_record_target
+                and 0 <= len(meas_records) + t.value < len(meas_records)
+            ]
+            for q in recs:
+                used_in_detector.add(q)
+            if len(recs) == 1:
+                r1_single_det_anc.add(recs[0])
+            elif len(recs) > 1:
+                multi_det_groups.append(set(recs))
+        elif name == "OBSERVABLE_INCLUDE":
+            for t in targets:
+                if t.is_measurement_record_target:
+                    idx = len(meas_records) + t.value
+                    if 0 <= idx < len(meas_records):
+                        used_in_observable.add(meas_records[idx])
+
+    max_resets = max(tot_resets.values()) if tot_resets else 0
+    max_meas = max(tot_meas.values()) if tot_meas else 0
+
+    data_qubits: Set[int] = set()
+    anc_candidates: Set[int] = set()
+
+    for q in active_qubits:
+        if max_resets > 1:
+            is_data = (tot_resets[q] <= 1)
+        elif max_meas > 1:
+            is_data = (tot_meas[q] <= 1)
+        else:
+            if q not in used_in_detector:
+                is_data = True
+            else:
+                is_data = (
+                    (q not in meas_before_first_det)
+                    or (q in used_in_observable)
+                )
+        if is_data:
+            data_qubits.add(q)
+        else:
+            anc_candidates.add(q)
+
+    # First-round stabilizer & data-basis tracking
+    reset_basis: Dict[int, str] = {}
+    meas_basis: Dict[int, str] = {}
+    first_round_insts: List[Tuple[str, List[int]]] = []
+    measured_anc: Set[int] = set()
+    has_any_anc_meas = False
+
+    for inst in flat_circ:
+        name = inst.name
+        t_vals = [t.value for t in inst.targets_copy() if t.is_qubit_target]
+        if name in ["R", "RZ", "RX", "RY"]:
+            if has_any_anc_meas and any(
+                q in anc_candidates and q in measured_anc for q in t_vals
+            ):
+                break
+            b = "X" if name == "RX" else ("Y" if name == "RY" else "Z")
+            for q in t_vals:
+                if q not in reset_basis:
+                    reset_basis[q] = b
+            first_round_insts.append((name, t_vals))
+        elif name in ["M", "MZ", "MX", "MY", "MR", "MRZ", "MRX", "MRY"]:
+            if any(q in data_qubits for q in t_vals) and has_any_anc_meas:
+                break
+            if any(q in anc_candidates and q in measured_anc for q in t_vals):
+                break
+            b = (
+                "X" if name in ["MX", "MRX"]
+                else ("Y" if name in ["MY", "MRY"] else "Z")
+            )
+            for q in t_vals:
+                if q in anc_candidates:
+                    meas_basis[q] = b
+                    measured_anc.add(q)
+                    has_any_anc_meas = True
+                    if q not in reset_basis and name in [
+                        "MR", "MRZ", "MRX", "MRY"
+                    ]:
+                        reset_basis[q] = b
+            first_round_insts.append((name, t_vals))
+        elif name in [
+            "H", "H_XZ", "H_XY", "H_YZ", "S", "S_DAG",
+            "SQRT_Z", "SQRT_Z_DAG", "SQRT_X", "SQRT_X_DAG",
+            "SQRT_Y", "SQRT_Y_DAG",
+            "CX", "ZCX", "CZ", "ZCZ", "CY", "ZCY",
+            "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ"
+        ]:
+            first_round_insts.append((name, t_vals))
+
+    def conj_1q(gate: str, p: str) -> str:
+        if p == "I":
+            return "I"
+        if gate in ["H", "H_XZ"]:
+            return "Z" if p == "X" else ("X" if p == "Z" else "Y")
+        if gate in ["S", "S_DAG", "SQRT_Z", "SQRT_Z_DAG", "H_XY"]:
+            return "Y" if p == "X" else ("X" if p == "Y" else "Z")
+        if gate in ["SQRT_X", "SQRT_X_DAG", "H_YZ"]:
+            return "Z" if p == "Y" else ("Y" if p == "Z" else "X")
+        if gate in ["SQRT_Y", "SQRT_Y_DAG"]:
+            return "Z" if p == "X" else ("X" if p == "Z" else "Y")
+        return p
+
+    mul_tab = {
+        ("I", "I"): "I", ("I", "X"): "X", ("I", "Y"): "Y", ("I", "Z"): "Z",
+        ("X", "I"): "X", ("X", "X"): "I", ("X", "Y"): "Z", ("X", "Z"): "Y",
+        ("Y", "I"): "Y", ("Y", "X"): "Z", ("Y", "Y"): "I", ("Y", "Z"): "X",
+        ("Z", "I"): "Z", ("Z", "X"): "Y", ("Z", "Y"): "X", ("Z", "Z"): "I",
+    }
+
+    def conj_2q(gate: str, p1: str, p2: str) -> Tuple[str, str]:
+        if p1 == "I" and p2 == "I":
+            return "I", "I"
+        if gate in ["CX", "ZCX"]:
+            a, b = "Z", "X"
+        elif gate in ["CZ", "ZCZ"]:
+            a, b = "Z", "Z"
+        elif gate in ["CY", "ZCY"]:
+            a, b = "Z", "Y"
+        elif gate == "XCX":
+            a, b = "X", "X"
+        elif gate == "XCY":
+            a, b = "X", "Y"
+        elif gate == "XCZ":
+            a, b = "X", "Z"
+        elif gate == "YCX":
+            a, b = "Y", "X"
+        elif gate == "YCY":
+            a, b = "Y", "Y"
+        elif gate == "YCZ":
+            a, b = "Y", "Z"
+        else:
+            return p1, p2
+        anti1 = (p1 != "I" and p1 != a)
+        anti2 = (p2 != "I" and p2 != b)
+        np1 = mul_tab[(p1, a)] if anti2 else p1
+        np2 = mul_tab[(p2, b)] if anti1 else p2
+        return np1, np2
+
+    # Simultaneously evolve all ancilla stabilizers and data initial bases
+    # using bitmasks over sorted anc_list for O(1) gate updates.
+    anc_list = sorted(list(anc_candidates))
+    anc_to_bit = {anc: (1 << i) for i, anc in enumerate(anc_list)}
+    all_anc_mask = (1 << len(anc_list)) - 1
+    active_anc_mask = 0
+    qx: Dict[int, int] = {q: 0 for q in all_qubits_set}
+    qz: Dict[int, int] = {q: 0 for q in all_qubits_set}
+
+    for anc in anc_list:
+        b = reset_basis.get(anc, meas_basis.get(anc, "Z"))
+        bit = anc_to_bit[anc]
+        if b in ["X", "Y"]:
+            qx[anc] |= bit
+        if b in ["Z", "Y"]:
+            qz[anc] |= bit
+        if anc not in reset_basis:
+            active_anc_mask |= bit
+
+    data_init_basis: Dict[int, str] = {q: "Z" for q in data_qubits}
+
+    for name, t_vals in first_round_insts:
+        if name in ["R", "RZ", "RX", "RY"]:
+            b = "X" if name == "RX" else ("Y" if name == "RY" else "Z")
+            for q in t_vals:
+                if q in data_qubits:
+                    data_init_basis[q] = b
+                if q in anc_to_bit:
+                    bit = anc_to_bit[q]
+                    if not (active_anc_mask & bit):
+                        active_anc_mask |= bit
+                        if b in ["X", "Y"]:
+                            qx[q] |= bit
+                        else:
+                            qx[q] &= ~bit
+                        if b in ["Z", "Y"]:
+                            qz[q] |= bit
+                        else:
+                            qz[q] &= ~bit
+        elif name in ["M", "MZ", "MX", "MY", "MR", "MRZ", "MRX", "MRY"]:
+            for q in t_vals:
+                if q in anc_to_bit:
+                    active_anc_mask &= ~anc_to_bit[q]
+        elif name in [
+            "H", "H_XZ", "H_XY", "H_YZ", "S", "S_DAG",
+            "SQRT_Z", "SQRT_Z_DAG", "SQRT_X", "SQRT_X_DAG",
+            "SQRT_Y", "SQRT_Y_DAG"
+        ]:
+            for q in t_vals:
+                if q in data_qubits:
+                    data_init_basis[q] = conj_1q(name, data_init_basis[q])
+                if q not in qx:
+                    continue
+                mask = active_anc_mask if q in anc_candidates else all_anc_mask
+                x_m = qx[q] & mask
+                z_m = qz[q] & mask
+                if name in ["H", "H_XZ", "SQRT_Y", "SQRT_Y_DAG"]:
+                    nx_m, nz_m = z_m, x_m
+                elif name in [
+                    "S", "S_DAG", "SQRT_Z", "SQRT_Z_DAG", "H_XY"
+                ]:
+                    nx_m, nz_m = x_m, x_m ^ z_m
+                elif name in ["SQRT_X", "SQRT_X_DAG", "H_YZ"]:
+                    nx_m, nz_m = x_m ^ z_m, z_m
+                else:
+                    nx_m, nz_m = x_m, z_m
+                qx[q] = (qx[q] & ~mask) | nx_m
+                qz[q] = (qz[q] & ~mask) | nz_m
+        elif name in [
+            "CX", "ZCX", "CZ", "ZCZ", "CY", "ZCY",
+            "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ"
+        ]:
+            if name in ["CX", "ZCX"]:
+                ax, az, bx, bz = 0, all_anc_mask, all_anc_mask, 0
+            elif name in ["CZ", "ZCZ"]:
+                ax, az, bx, bz = 0, all_anc_mask, 0, all_anc_mask
+            elif name in ["CY", "ZCY"]:
+                ax, az, bx, bz = 0, all_anc_mask, all_anc_mask, all_anc_mask
+            elif name == "XCX":
+                ax, az, bx, bz = all_anc_mask, 0, all_anc_mask, 0
+            elif name == "XCY":
+                ax, az, bx, bz = all_anc_mask, 0, all_anc_mask, all_anc_mask
+            elif name == "XCZ":
+                ax, az, bx, bz = all_anc_mask, 0, 0, all_anc_mask
+            elif name == "YCX":
+                ax, az, bx, bz = all_anc_mask, all_anc_mask, all_anc_mask, 0
+            elif name == "YCY":
+                ax, az, bx, bz = (
+                    all_anc_mask, all_anc_mask, all_anc_mask, all_anc_mask
+                )
+            elif name == "YCZ":
+                ax, az, bx, bz = all_anc_mask, all_anc_mask, 0, all_anc_mask
+            else:
+                continue
+
+            for idx in range(0, len(t_vals), 2):
+                q1, q2 = t_vals[idx], t_vals[idx + 1]
+                if q1 not in qx or q2 not in qx:
+                    continue
+                mask = active_anc_mask
+                if q1 in anc_to_bit and not (active_anc_mask & anc_to_bit[q1]):
+                    mask &= ~anc_to_bit[q1]
+                if q2 in anc_to_bit and not (active_anc_mask & anc_to_bit[q2]):
+                    mask &= ~anc_to_bit[q2]
+                x1 = qx[q1] & mask
+                z1 = qz[q1] & mask
+                x2 = qx[q2] & mask
+                z2 = qz[q2] & mask
+                anti1 = (x1 & (az & mask)) ^ (z1 & (ax & mask))
+                anti2 = (x2 & (bz & mask)) ^ (z2 & (bx & mask))
+                nx1 = x1 ^ (anti2 & ax)
+                nz1 = z1 ^ (anti2 & az)
+                nx2 = x2 ^ (anti1 & bx)
+                nz2 = z2 ^ (anti1 & bz)
+                qx[q1] = (qx[q1] & ~mask) | nx1
+                qz[q1] = (qz[q1] & ~mask) | nz1
+                qx[q2] = (qx[q2] & ~mask) | nx2
+                qz[q2] = (qz[q2] & ~mask) | nz2
+
+    anc_data_paulis: Dict[int, Dict[int, str]] = {
+        anc: {} for anc in anc_list
+    }
+    for q in data_qubits:
+        xm = qx[q]
+        zm = qz[q]
+        active_m = xm | zm
+        while active_m:
+            lsb = active_m & -active_m
+            anc_idx = lsb.bit_length() - 1
+            anc = anc_list[anc_idx]
+            has_x = bool(xm & lsb)
+            has_z = bool(zm & lsb)
+            p_str = (
+                "Y" if (has_x and has_z)
+                else ("X" if has_x else "Z")
+            )
+            anc_data_paulis[anc][q] = p_str
+            active_m ^= lsb
+
+    active_ancillas = [a for a in anc_list if len(anc_data_paulis[a]) > 0]
+    idle_ancillas = [a for a in anc_list if len(anc_data_paulis[a]) == 0]
+    routing_qubits.update(idle_ancillas)
+
+    # Check commutation among active ancillas
+    checks_commute = True
+    for i in range(len(active_ancillas)):
+        a1 = active_ancillas[i]
+        s1 = anc_data_paulis[a1]
+        for j in range(i + 1, len(active_ancillas)):
+            a2 = active_ancillas[j]
+            s2 = anc_data_paulis[a2]
+            anti = 0
+            for q, p1 in s1.items():
+                p2 = s2.get(q)
+                if p2 is not None and p1 != p2:
+                    anti ^= 1
+            if anti != 0:
+                checks_commute = False
+                break
+        if not checks_commute:
+            break
+
+    # Build check-relation graph on active_ancillas via shared data qubits
+    adj: Dict[int, Dict[int, int]] = {a: {} for a in active_ancillas}
+    bipartite_paulis = True
+    for q in data_qubits:
+        touching = [
+            (a, anc_data_paulis[a][q])
+            for a in active_ancillas
+            if q in anc_data_paulis[a]
+        ]
+        if not touching:
+            continue
+        pauli_set = {p for _, p in touching}
+        if len(pauli_set) > 2:
+            bipartite_paulis = False
+            break
+        a0, p0 = touching[0]
+        for ak, pk in touching[1:]:
+            rel = 0 if pk == p0 else 1
+            if ak in adj[a0] and adj[a0][ak] != rel:
+                bipartite_paulis = False
+                break
+            adj[a0][ak] = rel
+            adj[ak][a0] = rel
+        if not bipartite_paulis:
+            break
+
+    # 2-color connected components of active_ancillas
+    color: Dict[int, int] = {}
+    components: List[Tuple[List[int], List[int]]] = []
+    if bipartite_paulis:
+        for a in active_ancillas:
+            if a in color:
+                continue
+            c0: List[int] = []
+            c1: List[int] = []
+            color[a] = 0
+            queue = [a]
+            idx_q = 0
+            while idx_q < len(queue):
+                u = queue[idx_q]
+                idx_q += 1
+                if color[u] == 0:
+                    c0.append(u)
+                else:
+                    c1.append(u)
+                for v, rel in adj[u].items():
+                    expected = color[u] ^ rel
+                    if v not in color:
+                        color[v] = expected
+                        queue.append(v)
+                    elif color[v] != expected:
+                        bipartite_paulis = False
+                        break
+                if not bipartite_paulis:
+                    break
+            if not bipartite_paulis:
+                break
+            components.append((c0, c1))
+
+    # Determine if all checks are already pure-X or pure-Z (standard CSS)
+    all_pure_xz = True
+    for a in active_ancillas:
+        ps = set(anc_data_paulis[a].values())
+        if not (ps == {"X"} or ps == {"Z"}):
+            all_pure_xz = False
+            break
+
+    # Detect color code (pure X and pure Z checks with identical support)
+    native_basis = detect_basis(
+        circuit, filepath=filepath, basis_arg=basis_arg
+    )
+    final_det_anc: Set[int] = set()
+    for grp in multi_det_groups:
+        if grp & data_qubits:
+            final_det_anc.update(grp & set(active_ancillas))
+
+    x_ancillas: Set[int] = set()
+    z_ancillas: Set[int] = set()
+    rotated_data_qubits: Set[int] = set()
+    is_css = False
+    is_rotated_css = False
+
+    if checks_commute and bipartite_paulis and active_ancillas:
+        if all_pure_xz:
+            for a in active_ancillas:
+                ps = set(anc_data_paulis[a].values())
+                if ps == {"X"}:
+                    x_ancillas.add(a)
+                else:
+                    z_ancillas.add(a)
+            x_supps = {
+                frozenset(anc_data_paulis[a].keys()) for a in x_ancillas
+            }
+            z_supps = {
+                frozenset(anc_data_paulis[a].keys()) for a in z_ancillas
+            }
+            is_color_code = (
+                len(x_supps) > 0 and x_supps == z_supps
+                and len(x_ancillas) == len(z_ancillas)
+            )
+            is_css = not is_color_code
+            is_rotated_css = False
+        else:
+            is_css = True
+            is_rotated_css = True
+            for c0, c1 in components:
+                # Score which sector is the primary memory basis
+                def score_primary(sector: List[int]) -> Tuple[int, int, int]:
+                    r1_cnt = sum(1 for a in sector if a in r1_single_det_anc)
+                    fin_cnt = sum(1 for a in sector if a in final_det_anc)
+                    init_cnt = sum(
+                        1 for a in sector
+                        if all(
+                            anc_data_paulis[a][q] == data_init_basis.get(q, "Z")
+                            for q in anc_data_paulis[a]
+                        )
+                    )
+                    return (r1_cnt, fin_cnt, init_cnt)
+
+                sc0 = score_primary(c0)
+                sc1 = score_primary(c1)
+                if sc0 >= sc1:
+                    primary_sec, minority_sec = c0, c1
+                else:
+                    primary_sec, minority_sec = c1, c0
+
+                if native_basis == "Z":
+                    z_ancillas.update(primary_sec)
+                    x_ancillas.update(minority_sec)
+                else:
+                    x_ancillas.update(primary_sec)
+                    z_ancillas.update(minority_sec)
+
+            # Determine rotated data qubits (where check Pauli != sector label)
+            for q in data_qubits:
+                for a in active_ancillas:
+                    if q in anc_data_paulis[a]:
+                        sector_label = "X" if a in x_ancillas else "Z"
+                        if anc_data_paulis[a][q] != sector_label:
+                            rotated_data_qubits.add(q)
+                        break
+    else:
+        # Non-CSS fallback classification by majority Pauli weight
+        is_css = False
+        is_rotated_css = False
+        for a in active_ancillas:
+            s = anc_data_paulis[a]
+            nx = sum(1 for p in s.values() if p == "X")
+            nz = sum(1 for p in s.values() if p == "Z")
+            if nz > nx:
+                z_ancillas.add(a)
+            else:
+                x_ancillas.add(a)
+
+    return {
+        "x_ancillas": sorted(list(x_ancillas)),
+        "z_ancillas": sorted(list(z_ancillas)),
+        "data_qubits": sorted(list(data_qubits)),
+        "routing_qubits": sorted(list(routing_qubits)),
+        "rotated_data_qubits": sorted(list(rotated_data_qubits)),
+        "is_css": is_css,
+        "is_rotated_css": is_rotated_css,
+        "basis": native_basis,
+        "rewritten_circuit": rewritten_circ,
+    }
+
+
+def verify_qubit_metadata(
+    circuit: Any,
+    verbose: bool = False,
+    basis_arg: Optional[str] = None,
+    filepath: Optional[Union[str, Path]] = None
+) -> Dict[str, Any]:
+    """Verifies qubit classification and returns basis tracking metadata."""
+    return classify_qubits_thorough(
+        circuit, verbose=verbose, basis_arg=basis_arg, filepath=filepath
+    )
+
+
+def strip_minority_detectors(
+    circuit: Any,
+    basis: str,
+    verbose: bool = False,
+    thorough: bool = True,
+    thorough_res: Optional[Dict[str, Any]] = None
+) -> Tuple[Any, int, int]:
+    """Strips detectors corresponding to the minority basis from a Stim circuit.
+
+    Always uses ancilla and data basis tracking (and dynamic carrier tracking
+    across SWAPs and syndrome handoffs) to identify each detector's basis.
+
+    Args:
+        circuit: A stim.Circuit object or path to a .stim file.
+        basis: Primary memory basis ('X' or 'Z'). Detectors of the opposite
+            basis are removed.
+        verbose: Whether to print warnings/statistics.
+        thorough: Kept for API compatibility (basis tracking is always enabled).
+        thorough_res: Optional precomputed result from classify_qubits_thorough.
+
+    Returns:
+        Tuple of (simplified_circuit, stripped_count, kept_count).
+    """
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+
+    t_res = (
+        thorough_res
+        if thorough_res is not None
+        else classify_qubits_thorough(circuit, verbose=False, basis_arg=basis)
+    )
+    x_anc = set(t_res["x_ancillas"])
+    z_anc = set(t_res["z_ancillas"])
+    minority_basis = "Z" if basis.upper() == "X" else "X"
+
+    meas_carriers = track_circuit_carriers(circuit)
+
+    # Coordinate metadata for consistency check on standard (non-rotated) CSS
+    qubit_coords: Dict[int, Tuple[float, ...]] = {}
+
+    def get_coords(blk: Any) -> None:
+        for inst in blk:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                get_coords(inst.body_copy())
+            elif inst.name == "QUBIT_COORDS":
+                args = inst.gate_args_copy()
+                for t in inst.targets_copy():
+                    if t.is_qubit_target:
+                        qubit_coords[t.value] = tuple(float(x) for x in args)
+
+    get_coords(circuit)
+    x_coords = {
+        qubit_coords[q][:2]
+        for q in x_anc
+        if q in qubit_coords and len(qubit_coords[q]) >= 2
+    }
+    z_coords = {
+        qubit_coords[q][:2]
+        for q in z_anc
+        if q in qubit_coords and len(qubit_coords[q]) >= 2
+    }
+    layout_well_defined = (
+        not t_res.get("is_rotated_css", False)
+        and len(x_coords) > 0
+        and len(z_coords) > 0
+        and x_coords.isdisjoint(z_coords)
+    )
+
+    meas_history: List[int] = []
+    stripped_count = 0
+    kept_count = 0
+    contradictions_c_count = 0
+    floquet_suspected = False
+
+    def process_block(block: Any) -> Any:
+        nonlocal stripped_count, kept_count
+        nonlocal contradictions_c_count, floquet_suspected
+        new_block = stim.Circuit()
+        for inst in block:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                rep_count = inst.repeat_count
+                if rep_count <= 0:
+                    continue
+                body_copy = inst.body_copy()
+                meas_before = len(meas_history)
+                strip_before = stripped_count
+                kept_before = kept_count
+                new_body = process_block(body_copy)
+                meas_after = len(meas_history)
+                meas_per_rep = meas_after - meas_before
+                if rep_count > 1:
+                    stripped_count += (stripped_count - strip_before) * (
+                        rep_count - 1
+                    )
+                    kept_count += (kept_count - kept_before) * (rep_count - 1)
+                    if meas_per_rep > 0:
+                        meas_history.extend(
+                            meas_history[meas_before:meas_after]
+                            * (rep_count - 1)
+                        )
+                new_block.append(stim.CircuitRepeatBlock(rep_count, new_body))
+            elif inst.name in [
+                "M", "MX", "MY", "MZ", "MR", "MRX", "MRY", "MRZ"
+            ]:
+                if inst.name in ["MY", "MRY"]:
+                    floquet_suspected = True
+                for t in inst.targets_copy():
+                    if t.is_qubit_target:
+                        meas_history.append(t.value)
+                new_block.append(inst)
+            elif inst.name == "DETECTOR":
+                cur_meas = len(meas_history)
+                rec_targets = [
+                    t for t in inst.targets_copy()
+                    if t.is_measurement_record_target
+                ]
+                if not rec_targets:
+                    stripped_count += 1
+                    continue
+
+                qubits = [
+                    meas_history[cur_meas + t.value]
+                    for t in rec_targets
+                    if 0 <= cur_meas + t.value < cur_meas
+                ]
+                is_x_qubit = any(q in x_anc for q in qubits)
+                is_z_qubit = any(q in z_anc for q in qubits)
+                class_qubit = (
+                    "Both" if (is_x_qubit and is_z_qubit)
+                    else "X" if is_x_qubit
+                    else "Z" if is_z_qubit
+                    else "Unknown"
+                )
+
+                args = inst.gate_args_copy()
+                class_b = "Unknown"
+                if layout_well_defined and args and len(args) >= 2:
+                    det_xy = (float(args[0]), float(args[1]))
+                    if det_xy in x_coords:
+                        class_b = "X"
+                    elif det_xy in z_coords:
+                        class_b = "Z"
+
+                class_c = "Unknown"
+                if meas_carriers:
+                    carriers = [
+                        c
+                        for t in rec_targets
+                        if 0 <= cur_meas + t.value < len(meas_carriers)
+                        for c in meas_carriers[cur_meas + t.value]
+                    ]
+                    is_x_c = any(c in x_anc for c in carriers)
+                    is_z_c = any(c in z_anc for c in carriers)
+                    class_c = (
+                        "Both" if (is_x_c and is_z_c)
+                        else "X" if is_x_c
+                        else "Z" if is_z_c
+                        else "Unknown"
+                    )
+
+                is_minority = False
+                if class_c != "Unknown":
+                    if class_c == "Both":
+                        contradictions_c_count += 1
+                        floquet_suspected = True
+                    elif class_b != "Unknown" and class_c != class_b:
+                        contradictions_c_count += 1
+                    elif len(rec_targets) == 1 and class_c == minority_basis:
+                        contradictions_c_count += 1
+                    is_minority = (class_c == minority_basis)
+                elif layout_well_defined and class_b != "Unknown":
+                    is_minority = (class_b == minority_basis)
+                elif len(rec_targets) == 1:
+                    is_minority = False
+                else:
+                    if class_qubit == "Both":
+                        floquet_suspected = True
+                    is_minority = (class_qubit == minority_basis)
+
+                if is_minority:
+                    stripped_count += 1
+                else:
+                    kept_count += 1
+                    new_block.append(inst)
+            else:
+                new_block.append(inst)
+        return new_block
+
+    simp_circuit = process_block(circuit)
+
+    if contradictions_c_count > 0 and verbose:
+        sys.stderr.write(
+            f"# Warning: {contradictions_c_count} detector contradiction(s) "
+            "detected during dynamic carrier tracking.\n"
+        )
+    if floquet_suspected and verbose:
+        sys.stderr.write(
+            "# Warning: Floquet or dynamic measurement structure suspected; "
+            "simplified circuit distance may be invalid.\n"
+        )
+
+    return simp_circuit, stripped_count, kept_count
+
+
 def compute_classical_distance(
     H: Any,
     dist_m4ri: Optional[str] = None,
@@ -2087,6 +3375,58 @@ def compute_css_distance(
                 except OSError: pass
 
 
+def _resolve_stim_dem_out_path(
+    out_spec: Optional[Union[bool, str, Path]],
+    circuit_src: str,
+    mode_tag: str,
+    ext: str,
+    out_dir: Optional[Union[str, Path]] = None
+) -> Optional[str]:
+    """Resolves output filepath for --out-dem or --out-stim."""
+    if out_spec is None or out_spec is False:
+        return None
+    if isinstance(out_spec, str) and out_spec.strip().lower() in (
+        "0", "false", "no", "off", "none"
+    ):
+        return None
+
+    src_path = (
+        Path(circuit_src)
+        if (circuit_src and circuit_src != "stim.Circuit")
+        else None
+    )
+    eff_out_dir = (
+        Path(out_dir)
+        if out_dir is not None
+        else (src_path.parent if src_path is not None else Path("."))
+    )
+
+    is_auto = (out_spec is True) or (
+        isinstance(out_spec, str)
+        and out_spec.strip().lower() in ("", "1", "true", "yes", "auto")
+    )
+    if is_auto:
+        if src_path is not None:
+            stem = src_path.stem
+            if stem.endswith("_full") or stem.endswith("_simp"):
+                stem = stem[:-5]
+        else:
+            stem = "circuit"
+        out_path = eff_out_dir / f"{stem}{mode_tag}{ext}"
+    else:
+        spec_str = str(out_spec)
+        spec_path = Path(spec_str)
+        if not spec_path.is_absolute() and os.path.dirname(spec_str) == "":
+            out_path = eff_out_dir / spec_path
+        else:
+            out_path = spec_path
+
+    parent_dir = os.path.dirname(os.path.abspath(str(out_path)))
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+    return str(out_path)
+
+
 def compute_dem_distance(
     dem: Optional[Any] = None,
     circuit: Optional[Any] = None,
@@ -2128,14 +3468,21 @@ def compute_dem_distance(
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
+    simple: Optional[bool] = None,
+    full: bool = False,
+    basis: Optional[str] = None,
+    rounds: Optional[int] = None,
+    out_dir: Optional[Union[str, Path]] = None,
+    out_dem: Optional[Union[bool, str, Path]] = None,
+    out_stim: Optional[Union[bool, str, Path]] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
     Computes minimum graph/hypergraph distance of a Stim Detector Error Model (DEM).
 
     Args:
-        dem: stim.DetectorErrorModel object or path to .dem file.
-        circuit: stim.Circuit object (converted to DEM).
+        dem: stim.DetectorErrorModel object or path to .dem / .stim file.
+        circuit: stim.Circuit object or path to .stim file (converted to DEM).
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Number of worker threads.
@@ -2162,6 +3509,15 @@ def compute_dem_distance(
         seed: Random seed.
         debug: Debug level flags.
         verbose: Verbose reporting flag.
+        simple: If True (default for CSS .stim circuits), keep only primary-basis detectors.
+        full: If True, keep all detectors in .stim circuits.
+        basis: Optional primary memory basis override ('X' or 'Z') for .stim circuits.
+        rounds: Optional number of REPEAT rounds for .stim circuits (warns if no REPEAT block).
+        out_dir: Optional output directory for saved DEM and/or Stim circuit files.
+        out_dem: Optional bool or filename to save the constructed DEM (True = auto-named
+            <basename>_simp.dem or <basename>_full.dem).
+        out_stim: Optional bool or filename to save the processed (noisy) Stim circuit
+            (True = auto-named <basename>_simp.stim or <basename>_full.stim).
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -2173,17 +3529,120 @@ def compute_dem_distance(
         circuit = dem
         dem = None
 
+    if rounds is not None and circuit is None:
+        raise ValueError(
+            "--rounds option is only supported for Stim circuit (.stim) inputs."
+        )
+
+    saved_dem_path: Optional[str] = None
+
     if dem is None and circuit is not None:
         circuit_src = str(circuit) if isinstance(circuit, (str, Path)) else "stim.Circuit"
         if isinstance(circuit, (str, Path)):
             stim = _get_stim()
             circuit = stim.Circuit.from_file(str(circuit))
         if hasattr(circuit, 'detector_error_model'):
+            has_rep = False
+            if rounds is not None:
+                if rounds < 0:
+                    raise ValueError(f"Invalid rounds={rounds}; must be >= 0.")
+                has_rep = has_repeat_block(circuit)
+                if not has_rep:
+                    sys.stderr.write(
+                        f"# Warning: Circuit '{circuit_src}' does not contain a "
+                        f"REPEAT block; ignoring rounds={rounds}.\n"
+                    )
+
+            circuit, empty_removed = remove_empty_detectors(circuit)
+            if empty_removed > 0 and verbose:
+                print(
+                    f"[dist_m4ri] Removed {empty_removed} empty DETECTOR(s) "
+                    f"from '{circuit_src}'"
+                )
+
+            filepath_hint = circuit_src if circuit_src != "stim.Circuit" else None
+            t_res = classify_qubits_thorough(
+                circuit,
+                verbose=False,
+                basis_arg=basis,
+                filepath=filepath_hint
+            )
+            eff_basis = t_res["basis"]
+            is_css_circ = t_res["is_css"]
+            is_rot_css = t_res.get("is_rotated_css", False)
+
+            if rounds is not None and has_rep:
+                circuit = set_circuit_rounds(circuit, rounds)
+
+            if full:
+                use_simple = False
+            elif simple is not None:
+                use_simple = bool(simple)
+            else:
+                use_simple = is_css_circ
+
+            stripped_det = 0
+            kept_det = circuit.num_detectors
+            if use_simple and is_css_circ:
+                circuit, stripped_det, kept_det = strip_minority_detectors(
+                    circuit,
+                    eff_basis,
+                    verbose=verbose,
+                    thorough=True,
+                    thorough_res=t_res
+                )
+            elif simple is True and not is_css_circ and verbose:
+                print(
+                    f"[dist_m4ri] Warning: --simple requested, but '{circuit_src}' "
+                    "is not classified as a CSS circuit; keeping all detectors."
+                )
+
+            mode_tag = "_simp" if (use_simple and is_css_circ) else "_full"
+
+            if verbose:
+                mode_str = (
+                    "simple (primary-basis detectors only)"
+                    if (use_simple and is_css_circ)
+                    else "full (all detectors)"
+                )
+                css_type = (
+                    "rotated-CSS (e.g. XZZX)"
+                    if is_rot_css
+                    else ("CSS" if is_css_circ else "non-CSS")
+                )
+                rot_info = (
+                    f", rotated_data={len(t_res.get('rotated_data_qubits', []))}"
+                    if is_rot_css
+                    else ""
+                )
+                rnd_cnt = count_circuit_rounds(circuit)
+                print(
+                    f"[dist_m4ri] Circuit basis tracking: type={css_type}, "
+                    f"basis={eff_basis}, data={len(t_res['data_qubits'])}, "
+                    f"X_anc={len(t_res['x_ancillas'])}, "
+                    f"Z_anc={len(t_res['z_ancillas'])}, "
+                    f"routing={len(t_res['routing_qubits'])}{rot_info}, "
+                    f"rounds={rnd_cnt}"
+                )
+                print(
+                    f"[dist_m4ri] Circuit mode: {mode_str} "
+                    f"(kept={kept_det}, stripped={stripped_det} detectors)"
+                )
+
             noise_added = False
             p_noise = float(kwargs.get("p_noise", 0.001))
             if not has_noise(circuit):
                 circuit = add_noise(circuit, p=p_noise)
                 noise_added = True
+
+            stim_out_path = _resolve_stim_dem_out_path(
+                out_stim, circuit_src, mode_tag, ".stim", out_dir=out_dir
+            )
+            if stim_out_path is not None:
+                circuit.to_file(stim_out_path)
+                if verbose:
+                    print(f"[dist_m4ri] Saved Stim circuit to '{stim_out_path}'")
+
             try:
                 dem = circuit.detector_error_model(decompose_errors=True)
                 decomp_used = True
@@ -2199,8 +3658,42 @@ def compute_dem_distance(
                     f"[dist_m4ri] Converted '{circuit_src}' to DEM "
                     f"({noise_msg}, decompose_errors={decomp_used})"
                 )
+
+            dem_out_path = _resolve_stim_dem_out_path(
+                out_dem, circuit_src, mode_tag, ".dem", out_dir=out_dir
+            )
+            if dem_out_path is not None:
+                if hasattr(dem, 'flattened'):
+                    dem.flattened().to_file(dem_out_path)
+                elif hasattr(dem, 'to_file'):
+                    dem.to_file(dem_out_path)
+                else:
+                    with open(dem_out_path, 'w') as f_dem:
+                        f_dem.write(str(dem))
+                saved_dem_path = dem_out_path
+                if verbose:
+                    print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
         else:
             raise ValueError("Provided circuit object does not have detector_error_model() method.")
+    elif dem is not None and out_dem is not None and out_dem is not False:
+        dem_src = str(dem) if isinstance(dem, (str, Path)) else "stim.Circuit"
+        dem_out_path = _resolve_stim_dem_out_path(
+            out_dem, dem_src, "_full", ".dem", out_dir=out_dir
+        )
+        if dem_out_path is not None:
+            if isinstance(dem, (str, Path)) and os.path.exists(str(dem)):
+                if os.path.abspath(str(dem)) != os.path.abspath(dem_out_path):
+                    shutil.copyfile(str(dem), dem_out_path)
+            elif hasattr(dem, 'flattened'):
+                dem.flattened().to_file(dem_out_path)
+            elif hasattr(dem, 'to_file'):
+                dem.to_file(dem_out_path)
+            else:
+                with open(dem_out_path, 'w') as f_dem:
+                    f_dem.write(str(dem))
+            saved_dem_path = dem_out_path
+            if verbose:
+                print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
 
     if dem is None:
         raise ValueError("Either 'dem' or 'circuit' must be provided.")
@@ -2293,7 +3786,9 @@ def compute_dem_distance(
 
     temp_files = []
     try:
-        if isinstance(dem, (str, Path)) and os.path.exists(str(dem)):
+        if saved_dem_path is not None and os.path.exists(saved_dem_path):
+            file_dem = saved_dem_path
+        elif isinstance(dem, (str, Path)) and os.path.exists(str(dem)):
             file_dem = str(dem)
         else:
             file_dem = create_unique_file(extension=".dem")
@@ -2463,10 +3958,28 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "min_hits": None,
         "cov_cws": 100,
         "refresh": 0,
+        "simple": None,
+        "full": False,
+        "basis": None,
+        "rounds": None,
+        "out_dir": None,
+        "out_dem": None,
+        "out_stim": None,
         "morehelp": False,
         "version": False,
         "unrecognized": [],
     }
+
+    def _has_later_input_file(start_idx: int) -> bool:
+        for tok in argv[start_idx:]:
+            if (
+                not tok.startswith("-")
+                and "=" not in tok
+                and tok.endswith((".stim", ".dem", ".mtx", ".mmx"))
+                and os.path.exists(tok)
+            ):
+                return True
+        return False
 
     i = 0
     while i < len(argv):
@@ -2509,6 +4022,76 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         if arg in ("--cws", "-cws", "cws", "do_cws=1", "--do_cws"):
             args["do_cws"] = True
             i += 1
+            continue
+
+        if arg in (
+            "--simple", "-simple", "--simplified", "-simplified",
+            "simple", "simplified"
+        ):
+            args["simple"] = True
+            args["full"] = False
+            i += 1
+            continue
+
+        if arg in ("--full", "-full", "full"):
+            args["full"] = True
+            args["simple"] = False
+            i += 1
+            continue
+
+        if arg in ("--rounds", "-rounds", "rounds"):
+            if (
+                i + 1 < len(argv)
+                and "=" not in argv[i + 1]
+                and argv[i + 1].lstrip("-").isdigit()
+            ):
+                args["rounds"] = int(argv[i + 1])
+                i += 2
+            else:
+                args["rounds"] = 2
+                i += 1
+            continue
+
+        if arg in ("--out-dem", "-out-dem", "--out_dem", "-out_dem", "out_dem"):
+            next_tok = argv[i + 1] if i + 1 < len(argv) else None
+            if (
+                next_tok is not None
+                and not next_tok.startswith("-")
+                and "=" not in next_tok
+                and not next_tok.endswith((".stim", ".mtx", ".mmx"))
+                and not (
+                    next_tok.endswith(".dem")
+                    and os.path.exists(next_tok)
+                    and args["fdem"] is None
+                    and not _has_later_input_file(i + 2)
+                )
+            ):
+                args["out_dem"] = next_tok
+                i += 2
+            else:
+                args["out_dem"] = True
+                i += 1
+            continue
+
+        if arg in ("--out-stim", "-out-stim", "--out_stim", "-out_stim", "out_stim"):
+            next_tok = argv[i + 1] if i + 1 < len(argv) else None
+            if (
+                next_tok is not None
+                and not next_tok.startswith("-")
+                and "=" not in next_tok
+                and not next_tok.endswith((".dem", ".mtx", ".mmx"))
+                and not (
+                    next_tok.endswith(".stim")
+                    and os.path.exists(next_tok)
+                    and args["fdem"] is None
+                    and not _has_later_input_file(i + 2)
+                )
+            ):
+                args["out_stim"] = next_tok
+                i += 2
+            else:
+                args["out_stim"] = True
+                i += 1
             continue
 
         key = None
@@ -2638,6 +4221,46 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["cov_cws"] = int(val)
             elif key_lower == "refresh":
                 args["refresh"] = int(val)
+            elif key_lower in ("simple", "simplified"):
+                bval = (
+                    bool(int(val)) if val.isdigit()
+                    else (val.lower() not in ("0", "false", "no", "off"))
+                )
+                args["simple"] = bval
+                if bval:
+                    args["full"] = False
+            elif key_lower == "full":
+                bval = (
+                    bool(int(val)) if val.isdigit()
+                    else (val.lower() not in ("0", "false", "no", "off"))
+                )
+                args["full"] = bval
+                if bval:
+                    args["simple"] = False
+            elif key_lower == "basis":
+                if val.upper() not in ("X", "Z"):
+                    raise ValueError(
+                        f"Invalid basis '{val}'; must be 'X' or 'Z'."
+                    )
+                args["basis"] = val.upper()
+            elif key_lower == "rounds":
+                args["rounds"] = int(val)
+            elif key_lower in ("out-dir", "out_dir", "outdir"):
+                args["out_dir"] = val
+            elif key_lower in ("out-dem", "out_dem", "outdem"):
+                if val.lower() in ("0", "false", "no", "off", "none"):
+                    args["out_dem"] = None
+                elif val.lower() in ("1", "true", "yes", "auto", ""):
+                    args["out_dem"] = True
+                else:
+                    args["out_dem"] = val
+            elif key_lower in ("out-stim", "out_stim", "outstim"):
+                if val.lower() in ("0", "false", "no", "off", "none"):
+                    args["out_stim"] = None
+                elif val.lower() in ("1", "true", "yes", "auto", ""):
+                    args["out_stim"] = True
+                else:
+                    args["out_stim"] = val
             else:
                 args["unrecognized"].append(arg)
 
@@ -2664,11 +4287,11 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Allowed parameters:
   fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, classical,
-  method, dmin, dmax, dexp (dest), steps, wmin, wmax, timeout,
-  threads, nothrottle, chunk_size (batch), ksub, kwin (win),
-  win_mode, min_hits, cov_cws, refresh, smax, noscan, start,
-  cbeg, cend, finC, outC, maxC, dW, seed, debug, solver, cache,
-  --no-cache, --verbose, --cws
+  --simple, --full, basis, --rounds, --out-dir, --out-dem, --out-stim,
+  method, dmin, dmax, dexp (dest), steps, wmin, wmax, timeout, threads,
+  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, min_hits,
+  cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC,
+  dW, seed, debug, solver, cache, --no-cache, --verbose, --cws
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows)
@@ -2682,7 +4305,7 @@ def print_cli_help(file: Optional[Any] = None) -> None:
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Input matrices & models:
-  fdem=FILE             Detector Error Model input file (.dem) from Stim
+  fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file
   finH=FILE             Parity check matrix H (classical) or Hx (CSS quantum) (.mmx/.mtx)
   finG=FILE, finL=FILE  Hz check matrix or Lx logical operator matrix (quantum CSS)
   fin=PREFIX            Base prefix for CSS matrices (loads ${{fin}}X.mtx, ${{fin}}Z.mtx, e.g. try -> tryX.mtx)
@@ -2690,6 +4313,13 @@ Input matrices & models:
   Lx=FILE, Lz=FILE      CSS logical operators (optional, constructed if omitted)
   pmin=PROB             Minimum error probability threshold for DEM errors (default: 0.0)
   classical=0|1         1: classical code (Hx only), 0: quantum CSS (auto-detected)
+  --simple / --full     For .stim files: keep primary-basis detectors only (--simple, default
+                        for CSS/XZZX circuits) or keep all detectors (--full)
+  basis=X|Z             Override primary memory basis ('X' or 'Z') for .stim circuits
+  --rounds [N]          Set REPEAT block count in .stim circuit (default: 2; warns if no REPEAT)
+  --out-dir DIR         Output directory for saved .dem/.stim files (default: input file dir)
+  --out-dem [FILE]      Save constructed DEM (default: <basename>_simp.dem or _full.dem)
+  --out-stim [FILE]     Save processed/noisy Stim circuit (default: <basename>_simp.stim or _full.stim)
 
 Method and distance bounds:
   method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
@@ -2745,7 +4375,7 @@ def print_cli_morehelp(file: Optional[Any] = None) -> None:
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Required input (at least one matrix/model specification):
-  fdem=FILE             Detector Error Model file (.dem) generated by Stim.
+  fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file.
                         Automatically constructs parity check H and logical L matrices.
   finH=FILE             Parity check matrix file in Matrix Market (.mmx / .mtx) format.
                         For classical codes, this is check matrix H. For CSS codes, Hx.
@@ -2761,6 +4391,22 @@ Required input (at least one matrix/model specification):
                         1: Classical linear code (Hx only; ignores/discards logicals).
                         0: Quantum CSS code (requires logicals or Hz).
                         Default: auto-detected (1 if only finH/Hx is given; 0 otherwise).
+  --simple / simple=1   For .stim circuits: activate only primary-basis detectors by stripping
+                        minority-basis detectors via ancilla and data basis tracking. Default
+                        for CSS circuits (including locally rotated CSS such as XZZX codes).
+  --full / full=1       For .stim circuits: retain all detectors (both X and Z sectors).
+  basis=X|Z             Explicitly set primary memory basis ('X' or 'Z') for .stim circuits
+                        (default: auto-detected from filename or initial/final resets/measurements).
+  --rounds [N]          Construct DEM from a .stim circuit with N repetitions in its REPEAT block
+                        (default: 2 when --rounds is given without a number; also rounds=N).
+                        Issues a warning and continues with the original circuit if no REPEAT block.
+  --out-dir DIR         Output directory for saving constructed DEM and/or processed Stim circuit
+                        files (also out_dir=DIR; default: directory of the input .stim/.dem file).
+  --out-dem [FILE]      Save constructed (flattened) DEM to FILE. If given without a filename (or
+                        out_dem=1), automatically saves as <basename>_simp.dem or <basename>_full.dem.
+  --out-stim [FILE]     Save processed (noisy, rounds-adjusted, detector-filtered) Stim circuit to
+                        FILE. If given without a filename (or out_stim=1), automatically saves as
+                        <basename>_simp.stim or <basename>_full.stim.
 
 Calculation method:
   method=1|2|3          Calculation method (default: 3):
@@ -2863,7 +4509,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    args = parse_cli_args(argv)
+    try:
+        args = parse_cli_args(argv)
+    except ValueError as e:
+        sys.stderr.write(f"Error: {e}\n")
+        return 1
 
     if args.get("version"):
         print(f"dist_m4ri.py version {__version__}")
@@ -2936,7 +4586,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                 win_mode=args["win_mode"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
-                refresh=args["refresh"]
+                refresh=args["refresh"],
+                simple=args["simple"],
+                full=args["full"],
+                basis=args["basis"],
+                rounds=args["rounds"],
+                out_dir=args["out_dir"],
+                out_dem=args["out_dem"],
+                out_stim=args["out_stim"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res
@@ -2953,6 +4610,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"  Summary bounds: {format_bounds_str(d_info)}")
             print(format_bounds_str(d_info))
             return 0
+
+        if args.get("rounds") is not None:
+            raise ValueError(
+                "--rounds option is only supported for Stim circuit (.stim) inputs."
+            )
 
         if args["Hx"] is not None or args["Hz"] is not None:
             res = compute_css_distance(

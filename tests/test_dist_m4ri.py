@@ -612,6 +612,367 @@ def test_add_noise_and_noiseless_circuit():
     assert d_info[0] == 3 and d_info[1] == 3
 
 
+def _make_xzzx_circuit(distance: int = 3, rounds: int = 3, memory_basis: str = "Z"):
+    """Constructs a rotated-surface-code XZZX circuit by conjugating checkerboard data qubits."""
+    import stim
+    task = (
+        "surface_code:rotated_memory_z"
+        if memory_basis.upper() == "Z"
+        else "surface_code:rotated_memory_x"
+    )
+    base_circ = stim.Circuit.generated(
+        task,
+        rounds=rounds,
+        distance=distance,
+        after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001,
+        after_reset_flip_probability=0.001,
+    )
+    t_res = dist_m4ri.classify_qubits_thorough(base_circ, basis_arg=memory_basis)
+    data_set = set(t_res["data_qubits"])
+
+    coords = {}
+    for inst in base_circ.flattened():
+        if inst.name == "QUBIT_COORDS":
+            args = inst.gate_args_copy()
+            for t in inst.targets_copy():
+                if t.is_qubit_target:
+                    coords[t.value] = args
+
+    rot_data = set()
+    for q in data_set:
+        x, y = coords[q][0], coords[q][1]
+        if int(round((x + y) / 2)) % 2 == 1:
+            rot_data.add(q)
+
+    def transform_block(blk):
+        out = stim.Circuit()
+        for inst in blk:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                out.append(
+                    stim.CircuitRepeatBlock(
+                        inst.repeat_count, transform_block(inst.body_copy())
+                    )
+                )
+            elif inst.name in ["R", "RX"]:
+                out.append(inst)
+                rot_t = [
+                    t.value for t in inst.targets_copy()
+                    if t.is_qubit_target and t.value in rot_data
+                ]
+                if rot_t:
+                    out.append("H", rot_t)
+            elif inst.name in ["M", "MX"]:
+                rot_t = [
+                    t.value for t in inst.targets_copy()
+                    if t.is_qubit_target and t.value in rot_data
+                ]
+                if rot_t:
+                    out.append("H", rot_t)
+                out.append(inst)
+            elif inst.name == "CX":
+                t_vals = [t.value for t in inst.targets_copy()]
+                for i in range(0, len(t_vals), 2):
+                    c, t = t_vals[i], t_vals[i + 1]
+                    if t in rot_data:
+                        out.append("CZ", [c, t])
+                    elif c in rot_data:
+                        out.append("H", [c])
+                        out.append("CX", [c, t])
+                        out.append("H", [c])
+                    else:
+                        out.append("CX", [c, t])
+            else:
+                out.append(inst)
+        return out
+
+    return transform_block(base_circ), rot_data
+
+
+def test_stim_simple_vs_full_and_basis_tracking(tmp_path, capsys):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=3,
+        distance=3,
+        after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001,
+        after_reset_flip_probability=0.001,
+    )
+    stim_file = tmp_path / "surf_d3_r3_Z.stim"
+    circuit.to_file(str(stim_file))
+
+    t_res = dist_m4ri.classify_qubits_thorough(circuit)
+    assert t_res["is_css"] is True
+    assert t_res["is_rotated_css"] is False
+    assert t_res["basis"] == "Z"
+    assert len(t_res["data_qubits"]) == 9
+    assert len(t_res["x_ancillas"]) == 4
+    assert len(t_res["z_ancillas"]) == 4
+
+    simp_circ, stripped, kept = dist_m4ri.strip_minority_detectors(
+        circuit, "Z", thorough_res=t_res
+    )
+    assert stripped == 8
+    assert kept == 16
+    assert simp_circ.num_detectors == 16
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        # Default for CSS .stim is --simple
+        ret = dist_m4ri.main([str(stim_file), "-v", "--no-cache", "threads=2"])
+        assert ret == 0
+        out_simple = capsys.readouterr().out
+        assert "mode: simple" in out_simple
+        assert "kept=16, stripped=8" in out_simple
+
+        # Explicit --full keeps all 24 detectors
+        ret = dist_m4ri.main(
+            [str(stim_file), "--full", "-v", "--no-cache", "threads=2"]
+        )
+        assert ret == 0
+        out_full = capsys.readouterr().out
+        assert "mode: full" in out_full
+        assert "kept=24, stripped=0" in out_full
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_stim_xzzx_rotated_css(tmp_path):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+
+    for mem_basis in ("Z", "X"):
+        xzzx_circ, rot_data = _make_xzzx_circuit(
+            distance=3, rounds=3, memory_basis=mem_basis
+        )
+        t_res = dist_m4ri.classify_qubits_thorough(
+            xzzx_circ, basis_arg=mem_basis
+        )
+        assert t_res["is_css"] is True
+        assert t_res["is_rotated_css"] is True
+        assert t_res["basis"] == mem_basis
+        assert len(t_res["data_qubits"]) == 9
+        assert len(t_res["x_ancillas"]) == 4
+        assert len(t_res["z_ancillas"]) == 4
+        assert set(t_res["rotated_data_qubits"]) == rot_data
+
+        simp_circ, stripped, kept = dist_m4ri.strip_minority_detectors(
+            xzzx_circ, mem_basis, thorough_res=t_res
+        )
+        assert stripped == 8
+        assert kept == 16
+        assert simp_circ.num_detectors == 16
+
+        stim_path = tmp_path / f"xzzx_d3_r3_{mem_basis}.stim"
+        xzzx_circ.to_file(str(stim_path))
+
+        dist_m4ri.clear_distance_cache()
+        d_simp, info_simp = dist_m4ri.compute_dem_distance(
+            dem=str(stim_path), simple=True, threads=2
+        )
+        assert d_simp == 3
+        assert info_simp[0] == 3 and info_simp[1] == 3
+
+        dist_m4ri.clear_distance_cache()
+        d_full, info_full = dist_m4ri.compute_dem_distance(
+            dem=str(stim_path), full=True, threads=2
+        )
+        assert d_full == 3
+        assert info_full[0] == 3 and info_full[1] == 3
+
+
+def test_stim_rounds_option(tmp_path, capsys):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=5,
+        distance=3,
+        after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001,
+        after_reset_flip_probability=0.001,
+    )
+    stim_with_repeat = tmp_path / "surf_r5_Z.stim"
+    circuit.to_file(str(stim_with_repeat))
+
+    # CLI argument parsing checks for --rounds, --simple, --full
+    args1 = dist_m4ri.parse_cli_args(["--rounds", str(stim_with_repeat)])
+    assert args1["rounds"] == 2
+    assert args1["fdem"] == str(stim_with_repeat)
+
+    args2 = dist_m4ri.parse_cli_args(["--rounds", "4", "--simple", str(stim_with_repeat)])
+    assert args2["rounds"] == 4
+    assert args2["simple"] is True
+    assert args2["full"] is False
+    assert args2["fdem"] == str(stim_with_repeat)
+
+    args3 = dist_m4ri.parse_cli_args(["rounds=3", "--full", "basis=X", str(stim_with_repeat)])
+    assert args3["rounds"] == 3
+    assert args3["full"] is True
+    assert args3["simple"] is False
+    assert args3["basis"] == "X"
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        # Bare --rounds sets rounds=2 (REPEAT 2 block -> 16 Z-detectors kept, 8 X-detectors stripped)
+        ret = dist_m4ri.main(
+            [str(stim_with_repeat), "--rounds", "-v", "--no-cache", "threads=2"]
+        )
+        assert ret == 0
+        out = capsys.readouterr().out
+        assert "rounds=2" in out
+        assert "kept=16, stripped=8" in out
+
+        # Flattened circuit has no REPEAT block -> issues a warning and continues
+        flat_stim = tmp_path / "surf_flat_Z.stim"
+        circuit.flattened().to_file(str(flat_stim))
+        d_flat, info_flat = dist_m4ri.compute_dem_distance(
+            dem=str(flat_stim), rounds=2, threads=2
+        )
+        assert d_flat == 3
+        assert info_flat[0] == 3 and info_flat[1] == 3
+        err_api = capsys.readouterr().err
+        assert "Warning:" in err_api and "REPEAT block" in err_api
+
+        ret_flat = dist_m4ri.main(
+            [str(flat_stim), "--rounds", "--no-cache", "threads=2"]
+        )
+        assert ret_flat == 0
+        captured_flat = capsys.readouterr()
+        assert "Warning:" in captured_flat.err and "REPEAT block" in captured_flat.err
+
+        # Non-stim input with --rounds must signal an error
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        ret_dem_err = dist_m4ri.main([dem_file, "--rounds", "--no-cache"])
+        assert ret_dem_err != 0
+        assert "--rounds" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_stim_out_dem_out_stim_out_dir(tmp_path):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+
+    in_dir = tmp_path / "inputs"
+    in_dir.mkdir(parents=True, exist_ok=True)
+    stim_file = in_dir / "surf_d3_Z.stim"
+
+    # Create a noiseless circuit to also verify that --out-stim saves the noisy/processed circuit
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=4,
+        distance=3,
+    )
+    circuit.to_file(str(stim_file))
+
+    # 1. Test CLI parsing of bare --out-dem and --out-stim vs explicit filenames
+    p1 = dist_m4ri.parse_cli_args(["--out-dem", "--out-stim", str(stim_file)])
+    assert p1["out_dem"] is True
+    assert p1["out_stim"] is True
+    assert p1["fdem"] == str(stim_file)
+
+    p2 = dist_m4ri.parse_cli_args(
+        ["--out-dir", "/tmp/out", "--out-dem", "a.dem", "--out-stim", "b.stim", str(stim_file)]
+    )
+    assert p2["out_dir"] == "/tmp/out"
+    assert p2["out_dem"] == "a.dem"
+    assert p2["out_stim"] == "b.stim"
+    assert p2["fdem"] == str(stim_file)
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        # 2. Bare --out-dem and --out-stim (default --simple, default out-dir = input file dir)
+        ret = dist_m4ri.main(
+            [str(stim_file), "--rounds", "2", "--out-dem", "--out-stim", "--no-cache", "threads=2"]
+        )
+        assert ret == 0
+        exp_simp_dem = in_dir / "surf_d3_Z_simp.dem"
+        exp_simp_stim = in_dir / "surf_d3_Z_simp.stim"
+        assert exp_simp_dem.exists()
+        assert exp_simp_stim.exists()
+
+        saved_simp_circ = stim.Circuit.from_file(str(exp_simp_stim))
+        assert dist_m4ri.has_noise(saved_simp_circ)
+        assert saved_simp_circ.num_detectors == 16
+        saved_simp_dem = stim.DetectorErrorModel.from_file(str(exp_simp_dem))
+        assert saved_simp_dem.num_detectors == 16
+
+        # 3. Bare --out-dem and --out-stim with --full and explicit --out-dir
+        custom_dir = tmp_path / "custom_out"
+        ret_full = dist_m4ri.main(
+            [
+                str(stim_file),
+                "--full",
+                "--rounds",
+                "2",
+                "--out-dir",
+                str(custom_dir),
+                "--out-dem",
+                "--out-stim",
+                "--no-cache",
+                "threads=2",
+            ]
+        )
+        assert ret_full == 0
+        exp_full_dem = custom_dir / "surf_d3_Z_full.dem"
+        exp_full_stim = custom_dir / "surf_d3_Z_full.stim"
+        assert exp_full_dem.exists()
+        assert exp_full_stim.exists()
+        saved_full_dem = stim.DetectorErrorModel.from_file(str(exp_full_dem))
+        assert saved_full_dem.num_detectors == 24
+
+        # 4. Explicit bare filenames without --out-dir default to input file's directory
+        ret_named_in_dir = dist_m4ri.main(
+            [
+                str(stim_file),
+                "--rounds",
+                "2",
+                "--out-dem",
+                "named_in_dir.dem",
+                "--out-stim",
+                "named_in_dir.stim",
+                "--no-cache",
+                "threads=2",
+            ]
+        )
+        assert ret_named_in_dir == 0
+        assert (in_dir / "named_in_dir.dem").exists()
+        assert (in_dir / "named_in_dir.stim").exists()
+
+        # 5. Explicit bare filenames with --out-dir save into --out-dir
+        ret_named = dist_m4ri.main(
+            [
+                str(stim_file),
+                "--rounds",
+                "2",
+                "--out-dir",
+                str(custom_dir),
+                "--out-dem",
+                "explicit.dem",
+                "--out-stim",
+                "explicit.stim",
+                "--no-cache",
+                "threads=2",
+            ]
+        )
+        assert ret_named == 0
+        assert (custom_dir / "explicit.dem").exists()
+        assert (custom_dir / "explicit.stim").exists()
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

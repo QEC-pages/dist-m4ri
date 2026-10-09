@@ -301,9 +301,26 @@ interoperability without manual threading overhead.
 - `compute_classical_distance(H, ...)`: Minimum distance of a classical linear code (from NumPy 2D array, SciPy sparse
   matrix, or `.mtx` file).
 - `compute_css_distance(Hx, Hz, Lx=None, Lz=None, ...)`: Distance $d = \min(d_X, d_Z)$ of a CSS quantum code.
-- `compute_dem_distance(dem=None, circuit=None, ...)`: Minimum distance directly from a `stim.DetectorErrorModel`,
-  `stim.Circuit`, `.dem` file, or `.stim` circuit file (automatically adding phenomenological noise via `add_noise` if
-  the `.stim` circuit contains no noise instructions).
+- `compute_dem_distance(dem=None, circuit=None, simple=None, full=False, basis=None, rounds=None, out_dir=None,`:
+  `out_dem=None, out_stim=None, ...)`:
+  Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file:
+  - Always performs **ancilla and data basis tracking** (`classify_qubits_thorough`) across virtual SWAP permutations
+    and Clifford gates to identify data qubits, $X$-sector and $Z$-sector ancillas, routing qubits, and local data basis
+    rotations (automatically recognizing both standard CSS codes and locally basis-rotated CSS codes such as **XZZX**).
+  - **`--simple` vs `--full`**: For CSS and locally rotated CSS `.stim` circuits, `--simple` (`simple=True`) is enabled
+    by default, stripping minority-basis detectors (`strip_minority_detectors`) to keep only primary-basis detectors and
+    produce a smaller, simpler DEM. Pass `--full` (`full=True`) to retain all detectors.
+  - **`--rounds [N]`**: Constructs the DEM with `N` repetitions in the circuit's `REPEAT` block (`rounds=2` by default
+    when `--rounds` is passed without a number). If the `.stim` circuit does not contain a `REPEAT` block, issues a
+    warning to `stderr` and continues with the original circuit.
+  - **`--out-dir DIR`, `--out-dem [FILE]`, `--out-stim [FILE]`**: Optionally saves the constructed DEM and/or the
+    processed (noisy, round-adjusted, detector-filtered) `.stim` circuit. When `--out-dem` or `--out-stim` is passed
+    without a filename (or `out_dem=True` / `out_stim=True`), filenames default to `<basename>_simp.dem` /
+    `<basename>_full.dem` and `<basename>_simp.stim` / `<basename>_full.stim`. By default, `--out-dir` defaults to the
+    directory of the input file.
+- `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ...)` /
+  `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping, and
+  `REPEAT` block round adjustment.
 - `has_noise(circuit)` / `add_noise(circuit, noise_prob=0.001)`: Inspects a `stim.Circuit` for noise instructions and
   injects phenomenological `DEPOLARIZE1` / `DEPOLARIZE2` / reset-flip / measurement-flip noise into noiseless circuits.
 - `read_sparse_vectors(filepath)`: Parses NZLIST files into lists of 0-based integer support indices.
