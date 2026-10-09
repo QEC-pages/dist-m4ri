@@ -380,6 +380,38 @@ def test_explain_bounds():
     assert "120 completed random information set searches" in exp3
 
 
+def test_rw_infoset_estimate():
+    # P1(w) = w C(n-w, k-1) / C(n, k) with k = n - rank: surf_d3.dem (n=221, rank(H)=24), w=3
+    from math import comb
+    p1 = dist_m4ri.rw_infoset_find_prob(221, 24, 3)
+    assert p1 == pytest.approx(3 * comb(218, 196) / comb(221, 197), rel=1e-9)
+    assert dist_m4ri.rw_infoset_find_prob(221, 24, 26) == 0.0  # w > rank + 1: never found
+    # c204 (n=204, rank(H)=101, d=8): the hardest lighter weight is w=7; miss probability (1-P1)^steps
+    est = dist_m4ri.rw_infoset_estimate(204, 101, 6000, 8, step_time=1e-5, steps_total=12000)
+    p7 = dist_m4ri.rw_infoset_find_prob(204, 101, 7)
+    assert est["w"] == 7
+    assert est["p_find"] == pytest.approx(p7)
+    assert est["p_miss"] == pytest.approx((1.0 - p7) ** 6000)
+    n1 = int(np.ceil(np.log(0.01) / np.log1p(-p7)))
+    assert est["steps_target"] == int(np.ceil(n1 * 2.0))  # half of the steps uniform
+    assert est["time_target"] == pytest.approx(est["steps_target"] * 1e-5)
+    # weights below a certified dmin are excluded; nothing to check if dmin >= d
+    assert dist_m4ri.rw_infoset_estimate(204, 101, 6000, 8, dmin=8) is None
+    # explanation from the stderr statistics of the binary
+    stderr = (
+        "# codewords accumulated: total=100, min_w=8: cws=1, total_hits=170, hits min=170, max=170, avg=170.00, "
+        "stdev=0.00, <n>=5.27 over 100 cws of w=8..15 (min_hits=5, cov_cws=100)\n"
+        "# RW information sets: n=204, rank(H)=101, steps=6000 (uniform permutations: 6000), ksub=0, "
+        "4.4e-05 s/step per thread, 8 RW threads\n"
+    )
+    stats = dist_m4ri._parse_stderr_stats(stderr)
+    assert stats["rw_n"] == 204 and stats["rw_rank"] == 101 and stats["rw_steps_uniform"] == 6000
+    exp = dist_m4ri.explain_bounds([0, 8, 6000], method=1, stats=stats)
+    assert "Hit-based estimate: P_fail ~ exp(-<n>) = 0.0051 (below 1%)" in exp
+    assert "a single codeword of weight 7 < 8 is found with probability" in exp
+    assert "Model check: expected hits per codeword of weight 8" in exp
+
+
 def test_cli_css_dx_dz_bounds(capsys):
     hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     lz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")

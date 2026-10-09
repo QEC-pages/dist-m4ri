@@ -83,18 +83,25 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 ---
 
 ### Task 4: Hit-Count Stopping Criterion (`QDistRnd` Convergence Style)
-- [x] Add parameters `min_hits=[int]` (default `0` = disabled) and `cov_cws=[int]` (minimum distinct codewords
-  required, default `1`).
+- [x] Add parameters `min_hits=[int]` (default `5`, `0` = disabled) and `cov_cws=[int]` (size of the representative
+  set of lowest-weight codewords, default `100`).
 - [x] **Codeword Multiplicity Tracking**:
   - Leverage the existing `cw_vec_t->cnt` field in `p->codewords` (which increments every time a duplicate codeword is
-    found).
+    found), with per-weight histograms of the numbers of codewords and of hits (`cw_cnt_w`, `cw_hits_w`).
+- [x] **Representative Set**: keep up to `cov_cws` lowest-weight codewords (whole weight classes); heavier codewords
+  are gradually replaced as lighter ones are found, regardless of `dW`; a new minimum weight is always recorded.
 - [x] **Empirical Convergence Condition**:
-  - In RW (`method=1` or `method=3`), track the number of distinct codewords found at the current minimum weight
-    $d_{\text{min-found}}$ whose hit count reaches at least `min_hits`.
-  - When at least `cov_cws` distinct minimum-weight codewords have each been independently rediscovered at least
-    `min_hits` times (or all discovered minimum-weight codewords when `cov_cws <= 0`), signal early termination.
-  - Optional variant: terminate when total repeat count or coverage ratio exceeds a statistical threshold, indicating
-    that the minimum-weight codeword subspace has been saturated and the true code distance has likely been found.
+  - In RW (`method=1` or `method=3`), stop when the average number of hits per codeword $\langle n\rangle$ reaches
+    `min_hits`, both for the minimum-weight codewords and for the representative set (a single codeword suffices,
+    e.g., for a classical code with $k=1$). As in QDistRnd, a lighter codeword is missed with probability
+    $\approx e^{-\langle n\rangle}$, assuming that lighter codewords are found at least as often.
+- [x] **Hit Uniformity Check**: at the end (`debug&1`, result not certified), a dispersion test of the hit counts in
+  each weight class of the representative set (zero-truncated Poisson); a warning if they are strongly non-uniform.
+- [x] **Information-Set Estimate** (Python `--verbose`, and in the binary with the hit uniformity warning): with
+  uniform random information sets, a codeword of weight $w$ is found per RW step with probability
+  $P_1(w) = w\binom{n-w}{k-1}/\binom{n}{k}$, $k = n - \mathrm{rank}\,H$; also the RW steps / time for a 1% miss
+  probability (and the extrapolation of $e^{-\langle n\rangle}$ to 1%).
+- [ ] **Proper estimate for matrices with many small-weight dual vectors**: see Task 6.
 
 ---
 
@@ -106,6 +113,31 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Gaussian elimination via AVX2 (`_mm256_xor_si256`) and AVX-512 (`_mm512_xor_si512`) vector XOR loops.
   - Zero dynamic heap allocation per trial (`malloc`/`free` free inner loop).
   - 100% thread-safe; completely eliminate `m4ri_mem_mutex` contention in worker threads.
+
+---
+
+### Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors
+- [ ] Find a proper estimate of the probability that RW misses a lighter codeword when the check matrix has many
+  small-weight dual vectors (small-weight trivial vectors in $\ker H$). This is particularly bad for circuit DEMs,
+  whose matrices have a huge number of column triplets summing to zero, as a consequence of the circuit structure: a
+  weight-one error after a CX gate may give a weight-two error, and the net action of the three single-qubit errors
+  is trivial. Both current estimates (Task 4) stay in place until then.
+- Observations (Oct 2026, `method=1`, `min_hits=5`, `cov_cws=100`):
+  - The uniform information-set estimate is accurate for some codes (c204: 166 expected vs 173 observed hits of the
+    weight-8 codeword), but extremely pessimistic for DEMs: for `gross_uniform_X.dem` ($n=8784$, $\mathrm{rank}\,H =
+    930$), $P_1 \approx 1.5\cdot 10^{-8}$ per step for $w=10$, i.e., $\sim 6\cdot 10^{8}$ steps for 1%, while the
+    hit-based extrapolation needs $\sim 5\cdot 10^{3}$ steps. Steps with localized windows, which find local
+    codewords much more often, are not counted in the uniform model.
+  - The hit-based estimate with the representative set is conservative for codes with few minimum-weight codewords
+    (c204: RW stops after $\sim 6000$ steps; the information-set estimate gives 1% after $\sim 90$ steps).
+  - Hit counts can be strongly non-uniform within a weight class (`surf_d5`: some weight-5 logicals are hit 50–70
+    times, others once), so that $e^{-\langle n\rangle}$ is optimistic there.
+- Possible directions:
+  - Separate hit statistics for the uniform and the windowed RW steps.
+  - Empirical per-weight hit rates from the representative set, extrapolated to weights below the minimum found.
+  - Account for the small-weight trivial vectors explicitly (see **Trivial Codeword Statistics** below).
+  - To check: the `ksub` basis refresh (Task 3) puts found low-weight codewords into the basis $N$, which may inflate
+    their hit counts and $\langle n\rangle$.
 
 ---
 
@@ -123,6 +155,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] **Sparse Gaussian Elimination**:
   - Evaluate whether sparse elimination (e.g. CSR row combining) can outperform dense bit-matrices for very large,
     highly sparse DEMs where $k_{\text{sub}}$ is small.
+- [ ] **Faster Logical Check**:
+  - `sparse_syndrome_non_zero(L, ...)` costs $O(\mathrm{nnz}(L))$ per RW candidate; with the transpose of $L$ and a
+    small bit set for the $k$ syndrome bits, it costs $O(w)$. For DEMs, most candidates below the weight limit are
+    trivial (e.g., $3.4\cdot 10^{6}$ $L$-orthogonal candidates in 5000 steps on `gross_uniform_X.dem`).
+- [ ] **Distance Benchmark Update**:
+  - Run the longer benchmark to certify or tighten the provisional distances in `benchmark/BENCHMARK.md` (plan in
+    `tmp/benchmark_distance_plan.md`).
 
 ---
 
@@ -136,10 +175,17 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ### Mode: Upper Bound Search with Hit-Count Saturation
 - Run RW with `method=1 steps=N min_hits=M cov_cws=K`.
-- Collects minimum-weight codewords into the hash table, terminating when the smallest observed weight has been
-  confirmed by $M$ independent hits across $K$ distinct degenerate configurations.
+- Collects the lowest-weight codewords into the hash table, terminating when the average number of hits per codeword
+  reaches $M$, both for the minimum-weight codewords and for the representative set of $K$ lowest-weight codewords.
 
 ### More debug bits
 - Detailed timing information (measured / predicted values, reasons for termination)
-- ???
+- ranks of the matrices and their sizes and code dimensions (to avoid doing rank in python)
+  - [x] Partly done: after RW, with `debug&1`, the binary prints `# RW information sets: n=..., rank(H)=...,
+    steps=... (uniform permutations: ...), ksub=..., ... s/step per thread, ... RW threads` (parsed by Python).
+  - [ ] Not yet: ranks of $L$ / $G$, code dimension $k$, and `method=2` (no RW).
+- [x] in addition, print estimated prob to find (miss) a single codeword of given
+  weight based on the number of information sets and the n and distance found with RW.
+  - Done: Python `--verbose`, and the binary with the hit uniformity warning (Task 4); a proper estimate for DEMs
+    is still open (Task 6).
 

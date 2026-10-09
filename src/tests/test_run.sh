@@ -500,6 +500,107 @@ assert_output "$BIN_FORK method=3 $S5 dmax=5 threads=8 nothrottle=1 debug=3" \
 assert_output "$BIN_FORK method=3 $S5 dmin=3 min_hits=0 threads=8 nothrottle=1 debug=3" \
     0 "^5 5 [0-9]+$" "CC round w=3 started: 4 CC threads"
 
+# Test 78: min_hits with a single codeword (classical [5,1] repetition code, k=1): RW converges after a few steps
+REP78=$(mktemp --suffix=.mtx)
+cat << 'EOF' > "$REP78"
+%%MatrixMarket matrix coordinate integer general
+4 5 8
+1 1 1
+1 2 1
+2 2 1
+2 3 1
+3 3 1
+3 4 1
+4 4 1
+4 5 1
+EOF
+echo "Running Test 78: min_hits convergence with a single codeword (k=1)"
+OUT78=$(mktemp)
+ERR78=$(mktemp)
+$BIN_FORK method=1 finH=$REP78 steps=100000 threads=2 debug=1 > "$OUT78" 2> "$ERR78"
+if ! grep -q -E "^1 5 ([0-9]|[1-9][0-9])$" "$OUT78" || ! grep -q "RW convergence reached" "$ERR78"; then
+    echo "  [FAIL] stdout '$(cat "$OUT78")', stderr '$(cat "$ERR78")'"
+    FAILED=1
+fi
+rm -f "$REP78" "$OUT78" "$ERR78"
+
+# Test 79: method=3 with outC (dW=0) exports all minimum-weight codewords, as method=2 (CC round w=d after dmin=dmax)
+CWS79=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem outC=$CWS79 debug=1 threads=4" \
+    0 "^3 3 [0-9]+$" "exported 128 codewords"
+if [ "$(grep -c '^3 ' "$CWS79")" != "128" ]; then
+    echo "  [FAIL] Test 79: expected 128 codewords of weight 3 in the exported file"
+    FAILED=1
+fi
+rm -f "$CWS79"
+
+# Test 80: codewords of weight 1 (H with zero columns): with outC, all of them are collected (method=2 and method=3)
+ZC80=$(mktemp --suffix=.mtx)
+cat << 'EOF' > "$ZC80"
+%%MatrixMarket matrix coordinate integer general
+2 5 4
+1 1 1
+1 2 1
+2 2 1
+2 3 1
+EOF
+for M in 2 3; do
+    CWS80=$(mktemp --suffix=.nz)
+    assert_output "$BIN_FORK method=$M finH=$ZC80 wmax=3 outC=$CWS80 debug=1 threads=2" 0 "^1 1 0$" \
+        "exported 2 codewords"
+    if [ "$(grep -c '^1 ' "$CWS80")" != "2" ]; then
+        echo "  [FAIL] Test 80 (method=$M): expected 2 codewords of weight 1 in the exported file"
+        FAILED=1
+    fi
+    rm -f "$CWS80"
+done
+rm -f "$ZC80"
+
+# Test 81: outC exports only the collection window (here: the minimum weight found), not the heavier codewords kept
+# for the min_hits statistic
+echo "Running Test 81: outC exports only the codewords of the minimum weight found (dW=0)"
+CWS81=$(mktemp --suffix=.nz)
+OUT81=$($BIN_FORK method=1 finH=$EXAMPLES_DIR/c96H.mmx steps=50000 outC=$CWS81 debug=0 threads=4)
+W81=$(echo "$OUT81" | awk '{print $2}')
+if [ -z "$W81" ] || [ ! -s "$CWS81" ] || grep -v '^%' "$CWS81" | awk -v w="$W81" '$1 != w {bad=1} END {exit !bad}'; then
+    echo "  [FAIL] Test 81: stdout '$OUT81', weights: $(grep -v '^%' "$CWS81" | awk '{print $1}' | sort | uniq -c)"
+    FAILED=1
+fi
+rm -f "$CWS81"
+
+# Test 82: debug bits do not change the algorithm: the same RW result with debug=1 and debug=33 (one thread, fixed seed)
+echo "Running Test 82: debug does not change the RW result"
+O82A=$($BIN_FORK method=1 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx steps=50000 seed=7 threads=1 \
+    debug=1 2>/dev/null)
+O82B=$($BIN_FORK method=1 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx steps=50000 seed=7 threads=1 \
+    debug=33 2>/dev/null)
+if [ -z "$O82A" ] || [ "$O82A" != "$O82B" ]; then
+    echo "  [FAIL] Test 82: debug=1 gives '$O82A', debug=33 gives '$O82B'"
+    FAILED=1
+fi
+
+# Test 83: warning for strongly non-uniform RW hit counts (surface code: some minimum-weight logicals are found much
+# more often than others), with the information-set estimate; no warning for the code QX150 (one thread, fixed seed)
+echo "Running Test 83: hit-count warning with the information-set estimate"
+OUT83=$(mktemp)
+ERR83=$(mktemp)
+$BIN_FORK method=1 $S5 steps=10000 seed=1 threads=1 debug=1 > "$OUT83" 2> "$ERR83"
+if ! grep -q -E "^1 5 10000$" "$OUT83" || \
+   ! grep -q "Warning: non-uniform RW hit counts of the 100 codewords of weight 5" "$ERR83" || \
+   ! grep -q "information-set estimate (uniform random information sets, n=1958, rank(H)=120)" "$ERR83" || \
+   ! grep -q -E "^# RW information sets: n=1958, rank\(H\)=120, steps=10000 \(uniform permutations: 5000\)" "$ERR83"
+then
+    echo "  [FAIL] Test 83: stdout '$(cat "$OUT83")', stderr '$(cat "$ERR83")'"
+    FAILED=1
+fi
+rm -f "$OUT83" "$ERR83"
+echo "Running Test 83: no hit-count warning for QX150"
+if $BIN_FORK method=1 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx steps=50000 seed=7 threads=1 \
+    debug=1 2>&1 | grep -q "non-uniform"; then
+    echo "  [FAIL] Test 83: unexpected hit-count warning for QX150"
+    FAILED=1
+fi
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

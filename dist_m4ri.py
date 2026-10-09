@@ -216,14 +216,142 @@ def format_bounds_str(bounds: List[int]) -> str:
     return f"{dmin} {dmax} {num_rw}"
 
 
+def rw_infoset_find_prob(n: int, rank: int, w: int) -> float:
+    """
+    Information-set estimate of the probability that a RW step finds a given codeword of weight w.
+
+    Model: uniform random information sets (as in the dist_m4ri binary, rw_infoset_find_prob()).  A RW step
+    reduces H (rank r) with a random column order; a codeword is found if exactly one of its w positions is among
+    the k = n - r non-pivot columns: P1(w) = w C(n-w, k-1) / C(n, k).  Codewords of weight w > r + 1 are never
+    found (P1 = 0).
+
+    Args:
+        n: Block length (number of columns of H).
+        rank: Rank r of H.
+        w: Codeword weight.
+
+    Returns:
+        P1(w).
+    """
+    import math
+    k = n - rank
+    if n <= 0 or rank < 0 or k <= 0 or w < 1 or w > n or w - 1 > rank:
+        return 0.0
+
+    def log_binom(a: int, b: int) -> float:
+        return math.lgamma(a + 1) - math.lgamma(b + 1) - math.lgamma(a - b + 1)
+
+    return min(1.0, math.exp(math.log(w) + log_binom(n - w, k - 1) - log_binom(n, k)))
+
+
+def rw_infoset_estimate(
+    n: int, rank: int, steps: int, d: int, dmin: int = 1, step_time: float = 0.0, target: float = 0.01,
+    steps_total: int = 0
+) -> Optional[Dict[str, Any]]:
+    """
+    Information-set estimate of the probability that RW missed a codeword lighter than the upper bound d found.
+
+    Among the weights max(dmin, 1) <= w < d (not excluded by CC), the weight hardest to find (the smallest P1(w),
+    see rw_infoset_find_prob()) is used: a single codeword of this weight is missed in `steps` RW steps with uniform
+    random permutations with probability (1 - P1)^steps.  The number of RW steps for the target miss probability is
+    given in total, with the fraction steps / steps_total of uniform steps as in the run (localized windows, used in
+    about half of the steps for n >= 500, are not counted).  Same as print_rw_infoset_estimate() in the binary.
+
+    Args:
+        n: Block length (number of columns of H).
+        rank: Rank of H.
+        steps: Number of completed RW steps with uniform random permutations.
+        d: Smallest weight found (the upper bound dmax).
+        dmin: Certified lower bound (smaller weights are excluded).
+        step_time: Wall time per RW step in seconds (0: unknown).
+        target: Target miss probability (default: 0.01).
+        steps_total: Number of all completed RW steps (0: the same as `steps`).
+
+    Returns:
+        Dictionary with the weight `w`, the probability `p_find` = P1(w) per step, the miss probability `p_miss`,
+        the total number of RW steps `steps_target` for the target miss probability (None if the codeword cannot be
+        found), and the corresponding wall time `time_target` (None if unknown); or None if there are no weights to
+        check.
+    """
+    import math
+    w_lo, w_hi = max(dmin, 1), d - 1
+    if w_hi < w_lo or n <= 0:
+        return None
+    w_hard, p1 = w_hi, rw_infoset_find_prob(n, rank, w_hi)  # the weight hardest to find (smallest P1)
+    for w in range(w_lo, w_hi):
+        pw = rw_infoset_find_prob(n, rank, w)
+        if pw < p1:
+            w_hard, p1 = w, pw
+    steps_target: Optional[int]
+    if p1 <= 0.0:
+        p_miss, steps_target = 1.0, None
+    elif p1 >= 1.0:
+        p_miss, steps_target = (0.0 if steps > 0 else 1.0), 1
+    else:
+        lq = math.log1p(-p1)
+        p_miss = math.exp(steps * lq) if steps > 0 else 1.0
+        steps_target = math.ceil(math.log(target) / lq)
+    if steps_target is not None and steps > 0 and steps_total > steps:
+        steps_target = math.ceil(steps_target * steps_total / steps)
+    time_target = steps_target * step_time if (steps_target is not None and step_time > 0.0) else None
+    return {"w": w_hard, "p_find": p1, "p_miss": p_miss, "steps_target": steps_target, "time_target": time_target}
+
+
+def _format_duration(t: float) -> str:
+    """Formats a duration in seconds (s, min, h, or days), as in the dist_m4ri binary."""
+    if t < 120.0:
+        return f"{t:.3g} s"
+    if t < 7200.0:
+        return f"{t / 60.0:.3g} min"
+    if t < 172800.0:
+        return f"{t / 3600.0:.3g} h"
+    return f"{t / 86400.0:.3g} days"
+
+
 def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
     """Parses codeword and hit statistics from dist_m4ri stderr output."""
     import re
-    stats: Dict[str, Any] = {"extra_weights": [], "rw_converged": False}
+    stats: Dict[str, Any] = {"extra_weights": [], "rw_converged": False, "hit_warnings": []}
     if not stderr:
         return stats
+    hit_warning: Optional[List[str]] = None
+    skip_estimate = False
     for line in stderr.splitlines():
         line_s = line.strip()
+        if line_s.startswith("#   information-set estimate"):  # printed by the binary after a hit warning
+            skip_estimate = True
+        elif skip_estimate and line_s.startswith("#   "):
+            continue
+        else:
+            skip_estimate = False
+        if skip_estimate:
+            if hit_warning is not None:
+                stats["hit_warnings"].append(" ".join(hit_warning))
+                hit_warning = None
+            continue
+        if hit_warning is not None:
+            if line_s.startswith("#   "):  # continuation of a hit uniformity warning
+                hit_warning.append(line_s[1:].strip())
+                continue
+            stats["hit_warnings"].append(" ".join(hit_warning))
+            hit_warning = None
+        if line_s.startswith("# Warning: non-uniform RW hit counts"):
+            hit_warning = [line_s[len("# Warning: "):]]
+            continue
+        if line_s.startswith("# RW information sets:"):
+            m_rw = re.search(
+                r"n=(\d+), rank\(H\)=(\d+), steps=(\d+) \(uniform permutations: (\d+)\), ksub=(\d+), "
+                r"([0-9.eE+-]+) s/step per thread, (\d+) RW threads", line_s
+            )
+            if m_rw:
+                stats["rw_n"] = int(m_rw.group(1))
+                stats["rw_rank"] = int(m_rw.group(2))
+                stats["rw_steps"] = int(m_rw.group(3))
+                stats["rw_steps_uniform"] = int(m_rw.group(4))
+                stats["rw_ksub"] = int(m_rw.group(5))
+                stats["rw_step_time"] = float(m_rw.group(6))
+                stats["rw_threads"] = int(m_rw.group(7))
+            continue
         if "RW convergence reached:" in line_s:
             stats["rw_converged"] = True
         if line_s.startswith("# codewords accumulated: total=0"):
@@ -243,13 +371,16 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 stats["hits_max"] = int(m.group(6))
                 stats["hits_avg"] = float(m.group(7))
                 stats["hits_stdev"] = float(m.group(8))
-            m_cov = re.search(
-                r"hits>=(\d+):\s*(\d+)/(\d+)\s*\(cov_cws=(\d+)\)", line_s
+            m_set = re.search(
+                r"<n>=([0-9.]+) over (\d+) cws of w=(\d+)\.\.(\d+) \(min_hits=(\d+), cov_cws=(-?\d+)\)", line_s
             )
-            if m_cov:
-                stats["min_hits"] = int(m_cov.group(1))
-                stats["cov_cnt"] = int(m_cov.group(2))
-                stats["cov_cws"] = int(m_cov.group(4))
+            if m_set:
+                stats["avg_hits"] = float(m_set.group(1))
+                stats["set_cws"] = int(m_set.group(2))
+                stats["set_w_lo"] = int(m_set.group(3))
+                stats["set_w_hi"] = int(m_set.group(4))
+                stats["min_hits"] = int(m_set.group(5))
+                stats["cov_cws"] = int(m_set.group(6))
         elif line_s.startswith("# codewords w="):
             m_w = re.search(
                 r"w=(\d+):\s*cws=(\d+),\s*total_hits=(\d+),\s*"
@@ -266,6 +397,8 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                     "hits_avg": float(m_w.group(6)),
                     "hits_stdev": float(m_w.group(7)),
                 })
+    if hit_warning is not None:
+        stats["hit_warnings"].append(" ".join(hit_warning))
     return stats
 
 
@@ -328,12 +461,14 @@ def explain_bounds(
                 f"hits min = {stats['hits_min']}, max = {stats['hits_max']}, "
                 f"avg = {stats['hits_avg']:.2f}, stdev = {stats['hits_stdev']:.2f})."
             )
-            if stats.get("min_hits", 0) > 0:
+            if stats.get("min_hits", 0) > 0 and "avg_hits" in stats:
+                import math
                 conv_str = "CONVERGED" if stats.get("rw_converged") else "not converged"
                 lines.append(
                     f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}, "
-                    f"cov_cws = {stats['cov_cws']}): {stats['cov_cnt']}/{stats['cws']} "
-                    f"min-weight codewords hit >= {stats['min_hits']} times ({conv_str})."
+                    f"cov_cws = {stats['cov_cws']}): <n> = {stats['avg_hits']:.2f} average hits per codeword "
+                    f"({stats['set_cws']} codewords of weight {stats['set_w_lo']}..{stats['set_w_hi']}), "
+                    f"P_fail ~ exp(-<n>) = {math.exp(-stats['avg_hits']):.2g} ({conv_str})."
                 )
             for ew in stats.get("extra_weights", []):
                 lines.append(
@@ -342,8 +477,57 @@ def explain_bounds(
                     f"max = {ew['hits_max']}, avg = {ew['hits_avg']:.2f}, "
                     f"stdev = {ew['hits_stdev']:.2f}."
                 )
+            for hw in stats.get("hit_warnings", []):
+                lines.append(f"  {prefix}WARNING: {hw}")
         else:
             lines.append(f"  {prefix}Codewords accumulated: 0 distinct non-trivial codewords found.")
+
+    # The RW upper bound is not certified: estimated probability that RW missed a lighter codeword
+    if stats and num_rw > 0 and dmax > max(dmin, 1):
+        import math
+        rw_threads = stats.get("rw_threads", 0)
+        step_wall = stats.get("rw_step_time", 0.0) / rw_threads if rw_threads > 0 else 0.0
+        avg = stats.get("avg_hits", 0.0)
+        if stats.get("min_hits", 0) > 0 and avg > 0.0:
+            p_hit = math.exp(-avg)
+            if p_hit > 0.01:
+                need = math.ceil(num_rw * math.log(100.0) / avg)  # the average number of hits grows with the steps
+                t_str = f", ~{_format_duration((need - num_rw) * step_wall)} more" if step_wall > 0.0 else ""
+                lines.append(f"  {prefix}Hit-based estimate: P_fail ~ exp(-<n>) = {p_hit:.2g}; 1% after about {need} "
+                             f"RW steps in total{t_str}.")
+            else:
+                lines.append(f"  {prefix}Hit-based estimate: P_fail ~ exp(-<n>) = {p_hit:.2g} (below 1%).")
+        n_unif = stats.get("rw_steps_uniform", 0)
+        if stats.get("rw_n", 0) > 0 and stats.get("rw_ksub", 0) == 0 and n_unif > 0:
+            n_cols, rank = stats["rw_n"], stats["rw_rank"]
+            est = rw_infoset_estimate(n_cols, rank, n_unif, dmax, dmin=max(dmin, 1), step_time=step_wall,
+                                      steps_total=stats.get("rw_steps", n_unif))
+            if est is not None and est["steps_target"] is None:
+                lines.append(f"  {prefix}Information-set estimate: a codeword of weight {est['w']} cannot be found "
+                             f"by RW (n = {n_cols}, rank(H) = {rank}).")
+            elif est is not None:
+                t_str = (f", ~{_format_duration(est['time_target'])}" if est["time_target"] is not None else "")
+                lines.append(
+                    f"  {prefix}Information-set estimate (uniform random information sets; n = {n_cols}, "
+                    f"rank(H) = {rank}, {n_unif} of {stats.get('rw_steps', n_unif)} RW steps uniform): a single "
+                    f"codeword of weight {est['w']} < {dmax} is found with probability {est['p_find']:.3g} per RW "
+                    f"step and would be missed with probability {est['p_miss']:.2g}; 1% after about "
+                    f"{est['steps_target']} RW steps in total{t_str}."
+                )
+                if stats.get("min_w") == dmax and "hits_avg" in stats:
+                    n_all = stats.get("rw_steps", n_unif)
+                    exp_hits = n_all * rw_infoset_find_prob(n_cols, rank, dmax)
+                    verdict = ("the uniform model is conservative here" if stats["hits_avg"] >= exp_hits else
+                               "codewords are found less often than in the uniform model, the information-set "
+                               "estimate may be optimistic")
+                    note = "" if n_unif == n_all else ", including the steps with localized windows"
+                    lines.append(
+                        f"  {prefix}Model check: expected hits per codeword of weight {dmax} in {n_all} uniform RW "
+                        f"steps: {exp_hits:.3g}, observed average {stats['hits_avg']:.2f}{note} ({verdict})."
+                    )
+        elif stats.get("rw_n", 0) > 0:
+            lines.append(f"  {prefix}Information-set estimate: not available (ksub > 0 or kwin > 0: no uniform "
+                         f"random information sets).")
 
     return "\n".join(lines)
 
@@ -4761,7 +4945,7 @@ Search limits and stopping criteria:
   steps=N               Maximum RW steps / information sets (default: 100000)
   wmax=N                Maximum cluster weight to search in CC (0=until bound/timeout)
   wmin=N                Stop immediately if cw with weight <= wmin is found (default: 1)
-  min_hits=N            Stop RW when tracked min-weight cws hit >= N times (default: 5)
+  min_hits=N            Stop RW when lowest-weight cws are hit N times on average (default: 5)
   timeout=SEC           Execution timeout in seconds, 0 for infinite (default: 60.0)
 
 Multithreading & execution:
@@ -4775,7 +4959,7 @@ Codeword collection & caching:
   finC=FILE             Input initial candidate codewords (.nz file)
   cache=FILE            Persistent JSON cache file (default: tmp_dist_cache.json)
   --no-cache / nocache  Disable persistent JSON caching
-  --verbose / -v        Output detailed explanations of bounds, steps, and cache status
+  --verbose / -v        Explain bounds, steps, cache status, and miss probability estimates
 
 Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
@@ -4787,7 +4971,7 @@ Extra parameters (see --morehelp for details):
   ksub=N (0)            RW subspace sketch dimension (0: full matrix; auto-disabled if m < nu)
   kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
-  cov_cws=N (100)       Max distinct min-weight cws tracked for min_hits convergence
+  cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
   refresh=N (0)         Periodic N basis refresh interval in RW steps (auto 5000 when ksub > 0)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
   dW=N (0)              Extra weight window above dmin to collect codewords
@@ -4867,7 +5051,8 @@ Search limits and stopping criteria:
                         (default: 100000).
   wmax=N                Maximum cluster weight to analyze in CC (default: 0 = until bound/timeout).
   wmin=N                Minimum distance threshold (default: 1).
-                        If a codeword of weight w <= wmin is discovered, search halts immediately.
+                        If a codeword of weight w <= wmin is discovered, search halts immediately
+                        (not when collecting codewords with outC or maxC).
   timeout=SEC           Execution timeout in seconds (default: 60.0; set 0 for infinite).
                         In method=3, it guides the CC vs RW thread balance, and a CC round predicted
                         not to finish in time is not started while RW runs (in method=2, and with
@@ -4894,11 +5079,24 @@ Multithreading & throttling:
                         Alias: win=N.
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
-  min_hits=N            Empirical RW convergence stopping criterion (default: 5, 0 = disabled).
-                        Stops RW early when all tracked min-weight codewords (up to cov_cws)
-                        have each been independently found at least min_hits times.
-  cov_cws=N             Maximum distinct minimum-weight codewords tracked in hash for min_hits
-                        convergence (default: 100; set <= 0 to track all found min-weight cws).
+  min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = disabled).
+                        Stops RW when the average number of times <n> that RW has found each
+                        codeword reaches min_hits, both for the codewords of the minimum weight
+                        found and for a representative set of cov_cws lowest-weight codewords
+                        (heavier codewords are kept until enough lighter ones are found).  A
+                        single codeword suffices.  A lighter codeword is missed with probability
+                        about exp(-<n>), assuming that lighter codewords are found at least as
+                        often.  With debug&1 (or --verbose), a warning is printed at the end if
+                        the hit counts of codewords of the same weight are strongly non-uniform
+                        (then exp(-<n>) is optimistic), together with an information-set estimate
+                        (uniform random information sets) of the probability to miss a lighter
+                        codeword and of the RW steps needed for 1%.  With --verbose, both
+                        estimates are always shown for a result which is not certified.
+  cov_cws=N             Size of the representative set of lowest-weight codewords for min_hits
+                        (default: 100; 0 = only the minimum weight).  Without outC and maxC, at
+                        most cov_cws minimum-weight codewords are tracked (all if cov_cws=0).
+                        With fewer minimum-weight codewords, a smaller cov_cws may stop RW
+                        earlier.
   refresh=N             Periodic adaptive basis refresh interval in RW steps when ksub > 0
                         (default: 5000 when ksub > 0, 0 to disable). Re-echelonizes N and
                         substitutes heavier basis rows with discovered min-weight codewords.
@@ -4932,7 +5130,10 @@ Connected Cluster (CC) search options:
 
 Codeword collection and export:
   --cws                 Collect and display non-trivial minimum-weight codewords.
-  outC=FILE             Export found codewords to file in .nz format.
+  outC=FILE             Export found codewords of weight up to min_w + dW (min_w: minimum weight
+                        found) to file in .nz format.  In method=2/3, once the distance d is
+                        known, CC rounds w = d..d+dW enumerate all such codewords (unless the
+                        timeout is hit).
                         In CSS mode, automatically saves X-codewords to FILE_X.nz and
                         Z-codewords to FILE_Z.nz.
   finC=FILE             Import initial candidate codewords from file in .nz format.
@@ -4948,7 +5149,11 @@ Distance caching (Python CLI):
 General options:
   solver=NAME           Distance calculation engine: 'dist_m4ri' (default) or 'codedistance'.
   --verbose / -v        Enable verbose output with detailed explanations of bounds,
-                        timings, steps, and cache status.
+                        timings, steps, and cache status.  For a RW upper bound which is not
+                        certified, also estimates the probability that a lighter codeword was
+                        missed (from the average hits <n>, and from uniform random information
+                        sets with n, rank(H), and the RW steps), with the RW steps and time
+                        needed for a 1% miss probability.
   seed=N                Random number generator seed (default: 0 = current time).
   debug=N               Debug bitmask passed directly to the dist_m4ri binary (default: 0).
                         (0: silent, 1: general, 2: verbose/threads, 4: args, 8: progress,

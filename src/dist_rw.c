@@ -163,15 +163,8 @@ int do_RW_dist(params_t * const p){
       }
       for (int ir = 0; ir < rank; ir++) {
         int cnt = 0;
-        int limit = nvar + 1;
-        int cur_d = (minW <= nvar) ? minW : 0;
-        if (cur_d > 0) {
-          if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
-            limit = minint(limit, cur_d + p->dW + 1);
-          } else {
-            limit = minint(limit, cur_d);
-          }
-        }
+        const int cur_d = (minW <= nvar) ? minW : 0;
+        const int limit = codeword_rw_limit(p, cur_d, codeword_feed_limit(p));
         word *rawrow = mzd_row(M_sub, ir);
         rci_t j = -1;
         while (cnt < limit) {
@@ -184,7 +177,7 @@ int do_RW_dist(params_t * const p){
           if (nz) {
             p->codewords = codeword_add_maybe(p, ee, cnt);
             if (cnt < minW) minW = cnt;
-            if (p->maxC && p->num_cws >= p->maxC) goto alldone;
+            if (codeword_maxc_reached(p)) goto alldone;
             if (check_min_hits_convergence(p)) goto alldone;
             if (minW <= wmin) {
               minW = -minW;
@@ -240,15 +233,9 @@ int do_RW_dist(params_t * const p){
       ir++;
       int cnt=0; /** how many non-zero elements */
       ee[cnt++] = col;
-      int limit = nvar + 1;
-      int cur_d = (minW <= nvar) ? minW : 0;
-      if (cur_d > 0) {
-        if ((p->outC || p->maxC || p->dW > 0 || p->min_hits > 0) && p->dW >= 0) {
-          limit = minint(limit, cur_d + p->dW + 1);
-        } else {
-          limit = minint(limit, cur_d);
-        }
-      }
+      const int cur_d = (minW <= nvar) ? minW : 0;
+      /** weight limit of candidates of interest (the same with any `debug` value) */
+      const int limit = codeword_rw_limit(p, cur_d, codeword_feed_limit(p));
 #if (NEW==0) /** older version going over columns of `H` */
       for(int ix=0; ix<rank; ix++){
         if(mzd_read_bit(mH,ix,col))
@@ -317,7 +304,7 @@ int do_RW_dist(params_t * const p){
           if (cnt < minW) {
             minW = cnt;
           }
-          if (p->maxC && p->num_cws >= p->maxC) {
+          if (codeword_maxc_reached(p)) {
             goto alldone;
           }
           if (check_min_hits_convergence(p)) {

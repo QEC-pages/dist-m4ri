@@ -39,9 +39,9 @@ params_t prm={
   .codewords=NULL,
   .num_cws=0,
   .min_w=INT_MAX,
-  .min_w_cws=0,
-  .min_w_cov=0,
-  .min_w_hits=0,
+  .cw_max_w=0,
+  .cw_cnt_w=NULL,
+  .cw_hits_w=NULL,
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
@@ -685,6 +685,13 @@ void var_kill(params_t * const p){
     HASH_DEL(p->codewords, cw);
     free(cw);
   }
+  p->num_cws = 0;
+  p->min_w = INT_MAX;
+  p->cw_max_w = 0;
+  free(p->cw_cnt_w);
+  free(p->cw_hits_w);
+  p->cw_cnt_w = NULL;
+  p->cw_hits_w = NULL;
 }
 
 typedef struct {
@@ -986,65 +993,125 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
   return vec;
 }
 
-cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
-  if (p->maxC && p->num_cws >= p->maxC) {
-    return p->codewords;
+/* Codewords are collected (and exported with outC) with outC or maxC */
+static inline int cw_collecting(const params_t * const p) {
+  return (p->outC != NULL) || (p->maxC > 0);
+}
+
+/* Width of the collection window: codewords of weight up to min_w + dW are collected (with outC or maxC) */
+static inline int cw_window_dw(const params_t * const p) {
+  return (cw_collecting(p) && p->dW > 0) ? p->dW : 0;
+}
+
+/* Size of the representative set of lowest-weight codewords for the `min_hits` statistic (0: only the
+ * minimum-weight codewords) */
+static inline long long int cw_rep_size(const params_t * const p) {
+  return (p->min_hits > 0 && p->cov_cws > 0) ? p->cov_cws : 0;
+}
+
+long long int codeword_window_count(const params_t * const p) {
+  if (p->min_w == INT_MAX || !p->cw_cnt_w) return 0;
+  const long long int top = (long long int)p->min_w + cw_window_dw(p);
+  const int w_top = (top < p->cw_max_w) ? (int)top : p->cw_max_w;
+  long long int num = 0;
+  for (int w = p->min_w; w <= w_top; w++) num += p->cw_cnt_w[w];
+  return num;
+}
+
+int codeword_maxc_reached(const params_t * const p) {
+  return (p->maxC > 0) && (codeword_window_count(p) >= p->maxC);
+}
+
+int codeword_feed_limit(const params_t * const p) {
+  if (p->min_hits <= 0) return 0;
+  if (p->min_w == INT_MAX) return INT_MAX;
+  const long long int rep = cw_rep_size(p);
+  if (rep <= 0) return p->min_w + 1;
+  if (p->num_cws < rep) return INT_MAX;
+  return p->cw_max_w + 1;
+}
+
+/* Remove the heaviest weight classes from the hash as long as the remaining codewords keep the collection window
+ * and at least `cw_rep_size()` codewords (whole weight classes are kept) */
+static void cw_trim(params_t * const p) {
+  if (p->min_w == INT_MAX || p->cw_max_w <= p->min_w) return;
+  const long long int rep = cw_rep_size(p);
+  if (rep > 0 && p->num_cws <= rep) return;
+  const long long int top = (long long int)p->min_w + cw_window_dw(p);
+  if (top >= p->cw_max_w) return;
+  int keep = (int)top;
+  if (rep > 0) { /* the smallest weight such that the codewords up to this weight form the representative set */
+    long long int cum = 0;
+    int w_rep = p->cw_max_w;
+    for (int w = p->min_w; w < p->cw_max_w; w++) {
+      cum += p->cw_cnt_w[w];
+      if (cum >= rep) {
+        w_rep = w;
+        break;
+      }
+    }
+    if (w_rep > keep) keep = w_rep;
   }
-  // Check if weight is within the current limit: min_w + dW (or min_w if dW < 0)
-  int max_allowed_w = (p->min_w == INT_MAX) ? INT_MAX : ((p->dW >= 0) ? (p->min_w + p->dW) : p->min_w);
-  if (weight > max_allowed_w) {
-    return p->codewords;
+  if (keep >= p->cw_max_w) return;
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    if (cw->weight > keep) {
+      p->cw_cnt_w[cw->weight]--;
+      p->cw_hits_w[cw->weight] -= cw->cnt;
+      HASH_DEL(p->codewords, cw);
+      free(cw);
+      p->num_cws--;
+    }
+  }
+  p->cw_max_w = keep;
+  while (p->cw_max_w > p->min_w && p->cw_cnt_w[p->cw_max_w] == 0) p->cw_max_w--;
+}
+
+cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
+  if (weight <= 0 || weight > p->nvar) return p->codewords;
+  if (!p->cw_cnt_w) { /* weight histograms, allocated on first use */
+    p->cw_cnt_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
+    p->cw_hits_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
+    if (!p->cw_cnt_w || !p->cw_hits_w) ERROR("memory allocation");
   }
 
   const size_t keylen = weight * sizeof(int);
   cw_vec_t *pvec = NULL;
   HASH_FIND(hh, p->codewords, arr, keylen, pvec);
-  if (!pvec) {
-    if (weight == p->min_w && !p->outC && p->maxC == 0 && p->dW <= 0 &&
-        !(p->debug & 32) && p->cov_cws > 0 && p->min_w_cws >= p->cov_cws) {
-      return p->codewords;
-    }
-    cw_vec_t *entry = malloc(sizeof(cw_vec_t) + keylen);
-    if (!entry) ERROR("memory allocation");
-    entry->weight = weight;
-    entry->cnt = 1;
-    for (int i = 0; i < weight; i++) {
-      entry->arr[i] = arr[i];
-    }
-    HASH_ADD(hh, p->codewords, arr, keylen, entry);
-    p->num_cws++;
-
-    // Update min_w and prune heavier codewords
-    if (weight < p->min_w) {
-      p->min_w = weight;
-      p->min_w_cws = 1;
-      p->min_w_hits = 1;
-      p->min_w_cov = (p->min_hits > 0 && 1 >= p->min_hits) ? 1 : 0;
-      int prune_w = (p->dW >= 0) ? (p->min_w + p->dW) : p->min_w;
-      cw_vec_t *cw, *tmp;
-      HASH_ITER(hh, p->codewords, cw, tmp) {
-        if (cw->weight > prune_w) {
-          HASH_DEL(p->codewords, cw);
-          free(cw);
-          p->num_cws--;
-        }
-      }
-    } else if (weight == p->min_w) {
-      p->min_w_cws++;
-      p->min_w_hits++;
-      if (p->min_hits > 0 && 1 >= p->min_hits) {
-        p->min_w_cov++;
-      }
-    }
-  } else {
+  if (pvec) { /* a known codeword: one more hit */
     pvec->cnt++;
-    if (weight == p->min_w) {
-      p->min_w_hits++;
-      if (p->min_hits > 0 && pvec->cnt == p->min_hits) {
-        p->min_w_cov++;
-      }
-    }
+    p->cw_hits_w[weight]++;
+    return p->codewords;
   }
+
+  int insert;
+  if (weight < p->min_w) {
+    insert = 1; /* a new minimum weight is always recorded (also with maxC) */
+  } else if ((long long int)weight <= (long long int)p->min_w + cw_window_dw(p)) { /* the collection window */
+    if (cw_collecting(p))
+      insert = !codeword_maxc_reached(p);
+    else /* weight == min_w: at most cov_cws codewords tracked for `min_hits` (all if cov_cws <= 0) */
+      insert = (p->cov_cws <= 0) || (p->cw_cnt_w[weight] < p->cov_cws);
+  } else { /* heavier: only to keep a representative set of cov_cws lowest-weight codewords for `min_hits` */
+    const long long int rep = cw_rep_size(p);
+    insert = (rep > 0) && (p->num_cws < rep || weight < p->cw_max_w);
+  }
+  if (!insert) return p->codewords;
+
+  cw_vec_t *entry = malloc(sizeof(cw_vec_t) + keylen);
+  if (!entry) ERROR("memory allocation");
+  entry->weight = weight;
+  entry->cnt = 1;
+  memcpy(entry->arr, arr, keylen);
+  HASH_ADD(hh, p->codewords, arr, keylen, entry);
+  p->num_cws++;
+  p->cw_cnt_w[weight]++;
+  p->cw_hits_w[weight]++;
+  if (weight > p->cw_max_w) p->cw_max_w = weight;
+  if (weight < p->min_w) p->min_w = weight;
+
+  /* gradually replace heavier codewords by lighter ones */
+  cw_trim(p);
   return p->codewords;
 }
 
@@ -1085,6 +1152,52 @@ void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cn
   *stdev_cnt = sqrt(sum_sq / (double)n_cws);
 }
 
+/* Hit statistics of the codewords of one weight in hash */
+typedef struct {
+  long long int n;    /* number of codewords */
+  long long int hits; /* total hits */
+  double sumsq;       /* sum of squared hit counts */
+  int c_min, c_max;   /* smallest and largest hit count */
+} cw_class_stats_t;
+
+/* Hit statistics of the codewords in hash of each weight w_lo..w_hi (one pass over the hash; free() the result) */
+static cw_class_stats_t *cw_class_stats(const params_t * const p, const int w_lo, const int w_hi) {
+  const int nw = w_hi - w_lo + 1;
+  cw_class_stats_t *cs = calloc(nw > 0 ? nw : 1, sizeof(cw_class_stats_t));
+  if (!cs) ERROR("memory allocation");
+  for (int i = 0; i < nw; i++) cs[i].c_min = INT_MAX;
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    if (cw->weight < w_lo || cw->weight > w_hi) continue;
+    cw_class_stats_t * const c = &cs[cw->weight - w_lo];
+    c->n++;
+    c->hits += cw->cnt;
+    c->sumsq += (double)cw->cnt * (double)cw->cnt;
+    if (cw->cnt < c->c_min) c->c_min = cw->cnt;
+    if (cw->cnt > c->c_max) c->c_max = cw->cnt;
+  }
+  return cs;
+}
+
+void codeword_hit_stats(const params_t * const p, cw_hit_stats_t * const st) {
+  memset(st, 0, sizeof(*st));
+  if (p->min_w == INT_MAX || !p->cw_cnt_w || p->cw_cnt_w[p->min_w] <= 0) return;
+  const long long int rep = cw_rep_size(p);
+  st->w_lo = st->w_hi = p->min_w;
+  st->min_cws = p->cw_cnt_w[p->min_w];
+  st->min_hits = p->cw_hits_w[p->min_w];
+  for (int w = p->min_w; w <= p->cw_max_w; w++) { /* the lowest weight classes with at least `rep` codewords */
+    if (p->cw_cnt_w[w] <= 0) continue;
+    st->set_cws += p->cw_cnt_w[w];
+    st->set_hits += p->cw_hits_w[w];
+    st->w_hi = w;
+    if (st->set_cws >= rep) break;
+  }
+  const double avg_min = (double)st->min_hits / (double)st->min_cws;
+  const double avg_set = (double)st->set_hits / (double)st->set_cws;
+  st->avg = (avg_set < avg_min) ? avg_set : avg_min;
+}
+
 void print_codeword_stats(FILE *stream, const params_t * const p) {
   if (!stream || !p) return;
   if (p->num_cws <= 0 || !p->codewords || p->min_w == INT_MAX) {
@@ -1092,84 +1205,172 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
     return;
   }
 
-  int min_w = p->min_w;
-  int max_w = min_w;
-  long long n_min_w = 0;
-  long long hits_min_w = 0;
-  long long cov_min_w = 0;
-  cw_vec_t *cw, *tmp;
-  HASH_ITER(hh, p->codewords, cw, tmp) {
-    if (cw->weight > max_w) max_w = cw->weight;
-    if (cw->weight == min_w) {
-      n_min_w++;
-      hits_min_w += cw->cnt;
-      if (p->min_hits > 0 && cw->cnt >= p->min_hits) cov_min_w++;
-    }
-  }
-
-  int min_cnt = 0, max_cnt = 0;
-  double avg_cnt = 0.0, stdev_cnt = 0.0;
-  compute_min_w_hit_stats(p, &min_cnt, &max_cnt, &avg_cnt, &stdev_cnt);
-
-  fprintf(stream,
-          "# codewords accumulated: total=%lld, min_w=%d: cws=%lld, total_hits=%lld, "
-          "hits min=%d, max=%d, avg=%.2f, stdev=%.2f",
-          p->num_cws, min_w, n_min_w, hits_min_w,
-          min_cnt, max_cnt, avg_cnt, stdev_cnt);
-  if (p->min_hits > 0) {
-    fprintf(stream, ", hits>=%d: %lld/%lld (cov_cws=%d)",
-            p->min_hits, cov_min_w, n_min_w, p->cov_cws);
-  }
-  fprintf(stream, "\n");
-
-  for (int w = min_w + 1; w <= max_w; w++) {
-    long long n_w = 0, hits_w = 0;
-    int c_min = INT_MAX, c_max = 0;
-    HASH_ITER(hh, p->codewords, cw, tmp) {
-      if (cw->weight == w) {
-        n_w++;
-        hits_w += cw->cnt;
-        if (cw->cnt < c_min) c_min = cw->cnt;
-        if (cw->cnt > c_max) c_max = cw->cnt;
+  const int w_lo = p->min_w;
+  const int w_hi = (p->cw_max_w > w_lo) ? p->cw_max_w : w_lo;
+  cw_class_stats_t *cs = cw_class_stats(p, w_lo, w_hi);
+  for (int w = w_lo; w <= w_hi; w++) {
+    const cw_class_stats_t * const c = &cs[w - w_lo];
+    if (c->n <= 0) continue;
+    const double avg = (double)c->hits / (double)c->n;
+    const double var = c->sumsq / (double)c->n - avg * avg;
+    const double stdev = (var > 0.0) ? sqrt(var) : 0.0;
+    if (w == w_lo) {
+      fprintf(stream,
+              "# codewords accumulated: total=%lld, min_w=%d: cws=%lld, total_hits=%lld, "
+              "hits min=%d, max=%d, avg=%.2f, stdev=%.2f",
+              p->num_cws, w, c->n, c->hits, c->c_min, c->c_max, avg, stdev);
+      if (p->min_hits > 0) {
+        cw_hit_stats_t st;
+        codeword_hit_stats(p, &st);
+        fprintf(stream, ", <n>=%.2f over %lld cws of w=%d..%d (min_hits=%d, cov_cws=%d)",
+                st.avg, st.set_cws, st.w_lo, st.w_hi, p->min_hits, p->cov_cws);
       }
-    }
-    if (n_w > 0) {
-      double avg_w = (double)hits_w / (double)n_w;
-      double sum_sq = 0.0;
-      HASH_ITER(hh, p->codewords, cw, tmp) {
-        if (cw->weight == w) {
-          double diff = (double)cw->cnt - avg_w;
-          sum_sq += diff * diff;
-        }
-      }
-      double stdev_w = sqrt(sum_sq / (double)n_w);
+      fprintf(stream, "\n");
+    } else {
       fprintf(stream,
               "# codewords w=%d: cws=%lld, total_hits=%lld, "
               "hits min=%d, max=%d, avg=%.2f, stdev=%.2f\n",
-              w, n_w, hits_w, c_min, c_max, avg_w, stdev_w);
+              w, c->n, c->hits, c->c_min, c->c_max, avg, stdev);
     }
   }
+  free(cs);
 }
 
 int check_min_hits_convergence(const params_t * const p) {
-  if (p->min_hits <= 0 || p->min_w == INT_MAX || p->min_w_cws <= 0) {
-    return 0;
+  if (p->min_hits <= 0) return 0;
+  cw_hit_stats_t st;
+  codeword_hit_stats(p, &st);
+  return (st.set_cws > 0) && (st.avg >= (double)p->min_hits);
+}
+
+/* Upper tail probability P(X >= x) of the chi-square distribution with `df` degrees of freedom (exact for df <= 2,
+ * Wilson-Hilferty approximation otherwise) */
+static double chi2_upper_tail(const double x, const long long int df) {
+  if (!(x > 0.0)) return 1.0;
+  if (df == 1) return erfc(sqrt(0.5 * x));
+  if (df == 2) return exp(-0.5 * x);
+  const double s = 2.0 / (9.0 * (double)df);
+  const double z = (cbrt(x / (double)df) - (1.0 - s)) / sqrt(s);
+  return 0.5 * erfc(z / sqrt(2.0));
+}
+
+/* Mean mu of the Poisson distribution whose zero-truncated version has the mean m > 1, i.e., m = mu / (1 - e^-mu):
+ * Newton iteration for the convex function g(mu) = mu - m (1 - e^-mu), starting to the right of the root */
+static double ztp_mu(const double m) {
+  double mu = m;
+  for (int it = 0; it < 200; it++) {
+    const double e = exp(-mu);
+    const double dg = 1.0 - m * e;
+    if (!(dg > 0.0)) break;
+    const double step = (mu - m * (1.0 - e)) / dg;
+    mu -= step;
+    if (fabs(step) <= 1e-12 * (1.0 + mu)) break;
   }
-  int min_req = (p->cov_cws > 0) ? minint(p->cov_cws, 5) : 1;
-  if (p->min_w_cws < min_req) {
-    return 0;
+  return mu;
+}
+
+int codeword_hit_check(FILE *stream, const params_t * const p) {
+  if (!p || p->min_w == INT_MAX || !p->cw_cnt_w) return 0;
+  cw_hit_stats_t st;
+  codeword_hit_stats(p, &st);
+  if (st.set_cws <= 0) return 0;
+  cw_class_stats_t *cs = cw_class_stats(p, st.w_lo, st.w_hi);
+  int num_bad = 0;
+  for (int w = st.w_lo; w <= st.w_hi; w++) {
+    const cw_class_stats_t * const c = &cs[w - st.w_lo];
+    if (c->n < 2) continue;
+    const double n = (double)c->n;
+    const double m = (double)c->hits / n;
+    if (m <= 1.0 + 1e-9) continue; /* every codeword found once: no information */
+    double s2 = (c->sumsq - n * m * m) / (n - 1.0); /* sample variance of the hit counts */
+    if (s2 < 0.0) s2 = 0.0;
+    /* with equal hit rates, a hit count is Poisson(mu) conditioned on >= 1 (zero-truncated), with mean m and
+     * variance v0; codewords tracked only after their first hit have a smaller variance (the test is conservative) */
+    const double mu = ztp_mu(m);
+    const double v0 = m * (1.0 + mu - m);
+    if (!(mu > 0.0) || !(v0 > 0.0)) continue;
+    const double pval = chi2_upper_tail((n - 1.0) * s2 / v0, c->n - 1); /* dispersion test */
+    const double cv2 = (s2 - v0) / (mu * mu); /* squared relative spread of the hit rates */
+    if (!(pval < 1e-3) || !(cv2 >= 1.0)) continue; /* significant and strong: spread of hit rates >= their mean */
+    /* a lighter codeword with a gamma-distributed hit rate of the same relative spread is missed with the
+     * probability E[exp(-lambda)] = (1 + cv2 mu)^(-1/cv2), instead of exp(-mu) with equal hit rates: warn if this
+     * is at least 3 times larger */
+    const double p_unif = exp(-mu);
+    const double p_spread = pow(1.0 + cv2 * mu, -1.0 / cv2);
+    if (p_spread >= 3.0 * p_unif) {
+      num_bad++;
+      if (stream) {
+        fprintf(stream,
+                "# Warning: non-uniform RW hit counts of the %lld codewords of weight %d: hits min=%d, max=%d, "
+                "avg=%.2f, stdev=%.2f (expected %.2f; p=%.1e)\n"
+                "#   some codewords are found much more often than others of the same weight (relative spread of "
+                "hit rates %.2f):\n"
+                "#   a lighter codeword may be missed with probability ~%.2g rather than exp(-%.2f)=%.2g; "
+                "consider a larger min_hits\n",
+                c->n, w, c->c_min, c->c_max, m, sqrt(s2), sqrt(v0), pval, sqrt(cv2), p_spread, mu, p_unif);
+      }
+    }
   }
-  if (p->cov_cws > 0 && p->min_w_cov >= p->cov_cws) {
-    return 1;
+  free(cs);
+  return num_bad;
+}
+
+/* Logarithm of the binomial coefficient C(a, b), 0 <= b <= a */
+static double log_binom(const double a, const double b) {
+  return lgamma(a + 1.0) - lgamma(b + 1.0) - lgamma(a - b + 1.0);
+}
+
+double rw_infoset_find_prob(const int n, const int rank, const int w) {
+  const int k = n - rank; /* number of non-pivot columns */
+  if (n <= 0 || rank < 0 || k <= 0 || w < 1 || w > n || w - 1 > rank) return 0.0;
+  /* exactly one of the w positions among the k non-pivot columns */
+  const double p1 = exp(log((double)w) + log_binom(n - w, k - 1) - log_binom(n, k));
+  return (p1 < 1.0) ? p1 : 1.0;
+}
+
+/* Format a duration in seconds (s, min, h, or days) */
+static void format_duration(char * const buf, const size_t size, const double t) {
+  if (t < 120.0) snprintf(buf, size, "%.3g s", t);
+  else if (t < 7200.0) snprintf(buf, size, "%.3g min", t / 60.0);
+  else if (t < 172800.0) snprintf(buf, size, "%.3g h", t / 3600.0);
+  else snprintf(buf, size, "%.3g days", t / 86400.0);
+}
+
+void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const int w_lo, const int w_hi,
+                               const long steps, const long steps_total, const double t_step) {
+  if (!stream || w_lo < 1 || w_hi < w_lo) return;
+  int w_hard = w_hi; /* the weight hardest to find (smallest P1) */
+  double p1 = rw_infoset_find_prob(n, rank, w_hi);
+  for (int w = w_lo; w < w_hi; w++) {
+    const double pw = rw_infoset_find_prob(n, rank, w);
+    if (pw < p1) {
+      p1 = pw;
+      w_hard = w;
+    }
   }
-  if (p->min_w_cov >= p->min_w_cws) {
-    return 1;
+  if (!(p1 > 0.0)) {
+    fprintf(stream, "#   information-set estimate: a codeword of weight %d cannot be found by RW (n=%d, rank(H)=%d)\n",
+            w_hard, n, rank);
+    return;
   }
-  if (p->min_w_hits >= (long long int)p->min_w_cws * p->min_hits &&
-      p->min_w_cov * 2 >= p->min_w_cws) {
-    return 1;
+  const double lq = (p1 < 1.0) ? log1p(-p1) : -INFINITY; /* log of the miss probability per step */
+  const double p_miss = (steps > 0) ? exp((double)steps * lq) : 1.0;
+  /* RW steps for a 1% miss probability: uniform steps, scaled to all steps with the fraction of uniform steps */
+  const double unif_steps_1pc = (p1 < 1.0) ? ceil(log(0.01) / lq) : 1.0;
+  const double steps_1pc = (steps > 0 && steps_total > steps) ? ceil(unif_steps_1pc * steps_total / steps)
+                                                                : unif_steps_1pc;
+  char steps_str[32], time_str[64] = "";
+  snprintf(steps_str, sizeof(steps_str), (steps_1pc < 1e9) ? "%.0f" : "%.3g", steps_1pc);
+  if (t_step > 0.0) {
+    char dur[32];
+    format_duration(dur, sizeof(dur), steps_1pc * t_step);
+    snprintf(time_str, sizeof(time_str), ", ~%s", dur);
   }
-  return 0;
+  fprintf(stream,
+          "#   information-set estimate (uniform random information sets, n=%d, rank(H)=%d): a codeword of weight %d\n"
+          "#   is found with probability %.3g per RW step, missed in %ld uniform steps with probability %.2g "
+          "(1%% after %s RW steps in total%s)\n",
+          n, rank, w_hard, p1, steps, p_miss, steps_str, time_str);
 }
 
 long long int nzlist_read(const char fnam[], params_t *p){
@@ -1187,12 +1388,12 @@ long long int nzlist_read(const char fnam[], params_t *p){
   }
   cw_vec_t *entry=NULL;
   while((entry=nzlist_r_one(f,NULL, fnam, &lineno))){
-    if((p->maxC) && (p->num_cws >= p->maxC)) {
+    if (codeword_maxc_reached(p)) {
       free(entry);
       break;
     }
-    int valid = 1;
-    if (p->spaH) {
+    int valid = (entry->weight > 0) && (entry->arr[entry->weight - 1] < p->nvar); /* column indices in range */
+    if (valid && p->spaH) {
       if (sparse_syndrome_non_zero(p->spaH, entry->weight, entry->arr)) {
         valid = 0;
       }
@@ -1208,10 +1409,13 @@ long long int nzlist_read(const char fnam[], params_t *p){
       continue;
     }
     if((p->wmax==0) ||((p->wmax) && (entry->weight <= p->wmax))){
-      long long int old_num = p->num_cws;
+      const size_t keylen = entry->weight * sizeof(int);
+      cw_vec_t *known = NULL, *added = NULL;
+      HASH_FIND(hh, p->codewords, entry->arr, keylen, known);
       p->codewords = codeword_add_maybe(p, entry->arr, entry->weight);
-      if (p->num_cws > old_num) {
-        count++;
+      if (!known) {
+        HASH_FIND(hh, p->codewords, entry->arr, keylen, added);
+        if (added) count++;
       }
     }
     free(entry);
@@ -1219,7 +1423,8 @@ long long int nzlist_read(const char fnam[], params_t *p){
   fclose(f);
   if (skipped_invalid > 0) {
     fprintf(stderr,
-            "# Warning: skipped %lld invalid codewords (not orthogonal to H or orthogonal to L)\n",
+            "# Warning: skipped %lld invalid codewords (column out of range, not orthogonal to H, or orthogonal "
+            "to L)\n",
             skipped_invalid);
   }
   if(p->debug&1)
@@ -1231,9 +1436,13 @@ long long int nzlist_write(const char fnam[], const char comment[], params_t *p)
   long long int count=0;
   assert(fnam);
   FILE * f = nzlist_w_new(fnam, comment);
+  /* only the collection window (weight up to min_w + dW): the hash may also hold heavier codewords, which are kept
+   * for the `min_hits` statistic only */
+  const long long int w_top = (p->min_w == INT_MAX) ? 0 : (long long int)p->min_w + cw_window_dw(p);
   cw_vec_t *pvec;
   
   for(pvec = p->codewords; pvec != NULL; pvec = (cw_vec_t *)(pvec->hh.next)){
+    if (pvec->weight > w_top) continue;
     count ++;
     nzlist_w_append(f,pvec);
   }

@@ -137,7 +137,7 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		one_vec_print(syn[w+1]);
 	      }
               p->codewords = codeword_add_maybe(p, err->vec, err->wei);
-              if (p->maxC && p->num_cws >= p->maxC) {
+              if (codeword_maxc_reached(p)) {
                 return 1;
               }
               if (!p->outC && p->maxC == 0) {
@@ -253,7 +253,7 @@ int do_CC_dist(params_t * const p){
 	  if((!mL) ||  /** classical code */
 	     (sparse_syndrome_non_zero(mL, err->wei, err->vec))){
             p->codewords = codeword_add_maybe(p, err->vec, err->wei);
-            if (p->maxC && p->num_cws >= p->maxC) {
+            if (codeword_maxc_reached(p)) {
               result = 1;
               break;
             }

@@ -57,14 +57,35 @@ $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
 Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$.
 Threads independently generate random column permutations, compute Gaussian elimination to find information sets,
 and extract candidate dual-row codewords. When a lighter codeword is discovered, all worker threads atomically update
-the global upper bound $d_{\max}$ and prune heavier entries.
+the global upper bound $d_{\max}$. The found codewords are kept in a hash table with their hit counts (the number of
+times RW found each codeword): the collection window for `outC` (weight up to $w_{\min} + \text{dW}$, where
+$w_{\min}$ is the minimum weight found) and, for `min_hits`, a representative set of `cov_cws` lowest-weight codewords,
+where heavier codewords are gradually replaced as lighter ones are found.
 
 Relevant parameters:
 - `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 100000).
 - `min_hits=[int]`: QDistRnd-style automatic convergence stopping criterion (default: 5; set 0 to disable). Stops RW
-  when tracked minimum-weight codewords (up to `cov_cws=100`) have been rediscovered at least `min_hits` times.
-- `cov_cws=[int]`: Maximum number of minimum-weight codewords tracked in the hash table for `min_hits` convergence
-  (default: 100).
+  when the average number of hits per codeword $\langle n\rangle$ reaches `min_hits`, both for the codewords of the
+  minimum weight found and for the representative set of `cov_cws` lowest-weight codewords (heavier codewords make the
+  estimate more conservative). A single codeword suffices (e.g., a classical code with $k=1$). As in QDistRnd, a
+  lighter codeword is missed with probability about $e^{-\langle n\rangle}$, assuming that lighter codewords are found
+  at least as often. At the end (with `debug&1`), a warning is printed if the hit counts of the codewords of the same
+  weight are strongly non-uniform (a dispersion test against the Poisson distribution): some codewords are then found
+  much more often than others, and $e^{-\langle n\rangle}$ is optimistic.
+- `cov_cws=[int]`: Size of the representative set of lowest-weight codewords for `min_hits` (default: 100; 0 for the
+  minimum-weight codewords only). Without `outC` and `maxC`, at most `cov_cws` minimum-weight codewords are tracked
+  (all with `cov_cws=0`). For codes with fewer than `cov_cws` minimum-weight codewords, a smaller `cov_cws` may stop
+  RW earlier.
+- Information-set estimate (printed by the Python wrapper with `--verbose`, and by the binary together with the
+  non-uniform hit count warning): with uniform random information sets, a given codeword of weight $w$ is found in one
+  RW step with probability $P_1(w) = w\binom{n-w}{k-1}/\binom{n}{k}$, where $k = n - \mathrm{rank}\,H$ (exactly one
+  of its positions is a non-pivot column). Among the weights $d_{\min} \le w < d_{\max}$, the weight with the smallest
+  $P_1$ is used: a single codeword of this weight is missed in $S$ uniform RW steps with probability $(1-P_1)^S$. The
+  RW steps (and time) needed for a 1% miss probability are also reported, and in Python a model check compares the
+  expected and the observed hits per codeword of weight $d_{\max}$; the hit-based estimate $e^{-\langle n\rangle}$ is
+  extrapolated to 1% as well. Steps with localized windows (`kwin>0`, or about half of the steps for $n \ge 500$) and
+  `ksub>0` steps are not counted, which makes the estimate conservative (for circuit DEMs, often very much so). With
+  `debug&1`, the binary prints the data for this estimate (`# RW information sets: n=..., rank(H)=..., steps=...`).
 - `kwin=[int]` (alias: `win=[int]`): Localized column permutation window size $W$ (default: 0 for automatic hybrid
   50% uniform / 50% contiguous index window when $n \ge 500$).
 - `win_mode=[0|1]`: Window construction mode when `kwin > 0`: `0` for Tanner graph BFS neighborhood, `1` for contiguous
@@ -73,7 +94,8 @@ Relevant parameters:
   RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$).
 - `refresh=[int]`: RW step interval for adaptive $\ker(H)$ basis refresh via low-weight codeword exchange and
   re-echelonization (default: 5000 when `ksub > 0`, 0 to disable).
-- `wmin=[int]`: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found).
+- `wmin=[int]`: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found;
+  not when collecting codewords with `outC` or `maxC`).
 - `threads=[int]`: Maximum number of POSIX worker threads to run (default: number of CPU cores; subject to automatic
   throttling unless `nothrottle=1` is specified).
 - `timeout=[sec]`: Maximum execution time in seconds (default: 60.0).
@@ -161,8 +183,8 @@ determine the exact code distance as quickly as possible.
 #### Dynamic Thread Allocation & Role of `dexp`:
 1. **Target Search Depth**:
    - Once a codeword has been found, CC rounds continue up to $w = d_{\max} - 1$: the round $w = d_{\max} - 1$
-     certifies $d_{\min} = d_{\max}$ (with `outC` and `dW>0`, CC continues up to $w = d_{\max} + \text{dW}$). Before
-     that, CC is limited only by `wmax` and the `timeout`.
+     certifies $d_{\min} = d_{\max}$ (with `outC`, CC continues with the rounds $w = d_{\max}, \dots, d_{\max} +
+     \text{dW}$, which enumerate all codewords to export). Before that, CC is limited only by `wmax` and the `timeout`.
    - `dexp=D` (alias: `dest=D`) is a hint: as long as RW has not found any codeword, CC rounds $w > D$ run only on the
      threads which cannot run RW (see
      [Multithreading, Throttling & Batch Sizing](#4-multithreading-throttling--batch-sizing)), i.e., CC pauses if RW
@@ -219,7 +241,8 @@ Relevant parameters:
   Gaussian elimination), so that even on huge matrices, where a single RW step may take many seconds, the run ends
   shortly after the timeout.
 - `steps=[int]`: Maximum total RW steps (default: 100000; set to `0` to run pure CC via bracketing coordinator).
-- `min_hits=[int]`: Minimum hit count per minimum-weight codeword for early RW termination (default: 5; 0 to disable).
+- `min_hits=[int]`: Average number of hits per lowest-weight codeword for early RW termination (default: 5; 0 to
+  disable; see [method=1](#1-multithreaded-rw-algorithm-method1)).
 - `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
 
 ### 4. Multithreading, Throttling & Batch Sizing
@@ -272,7 +295,11 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 
 ## Codeword Export (`outC` / `finC`)
 
-- **`outC=[file.nz]`**: Saves all unique discovered codewords in standard **NZLIST** format:
+- **`outC=[file.nz]`**: Saves the discovered codewords of weight up to $w_{\min} + \text{dW}$ ($w_{\min}$: the minimum
+  weight found) in standard **NZLIST** format (heavier codewords kept only for the `min_hits` statistic are not
+  exported). With `method=2` or `3`, once the distance $d$ is known, the CC rounds $w = d, \dots, d + \text{dW}$
+  enumerate all such codewords (unless the `timeout` is hit); with `method=1`, only the codewords found by RW are
+  exported:
   ```text
   %% NZLIST
   % generated by dist_m4ri
@@ -281,7 +308,7 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
   *(Indices are 1-based).*
 - **`finC=[file.nz]`**: Reads initial codewords from a file to initialize $d_{\max}$ and the codeword hash table.
 - **`dW=[int]`**: When set (e.g. `dW=1`), preserves and exports codewords of weight up to $w \le d_{\min} + \text{dW}$.
-- **`maxC=[int]`**: Limits collection to at most `maxC` unique codewords.
+- **`maxC=[int]`**: Limits collection to at most `maxC` unique codewords (of weight up to $w_{\min} + \text{dW}$).
 
 ---
 
@@ -327,7 +354,7 @@ Search limits and stopping criteria:
   steps=[int]        Maximum RW decoding steps / information sets (100000)
   wmax=[int]         Maximum cluster weight to search in CC (0=until bound/timeout)
   wmin=[int]         Stop immediately if cw with weight <= wmin is found (1)
-  min_hits=[int]     Stop RW when min-wt cws (at least cov_cws) hit >= min_hits (5)
+  min_hits=[int]     Stop RW when lowest-wt cws are hit min_hits times on average (5)
   timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)
 
 Multithreading and RW optimization:
@@ -336,10 +363,10 @@ Multithreading and RW optimization:
   kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)
 
 Codeword collection:
-  outC=[file]        Export found minimum-weight codewords to file (.nz format)
+  outC=[file]        Export found min-weight codewords (up to +dW) to file (.nz format)
   finC=[file]        Import initial codewords from file (.nz format)
   maxC=[int]         Maximum number of codewords to collect (0 for unlimited) (0)
-  dW=[int]           Collect codewords up to weight dmin + dW (default: 0)
+  dW=[int]           Collect codewords up to the minimum weight found + dW (0)
 
 Extra parameters (see --morehelp for details):
   smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)
@@ -349,7 +376,7 @@ Extra parameters (see --morehelp for details):
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
-  cov_cws=[int] (100)    Max min-wt cws tracked in hash for min_hits stop
+  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
   refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (auto 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]
   debug=[int] (3)        Debug bitmask (0: silent, 1: general, 2: verbose, ...)
@@ -485,7 +512,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (77 tests)
+# Run full C test suite (83 tests)
 make test
 ```
 

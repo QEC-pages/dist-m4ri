@@ -40,7 +40,8 @@ typedef struct{
 	     */
   int wmax; /** max cluster size to try for `CC`; */
   int dmin; /** known lower bound on distance (w starts from dmin in CC) */
-  int dmax; /** known upper bound on distance (RW ignores codewords of weight >= dmax unless collecting) */
+  int dmax; /** known upper bound on distance (RW ignores codewords of weight >= dmax unless collecting or for
+                `min_hits`) */
   int wmin; /** min distance below which we are not interested 
 		if w <= wmin found in RW, terminate immediately 
 		start clusters with `wmin` for `CC`
@@ -68,12 +69,13 @@ typedef struct{
   int dW;
   char *finC;
   char *outC;
-  cw_vec_t *codewords;
-  long long int num_cws;
-  int min_w;
-  int min_w_cws;  /* number of distinct codewords of weight min_w in hash */
-  int min_w_cov;  /* number of codewords of weight min_w with cnt >= min_hits */
-  long long int min_w_hits; /* total hits across codewords of weight min_w */
+  cw_vec_t *codewords; /* hash of codewords: the collection window (weight up to min_w + dW with outC or maxC)
+                          and the representative set for `min_hits`, see codeword_add_maybe() */
+  long long int num_cws; /* number of codewords in hash */
+  int min_w;             /* minimum weight of the codewords in hash (INT_MAX: none) */
+  int cw_max_w;          /* maximum weight of the codewords in hash (0: none) */
+  long long int *cw_cnt_w;  /* number of codewords of each weight in hash (size nvar+2, allocated on first use) */
+  long long int *cw_hits_w; /* total hits of the codewords of each weight in hash (same size) */
   char *fdem;
   double pmin;
   char *finH;
@@ -91,8 +93,8 @@ typedef struct{
   int ksub;       /* RW subspace dimension sampled from ker(H) (0 for full H) */
   int kwin;       /* RW localized window size W (0 for uniform permutation) */
   int win_mode;   /* RW window mode: 0 = Tanner BFS, 1 = index proximity */
-  int min_hits;   /* RW stopping criterion: min hits per min-weight cw (0 = off) */
-  int cov_cws;    /* RW stopping criterion: max min-weight cws tracked (default 100) */
+  int min_hits;   /* RW stopping criterion: average hits <n> per lowest-weight cw (0 = off) */
+  int cov_cws;    /* RW stopping criterion: size of the representative set of lowest-weight cws (default 100) */
   int refresh;    /* RW steps interval for adaptive basis refresh (0 = off, auto 5000 if ksub>0) */
 } params_t;
 
@@ -150,9 +152,11 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
 long long int nzlist_read(const char fnam[], params_t *p);
 
 /**
- * @brief Write the found codewords from the hash table to a .nz file.
+ * @brief Write the collected codewords from the hash table to a .nz file.
  * 
- * Exports all codewords currently stored in the hash table to a file in NZLIST format.
+ * Exports the codewords in the collection window, i.e., of weight up to min_w + dW (min_w: the
+ * minimum weight found), in NZLIST format.  Heavier codewords kept in the hash only for the
+ * `min_hits` statistic are not exported.
  *
  * @param fnam Path to the output .nz file.
  * @param comment An optional comment string to include in the file header.
@@ -162,33 +166,159 @@ long long int nzlist_read(const char fnam[], params_t *p);
 long long int nzlist_write(const char fnam[], const char comment[], params_t *p);
 
 /**
- * @brief Add a candidate codeword to the hash table if it meets weight limits.
+ * @brief Add a candidate codeword to the hash table, or count one more hit of a known codeword.
  * 
- * Compares the candidate codeword weight with the current minimum weight and dW limit.
- * If it is within the limits, it is added to the hash. If a new strictly smaller minimum
- * weight is found, it updates the global minimum weight and prunes heavier codewords
- * from the hash.
+ * A codeword already in the hash gets one more hit (`cnt`).  A new codeword is added if:
+ * - its weight is below the minimum weight min_w (always, also with maxC; min_w is updated);
+ * - with outC or maxC (collecting), its weight is at most min_w + max(dW,0), unless maxC
+ *   codewords of such weights are collected (see codeword_maxc_reached());
+ * - without outC and maxC, its weight equals min_w, unless cov_cws > 0 such codewords are in hash;
+ * - with min_hits > 0 and cov_cws > 0, it is heavier but helps to keep a representative set of
+ *   cov_cws lowest-weight codewords: the hash holds fewer than cov_cws codewords, or the codeword
+ *   is lighter than the heaviest codeword in hash.
+ * Heavier codewords are then gradually removed (whole weight classes, starting from the heaviest)
+ * as long as the remaining ones keep the collection window and at least cov_cws codewords.
  *
  * @param p Pointer to the params_t structure.
- * @param arr Array of indices representing the support of the codeword.
+ * @param arr Array of indices representing the support of the codeword (sorted).
  * @param weight Weight of the codeword (length of arr).
- * @return Pointer to the added/existing codeword structure, or NULL if not added.
+ * @return The codeword hash (`p->codewords`).
  */
 cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight);
 
 /**
- * @brief Check whether the QDistRnd-style minimum hit count stopping condition is met.
+ * @brief Number of codewords in the collection window (weight up to min_w + dW with outC or maxC,
+ *        otherwise weight min_w): the codewords exported with outC and counted for maxC.
+ */
+long long int codeword_window_count(const params_t * const p);
+
+/** @brief Returns 1 if maxC > 0 and maxC codewords of the collection window are collected. */
+int codeword_maxc_reached(const params_t * const p);
+
+/**
+ * @brief Weight limit (exclusive) of RW codewords needed for the `min_hits` statistic.
  *
- * Returns 1 if p->min_hits > 0, at least min(p->cov_cws, 5) distinct codewords of
- * weight p->min_w have been found (up to p->cov_cws), and every tracked codeword of
- * weight p->min_w has been hit at least p->min_hits times (or the average hit count
- * across tracked min-weight codewords reaches p->min_hits with at least half having
- * cnt >= p->min_hits). Otherwise returns 0.
+ * Returns 0 if min_hits <= 0, the weight min_w + 1 if only the minimum-weight codewords are used
+ * (cov_cws <= 0), INT_MAX (any weight) while the representative set is not filled, and otherwise
+ * the maximum weight in hash plus one.
+ */
+int codeword_feed_limit(const params_t * const p);
+
+/**
+ * @brief Weight limit (exclusive) for RW candidate codewords (the same with any `debug` value).
+ *
+ * Without an upper bound (cur_dmax <= 0), any weight is of interest.  Otherwise, codewords of
+ * weight >= cur_dmax are of no interest, except when collecting (outC or maxC with dW >= 0:
+ * weight up to cur_dmax + dW) and for the `min_hits` statistic (`feed`, see codeword_feed_limit()).
+ *
+ * @param p Pointer to the params_t structure.
+ * @param cur_dmax Current upper bound on the distance (0 if none).
+ * @param feed Weight limit for the `min_hits` statistic, see codeword_feed_limit().
+ * @return Weight limit, at most nvar + 1.
+ */
+static inline int codeword_rw_limit(const params_t * const p, const int cur_dmax, const int feed) {
+  const int lim_max = p->nvar + 1;
+  if (cur_dmax <= 0) return lim_max;
+  long long int lim = cur_dmax;
+  if ((p->outC != NULL || p->maxC > 0) && p->dW >= 0) lim = (long long int)cur_dmax + p->dW + 1;
+  if (feed > lim) lim = feed;
+  return (lim < lim_max) ? (int)lim : lim_max;
+}
+
+/** @brief Hit statistics for the `min_hits` stopping criterion, see codeword_hit_stats(). */
+typedef struct {
+  long long int min_cws;  /**< number of codewords of the minimum weight min_w */
+  long long int min_hits; /**< their total number of hits */
+  long long int set_cws;  /**< number of codewords in the representative set (weights w_lo..w_hi) */
+  long long int set_hits; /**< their total number of hits */
+  int w_lo;               /**< smallest weight in the representative set (min_w) */
+  int w_hi;               /**< largest weight in the representative set */
+  double avg;             /**< <n>: the smaller of the average hits per codeword of weight min_w and
+                               of the representative set (0 if no codewords) */
+} cw_hit_stats_t;
+
+/**
+ * @brief Compute the hit statistics of the `min_hits` stopping criterion.
+ *
+ * The representative set consists of the lowest weight classes (starting with min_w) in hash
+ * with at least cov_cws codewords in total (all classes if fewer; only min_w if cov_cws <= 0 or
+ * min_hits <= 0).  As in QDistRnd, <n> estimates the average number of times a codeword is found;
+ * a lighter codeword is missed with probability about exp(-<n>), assuming lighter codewords are
+ * found at least as often.  Heavier codewords make the estimate more conservative.
+ *
+ * @param p Pointer to the params_t structure.
+ * @param st Output statistics.
+ */
+void codeword_hit_stats(const params_t * const p, cw_hit_stats_t * const st);
+
+/**
+ * @brief Check whether the QDistRnd-style hit count stopping condition is met.
+ *
+ * Returns 1 if p->min_hits > 0 and the average number of hits <n> (see codeword_hit_stats())
+ * reaches p->min_hits, both for the codewords of weight p->min_w and for the representative set
+ * of up to p->cov_cws lowest-weight codewords.  A single codeword (e.g., for a classical code
+ * with k=1) suffices.  Otherwise returns 0.
  *
  * @param p Pointer to the params_t structure.
  * @return 1 if convergence criterion is met, 0 otherwise.
  */
 int check_min_hits_convergence(const params_t * const p);
+
+/**
+ * @brief Check the uniformity of the hit counts within each weight class of the representative set.
+ *
+ * Codewords of the same weight found with the same probability per RW step have (zero-truncated)
+ * Poisson-distributed hit counts.  For each weight class of the representative set with at least
+ * 2 codewords, the variance of the hit counts is compared with the Poisson variance.  A warning is
+ * printed if it is significantly larger (p-value < 0.001), the spread (standard deviation) of the
+ * hit rates is at least their mean, and, for hit rates with this relative spread (gamma
+ * distribution), the probability to miss a lighter codeword is at least 3 times larger than
+ * exp(-mu) with equal hit rates (mu: average hits): some codewords are found much more often than
+ * others of the same weight, and the estimate exp(-<n>) is optimistic.  Takes a single pass over
+ * the hash.
+ *
+ * @param stream Output stream for the warnings (typically stderr).
+ * @param p Pointer to the params_t structure.
+ * @return Number of weight classes with non-uniform hit counts.
+ */
+int codeword_hit_check(FILE *stream, const params_t * const p);
+
+/**
+ * @brief Information-set estimate of the probability that a RW step finds a given codeword of weight w.
+ *
+ * Model: uniform random information sets.  A RW step reduces H (rank r) with a random column order;
+ * a codeword is found if exactly one of its w positions is among the k = n - r non-pivot columns:
+ * P1(w) = w C(n-w, k-1) / C(n, k).  Codewords of weight w > r + 1 are never found (P1 = 0).
+ *
+ * @param n Block length (number of columns of H).
+ * @param rank Rank r of H.
+ * @param w Codeword weight.
+ * @return P1(w).
+ */
+double rw_infoset_find_prob(const int n, const int rank, const int w);
+
+/**
+ * @brief Print the information-set estimate of the probability that RW missed a codeword lighter than
+ *        the upper bound found.
+ *
+ * Among the weights w_lo..w_hi (not excluded by CC), the weight w with the smallest P1(w) (see
+ * rw_infoset_find_prob()) is used: a single codeword of this weight is missed in `steps` RW steps
+ * with uniform random permutations with probability (1 - P1)^steps.  Also prints the total number
+ * of RW steps for a 1% miss probability (with the fraction steps / steps_total of uniform steps, as
+ * in this run; localized windows, used in about half of the steps for n >= 500, are not counted)
+ * and, if `t_step` > 0, the corresponding time.
+ *
+ * @param stream Output stream (typically stderr).
+ * @param n Block length (number of columns of H).
+ * @param rank Rank of H.
+ * @param w_lo Smallest weight to consider (dmin, at least 1).
+ * @param w_hi Largest weight to consider (dmax - 1).
+ * @param steps Number of completed RW steps with uniform random permutations.
+ * @param steps_total Number of all completed RW steps.
+ * @param t_step Wall time per RW step in seconds (0: unknown).
+ */
+void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const int w_lo, const int w_hi,
+                               const long steps, const long steps_total, const double t_step);
 
 /**
  * @brief Compute hit count statistics (min, max, avg, stdev) for minimum-weight codewords.
@@ -256,17 +386,17 @@ void print_short_help(const char *prog);
   "  steps=[int]        Maximum RW decoding steps / information sets (100000)\n" \
   "  wmax=[int]         Maximum cluster weight to search in CC (0=until bound/timeout)\n" \
   "  wmin=[int]         Stop immediately if cw with weight <= wmin is found (1)\n" \
-  "  min_hits=[int]     Stop RW when min-wt cws (at least cov_cws) hit >= min_hits (5)\n" \
+  "  min_hits=[int]     Stop RW when lowest-wt cws are hit min_hits times on average (5)\n" \
   "  timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)\n\n" \
   "Multithreading and RW optimization:\n" \
   "  threads=[int]      Max worker threads to use (0: auto CPU count) (0)\n" \
   "  ksub=[int]         Subspace dimension sampled from ker(H) for RW (0: full H) (0)\n" \
   "  kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)\n\n" \
   "Codeword collection:\n" \
-  "  outC=[file]        Export found minimum-weight codewords to file (.nz format)\n" \
+  "  outC=[file]        Export found min-weight codewords (up to +dW) to file (.nz format)\n" \
   "  finC=[file]        Import initial codewords from file (.nz format)\n" \
   "  maxC=[int]         Maximum number of codewords to collect (0 for unlimited) (0)\n" \
-  "  dW=[int]           Collect codewords up to weight dmin + dW (default: 0)\n\n" \
+  "  dW=[int]           Collect codewords up to the minimum weight found + dW (0)\n\n" \
   "Extra parameters (see --morehelp for details):\n" \
   "  smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)\n" \
   "  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)\n" \
@@ -275,7 +405,7 @@ void print_short_help(const char *prog);
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
-  "  cov_cws=[int] (100)    Max min-wt cws tracked in hash for min_hits stop\n" \
+  "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
   "  refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (auto 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
   "  debug=[int] (3)        Debug bitmask (0: silent, 1: general, 2: verbose, ...)\n\n" \
@@ -331,7 +461,7 @@ void print_short_help(const char *prog);
   "                     In CC (method 2/3), cluster search begins at w = dmin.\n" \
   "  dmax=[int]         Known upper bound on distance (default: 0).\n" \
   "                     In RW (method 1/3), codewords of weight >= dmax are ignored\n" \
-  "                     unless collecting codewords.\n" \
+  "                     unless collecting codewords or needed for min_hits.\n" \
   "  dexp=[int]         Expected code distance (alias: dest) (default: 0).\n" \
   "                     Hint for method=3 (bracketing): as long as RW has found no\n" \
   "                     codeword, CC rounds at w > dexp run only on threads which\n" \
@@ -342,7 +472,8 @@ void print_short_help(const char *prog);
   "                     (default: 100000). Ignored in method=2.\n" \
   "  wmin=[int]         Minimum distance threshold (default: 1).\n" \
   "                     If a codeword of weight w <= wmin is found, execution\n" \
-  "                     terminates immediately. Useful for screening codes.\n" \
+  "                     terminates immediately (not when collecting codewords with\n" \
+  "                     outC or maxC). Useful for screening codes.\n" \
   "  wmax=[int]         Maximum cluster weight to analyze in CC (default: 0).\n" \
   "                     In method=2, CC terminates after checking weight wmax.\n" \
   "                     0 means continue until codeword found, bounds meet, or timeout.\n" \
@@ -371,7 +502,10 @@ void print_short_help(const char *prog);
   "                     [cbeg,cend]; combine runs covering all columns 0..n-1 by\n" \
   "                     taking the minimum of dmin (and of dmax) over the runs.\n\n" \
   "Codeword collection and export:\n" \
-  "  outC=[file]        Export found codewords to file in .nz list format.\n" \
+  "  outC=[file]        Export found codewords of weight up to min_w + dW (min_w:\n" \
+  "                     minimum weight found) to file in .nz list format.  In\n" \
+  "                     method=2/3, once dmin = dmax = d, CC rounds w = d..d+dW\n" \
+  "                     enumerate all such codewords (unless the timeout is hit).\n" \
   "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
   "  maxC=[int]         Maximum number of codewords to collect (default: 0).\n" \
   "                     0 means collect all valid codewords found up to wmax or stop\n" \
@@ -406,10 +540,25 @@ void print_short_help(const char *prog);
   "                     0: Tanner graph BFS neighbors around random seed column.\n" \
   "                     1: Contiguous index proximity window around seed column.\n" \
   "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off).\n" \
-  "                     Stops RW when tracked minimum-weight codewords (up to\n" \
-  "                     cov_cws) have been found at least min_hits times.\n" \
-  "  cov_cws=[int]      Maximum number of minimum-weight codewords tracked in hash\n" \
-  "                     for the min_hits stopping criterion (default: 100).\n" \
+  "                     Stops RW when the average number of times <n> that RW has\n" \
+  "                     found each codeword reaches min_hits, both for the codewords\n" \
+  "                     of the minimum weight found and for a representative set of\n" \
+  "                     cov_cws lowest-weight codewords (heavier codewords are kept\n" \
+  "                     until enough lighter ones are found).  A single codeword\n" \
+  "                     suffices.  A lighter codeword is missed with probability\n" \
+  "                     about exp(-<n>), assuming that lighter codewords are found\n" \
+  "                     at least as often.  With debug&1, a warning is printed at\n" \
+  "                     the end if the hit counts of codewords of the same weight\n" \
+  "                     are strongly non-uniform (then exp(-<n>) is optimistic),\n" \
+  "                     together with an information-set estimate (uniform random\n" \
+  "                     information sets) of the probability to miss a lighter\n" \
+  "                     codeword and of the RW steps needed for 1%%.\n" \
+  "  cov_cws=[int]      Size of the representative set of lowest-weight codewords\n" \
+  "                     for min_hits (default: 100; 0 = only the minimum weight).\n" \
+  "                     Without outC and maxC, at most cov_cws minimum-weight\n" \
+  "                     codewords are tracked (all if cov_cws=0).  With fewer\n" \
+  "                     minimum-weight codewords, a smaller cov_cws may stop RW\n" \
+  "                     earlier.\n" \
   "  refresh=[int]      RW steps interval for adaptive ker(H) basis refresh via\n" \
   "                     low-weight codeword exchange and re-echelonization\n" \
   "                     (default: 5000 when ksub > 0, 0 = off).\n" \
