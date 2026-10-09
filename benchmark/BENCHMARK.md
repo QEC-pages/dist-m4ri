@@ -1,9 +1,16 @@
 # Benchmark Suite for `dist-m4ri`
 
 This directory contains quantum LDPC CSS parity-check matrices (`.mtx`) and Stim circuit-level fault-tolerance files
-(`.stim`) spanning code distances $d = 6$ to $d \le 34$. Detector Error Models (`.dem`)—both full `DEPOLARIZE2` DEMs
+(`.stim`) spanning code distances $d = 4$ to $d \le 34$. Detector Error Models (`.dem`)—both full `DEPOLARIZE2` DEMs
 and simplified DEMs with minority-basis detectors stripped—can be generated on the fly from the `.stim` circuits using
 `add_noise` in `dist_m4ri.py` (or `distance.py`).
+
+> [!NOTE]
+> The distances in the file names (and in the source patterns below) are the nominal values of the sources, and they
+> are not always correct; the file names are kept unchanged. The distances computed with `dist_m4ri` (version 0.10.1,
+> `method=3`, 16 threads, 30–60 s per run) are listed in the tables below: an exact value is certified (by CC), and
+> $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the timeout. These numbers are provisional and will be
+> updated after a longer benchmark.
 
 ## Directory Structure
 
