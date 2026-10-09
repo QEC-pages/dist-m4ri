@@ -138,3 +138,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - Run RW with `method=1 steps=N min_hits=M cov_cws=K`.
 - Collects minimum-weight codewords into the hash table, terminating when the smallest observed weight has been
   confirmed by $M$ independent hits across $K$ distinct degenerate configurations.
+
+### More debug bits
+- Detailed timing information (measured / predicted values, reasons for termination)
+- ???
+
