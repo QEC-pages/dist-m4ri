@@ -7,8 +7,8 @@ and simplified DEMs with minority-basis detectors stripped—can be generated on
 
 > [!NOTE]
 > The distances in the file names (and in the source patterns below) are the nominal values of the sources, and they
-> are not always correct; the file names are kept unchanged. The distances computed with `dist_m4ri` (version 0.10.1,
-> `method=3`, 16 threads, 30–60 s per run) are listed in the tables below: an exact value is certified (by CC), and
+> are not always correct; the file names are kept unchanged. The distances computed with `dist_m4ri` (`method=3`,
+> 16 threads, 30–60 s per run) are listed in the tables below: an exact value is certified (by CC), and
 > $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the timeout. These numbers are provisional and will be
 > updated after a longer benchmark.
 
@@ -52,8 +52,9 @@ and simplified DEMs with minority-basis detectors stripped—can be generated on
 
 3. **2D Local Torus Bivariate Bicycle Stim Circuits**
    - Copied unmodified from `tmp/*.stim`. These are noiseless syndrome-extraction templates on a 2D torus with Swap/CNOT
-     routing (`L3_torus`) for $[[60, 8, 14]]$, $[[120, 8, 15]]$, $[[200, 16, 16]]$, and $[[200, 8, 17]]$ codes in both
-     $X$ and $Z$ bases. When passed to `dist_m4ri.compute_dem_distance(circuit=...)` or
+     routing (`L3_torus`) for codes with the nominal parameters $[[60, 8, 14]]$, $[[120, 8, 15]]$, $[[200, 16, 16]]$,
+     and $[[200, 8, 17]]$ (from the file names; the code distances have not been verified) in both $X$ and $Z$ bases.
+     When passed to `dist_m4ri.compute_dem_distance(circuit=...)` or
      `dist_m4ri.add_noise(circuit, p=0.001)`, standard circuit-level depolarizing noise (`DEPOLARIZE1`, `DEPOLARIZE2`,
      `X_ERROR`/`Z_ERROR`) is added on the fly.
 
@@ -68,17 +69,46 @@ and simplified DEMs with minority-basis detectors stripped—can be generated on
 | `bb_108_8_10` | $[[108, 8, 10]]$ | $54 \times 108$ | $\ell=9, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
 | `gross_144_12_12` | $[[144, 12, 12]]$ | $72 \times 144$ | $\ell=12, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
 | `double_gross_288_12_18` | $[[288, 12, 18]]$ | $144 \times 288$ | $\ell=12, m=12$, $A=x^3+y^2+y^7$, $B=y^3+x+x^2$ |
-| `bb_360_12_24` | $[[360, 12, 24]]$ | $180 \times 360$ | $\ell=30, m=6$, $A=x^9+y+y^2$, $B=y^3+x^{25}+x^{26}$ |
+| `bb_360_12_24` | $[[360, 12, \le 24]]$ | $180 \times 360$ | $\ell=30, m=6$, $A=x^9+y+y^2$, $B=y^3+x^{25}+x^{26}$ |
 | `bb_756_16_34` | $[[756, 16, \le 34]]$ | $378 \times 756$ | $\ell=21, m=18, A=x^3+y^{10}+y^{17}, B=y^5+x^3+x^{19}$ |
 | `mitten_90_18_6_C3xS3` | $[[90, 18, 6]]$ | $36 \times 90$ | $G = C_3 \times S_3$ ($|G|=18$, `seed=2`) |
 | `mitten_150_30_8_C5xS3` | $[[150, 30, 8]]$ | $60 \times 150$ | $G = C_5 \times S_3$ ($|G|=30$, `seed=2`) |
-| `mitten_210_42_8_C7xS3` | $[[210, 42, 8]]$ | $84 \times 210$ | $G = C_7 \times S_3$ ($|G|=42$, `seed=2`) |
-| `mitten_270_54_10_C9xS3` | $[[270, 54, 10]]$ | $108 \times 270$ | $G = C_9 \times S_3$ ($|G|=54$, `seed=2`) |
-| `mitten_330_66_6_C11xS3` | $[[330, 66, 6]]$ | $132 \times 330$ | $G = C_{11}\times S_3$ ($|G|=66$, `seed=2`) |
+| `mitten_210_42_8_C7xS3` | $[[210, 42, \le 8]]$ | $84 \times 210$ | $G = C_7 \times S_3$ ($|G|=42$, `seed=2`) |
+| `mitten_270_54_10_C9xS3` | $[[270, 54, \le 10]]$ | $108 \times 270$ | $G = C_9 \times S_3$ ($|G|=54$, `seed=2`) |
+| `mitten_330_66_6_C11xS3` | $[[330, 66, 4]]$ | $132 \times 330$ | $G = C_{11}\times S_3$ ($|G|=66$, `seed=2`) |
+
+Distances computed with `dist_m4ri`:
+
+| Prefix | $d_X$ | $d_Z$ |
+| :--- | :--- | :--- |
+| `bb_72_12_6` | 6 | 6 |
+| `bb_90_8_10` | 10 | 10 |
+| `bb_108_8_10` | – | 10 |
+| `gross_144_12_12` | 12 | 12 |
+| `double_gross_288_12_18` | 18 | 18 |
+| `bb_360_12_24` | – | [18, 24] |
+| `bb_756_16_34` | – | [17, 34] |
+| `mitten_90_18_6_C3xS3` | 6 | 6 |
+| `mitten_150_30_8_C5xS3` | 8 | 8 |
+| `mitten_210_42_8_C7xS3` | – | 8 |
+| `mitten_270_54_10_C9xS3` | – | 10 |
+| `mitten_330_66_6_C11xS3` | **4** | 6 |
+
+- $d_X$ ($d_Z$) is the minimum weight of an $X$-type ($Z$-type) logical operator, i.e., of a vector $c$ with
+  $H_Z c = 0$ ($H_X c = 0$) which is not in the row space of $H_X$ ($H_Z$); $d = \min(d_X, d_Z)$. "–": not computed
+  yet.
+- For the BB codes, $d_X = d_Z$ by the symmetry exchanging the two sectors, so one sector suffices.
+- `mitten_330_66_6_C11xS3` has distance **4**, not 6: $d_X = 4$ (132 $X$-type logical operators of weight 4 were
+  found, and those checked independently over GF(2) are valid), while $d_Z = 6$.
+- For `mitten_210` and `mitten_270`, only $d_Z$ has been computed, so the nominal $d$ is an upper bound until $d_X$ is
+  known. For `bb_360` and `bb_756`, the published distances are upper bounds (the codewords found by `dist_m4ri` have
+  the same weights), and the lower bounds are from 60 s runs.
 
 ---
 
 ## 2. Stim Circuits (`stim_bb/`, `stim_mitten/`, `stim_torus/`)
+
+The circuit-level distances are listed in [Section 2.4](#24-circuit-level-distances).
 
 ### 2.1 Bivariate Bicycle, Gross, and Double-Gross (`benchmark/stim_bb/`)
 
@@ -117,9 +147,12 @@ and simplified DEMs with minority-basis detectors stripped—can be generated on
 | `mitten_330_66_6_C11xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
 | `mitten_330_66_6_C11xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
 
+The Mitten circuits are $Z$-basis memory experiments, whose logical observables are flipped by $X$-type errors; their
+circuit-level distance cannot exceed the code's $d_X$, which is 4 for `mitten_330` (Section 1).
+
 ### 2.3 2D Local Torus BB Circuits (`benchmark/stim_torus/`)
 
-| File (`benchmark/stim_torus/`) | $[[n, k, d]]$ | Basis | Notes |
+| File (`benchmark/stim_torus/`) | Nominal $[[n, k, d]]$ | Basis | Notes |
 | :--- | :--- | :--- | :--- |
 | `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim` | $[[60, 8, 14]]$ | `X` | Noiseless (`tmp/`) |
 | `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_Z.stim` | $[[60, 8, 14]]$ | `Z` | Noiseless (`tmp/`) |
@@ -129,6 +162,52 @@ and simplified DEMs with minority-basis detectors stripped—can be generated on
 | `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_Z.stim` | $[[200, 16, 16]]$ | `Z` | Noiseless (`tmp/`) |
 | `ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_X.stim` | $[[200, 8, 17]]$ | `X` | Noiseless (`tmp/`) |
 | `ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_Z.stim` | $[[200, 8, 17]]$ | `Z` | Noiseless (`tmp/`) |
+
+The nominal code parameters are taken from the file names; the code distances of the torus codes have not been
+verified yet (no check matrices are included).
+
+### 2.4 Circuit-Level Distances
+
+The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable
+logical error.
+- It is computed for the stripped DEM (minority-basis detectors removed), which is the default of
+  `dist_m4ri.compute_dem_distance(circuit=...)`, with 30 s `method=3` runs on 16 threads.
+- In parentheses: the distance of the full DEM, where it was computed. The stripped DEM keeps a subset of the
+  detectors of the full DEM, so its distance is a lower bound on the full-DEM distance. †: lower bound from the
+  stripped DEM, upper bound from a codeword of the full DEM.
+- "–": not computed yet; "n/a": no circuit for this basis.
+- For the noiseless torus templates, the noise of `add_noise(p=0.001)` is added. The circuit distance depends on the
+  noise model (which faults are included), but not on $p$.
+
+| Circuit (`.stim` file name without `_X`/`_Z`) | $X$ basis | $Z$ basis |
+| :--- | :--- | :--- |
+| `bb_72_12_6_si1000_r6` | 6 (full: 6†) | 6 |
+| `bb_90_8_10_si1000_r10` | [7, 8] | – |
+| `bb_108_8_10_si1000_r10` | [7, 8] | – |
+| `gross_144_12_12_si1000_r12` | [7, 10] | – |
+| `double_gross_288_12_18_si1000_r18` | [4, 24] (full: [4, 53]†) | – |
+| `bb_360_12_24_si1000_r24` | [4, 29] | – |
+| `bb_756_16_34_si1000_r34` | – | – |
+| `bb_72_12_6_uniform_r6` | 6 | n/a |
+| `gross_144_12_12_uniform_r12` | [7, 11] | n/a |
+| `double_gross_288_12_18_uniform_r18` | – | n/a |
+| `mitten_90_18_6_C3xS3_custom_r4` | n/a | 5 (full: 5) |
+| `mitten_90_18_6_C3xS3_hef_r4` | n/a | 4 (full: 4) |
+| `mitten_150_30_8_C5xS3_custom_r5` | n/a | [6, 7] |
+| `mitten_150_30_8_C5xS3_hef_r5` | n/a | – |
+| `mitten_210_42_8_C7xS3_custom_r4`, `..._hef_r4` | n/a | – |
+| `mitten_270_54_10_C9xS3_custom_r4`, `..._hef_r4` | n/a | – |
+| `mitten_330_66_6_C11xS3_custom_r4` | n/a | 4 |
+| `mitten_330_66_6_C11xS3_hef_r4` | n/a | – |
+| `NNEESEEESEENN_L3_torus_..._n60_k8_d14` | 6 (full: 6†) | 6 |
+| `NEENNWNWNNEEN_L3_torus_..._n120_k8_d15` | 6 | – |
+| `NEENNWNWNNEEN_L3_torus_..._n200_k16_d16` | [6, 8] | – |
+| `ENENESESENENE_L3_torus_..._n200_k8_d17` | [6, 8] | – |
+
+The circuit-level distances are often below the code distances in the file names. For example, the gross-code
+circuit has distance at most 10, consistent with the circuit-level distance $\le 10$ reported for the IBM
+syndrome-extraction circuit. For `mitten_90`, the "hook-error-free" schedule has a lower circuit-level distance (4)
+than the `custom` schedule (5).
 
 ---
 
