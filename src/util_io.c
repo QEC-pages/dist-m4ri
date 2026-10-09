@@ -19,7 +19,8 @@ params_t prm={
   .noscan=0,
   .fdem=NULL,
   .pmin=0.0,
-  .start=-1, 
+  .start_list=NULL,
+  .start_num=0,
   .cbeg=-1,
   .cend=-1,
   .seed=0,
@@ -65,6 +66,51 @@ params_t * const p = &prm;
 
 void print_short_help(const char *prog) {
   fprintf(stderr, SHORT_HELP, prog, DIST_M4RI_VERSION, prog);
+}
+
+/** @brief Parse `start=a,b,c` (comma-separated list of CC start columns) into `p->start_list`.
+ *
+ * A single negative value (e.g., the legacy default `start=-1`) clears the list, i.e., all
+ * columns are used.  A repeated `start=` argument replaces the previous list.  Range checks,
+ * sorting, and removal of duplicates are done in `var_init()` once the matrix size is known.
+ */
+static void parse_start_list(const char * const str, params_t * const p){
+  if (p->start_list) {
+    free(p->start_list);
+    p->start_list = NULL;
+  }
+  p->start_num = 0;
+  int cnt = 1;
+  for (const char *c = str; *c; c++)
+    if (*c == ',')
+      cnt++;
+  int *list = malloc(cnt * sizeof(int));
+  if (!list)
+    ERROR("memory allocation");
+  const char *s = str;
+  for (int k = 0; k < cnt; k++) {
+    char *end = NULL;
+    errno = 0;
+    long val = strtol(s, &end, 10);
+    if ((end == s) || errno || (val > INT_MAX) || (val < INT_MIN) || ((*end != ',') && (*end != '\0')))
+      ERROR("invalid start='%s': expected a comma-separated list of column indices, e.g., start=0,48", str);
+    list[k] = (int) val;
+    s = end + 1;
+  }
+  if ((cnt == 1) && (list[0] < 0)) { /* legacy default `start=-1`: all columns */
+    free(list);
+    return;
+  }
+  for (int k = 0; k < cnt; k++)
+    if (list[k] < 0)
+      ERROR("invalid start='%s': column indices must be non-negative", str);
+  p->start_list = list;
+  p->start_num = cnt;
+}
+
+static int cmp_int(const void *a, const void *b){
+  const int x = *(const int *) a, y = *(const int *) b;
+  return (x > y) - (x < y);
 }
 
 void var_init(int argc, char **argv, params_t * const p){
@@ -191,10 +237,10 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug&4)
 	fprintf(stderr, "# read %s, dmax=%d\n",argv[i],p->dmax);
     }
-    else if (sscanf(argv[i],"start=%d",&dbg)==1){
-      p->start=dbg;
+    else if (0==strncmp(argv[i],"start=",6)){ /** `start=a,b,c` list of CC start columns */
+      parse_start_list(argv[i]+6, p);
       if (p->debug&4)
-	fprintf(stderr, "# read %s, start=%d\n",argv[i],p->start);
+	fprintf(stderr, "# read %s, start_num=%d\n",argv[i],p->start_num);
     }
     else if (sscanf(argv[i],"cbeg=%d",&dbg)==1){
       p->cbeg=dbg;
@@ -382,16 +428,14 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->wmax > 0 && p->wmin > p->wmax) {
     ERROR("parameter wmin=%d cannot be larger than wmax=%d\n", p->wmin, p->wmax);
   }
-  if (p->start >= 0) {
+  if (p->start_num > 0) { /* `start` list uses unlimited clusters: cannot be mixed with split runs */
     if (p->cbeg >= 0 || p->cend >= 0) {
       ERROR("Cannot specify start along with cbeg or cend\n");
     }
-    p->cbeg = p->start;
-    p->cend = p->start;
   }
 
   if (p->method == 1) {
-    if (p->cbeg >= 0 || p->cend >= 0) {
+    if (p->cbeg >= 0 || p->cend >= 0 || p->start_num > 0) {
       ERROR("Parameters start, cbeg, and cend only work with CC method (method=2 or method=3)\n");
     }
   }
@@ -533,6 +577,17 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->cend >= p->nvar) {
     ERROR("cend=%d cannot be larger than nvar-1=%d\n", p->cend, p->nvar-1);
   }
+  if (p->start_num > 0) { /* range check, sort, and remove duplicates */
+    for (int k = 0; k < p->start_num; k++)
+      if (p->start_list[k] >= p->nvar)
+        ERROR("start column %d cannot be larger than nvar-1=%d\n", p->start_list[k], p->nvar-1);
+    qsort(p->start_list, p->start_num, sizeof(int), cmp_int);
+    int num = 1;
+    for (int k = 1; k < p->start_num; k++)
+      if (p->start_list[k] != p->start_list[num-1])
+        p->start_list[num++] = p->start_list[k];
+    p->start_num = num;
+  }
   
   if((p->spaG) && (p->spaL==NULL)){
     /** create `Lx` */
@@ -568,9 +623,46 @@ void var_init(int argc, char **argv, params_t * const p){
   if ((p->debug & 1) && !p->fdem && (p->method & 2) && p->smax == 0) {
     fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
   }
+
+  /* Warnings for the expert CC options (printed regardless of `debug`) */
+  if (p->noscan) {
+    const int d0 = (p->dmin > 1) ? p->dmin : 1;
+    if (d0 < p->wmax)
+      fprintf(stderr,
+              "# WARNING: noscan=1 (expert option): CC checks only weight w=wmax=%d; weights %d..%d are not\n"
+              "#   scanned, so a codeword found only gives an upper bound (dmax), and dmin=%d is not raised\n",
+              p->wmax, d0, p->wmax - 1, d0);
+    else
+      fprintf(stderr,
+              "# WARNING: noscan=1 (expert option): CC checks only weight w=wmax=%d; the result relies on\n"
+              "#   the supplied dmin=%d being a certified lower bound\n", p->wmax, p->dmin);
+  }
+  if (p->start_num > 0) {
+    fprintf(stderr, "# WARNING: start=");
+    for (int k = 0; (k < p->start_num) && (k < 8); k++)
+      fprintf(stderr, "%s%d", k ? "," : "", p->start_list[k]);
+    fprintf(stderr,
+            "%s (expert option): CC clusters are grown only from %d listed column(s)\n"
+            "#   (not limited to larger column indices); dmin is valid only if a code symmetry maps every\n"
+            "#   minimum-weight codeword to one containing a listed column\n",
+            (p->start_num > 8) ? ",..." : "", p->start_num);
+  }
+  if (p->cbeg >= 0 || p->cend >= 0) {
+    const int beg = (p->cbeg >= 0) ? p->cbeg : 0;
+    const int end = (p->cend >= 0) ? p->cend : p->nvar - 1;
+    fprintf(stderr,
+            "# WARNING: cbeg/cend (expert option for split runs): CC starts only from columns [%d,%d];\n"
+            "#   dmin only covers codewords whose smallest column is in this range; take the minimum of\n"
+            "#   dmin (and of dmax) over runs covering all columns 0..%d\n", beg, end, p->nvar - 1);
+  }
 }
 
 void var_kill(params_t * const p){
+  if (p->start_list) {
+    free(p->start_list);
+    p->start_list = NULL;
+    p->start_num = 0;
+  }
   if(p->spaL)
     csr_free(p->spaL);
   if(p->spaH)

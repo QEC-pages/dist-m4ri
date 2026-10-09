@@ -74,12 +74,36 @@ Additional command-line parameters relevant for this method:
 
 - `wmax` the maximum size of the connected cluster.
 
-- `start` the position to start the cluster.  In this case only one
-  starting position `i=start` will be used.  This is useful, e.g., if
-  the code is symmetric (as, e.g., for cyclic codes).
+By default, a cluster started at position `i` only uses positions larger
+than `i`, so that every codeword is found starting from its smallest
+position.  The following expert options restrict the search; each of them
+prints a warning to `stderr`, since the resulting lower bound `dmin` is
+then not necessarily valid (the upper bound `dmax` is always valid).  See
+`README.md` for details.
 
-- `noscan` if set to 1, start the recursion directly with `w=wmax`,
-  without scanning smaller weights.  Only works with `method=2`.
+- `start=a,b,c` a comma-separated list of starting positions (0-based),
+  e.g., `start=0,48`; `start=i` is a one-element list.  Clusters are grown
+  only from the listed positions, and they are *not* limited to larger
+  positions.  This is useful if the code is symmetric, e.g., for a
+  quasi-cyclic code, list one position from each circulant block.  The
+  lower bound `dmin` is valid only if a code symmetry maps every
+  minimum-weight codeword to one containing a listed position.  (Before
+  version 0.10.0, `start=i` meant `cbeg=i cend=i`.)
+
+- `cbeg`, `cend` the range of starting positions `i`, for splitting the
+  calculation into several runs, where every position is eventually
+  listed in one of the runs (clusters only use positions larger than
+  `i`, as by default).  A single run only covers codewords whose smallest
+  position is in the range; take the minimum of `dmin` over the runs.
+
+- `noscan` if set to 1, run the recursion only at `w=wmax`, without
+  scanning smaller weights.  Only works with `method=2`.  Since smaller
+  weights are not checked, a codeword found only gives an upper bound,
+  and `dmin` is certified only if `dmin=wmax` is also given.
+
+The Python interface `dist_m4ri.py` supports `start` (with the expert
+option `trust_start` to accept the results as valid in its cache), while
+`noscan`, `cbeg`, and `cend` are disabled there (ignored with a warning).
   
 With `debug&2` non-zero, the program in this mode also displays the minimum
 weight of the syndrome found for each error weight `w`.  Example (run from
@@ -112,7 +136,9 @@ success  (found min-weight codeword) d=8
 ## How to run it
 
 For help, just run `./dist_m4ri -h` or `./dist_m4ri --help`.  This
-shows the following 
+shows the following (abbreviated listing from an older version; the current
+`--help` output is reproduced in `README.md`, and `--morehelp` describes all
+parameters)
 ```sh
 $ ./dist_m4ri --help 
 ./dist_m4ri: distance of a classical or quantum CSS code
@@ -134,8 +160,11 @@ $ ./dist_m4ri --help
 			 must be non-zero for CC only, otherwise use upper bound from RW
 		   smax=[int]:  maximum syndrome weight of interest, inclusive (5)
 			 must be non-zero to calculate confinement profile
-		   start=[int]: use only this position to start (-1)
-		   noscan=[int]: start CC directly with wmax (0)
+		   start=[list]: use only these positions to start, e.g., start=0,48 (-1)
+			 expert option: clusters not limited to larger positions
+		   cbeg=[int], cend=[int]: range of positions to start (-1)
+			 expert option for split runs covering all positions
+		   noscan=[int]: expert, CC only at w=wmax (no lower bound) (0)
 
    General parameters:
 	fdem=[str]: detector error model (DEM) file from stim (NULL)
@@ -194,15 +223,23 @@ This file (`introduction.md`) is used as the main page for the doxygen documenta
 
 If you use this program, please cite:
 
-*   A. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes," *IEEE Transactions on Information Theory*, vol. 63, no. 7, pp. 4675-4690, 2017. [doi:10.1109/TIT.2017.2690381](https://doi.org/10.1109/TIT.2017.2690381).
+*   A. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes,"
+    *IEEE Transactions on Information Theory*, vol. 63, no. 7, pp. 4675-4690, 2017.
+    [doi:10.1109/TIT.2017.2690381](https://doi.org/10.1109/TIT.2017.2690381).
 
 Other related papers and software:
 
-*   **vecdec Repository** (implements the Random Information Set (RW) algorithm and can handle different error weights/probabilities):
+*   **vecdec Repository** (implements the Random Information Set (RW) algorithm and can handle different error
+    weights/probabilities):
     [QEC-pages/vecdec](https://github.com/QEC-pages/vecdec).
 
-*   **QDistRnd GAP Package** (describing the Random Information Set algorithm for quantum codes over arbitrary finite fields):
-    L. P. Pryadko, V. A. Shabashov, and V. K. Kozin, "QDistRnd: A GAP package for computing the distance of quantum error-correcting codes," *Journal of Open Source Software*, vol. 7, no. 71, p. 4120, 2022. [doi:10.21105/joss.04120](https://doi.org/10.21105/joss.04120).
+*   **QDistRnd GAP Package** (describing the Random Information Set algorithm for quantum codes over arbitrary finite
+    fields):
+    L. P. Pryadko, V. A. Shabashov, and V. K. Kozin, "QDistRnd: A GAP package for computing the distance of quantum
+    error-correcting codes," *Journal of Open Source Software*, vol. 7, no. 71, p. 4120, 2022.
+    [doi:10.21105/joss.04120](https://doi.org/10.21105/joss.04120).
 
-*   **Performance Comparison** (comparing the performance of this program with other available distance-finding programs):
-    M. Webster, A. Jacob, and O. Higgott, "Distance-Finding Algorithms for Quantum Codes and Circuits," arXiv:2603.22532 [quant-ph], 2026. [arXiv:2603.22532](https://arxiv.org/abs/2603.22532).
+*   **Performance Comparison** (comparing the performance of this program with other available distance-finding
+    programs):
+    M. Webster, A. Jacob, and O. Higgott, "Distance-Finding Algorithms for Quantum Codes and Circuits,"
+    arXiv:2603.22532 [quant-ph], 2026. [arXiv:2603.22532](https://arxiv.org/abs/2603.22532).

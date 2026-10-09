@@ -23,12 +23,12 @@ import tempfile
 import threading
 import subprocess
 from pathlib import Path
-from typing import List, Tuple, Union, Optional, Dict, Any, Set
+from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Callable
 
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 
 def _get_codedistance():
@@ -359,11 +359,15 @@ def get_cached_distance(
     dem: Optional[Any] = None,
     circuit: Optional[Any] = None,
     pmin: float = 0.0,
-    cache_file: Optional[Union[str, Path]] = None
+    cache_file: Optional[Union[str, Path]] = None,
+    start: Optional[Union[int, str, Sequence[int]]] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Retrieves the cached distance entry (including bounds and cumulative rw_steps)
     for a given code matrix, CSS code, or DEM.
+
+    If the expert CC start-column list `start` is given (see compute_classical_distance), the
+    separate start-list record (cache key suffix ':start=a,b,c') is returned instead of the main record.
 
     Returns:
         dict with keys {"dist", "dmin", "dmax", "rw_steps", ...} or None if not cached.
@@ -372,6 +376,7 @@ def get_cached_distance(
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     if eff_cache_file:
         load_distance_cache(eff_cache_file)
+    sfx = _start_key_suffix(_normalize_start_list(start))
 
     if H is not None:
         if G is not None:
@@ -380,7 +385,7 @@ def get_cached_distance(
             key = f"quantum:H={get_sparse_array_state(H)}:L={get_sparse_array_state(L)}"
         else:
             key = f"classical:{get_sparse_array_state(H)}"
-        entry = _distance_cache.get(key)
+        entry = _distance_cache.get(key + sfx)
         if entry:
             entry = dict(entry)
             entry["d_info"] = format_bounds_list(entry.get("dmin", 0), entry.get("dmax", 0), entry.get("rw_steps", 0))
@@ -393,7 +398,7 @@ def get_cached_distance(
             lx_st = get_sparse_array_state(Lx) if Lx is not None else "none"
             lz_st = get_sparse_array_state(Lz) if Lz is not None else "none"
             key = f"{key}:Lx={lx_st}:Lz={lz_st}"
-        entry = _distance_cache.get(key)
+        entry = _distance_cache.get(key + sfx)
         if entry:
             entry = dict(entry)
             if "dmin_X" in entry:
@@ -415,7 +420,7 @@ def get_cached_distance(
             obj = dem
         dem_st = get_sparse_array_state(obj)
         key = f"dem:{dem_st}" if pmin <= 0.0 else f"dem:{dem_st}:pmin={pmin}"
-        entry = _distance_cache.get(key)
+        entry = _distance_cache.get(key + sfx)
         if entry:
             entry = dict(entry)
             entry["d_info"] = format_bounds_list(entry.get("dmin", 0), entry.get("dmax", 0), entry.get("rw_steps", 0))
@@ -722,6 +727,318 @@ def check_finc_outc(finC: Optional[str], outC: Optional[str], verbose: bool = Fa
     return finC
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Expert CC options: `start` list of CC start columns, `trust_start`, and the disabled options noscan, cbeg, cend.
+#
+# - start=a,b,c: CC clusters are grown only from the listed columns, and they are NOT limited to larger column
+#   indices (unlike cbeg/cend in the dist_m4ri binary).  The lower bound dmin (and an exact result) is valid only
+#   if a code symmetry maps every codeword to one whose support contains a listed column (e.g., one column per
+#   block of a quasi-cyclic code); the upper bound dmax is always valid.  Results are cached under the separate
+#   key '<key>:start=a,b,c' (sorted, distinct columns).  Only dmax and the codewords are merged into the main
+#   record, unless the expert option trust_start is set (then dmin and rw_steps are merged as well, and an
+#   existing exact start-list record is copied to the main record even if no calculation is needed).
+# - noscan, cbeg, cend: disabled in the Python interface (ignored with a warning to stderr); use the dist_m4ri
+#   binary directly (noscan: CC only at w=wmax; cbeg/cend: start-column range for split multi-run use, where
+#   each column is eventually listed in one of the runs).
+# ---------------------------------------------------------------------------------------------------------------
+
+def _normalize_start_list(start: Any) -> Optional[List[int]]:
+    """
+    Normalizes the expert CC start-column specification `start` into a sorted list of distinct
+    non-negative (0-based) column indices, or None if unset.
+
+    Accepts None, an integer, a comma-separated string (e.g., "0,48"), or a sequence of integers.
+    A single negative value (e.g., -1, the default of the dist_m4ri binary) means unset (all columns).
+
+    Raises:
+        ValueError: on malformed input or on negative entries in a list of several columns.
+    """
+    import operator
+    if start is None:
+        return None
+    err_msg = f"invalid start={start!r}: expected a comma-separated list of column indices, e.g., start=0,48"
+    vals: List[int] = []
+    if isinstance(start, str):
+        s = start.strip()
+        if not s:
+            return None
+        try:
+            vals = [int(tok) for tok in s.split(",")]
+        except ValueError:
+            raise ValueError(err_msg) from None
+    else:
+        try:
+            items = list(start)
+        except TypeError:
+            items = [start]
+        for v in items:
+            if isinstance(v, (bool, str, bytes)):
+                raise ValueError(err_msg)
+            try:
+                vals.append(operator.index(v))
+            except TypeError:
+                raise ValueError(err_msg) from None
+    if not vals:
+        return None
+    if len(vals) == 1 and vals[0] < 0:
+        return None
+    if any(v < 0 for v in vals):
+        raise ValueError(f"invalid start={start!r}: column indices must be non-negative")
+    return sorted(set(vals))
+
+
+def _start_key_suffix(start_list: Optional[List[int]]) -> str:
+    """Returns the cache key suffix ':start=a,b,c' for a normalized start list ('' if unset)."""
+    if not start_list:
+        return ""
+    return ":start=" + ",".join(str(c) for c in start_list)
+
+
+def _format_start_list(start_list: List[int], max_show: int = 8) -> str:
+    """Formats a start list for messages, showing at most `max_show` entries (as the dist_m4ri binary)."""
+    shown = ",".join(str(c) for c in start_list[:max_show])
+    return shown + (",..." if len(start_list) > max_show else "")
+
+
+def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) -> None:
+    """
+    Issues a warning to stderr for each of the expert options noscan, cbeg, and cend that is set.
+    These options are disabled in the Python interface: they are accepted for backward compatibility
+    but ignored, since their results are not valid distance bounds on their own.
+    """
+    for name, val, is_flag in (("noscan", noscan, True), ("cbeg", cbeg, False), ("cend", cend, False)):
+        if val is None:
+            continue
+        try:
+            ival = int(val)
+            active = (ival != 0) if is_flag else (ival >= 0)
+        except (TypeError, ValueError):
+            active = True
+        if active:
+            sys.stderr.write(
+                f"# Warning: {name}={val} is disabled in the Python interface (ignored); "
+                f"use the dist_m4ri binary directly\n"
+            )
+
+
+def _start_warning_text(start_list: List[int]) -> str:
+    """Returns the stderr warning for a CC start list (same wording as the dist_m4ri binary)."""
+    return (
+        f"# WARNING: start={_format_start_list(start_list)} (expert option): CC clusters are grown only from "
+        f"{len(start_list)} listed column(s)\n"
+        f"#   (not limited to larger column indices); dmin is valid only if a code symmetry maps every\n"
+        f"#   minimum-weight codeword to one containing a listed column\n"
+    )
+
+
+def _prepare_start_option(
+    start: Any,
+    trust_start: bool = False,
+    noscan: Any = 0,
+    cbeg: Any = None,
+    cend: Any = None,
+    solver: str = "dist_m4ri"
+) -> Optional[List[int]]:
+    """
+    Validates the expert CC options of a compute_*_distance() call and issues the warnings to stderr.
+
+    Returns:
+        The normalized start list, or None if unset (or not applicable to the selected solver).
+    """
+    _warn_disabled_options(noscan, cbeg, cend)
+    start_list = _normalize_start_list(start)
+    if start_list is None:
+        if trust_start:
+            sys.stderr.write("# Warning: trust_start=1 has no effect without a start list\n")
+        return None
+    if solver == "codedistance":
+        sys.stderr.write(f"# Warning: start={_format_start_list(start_list)} is ignored with solver='codedistance'\n")
+        return None
+    msg = _start_warning_text(start_list)
+    if _use_distance_cache and trust_start:
+        msg += "#   trust_start=1: start-list results are accepted as valid and copied to the main cache record\n"
+    elif _use_distance_cache:
+        msg += (
+            "#   results are cached under a separate ':start=...' key; only dmax and codewords update the\n"
+            "#   main cache record (use trust_start=1 to also accept dmin)\n"
+        )
+    sys.stderr.write(msg)
+    return start_list
+
+
+def _seed_bounds_from_entry(
+    eff_dmin: int, eff_dmax: int, entry: Optional[Dict[str, Any]], sfx: str = ""
+) -> Tuple[int, int]:
+    """
+    Tightens the bounds (eff_dmin, eff_dmax) with those stored in a cache entry (for a CSS entry, use the
+    sector suffix sfx='_X' or '_Z'; missing sector fields fall back to the combined 'dmin' / 'dmax').
+    """
+    if not entry:
+        return eff_dmin, eff_dmax
+    c_dmin = entry.get(f"dmin{sfx}", entry.get("dmin", 0)) or 0
+    c_dmax = entry.get(f"dmax{sfx}", entry.get("dmax", 0)) or 0
+    if c_dmax > 0:
+        eff_dmax = min(eff_dmax, c_dmax) if eff_dmax > 0 else c_dmax
+    if c_dmin > 1:
+        eff_dmin = max(eff_dmin, c_dmin) if eff_dmin > 1 else c_dmin
+    return eff_dmin, eff_dmax
+
+
+def _union_cws(base: Optional[List[List[int]]], extra: Optional[List[List[int]]]) -> List[List[int]]:
+    """Returns the union of two codeword lists (duplicates removed, sorted by weight)."""
+    combined = [list(cw) for cw in (base or [])]
+    seen = {tuple(cw) for cw in combined}
+    for cw in (extra or []):
+        t = tuple(cw)
+        if t not in seen:
+            combined.append(list(cw))
+            seen.add(t)
+    combined.sort(key=len)
+    return combined
+
+
+def _single_entry_is_exact(entry: Dict[str, Any], need_cws: bool = False) -> bool:
+    """Cache hit test for a classical / quantum / DEM entry (exact distance, and codewords if needed)."""
+    if not (entry.get("dmin", 0) > 0 and entry.get("dmin") == entry.get("dmax")):
+        return False
+    return (not need_cws) or bool(entry.get("cws"))
+
+
+def _css_entry_is_exact(entry: Dict[str, Any], can_x: bool, can_z: bool, need_cws: bool = False) -> bool:
+    """Cache hit test for a CSS entry (exact distance in all computed sectors, and codewords if needed)."""
+    c_dmin_x = entry.get("dmin_X", entry.get("dmin", 0))
+    c_dmax_x = entry.get("dmax_X", entry.get("dmax", 0))
+    c_dmin_z = entry.get("dmin_Z", entry.get("dmin", 0))
+    c_dmax_z = entry.get("dmax_Z", entry.get("dmax", 0))
+    x_exact = (not can_x) or (c_dmin_x > 0 and c_dmin_x == c_dmax_x)
+    z_exact = (not can_z) or (c_dmin_z > 0 and c_dmin_z == c_dmax_z)
+    if not (x_exact and z_exact and (c_dmax_x > 0 or c_dmax_z > 0)):
+        return False
+    return (not need_cws) or bool(entry.get("cws_X") and entry.get("cws_Z"))
+
+
+def _merge_start_into_plain(
+    plain_key: str,
+    src: Dict[str, Any],
+    trust: bool = False,
+    rw_delta: Optional[Dict[str, int]] = None,
+    sectors: Optional[Sequence[str]] = None
+) -> bool:
+    """
+    Merges the start-list cache record `src` (key plain_key + ':start=...') into the main record `plain_key`.
+
+    The upper bound dmax (minimum of the positive values) and the codewords (union) are always valid and
+    are always merged.  Only with `trust` (expert option trust_start) the lower bound dmin is merged as well
+    (maximum, capped at dmax), and rw_steps are either incremented by the steps of the run, `rw_delta`
+    (after a calculation), or set to the maximum of the two records (copy of a cached record, rw_delta=None).
+
+    Args:
+        plain_key: Main cache key.
+        src: Start-list cache record.
+        trust: Accept the start-list lower bound as valid.
+        rw_delta: RW steps of the run by key suffix ('' for a single record; '_X', '_Z' for CSS sectors).
+        sectors: None for a single (classical, quantum, or DEM) record; for a CSS record, the list of
+            computed sectors among 'X' and 'Z'.
+
+    Returns:
+        True if the main record was created or modified.
+    """
+    global _distance_cache
+    prev = _distance_cache.get(plain_key)
+    new: Dict[str, Any] = dict(prev) if prev else {}
+    sfx_list = [""] if sectors is None else [f"_{s}" for s in sectors]
+    useful = trust
+    res: Dict[str, Tuple[int, int, int]] = {}
+    for sfx in sfx_list:
+        s_dmin = src.get(f"dmin{sfx}", 0) or 0
+        s_dmax = src.get(f"dmax{sfx}", 0) or 0
+        p_dmin = new.get(f"dmin{sfx}", 0) or 0
+        p_dmax = new.get(f"dmax{sfx}", 0) or 0
+        p_rw = new.get(f"rw_steps{sfx}", 0) or 0
+        dmax = min(p_dmax, s_dmax) if (p_dmax > 0 and s_dmax > 0) else (p_dmax if p_dmax > 0 else s_dmax)
+        dmin, rw = p_dmin, p_rw
+        if trust:
+            dmin = max(p_dmin, s_dmin)
+            if rw_delta is not None:
+                rw = p_rw + (rw_delta.get(sfx, 0) or 0)
+            else:
+                rw = max(p_rw, src.get(f"rw_steps{sfx}", 0) or 0)
+        if dmax > 0 and dmin > dmax:
+            dmin = dmax
+        if sectors is not None and dmin > 0 and dmin == dmax:
+            rw = 0  # CSS sector convention (see compute_css_distance)
+        s_cws = src.get(f"cws{sfx}", []) or []
+        if s_dmax > 0 or s_cws:
+            useful = True
+        new[f"cws{sfx}"] = _union_cws(new.get(f"cws{sfx}", []), s_cws)
+        res[sfx] = (dmin, dmax, rw)
+    if not prev and not useful:
+        return False
+
+    if sectors is None:
+        dmin, dmax, rw = res[""]
+        new["dist"] = dmin if (dmin == dmax or dmax == 0) else dmax
+        new["dmin"], new["dmax"], new["rw_steps"] = dmin, dmax, rw
+        new["d_info"] = format_bounds_list(dmin, dmax, rw)
+    else:
+        for s in ("X", "Z"):
+            sfx = f"_{s}"
+            if sfx in res:
+                dmin, dmax, rw = res[sfx]
+                new[f"dmin{sfx}"], new[f"dmax{sfx}"], new[f"rw_steps{sfx}"] = dmin, dmax, rw
+                new[f"d{s}"] = format_bounds_list(dmin, dmax, rw)
+            else:
+                for fld, dflt in (("dmin", 0), ("dmax", 0), ("rw_steps", 0), ("cws", [])):
+                    new.setdefault(f"{fld}{sfx}", dflt)
+                new.setdefault(f"d{s}", None)
+        vals = list(res.values())
+        dists = [dmin if (dmin == dmax or dmax == 0) else dmax for dmin, dmax, _ in vals]
+        new["dist"] = min(dists) if all(d > 0 for d in dists) else max(dists)
+        new["dmin"] = min(v[0] for v in vals)
+        new["dmax"] = min(v[1] for v in vals) if all(v[1] > 0 for v in vals) else 0
+        new["rw_steps"] = sum(v[2] for v in vals)
+    _distance_cache[plain_key] = new
+    return True
+
+
+def _resolve_start_cache(
+    plain_key: str,
+    start_list: Optional[List[int]],
+    is_hit: Callable[[Dict[str, Any]], bool],
+    trust_start: bool,
+    merge_copy: Callable[[Dict[str, Any]], bool],
+    eff_cache_file: Optional[str],
+    verbose: bool = False
+) -> Tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """
+    Resolves the cache record of a run with an optional expert CC start list.
+
+    Without a start list, or if the main record already holds the requested exact result, the main record
+    is used.  Otherwise the separate start-list record (key plain_key + ':start=a,b,c') is used; with
+    trust_start, an existing exact start-list record is copied to the main record (via `merge_copy`), and
+    the cache file is saved, even though no calculation is needed.
+
+    Returns:
+        (code_key, cached_entry, plain_entry): the key and the existing record (or None) for the results of
+        this run, and the main record (or None) used to seed the bounds of a start-list run.
+    """
+    plain_entry = _distance_cache.get(plain_key)
+    if not start_list:
+        return plain_key, plain_entry, None
+    if plain_entry is not None and is_hit(plain_entry):
+        if verbose:
+            print(f"[dist_m4ri] Start list not needed: the main record '{plain_key}' has the exact distance")
+        return plain_key, plain_entry, None
+    code_key = plain_key + _start_key_suffix(start_list)
+    cached_entry = _distance_cache.get(code_key)
+    if trust_start and cached_entry is not None and is_hit(cached_entry):
+        if merge_copy(cached_entry) and eff_cache_file:
+            save_distance_cache(eff_cache_file)
+        if verbose:
+            print(f"[dist_m4ri] trust_start: copied the exact start-list record to the main record '{plain_key}'")
+    return code_key, cached_entry, plain_entry
+
+
 def run_dist_m4ri(
     dist_m4ri_path: Optional[str] = None,
     method: int = 3,
@@ -741,7 +1058,7 @@ def run_dist_m4ri(
     threads: Optional[int] = None,
     timeout: float = 60.0,
     smax: Optional[int] = None,
-    start: Optional[int] = None,
+    start: Optional[Union[int, str, Sequence[int]]] = None,
     cbeg: Optional[int] = None,
     cend: Optional[int] = None,
     css: Optional[int] = None,
@@ -762,16 +1079,33 @@ def run_dist_m4ri(
     cov_cws: int = 100,
     refresh: int = 0,
     verbose: bool = False,
-    stop_event: Optional[threading.Event] = None
+    stop_event: Optional[threading.Event] = None,
+    warn_start: bool = True
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
-    
+
+    Expert CC options:
+        start: List of CC start columns (int, comma-separated string "a,b,c", or sequence of ints;
+            None or a single negative value: all columns), passed as start=a,b,c (sorted, distinct).
+            CC clusters are grown only from the listed columns, and they are not limited to larger
+            column indices.  WARNING: the returned dmin (and an exact result) is valid only if a code
+            symmetry maps every minimum-weight codeword to one containing a listed column (e.g., one
+            column per block of a quasi-cyclic code); dmax is always valid.
+        warn_start: If True (default), issue the start-list warning to stderr.
+        noscan / cbeg / cend: Disabled in the Python interface: accepted for backward compatibility,
+            but ignored with a warning to stderr (use the dist_m4ri binary directly).
+
     Returns:
         tuple (dmin, dmax, rw_steps)
     """
     global _last_run_stats
     exec_path = find_dist_m4ri_binary(dist_m4ri_path)
+
+    start_list = _normalize_start_list(start)
+    _warn_disabled_options(noscan, cbeg, cend)
+    if start_list and warn_start:
+        sys.stderr.write(_start_warning_text(start_list))
 
     finC = check_finc_outc(finC, outC, verbose=False)
 
@@ -800,11 +1134,8 @@ def run_dist_m4ri(
     if threads is not None and threads > 0: cmd.append(f"threads={threads}")
     if timeout is not None and timeout >= 0: cmd.append(f"timeout={timeout}")
     if smax is not None: cmd.append(f"smax={smax}")
-    if start is not None and start >= 0: cmd.append(f"start={start}")
-    if cbeg is not None and cbeg >= 0: cmd.append(f"cbeg={cbeg}")
-    if cend is not None and cend >= 0: cmd.append(f"cend={cend}")
+    if start_list: cmd.append("start=" + ",".join(str(c) for c in start_list))
     if css is not None: cmd.append(f"css={css}")
-    if noscan: cmd.append(f"noscan={noscan}")
     if classical >= 0: cmd.append(f"classical={classical}")
     if dW >= 0: cmd.append(f"dW={dW}")
     if maxC > 0: cmd.append(f"maxC={maxC}")
@@ -2289,7 +2620,7 @@ def compute_classical_distance(
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
-    start: Optional[int] = None,
+    start: Optional[Union[int, str, Sequence[int]]] = None,
     cbeg: Optional[int] = None,
     cend: Optional[int] = None,
     noscan: int = 0,
@@ -2314,6 +2645,7 @@ def compute_classical_distance(
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
+    trust_start: bool = False,
     **kwargs
 ) -> Any:
     """
@@ -2332,8 +2664,18 @@ def compute_classical_distance(
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
-        start / cbeg / cend: Column search range for CC.
-        noscan: Skip CC scan loop if 1.
+        start: Expert option: list of CC start columns (int, comma-separated string "a,b,c", or
+            sequence of ints; None or -1: all columns).  CC clusters are grown only from the listed
+            columns, and they are not limited to larger column indices.  WARNING: the lower bound
+            (and an exact result) is valid only if a code symmetry maps every minimum-weight codeword
+            to one containing a listed column (e.g., one column per block of a quasi-cyclic code);
+            the upper bound is always valid.  Results are cached under the separate key
+            '<key>:start=a,b,c'; only dmax and codewords update the main cache record.
+        trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
+            rw_steps into the main cache record, and copy an existing exact start-list record to the
+            main record even if no calculation is needed (default: False).
+        cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
+            but ignored with a warning to stderr (use the dist_m4ri binary directly).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
@@ -2353,6 +2695,7 @@ def compute_classical_distance(
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
 
     finC = check_finc_outc(finC, outC, verbose=verbose)
 
@@ -2360,6 +2703,8 @@ def compute_classical_distance(
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     code_key = None
     cached_entry = None
+    plain_key = None
+    plain_entry = None
 
     if solver == "codedistance":
         if do_cws or outC:
@@ -2389,8 +2734,12 @@ def compute_classical_distance(
             load_distance_cache(eff_cache_file)
         try:
             h_state = get_sparse_array_state(H)
-            code_key = f"classical:{h_state}"
-            cached_entry = _distance_cache.get(code_key)
+            plain_key = f"classical:{h_state}"
+            code_key, cached_entry, plain_entry = _resolve_start_cache(
+                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC)), trust_start,
+                lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
+            )
+            eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
             if cached_entry is not None:
                 # If exact distance is already proven and not asking for more codewords
                 if cached_entry.get("dmin", 0) > 0 and cached_entry.get("dmin") == cached_entry.get("dmax"):
@@ -2434,6 +2783,8 @@ def compute_classical_distance(
         except Exception:
             code_key = None
             cached_entry = None
+            plain_key = None
+            plain_entry = None
     else:
         if verbose:
             print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
@@ -2462,10 +2813,8 @@ def compute_classical_distance(
             wmin=wmin,
             wmax=wmax,
             smax=smax,
-            start=start,
-            cbeg=cbeg,
-            cend=cend,
-            noscan=noscan,
+            start=start_list,
+            warn_start=False,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
@@ -2528,6 +2877,9 @@ def compute_classical_distance(
                 "d_info": d_info,
                 "cws": combined_cws
             }
+            if plain_key is not None and code_key != plain_key:
+                # start-list run: merge the valid part (or all, with trust_start) into the main record
+                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, {"": rw_steps})
             if eff_cache_file:
                 save_distance_cache(eff_cache_file)
 
@@ -2563,7 +2915,7 @@ def compute_quantum_distance(
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
-    start: Optional[int] = None,
+    start: Optional[Union[int, str, Sequence[int]]] = None,
     cbeg: Optional[int] = None,
     cend: Optional[int] = None,
     noscan: int = 0,
@@ -2588,6 +2940,7 @@ def compute_quantum_distance(
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
+    trust_start: bool = False,
     **kwargs
 ) -> Any:
     """
@@ -2609,8 +2962,18 @@ def compute_quantum_distance(
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
-        start / cbeg / cend: Column search range for CC.
-        noscan: Skip CC scan loop if 1.
+        start: Expert option: list of CC start columns (int, comma-separated string "a,b,c", or
+            sequence of ints; None or -1: all columns).  CC clusters are grown only from the listed
+            columns, and they are not limited to larger column indices.  WARNING: the lower bound
+            (and an exact result) is valid only if a code symmetry maps every minimum-weight codeword
+            to one containing a listed column (e.g., one column per block of a quasi-cyclic code);
+            the upper bound is always valid.  Results are cached under the separate key
+            '<key>:start=a,b,c'; only dmax and codewords update the main cache record.
+        trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
+            rw_steps into the main cache record, and copy an existing exact start-list record to the
+            main record even if no calculation is needed (default: False).
+        cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
+            but ignored with a warning to stderr (use the dist_m4ri binary directly).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
@@ -2630,6 +2993,7 @@ def compute_quantum_distance(
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
 
     if G is None and L is None:
         raise ValueError(
@@ -2643,6 +3007,8 @@ def compute_quantum_distance(
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     code_key = None
     cached_entry = None
+    plain_key = None
+    plain_entry = None
 
     if solver == "codedistance":
         if do_cws or outC:
@@ -2684,11 +3050,15 @@ def compute_quantum_distance(
             h_state = get_sparse_array_state(H)
             if G is not None:
                 g_state = get_sparse_array_state(G)
-                code_key = f"quantum:H={h_state}:G={g_state}"
+                plain_key = f"quantum:H={h_state}:G={g_state}"
             else:
                 l_state = get_sparse_array_state(L)
-                code_key = f"quantum:H={h_state}:L={l_state}"
-            cached_entry = _distance_cache.get(code_key)
+                plain_key = f"quantum:H={h_state}:L={l_state}"
+            code_key, cached_entry, plain_entry = _resolve_start_cache(
+                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC)), trust_start,
+                lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
+            )
+            eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
             if cached_entry is not None:
                 if cached_entry.get("dmin", 0) > 0 and cached_entry.get("dmin") == cached_entry.get("dmax"):
                     if not (do_cws or outC) or (cached_entry.get("cws") and len(cached_entry["cws"]) > 0):
@@ -2730,6 +3100,8 @@ def compute_quantum_distance(
         except Exception:
             code_key = None
             cached_entry = None
+            plain_key = None
+            plain_entry = None
     else:
         if verbose:
             print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
@@ -2776,10 +3148,8 @@ def compute_quantum_distance(
             wmin=wmin,
             wmax=wmax,
             smax=smax,
-            start=start,
-            cbeg=cbeg,
-            cend=cend,
-            noscan=noscan,
+            start=start_list,
+            warn_start=False,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
@@ -2842,6 +3212,9 @@ def compute_quantum_distance(
                 "d_info": d_info,
                 "cws": combined_cws
             }
+            if plain_key is not None and code_key != plain_key:
+                # start-list run: merge the valid part (or all, with trust_start) into the main record
+                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, {"": rw_steps})
             if eff_cache_file:
                 save_distance_cache(eff_cache_file)
 
@@ -2892,7 +3265,7 @@ def compute_css_distance(
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
-    start: Optional[int] = None,
+    start: Optional[Union[int, str, Sequence[int]]] = None,
     cbeg: Optional[int] = None,
     cend: Optional[int] = None,
     noscan: int = 0,
@@ -2916,6 +3289,7 @@ def compute_css_distance(
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
+    trust_start: bool = False,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -2937,8 +3311,18 @@ def compute_css_distance(
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
-        start / cbeg / cend: Column search range for CC.
-        noscan: Skip CC scan loop if 1.
+        start: Expert option: list of CC start columns (int, comma-separated string "a,b,c", or
+            sequence of ints; None or -1: all columns).  CC clusters are grown only from the listed
+            columns, and they are not limited to larger column indices.  WARNING: the lower bound
+            (and an exact result) is valid only if a code symmetry maps every minimum-weight codeword
+            to one containing a listed column (e.g., one column per block of a quasi-cyclic code);
+            the upper bound is always valid.  Results are cached under the separate key
+            '<key>:start=a,b,c'; only dmax and codewords update the main cache record.
+        trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
+            rw_steps into the main cache record, and copy an existing exact start-list record to the
+            main record even if no calculation is needed (default: False).
+        cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
+            but ignored with a warning to stderr (use the dist_m4ri binary directly).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
@@ -2958,6 +3342,7 @@ def compute_css_distance(
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
 
     can_compute_Z = (
         Hx is not None
@@ -2970,6 +3355,7 @@ def compute_css_distance(
 
     if not can_compute_Z and not can_compute_X:
         raise ValueError("Cannot compute CSS distance: Both Hx and Hz are empty.")
+    css_sectors = [s for s, ok in (("X", can_compute_X), ("Z", can_compute_Z)) if ok]
 
     finC = check_finc_outc(finC, outC, verbose=verbose)
 
@@ -2977,6 +3363,8 @@ def compute_css_distance(
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     code_key = None
     cached_entry = None
+    plain_key = None
+    plain_entry = None
 
     if solver == "codedistance":
         if do_cws or outC:
@@ -3029,12 +3417,16 @@ def compute_css_distance(
         try:
             hx_state = get_sparse_array_state(Hx) if can_compute_Z else "none"
             hz_state = get_sparse_array_state(Hz) if can_compute_X else "none"
-            code_key = f"css:X={hx_state}:Z={hz_state}"
+            plain_key = f"css:X={hx_state}:Z={hz_state}"
             if Lx is not None or Lz is not None:
                 lx_state = get_sparse_array_state(Lx) if Lx is not None else "none"
                 lz_state = get_sparse_array_state(Lz) if Lz is not None else "none"
-                code_key = f"{code_key}:Lx={lx_state}:Lz={lz_state}"
-            cached_entry = _distance_cache.get(code_key)
+                plain_key = f"{plain_key}:Lx={lx_state}:Lz={lz_state}"
+            code_key, cached_entry, plain_entry = _resolve_start_cache(
+                plain_key, start_list,
+                lambda e: _css_entry_is_exact(e, can_compute_X, can_compute_Z, bool(do_cws or outC)), trust_start,
+                lambda e: _merge_start_into_plain(plain_key, e, True, None, css_sectors), eff_cache_file, verbose
+            )
             if cached_entry is not None:
                 c_dmin_x = cached_entry.get("dmin_X", cached_entry.get("dmin", 0))
                 c_dmax_x = cached_entry.get("dmax_X", cached_entry.get("dmax", 0))
@@ -3104,6 +3496,8 @@ def compute_css_distance(
         except Exception:
             code_key = None
             cached_entry = None
+            plain_key = None
+            plain_entry = None
     else:
         if verbose:
             print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
@@ -3179,6 +3573,9 @@ def compute_css_distance(
                 eff_dmin_x = max(eff_dmin_x, cx_min) if eff_dmin_x > 1 else cx_min
             if cx_max > 0:
                 eff_dmax_x = min(eff_dmax_x, cx_max) if eff_dmax_x > 0 else cx_max
+        # Start-list run: also seed from the main (plain-key) record
+        eff_dmin_z, eff_dmax_z = _seed_bounds_from_entry(eff_dmin_z, eff_dmax_z, plain_entry, "_Z")
+        eff_dmin_x, eff_dmax_x = _seed_bounds_from_entry(eff_dmin_x, eff_dmax_x, plain_entry, "_X")
 
         # Z-distance: Hx as finH, Hz as finG (or Lx as finL dual logical operators)
         if can_compute_Z:
@@ -3194,10 +3591,8 @@ def compute_css_distance(
                 wmin=wmin,
                 wmax=wmax,
                 smax=smax,
-                start=start,
-                cbeg=cbeg,
-                cend=cend,
-                noscan=noscan,
+                start=start_list,
+                warn_start=False,
                 dexp=d_exp,
                 steps=num_steps,
                 threads=threads,
@@ -3237,10 +3632,8 @@ def compute_css_distance(
                 wmin=wmin,
                 wmax=wmax,
                 smax=smax,
-                start=start,
-                cbeg=cbeg,
-                cend=cend,
-                noscan=noscan,
+                start=start_list,
+                warn_start=False,
                 dexp=d_exp,
                 steps=num_steps,
                 threads=threads,
@@ -3266,6 +3659,7 @@ def compute_css_distance(
                 cws_X = read_sparse_vectors(outX)
                 cws_X.sort(key=len)
 
+        run_rw_steps = {"_X": rw_steps_x, "_Z": rw_steps_z}  # RW steps of this run (before merging the cache)
         if _use_distance_cache and cached_entry is not None:
             if can_compute_Z:
                 pz_min = cached_entry.get("dmin_Z", 0)
@@ -3364,6 +3758,9 @@ def compute_css_distance(
                 "cws_X": combined_cws_x,
                 "cws_Z": combined_cws_z
             }
+            if plain_key is not None and code_key != plain_key:
+                # start-list run: merge the valid part (or all, with trust_start) into the main record
+                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, run_rw_steps, css_sectors)
             if eff_cache_file:
                 save_distance_cache(eff_cache_file)
         return res_tuple
@@ -3443,7 +3840,7 @@ def compute_dem_distance(
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
-    start: Optional[int] = None,
+    start: Optional[Union[int, str, Sequence[int]]] = None,
     cbeg: Optional[int] = None,
     cend: Optional[int] = None,
     noscan: int = 0,
@@ -3475,6 +3872,7 @@ def compute_dem_distance(
     out_dir: Optional[Union[str, Path]] = None,
     out_dem: Optional[Union[bool, str, Path]] = None,
     out_stim: Optional[Union[bool, str, Path]] = None,
+    trust_start: bool = False,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -3494,11 +3892,23 @@ def compute_dem_distance(
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
-        start / cbeg / cend: Column search range for CC.
-        noscan: Skip CC scan loop if 1.
+        start: Expert option: list of CC start columns (int, comma-separated string "a,b,c", or
+            sequence of ints; None or -1: all columns).  CC clusters are grown only from the listed
+            columns, and they are not limited to larger column indices.  WARNING: the lower bound
+            (and an exact result) is valid only if a code symmetry maps every minimum-weight codeword
+            to one containing a listed column (e.g., one column per block of a quasi-cyclic code);
+            the upper bound is always valid.  Results are cached under the separate key
+            '<key>:start=a,b,c'; only dmax and codewords update the main cache record.
+        trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
+            rw_steps into the main cache record, and copy an existing exact start-list record to the
+            main record even if no calculation is needed (default: False).
+        cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
+            but ignored with a warning to stderr (use the dist_m4ri binary directly).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         pmin: Probability cutoff for error mechanisms in DEM.
+            Note: CC start columns (start) index the error mechanisms in their order of appearance in
+            the (flattened) DEM, after the pmin cutoff.
         finC: Input file with initial codewords.
         outC: Output file to save codewords (NZLIST format).
         do_cws: Whether to return extracted error mechanisms / codewords.
@@ -3524,6 +3934,7 @@ def compute_dem_distance(
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
 
     if dem is not None and isinstance(dem, (str, Path)) and str(dem).endswith(".stim"):
         circuit = dem
@@ -3731,14 +4142,20 @@ def compute_dem_distance(
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     code_key = None
     cached_entry = None
+    plain_key = None
+    plain_entry = None
     if _use_distance_cache:
         if eff_cache_file:
             load_distance_cache(eff_cache_file)
         try:
             dem_obj = dem if dem is not None else circuit
             dem_state = get_sparse_array_state(dem_obj)
-            code_key = f"dem:{dem_state}" if pmin <= 0.0 else f"dem:{dem_state}:pmin={pmin}"
-            cached_entry = _distance_cache.get(code_key)
+            plain_key = f"dem:{dem_state}" if pmin <= 0.0 else f"dem:{dem_state}:pmin={pmin}"
+            code_key, cached_entry, plain_entry = _resolve_start_cache(
+                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC)), trust_start,
+                lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
+            )
+            eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
             if cached_entry is not None:
                 # If exact distance is already proven and not asking for more codewords
                 if cached_entry.get("dmin", 0) > 0 and cached_entry.get("dmin") == cached_entry.get("dmax"):
@@ -3780,6 +4197,8 @@ def compute_dem_distance(
         except Exception:
             code_key = None
             cached_entry = None
+            plain_key = None
+            plain_entry = None
     else:
         if verbose:
             print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
@@ -3816,10 +4235,8 @@ def compute_dem_distance(
             wmin=wmin,
             wmax=wmax,
             smax=smax if smax is not None else 0,
-            start=start,
-            cbeg=cbeg,
-            cend=cend,
-            noscan=noscan,
+            start=start_list,
+            warn_start=False,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
@@ -3883,6 +4300,9 @@ def compute_dem_distance(
                 "d_info": d_info,
                 "cws": combined_cws
             }
+            if plain_key is not None and code_key != plain_key:
+                # start-list run: merge the valid part (or all, with trust_start) into the main record
+                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, {"": rw_steps})
             if eff_cache_file:
                 save_distance_cache(eff_cache_file)
 
@@ -3933,6 +4353,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "start": None,
         "cbeg": None,
         "cend": None,
+        "trust_start": False,
         "css": None,
         "dexp": 0,
         "steps": None,
@@ -4016,6 +4437,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         if arg in ("--no-cache", "-no-cache", "nocache", "--nocache"):
             args["use_cache"] = False
             args["cache_file"] = None
+            i += 1
+            continue
+
+        if arg in ("--trust-start", "-trust-start", "--trust_start", "-trust_start", "trust_start", "trust-start"):
+            args["trust_start"] = True
             i += 1
             continue
 
@@ -4168,7 +4594,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             elif key_lower == "smax":
                 args["smax"] = int(val)
             elif key_lower == "start":
-                args["start"] = int(val)
+                args["start"] = _normalize_start_list(val)
+            elif key_lower in ("trust_start", "trust-start", "truststart"):
+                args["trust_start"] = (
+                    bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
+                )
             elif key_lower == "cbeg":
                 args["cbeg"] = int(val)
             elif key_lower == "cend":
@@ -4291,7 +4721,7 @@ Allowed parameters:
   method, dmin, dmax, dexp (dest), steps, wmin, wmax, timeout, threads,
   nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, min_hits,
   cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC,
-  dW, seed, debug, solver, cache, --no-cache, --verbose, --cws
+  dW, seed, debug, solver, cache, --no-cache, --verbose, --cws, --trust-start
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows)
@@ -4349,8 +4779,9 @@ Codeword collection & caching:
 
 Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
-  noscan=1 (0)          CC method 2: start directly at wmax, skip scanning w<wmax
-  start/cbeg/cend=N     Limit CC search to specific column(s) (-1: all)
+  start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (see --morehelp)
+  --trust-start         Expert: accept start-list results as valid (copied to main cache record)
+  noscan, cbeg, cend    Disabled in Python (ignored with a warning); use the dist_m4ri binary
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      RW batch chunk size (default: 0 for adaptive 25-500, alias: batch)
   ksub=N (0)            RW subspace sketch dimension (0: full matrix; auto-disabled if m < nu)
@@ -4468,11 +4899,28 @@ Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 0).
                         When smax > 0, tracks minimum syndrome weights for each error weight.
                         When smax=0, confinement is not computed.
-  noscan=1              Start CC directly at weight wmax, skipping weights w < wmax (default: 0).
-                        Only valid for method=2.
-  start=N               Restrict CC search to start column index N (equiv: cbeg=N cend=N).
-  cbeg=N                Beginning column index for CC search (default: 0).
-  cend=N                Ending column index for CC search (default: n - 1).
+  start=LIST            Expert option: comma-separated list of CC start columns (0-based), e.g.,
+                        start=0,48,96 (default: -1 = all columns; start=N is a one-element list).
+                        CC clusters are grown only from the listed columns, and they are NOT
+                        limited to larger column indices.  Use, e.g., one column per block of a
+                        quasi-cyclic code.  WARNING: dmin (and an exact result) is valid only if a
+                        code symmetry maps every minimum-weight codeword to one containing a listed
+                        column; dmax is always valid.  For DEM input, columns index the error
+                        mechanisms in their order in the (flattened) DEM, after the pmin cutoff.
+                        Results are cached under a separate key '<key>:start=a,b,c'; only dmax and
+                        codewords are merged into the main cache record.  (Before version 0.10.0,
+                        start=N limited CC to clusters started at column N using only larger
+                        columns; this is now cbeg=N cend=N of the dist_m4ri binary.)
+  --trust-start         Expert option (also trust_start=1): accept the start-list results as valid,
+                        i.e., also merge dmin and rw_steps into the main cache record, and copy an
+                        existing exact start-list record to the main record even if no calculation
+                        is needed.  Only use it if the code symmetry assumption above holds.
+  noscan, cbeg, cend    Disabled in the Python interface: accepted for backward compatibility, but
+                        ignored with a warning to stderr.  These expert options of the dist_m4ri
+                        binary do not give valid bounds on their own: noscan=1 runs CC only at
+                        weight w=wmax (method=2); cbeg/cend limit CC start columns to a range for
+                        split runs, where every column is eventually covered by one of the runs.
+                        Run the dist_m4ri binary directly to use them (see its --morehelp).
 
 Codeword collection and export:
   --cws                 Collect and display non-trivial minimum-weight codewords.
@@ -4593,7 +5041,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 rounds=args["rounds"],
                 out_dir=args["out_dir"],
                 out_dem=args["out_dem"],
-                out_stim=args["out_stim"]
+                out_stim=args["out_stim"],
+                trust_start=args["trust_start"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res
@@ -4653,7 +5102,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 win_mode=args["win_mode"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
-                refresh=args["refresh"]
+                refresh=args["refresh"],
+                trust_start=args["trust_start"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, dx_info, dz_info, cws_x, cws_z = res
@@ -4743,7 +5193,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 win_mode=args["win_mode"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
-                refresh=args["refresh"]
+                refresh=args["refresh"],
+                trust_start=args["trust_start"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res
@@ -4797,7 +5248,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 win_mode=args["win_mode"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
-                refresh=args["refresh"]
+                refresh=args["refresh"],
+                trust_start=args["trust_start"]
             )
             if args["do_cws"] or (args["outC"] is not None):
                 dist, d_info, cws = res

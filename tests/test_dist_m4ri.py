@@ -327,7 +327,7 @@ def test_cli_argument_parsing():
     assert args1["finG"] == "g.mtx"
     assert args1["smax"] == 0
     assert args1["finC"] == "init.nz"
-    assert args1["start"] == 2
+    assert args1["start"] == [2]  # start is a list of CC start columns (since version 0.10.0)
 
     # Auto-infer classical = 1 when only finH is given
     args2 = dist_m4ri.parse_cli_args(["finH=h.mtx", "method=2"])
@@ -502,7 +502,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.9.0" in captured.out
+    assert "0.10.0" in captured.out
 
 
 def test_cli_binary_compatibility_silent(capsys):
@@ -511,7 +511,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.9.0" in captured.out
+    assert "0.10.0" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -530,7 +530,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.9.0" in older_warn
+    assert "expected >= 0.10.0" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -969,6 +969,154 @@ def test_stim_out_dem_out_stim_out_dir(tmp_path):
         assert ret_named == 0
         assert (custom_dir / "explicit.dem").exists()
         assert (custom_dir / "explicit.stim").exists()
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+S5_H = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+S5_L = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+
+
+def test_normalize_start_list():
+    norm = dist_m4ri._normalize_start_list
+    assert norm(None) is None
+    assert norm(5) == [5]
+    assert norm(-1) is None
+    assert norm("-1") is None
+    assert norm("") is None
+    assert norm("48,0,48") == [0, 48]
+    assert norm([7, 3, 3]) == [3, 7]
+    assert norm((2,)) == [2]
+    assert norm(np.array([4, 1])) == [1, 4]
+    for bad in ("1,,2", "a", "1.5", "0,-1", [1, -2], 1.5, True, [True]):
+        with pytest.raises(ValueError):
+            norm(bad)
+    assert dist_m4ri._start_key_suffix([0, 48]) == ":start=0,48"
+    assert dist_m4ri._start_key_suffix(None) == ""
+
+
+def test_run_dist_m4ri_start_list_and_disabled_options(capsys):
+    # start list is passed sorted and deduplicated; noscan/cbeg/cend are ignored with a warning
+    res = dist_m4ri.run_dist_m4ri(
+        method=2, finH=S5_H, finL=S5_L, wmax=7, start=[41, 0, 41], noscan=1, cbeg=3, cend=7,
+        threads=2, verbose=True
+    )
+    assert res == (5, 5, 0)
+    captured = capsys.readouterr()
+    run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+    assert "start=0,41" in run_line
+    assert "noscan=" not in run_line and "cbeg=" not in run_line and "cend=" not in run_line
+    for opt in ("noscan=1", "cbeg=3", "cend=7"):
+        assert f"{opt} is disabled in the Python interface" in captured.err
+    assert "WARNING: start=0,41 (expert option)" in captured.err
+
+
+def test_start_list_cache_records(tmp_path, monkeypatch, capsys):
+    import json
+    cache_file = str(tmp_path / "start_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        # 1. Start-list run: separate ':start=0,41' record; the main record only gets dmax (and codewords)
+        dist, d_info = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, start="41,0", threads=2, return_info=True, cache_file=cache_file
+        )
+        assert dist == 5 and d_info == [5, 5, 0]
+        err = capsys.readouterr().err
+        assert "WARNING: start=0,41 (expert option)" in err
+        assert "use trust_start=1 to also accept dmin" in err
+        plain = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)
+        srec = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file, start=[0, 41])
+        assert srec["dmin"] == 5 and srec["dmax"] == 5
+        assert plain["dmin"] == 0 and plain["dmax"] == 5
+        with open(cache_file) as f:
+            data = json.load(f)
+        assert any(k.startswith("quantum:") and k.endswith(":start=0,41") for k in data)
+
+        # 2. Repeated start-list call is a cache hit (the binary is not called)
+        def _no_run(*args, **kwargs):
+            raise AssertionError("dist_m4ri binary should not be called")
+        monkeypatch.setattr(dist_m4ri, "run_dist_m4ri", _no_run)
+        dist2, d_info2 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, start=[0, 41], threads=2, return_info=True, cache_file=cache_file
+        )
+        assert dist2 == 5 and d_info2 == [5, 5, 0]
+        assert dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)["dmin"] == 0
+
+        # 3. trust_start copies the exact start-list record to the main record without a calculation
+        dist3, d_info3 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, start=[0, 41], trust_start=True, threads=2, return_info=True,
+            cache_file=cache_file
+        )
+        assert dist3 == 5 and d_info3 == [5, 5, 0]
+        assert "trust_start=1: start-list results are accepted" in capsys.readouterr().err
+        with open(cache_file) as f:
+            data = json.load(f)
+        plain_keys = [k for k in data if k.startswith("quantum:") and ":start=" not in k]
+        assert len(plain_keys) == 1
+        assert data[plain_keys[0]]["dmin"] == 5 and data[plain_keys[0]]["dmax"] == 5
+
+        # 4. The main record is now exact: a call without a start list is a cache hit
+        dist4, d_info4 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, threads=2, return_info=True, cache_file=cache_file
+        )
+        assert dist4 == 5 and d_info4 == [5, 5, 0]
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_start_list_trust_after_calculation_css(tmp_path):
+    cache_file = str(tmp_path / "start_css_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        kw = dict(Hx=S5_H, Hz=S5_H, Lz=S5_L, Lx=S5_L, method=2, wmax=7, threads=2, cache_file=cache_file)
+        # Without trust_start: only the upper bounds (and codewords) reach the main record
+        dist, dx, dz = dist_m4ri.compute_css_distance(start="0,41", **kw)
+        assert dist == 5 and dx == [5, 5, 0] and dz == [5, 5, 0]
+        plain = dist_m4ri.get_cached_distance(Hx=S5_H, Hz=S5_H, Lx=S5_L, Lz=S5_L, cache_file=cache_file)
+        assert plain["dmax_X"] == 5 and plain["dmax_Z"] == 5
+        assert plain["dmin_X"] == 0 and plain["dmin_Z"] == 0
+        # With trust_start and another start list: after the calculation, dmin is merged as well
+        dist2, dx2, dz2 = dist_m4ri.compute_css_distance(start=[0, 41, 12], trust_start=True, **kw)
+        assert dist2 == 5 and dx2 == [5, 5, 0] and dz2 == [5, 5, 0]
+        plain2 = dist_m4ri.get_cached_distance(Hx=S5_H, Hz=S5_H, Lx=S5_L, Lz=S5_L, cache_file=cache_file)
+        assert plain2["dX"] == [5, 5, 0] and plain2["dZ"] == [5, 5, 0]
+        assert plain2["dmin"] == 5 and plain2["dmax"] == 5 and plain2["dist"] == 5
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_cli_start_trust_start_and_disabled_options(capsys):
+    args = dist_m4ri.parse_cli_args(
+        ["finH=h.mtx", "start=5,1,1", "--trust-start", "noscan=1", "cbeg=2", "cend=3"]
+    )
+    assert args["start"] == [1, 5]
+    assert args["trust_start"] is True
+    assert (args["noscan"], args["cbeg"], args["cend"]) == (1, 2, 3)
+    assert dist_m4ri.parse_cli_args(["trust_start=0"])["trust_start"] is False
+    assert dist_m4ri.parse_cli_args(["trust-start=1"])["trust_start"] is True
+    assert dist_m4ri.parse_cli_args(["--trust-start=yes"])["trust_start"] is True
+    assert dist_m4ri.parse_cli_args(["start=-1"])["start"] is None
+    assert dist_m4ri.parse_cli_args([])["trust_start"] is False
+
+    try:
+        # Invalid start list is an error
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "start=1,,2", "--no-cache"])
+        assert ret == 1
+        assert "invalid start='1,,2'" in capsys.readouterr().err
+
+        # Disabled options are ignored with a warning; the start list gives the distance with a warning
+        ret = dist_m4ri.main([
+            f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=7", "noscan=1", "cbeg=30",
+            "start=0,41", "--no-cache", "threads=2"
+        ])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "5 5 0 (exact)" in captured.out
+        assert "noscan=1 is disabled in the Python interface" in captured.err
+        assert "cbeg=30 is disabled in the Python interface" in captured.err
+        assert "WARNING: start=0,41 (expert option)" in captured.err
     finally:
         dist_m4ri.enable_distance_cache()
 

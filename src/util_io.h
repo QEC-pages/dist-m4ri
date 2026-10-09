@@ -45,7 +45,8 @@ typedef struct{
 		if w <= wmin found in RW, terminate immediately 
 		start clusters with `wmin` for `CC`
 	     */
-  int noscan; /** 1: start CC directly with wmax (no scan over w) */
+  int noscan; /** 1: start CC directly with wmax (no scan over w).  Expert option: the
+                  result is a certified lower bound only if `dmin=wmax` is supplied */
   int seed;/* rng seed, set=0 for automatic */
   int dist; /* target distance of the code */
   int dist_max; /* distance actually checked */
@@ -54,9 +55,11 @@ typedef struct{
   int max_col_wgt_H; /* needed ? */
   //! int max_row_wt;  /* WARNING: this is defined in `util_io.h` as `static const int` */
   int swei[MAX_W]; /** minimum syndrome weight for each error weight */
-  int start;
-  int cbeg;
-  int cend;
+  int *start_list; /** sorted list of distinct CC start columns from `start=a,b,c` (NULL: not set).
+                       Clusters grown from a listed column are not limited to larger column indices */
+  int start_num;   /** number of entries in `start_list` (0: not set, all columns are used) */
+  int cbeg; /** first CC start column for split runs (-1: column 0) */
+  int cend; /** last CC start column for split runs (-1: column n-1) */
   //  int linear; /* not supported */
   int n0;  /* code length, =nvar for css, (nvar/2) for non-css */
   int nvar; /* actual n = matrix size */
@@ -207,7 +210,7 @@ void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cn
  */
 void print_codeword_stats(FILE *stream, const params_t * const p);
 
-#define DIST_M4RI_VERSION "0.9.0"
+#define DIST_M4RI_VERSION "0.10.0"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -266,8 +269,9 @@ void print_short_help(const char *prog);
   "  dW=[int]           Collect codewords up to weight dmin + dW (default: 0)\n\n" \
   "Extra parameters (see --morehelp for details):\n" \
   "  smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)\n" \
-  "  noscan=[0|1] (0)       CC method 2: start directly at wmax, skip scanning w<wmax\n" \
-  "  start/cbeg/cend=[int]  Limit CC search to specific column(s) (-1: all)\n" \
+  "  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)\n" \
+  "  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48\n" \
+  "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
@@ -342,12 +346,27 @@ void print_short_help(const char *prog);
   "  smax=[int]         Maximum syndrome weight for confinement profile (default: 0).\n" \
   "                     When smax > 0, tracks minimum syndrome weights for each\n" \
   "                     error weight. When smax=0, confinement is not computed.\n" \
-  "  noscan=[0|1]       1: Start CC directly at weight wmax, skipping scan over\n" \
-  "                     weights w < wmax (default: 0). Only valid for method=2.\n" \
-  "  start=[int]        Restrict CC search to start column index (default: -1).\n" \
-  "                     Equivalent to setting cbeg=start cend=start.\n" \
-  "  cbeg=[int]         Beginning column index for CC search (default: -1, start at 0).\n" \
-  "  cend=[int]         Ending column index for CC search (default: -1, end at n-1).\n\n" \
+  "  noscan=[0|1]       Expert option: 1: run CC only at weight w = wmax, skipping\n" \
+  "                     the scan over weights w < wmax (default: 0). Only valid for\n" \
+  "                     method=2. WARNING: lower weights are not checked, so a\n" \
+  "                     codeword found only sets dmax, and dmin is not raised above\n" \
+  "                     the supplied dmin. Certified only if dmin=wmax is given.\n" \
+  "  start=[list]       Expert option: comma-separated list of CC start columns,\n" \
+  "                     e.g., start=0,48,96 (default: -1 = all columns). Clusters\n" \
+  "                     grown from a listed column are NOT limited to larger column\n" \
+  "                     indices. Use, e.g., one column per block of a quasi-cyclic\n" \
+  "                     code. WARNING: dmin is valid only if a code symmetry maps\n" \
+  "                     every minimum-weight codeword to one containing a listed\n" \
+  "                     column. Cannot be combined with cbeg/cend.\n" \
+  "  cbeg=[int]         Expert option for split runs: first CC start column\n" \
+  "                     (default: -1 = column 0). A cluster started at column i\n" \
+  "                     only uses columns > i, so every codeword is found starting\n" \
+  "                     from its smallest column.\n" \
+  "  cend=[int]         Expert option for split runs: last CC start column\n" \
+  "                     (default: -1 = column n-1). WARNING: with cbeg/cend, dmin\n" \
+  "                     only covers codewords whose smallest column is in\n" \
+  "                     [cbeg,cend]; combine runs covering all columns 0..n-1 by\n" \
+  "                     taking the minimum of dmin (and of dmax) over the runs.\n\n" \
   "Codeword collection and export:\n" \
   "  outC=[file]        Export found codewords to file in .nz list format.\n" \
   "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
@@ -407,6 +426,8 @@ void print_short_help(const char *prog);
   "  where:\n" \
   "    dmin-1   : Maximum cluster weight analyzed by CC without finding any codeword.\n" \
   "               If CC finds an exact minimum-weight codeword, dmin = dmax = weight.\n" \
+  "               With the expert options noscan, start, or cbeg/cend, see the\n" \
+  "               warnings above for the validity of dmin.\n" \
   "    dmax     : Smallest weight of any codeword found (0 if no codeword found).\n" \
   "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n\n" \
   "Help options:\n" \

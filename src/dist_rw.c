@@ -442,12 +442,19 @@ int main(int argc, char **argv){
   
   if (prm.method & 2){ /* cluster method */
     int dmin=do_CC_dist(p);
+    /* with noscan=1 (unless the supplied dmin equals wmax) lower weights are not scanned */
+    const int certified = (!prm.noscan) || (prm.wmax <= ((prm.dmin > 1) ? prm.dmin : 1));
 
     if (dmin>0){ 
-      if (prm.debug&1)
-	printf("### Cluster (actual min-weight codeword found): d=%d\n",dmin);
+      if (prm.debug&1){
+        if (certified)
+          printf("### Cluster (actual min-weight codeword found): d=%d\n",dmin);
+        else
+          printf("### Cluster (codeword found, upper bound only with noscan=1): d<=%d\n",dmin);
+      }
       printf("%d\n",dmin);
-      prm.dist_min = dmin; /* actual distance found */
+      if (certified)
+        prm.dist_min = dmin; /* actual distance found */
       prm.dist_max = dmin;
       goto end_all;
     }
@@ -472,8 +479,11 @@ int main(int argc, char **argv){
         printf("%d\n",dmin);
       }
     }
-    else
-      ERROR("unexpected dmin=0\n");
+    else { /* noscan=1 without dmin: no codeword of weight wmax, and no lower bound certified */
+      if (prm.debug&1)
+        printf("### Cluster: no codewords of weight %d (noscan=1: lower weights not scanned)\n", prm.wmax);
+      printf("0\n");
+    }
   }
  end_all:
     if (p->outC) {

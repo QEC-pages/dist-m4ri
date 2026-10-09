@@ -78,19 +78,73 @@ Relevant parameters:
 - `timeout=[sec]`: Maximum execution time in seconds (default: 60.0).
 
 ### 2. Multithreaded CC Algorithm (`method=2`)
-Recursively explores connected clusters starting from each column $i \in [0, n-1]$. Columns are distributed dynamically
-among worker threads via lock-free atomic queues.
+Recursively explores connected clusters starting from each column $i \in [0, n-1]$; a cluster started at column $i$
+is grown using only columns $j > i$, so that every codeword is found starting from its smallest column. Columns are
+distributed dynamically among worker threads via lock-free atomic queues.
 If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `outC` is specified, CC exhausts all
 columns for weight $w$ to collect all unique minimum-weight codewords.
 
 Relevant parameters:
 - `wmax=[int]`: Maximum cluster weight to search (optional if `timeout>0` or `dmax>0` is specified; otherwise required
   for CC).
-- `noscan=[int]`: If set to 1, start CC directly at $w_{\max}$ without scanning smaller weights.
-- `cbeg=[int]`, `cend=[int]`: Column range $[c_{\text{beg}}, c_{\text{end}}]$ to limit the CC search space.
-- `start=[int]`: Set $c_{\text{beg}} = c_{\text{end}} = \text{start}$ (useful for cyclic or symmetric codes).
 - `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning;
   set e.g. `smax=5` to compute confinement).
+
+Expert parameters (each prints a `# WARNING:` to `stderr`; see
+[Restricting the CC Search](#restricting-the-cc-search-expert-options) below):
+- `noscan=[0|1]`: If set to 1 (`method=2` only), run CC only at weight $w = w_{\max}$, without scanning smaller
+  weights. The result is **not** a lower bound unless `dmin=wmax` is also supplied.
+- `start=[list]`: Comma-separated list of CC start columns (0-based), e.g. `start=0,48,96`. Clusters grown from a
+  listed column are **not** limited to larger column indices (for quasi-cyclic or otherwise symmetric codes).
+- `cbeg=[int]`, `cend=[int]`: Range $[c_{\text{beg}}, c_{\text{end}}]$ of CC start columns, for splitting one CC
+  calculation into several runs which together cover all columns $0, \dots, n-1$.
+
+#### Restricting the CC Search (Expert Options)
+
+By default, CC grows clusters from every column $i$ using only columns $j > i$. The expert options `start` and
+`cbeg`/`cend` (with `method=2` or `method=3`) and `noscan` (`method=2` only) restrict this search. Each of them
+prints a `# WARNING:` to `stderr`, since the reported $d_{\min}$ is then not necessarily a lower bound on the
+distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is always a valid upper bound.
+
+| Option          | CC start columns                           | Cluster growth  | Reported $d_{\min}$ valid    |
+|-----------------|--------------------------------------------|-----------------|------------------------------|
+| (default)       | all, $0 \le i \le n-1$                     | columns $j > i$ | always                       |
+| `start=a,b,c`   | listed columns only                        | unlimited       | under a code symmetry only   |
+| `cbeg`, `cend`  | $c_{\text{beg}} \le i \le c_{\text{end}}$  | columns $j > i$ | after combining split runs   |
+| `noscan=1`      | all, $0 \le i \le n-1$                     | columns $j > i$ | only if `dmin=wmax` is given |
+
+- **`start=a,b,c`** (e.g., quasi-cyclic codes): CC clusters are grown only from the listed (0-based) columns, but
+  they are **not** limited to larger column indices, so that every codeword whose support contains a listed column is
+  found. `start=N` is a one-element list, and `start=-1` (default) means all columns; the list is sorted, and
+  duplicates are removed. The reported $d_{\min}$ (and an exact result $d_{\min} = d_{\max}$) is valid only if a code
+  symmetry maps every minimum-weight codeword to a codeword containing a listed column. E.g., for a quasi-cyclic code
+  with circulant blocks of size $\ell$ (columns ordered block by block), simultaneous cyclic shifts of all blocks are
+  a symmetry, and it is sufficient to list one column per block, e.g., `start=0,48,96` for three blocks with
+  $\ell = 48$. Cannot be combined with `cbeg`/`cend`.
+- **`cbeg=[int]`, `cend=[int]`** (split runs): CC starts only from columns $c_{\text{beg}} \le i \le c_{\text{end}}$
+  (default `-1`: column $0$, respectively, column $n-1$), still growing clusters using only columns $j > i$. Thus the
+  $d_{\min}$ of a single run only covers codewords whose smallest column is in $[c_{\text{beg}}, c_{\text{end}}]$. To
+  split a calculation, e.g., among several machines, run `cbeg=0 cend=99`, `cbeg=100 cend=199`, ..., so that every
+  column $0, \dots, n-1$ is eventually listed in one of the runs, and take the minimum of $d_{\min}$ (and of the
+  positive $d_{\max}$) over all runs.
+- **`noscan=1`** (`method=2` only): a single CC round at $w = w_{\max}$, skipping weights $w < w_{\max}$. A codeword
+  found only gives an upper bound $d_{\max}$, and $d_{\min}$ is not raised above the supplied `dmin`. The result is
+  certified only if `dmin=wmax` is supplied, i.e., if all smaller weights are already known to be absent.
+- **Before version 0.10.0**, `start=N` was equivalent to `cbeg=N cend=N` (clusters started from column $N$ using
+  only larger columns; use `cbeg=N cend=N` to reproduce it), and `noscan=1` results were reported as certified even
+  though smaller weights were not checked.
+- **Python interface** (`dist_m4ri.py`): `start` takes a list of columns (`start=[0, 48]`, `start="0,48"`, or
+  `start=0,48` in the CLI), while `noscan`, `cbeg`, and `cend` are disabled: they are accepted for backward
+  compatibility, but ignored with a warning to `stderr` (run the `dist_m4ri` binary directly to use them). With the
+  persistent cache, start-list results are stored under the separate key `<key>:start=a,b,c`; such a run is seeded
+  with the bounds of the main record, and only the always valid $d_{\max}$ and codewords are merged into the main
+  record. The expert option `trust_start` (CLI: `--trust-start` or `trust_start=1`) accepts the start-list results as
+  valid: $d_{\min}$ and `rw_steps` are merged as well, and an existing exact start-list record is copied to the main
+  record (and the cache file is saved) even if no calculation is needed. For DEM input, the start columns index the
+  error mechanisms in their order in the flattened DEM (after the `pmin` cutoff). For CSS codes, the same list is
+  used in both sectors.
+- **Possible optimization** (not implemented): clusters grown from a listed column could skip the columns listed
+  before it, since all codewords containing those columns have already been enumerated.
 
 ### 3. Bracketing Mode (`method=3`, default)
 Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to
@@ -207,7 +261,7 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.9.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.10.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -250,8 +304,9 @@ Codeword collection:
 
 Extra parameters (see --morehelp for details):
   smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)
-  noscan=[0|1] (0)       CC method 2: start directly at wmax, skip scanning w<wmax
-  start/cbeg/cend=[int]  Limit CC search to specific column(s) (-1: all)
+  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)
+  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48
+  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
@@ -324,7 +379,13 @@ interoperability without manual threading overhead.
 - `has_noise(circuit)` / `add_noise(circuit, noise_prob=0.001)`: Inspects a `stim.Circuit` for noise instructions and
   injects phenomenological `DEPOLARIZE1` / `DEPOLARIZE2` / reset-flip / measurement-flip noise into noiseless circuits.
 - `read_sparse_vectors(filepath)`: Parses NZLIST files into lists of 0-based integer support indices.
-- Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`.
+- Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`,
+  `get_cached_distance(..., start=None)`.
+- Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
+  separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
+  results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
+  disabled in Python (ignored with a warning to `stderr`); see
+  [Restricting the CC Search](#restricting-the-cc-search-expert-options).
 - Optional solver backend: `solver="codedistance"` (uses the `codedistance` library if installed).
 
 ### Python Example
@@ -385,7 +446,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (57 tests)
+# Run full C test suite (69 tests)
 make test
 ```
 

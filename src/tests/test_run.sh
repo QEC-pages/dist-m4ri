@@ -333,10 +333,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.9.0" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.10.0" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.9.0" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.10.0" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -384,6 +384,62 @@ if grep -q "confinement profile is not computed" "$STDERR_DEM"; then
     FAILED=1
 fi
 rm -f "$STDERR_DEM"
+
+# Expert CC options: noscan, start (list, unlimited clusters), cbeg/cend (split runs)
+S5="finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx"
+
+# Test 58: noscan=1 without dmin: codeword at w=wmax only gives dmax (dmin not certified), warning
+assert_output "$BIN_FORK method=2 $S5 wmax=5 noscan=1 debug=0 threads=4" \
+    0 "^1 5 0$" "WARNING: noscan=1 \(expert option\)"
+
+# Test 59: noscan=1 with dmin=wmax: certified, exact
+assert_output "$BIN_FORK method=2 $S5 wmax=5 dmin=5 noscan=1 debug=0 threads=4" \
+    0 "^5 5 0$" "the supplied dmin=5 being a certified lower bound"
+
+# Test 60: noscan=1 without codewords at w=wmax: dmin not raised
+assert_output "$BIN_FORK method=2 $S5 wmax=4 noscan=1 debug=0 threads=4" 0 "^1 0 0$" "WARNING: noscan=1"
+
+# Test 61: dist_m4ri_old noscan=1 without codewords at w=wmax prints 0 (no lower bound certified)
+assert_output "$BIN method=2 $S5 wmax=4 noscan=1 debug=0" 0 "^0$" "WARNING: noscan=1"
+
+# Test 62: start list (unlimited clusters) with a warning
+assert_output "$BIN_FORK method=2 $S5 wmax=7 start=0,41 debug=0 threads=4" \
+    0 "^5 5 0$" "WARNING: start=0,41 \(expert option\)"
+
+# Test 63: start list with all columns reproduces the full CC result
+S3="finH=$EXAMPLES_DIR/surf_d3_H.mmx finL=$EXAMPLES_DIR/surf_d3_L.mmx"
+START_ALL=$(seq -s, 0 290)
+assert_output "$BIN_FORK method=2 $S3 wmax=4 start=$START_ALL debug=0 threads=4" \
+    0 "^3 3 0$" "WARNING: start=0,1,2,3,4,5,6,7,\.\.\."
+
+# Test 64: dist_m4ri_old start list (clusters from column 12 are not limited to columns > 12)
+assert_output "$BIN method=2 $S5 wmax=7 start=12 debug=0" 0 "^6$" "WARNING: start=12"
+
+# Test 65: cbeg/cend split run with a warning
+assert_output "$BIN_FORK method=2 $S5 wmax=7 cbeg=30 debug=0 threads=4" \
+    0 "^5 5 0$" "WARNING: cbeg/cend \(expert option for split runs\)"
+
+# Test 66: invalid start list
+assert_output "$BIN_FORK method=2 $S5 wmax=7 start=1,,2 debug=0" 255 "" "invalid start='1,,2'"
+
+# Test 67: start together with cbeg
+assert_output "$BIN_FORK method=2 $S5 wmax=7 start=0 cbeg=3 debug=0" 255 "" \
+    "Cannot specify start along with cbeg or cend"
+
+# Test 68: start column out of range
+assert_output "$BIN_FORK method=2 $S3 wmax=3 start=0,291 debug=0" 255 "" \
+    "start column 291 cannot be larger than nvar-1=290"
+
+# Test 69: legacy start=-1 (all columns) is still accepted, without a warning
+echo "Running Test 69: legacy start=-1 means all columns"
+OUT69=$(mktemp)
+ERR69=$(mktemp)
+$BIN_FORK method=2 $S5 wmax=7 start=-1 debug=0 threads=4 > "$OUT69" 2> "$ERR69"
+if ! grep -q -E "^5 5 0$" "$OUT69" || grep -q "WARNING: start" "$ERR69"; then
+    echo "  [FAIL] start=-1: stdout '$(cat "$OUT69")', stderr '$(cat "$ERR69")'"
+    FAILED=1
+fi
+rm -f "$OUT69" "$ERR69"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

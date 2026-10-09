@@ -75,7 +75,9 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
     }
   }
 #endif   
-  const int col_min=urr->vec[0]; /** all valid positions should be to the right of here */
+  /** all valid positions should be to the right of here, except with the expert `start` list
+   *  (unlimited clusters; columns already in `err` are skipped below) */
+  const int col_min = (p->start_num > 0) ? -1 : urr->vec[0];
   int current_limit = w_limit;
   if (p->min_w != INT_MAX && p->dW >= 0) {
     current_limit = minint(w_limit, p->min_w + p->dW);
@@ -199,6 +201,10 @@ int do_CC_dist(params_t * const p){
   }
   int result = 0;
   const int w_start = noscan ? wmax : (p->dmin > 1 ? p->dmin : 1);
+  /** lower bound certified by CC rounds only if all weights below `w_start` are known to be absent
+   *  (not with noscan=1, unless the supplied dmin equals wmax) */
+  const int d0 = (p->dmin > 1) ? p->dmin : 1;
+  const int certified = (w_start <= d0);
   int w_limit_dynamic = wmax;
   if (p->dmax > 0) {
     if (p->outC && p->dW > 0) {
@@ -214,11 +220,22 @@ int do_CC_dist(params_t * const p){
     if (w > w_limit_dynamic) {
       break;
     }
-    int beg = (p->cbeg >= 0) ? p->cbeg : 0;
-    int end = (p->cend >= 0) ? minint(p->cend, nvar - w) : nvar - w;
-    if(debug&2)
-      printf("# recursively searching for w=%d codewords wmax=%d beg=%d end=%d\n",w,wmax,beg,end);
-    for(int i = beg; i <= end; i++){ /* start column position */
+    int beg, end;
+    if (p->start_num > 0) { /** expert `start` list: unlimited clusters from the listed columns */
+      beg = 0;
+      end = p->start_num - 1;
+      if(debug&2)
+        printf("# recursively searching for w=%d codewords wmax=%d from %d listed start column(s)\n",
+               w, wmax, p->start_num);
+    }
+    else {
+      beg = (p->cbeg >= 0) ? p->cbeg : 0;
+      end = (p->cend >= 0) ? minint(p->cend, nvar - w) : nvar - w;
+      if(debug&2)
+        printf("# recursively searching for w=%d codewords wmax=%d beg=%d end=%d\n",w,wmax,beg,end);
+    }
+    for(int k = beg; k <= end; k++){ /* start column position (or its index in the `start` list) */
+      const int i = (p->start_num > 0) ? p->start_list[k] : k;
       /** prepare the 1st error vector and the syndrome */
       err->vec[0] = urr->vec[0] = i;
       err->wei = urr->wei = 1;
@@ -281,8 +298,10 @@ int do_CC_dist(params_t * const p){
   else {
     if (p->min_w <= wmax) {
       result = p->min_w;
-    } else {
+    } else if (certified) {
       result = -wmax; /** not found a codeword up to wmax */
+    } else {
+      result = -(d0 - 1); /** noscan=1: lower weights not scanned, only the supplied dmin (may be 0) */
     }
   }
 

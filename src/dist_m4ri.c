@@ -18,6 +18,16 @@
  * or if RW did not run in method=2).
  * NOTE: This 3-number output format is incompatible with legacy single-threaded dist_m4ri_old.
  *
+ * Expert CC options (see `--morehelp`) restrict the CC search:
+ * - noscan=1 (method=2): a single CC round at w=wmax.  Unless the supplied dmin equals wmax,
+ *   lower weights are not scanned, so a codeword found only sets dmax and dmin is not raised.
+ * - start=a,b,c: clusters are grown only from the listed columns (without the usual
+ *   restriction to larger column indices); dmin is valid only under a code symmetry which
+ *   maps every minimum-weight codeword to one containing a listed column.
+ * - cbeg/cend: split runs; dmin only covers codewords whose smallest column is in [cbeg,cend].
+ * A CC codeword gives dmin=dmax only if found in a round where all lower weights have been
+ * analyzed (flag `cc_exact`).
+ *
  * All debugging messages and confinement profile are sent to stderr.
  *
  * author: Leonid Pryadko <leonid.pryadko@ucr.edu>
@@ -122,7 +132,8 @@ typedef struct {
   /* Distance bounds & stop flags (cache-line isolated for read-mostly access) */
   _Alignas(64) atomic_int dmin; /* dmin-1 is max cluster size analyzed without success */
   atomic_int dmax;              /* smallest weight codeword found (0 if none) */
-  atomic_int cc_found_weight;   /* weight of codeword if CC found exact */
+  atomic_int cc_found_weight;   /* smallest weight of a codeword found by CC (0 if none) */
+  atomic_bool cc_exact;         /* cc_found_weight is certified exact (found in a round w=dmin) */
   atomic_bool stop_flag;        /* signals all threads to terminate */
   atomic_bool rw_stop_flag;     /* signals RW workers to stop (in method 3) */
 
@@ -189,7 +200,9 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   const int syn_w_wei = syn_w->wei;
   const int row = syn_w->vec[0];
   const csr_t * const mL = p->spaL;
-  const int col_min = urr->vec[0];
+  /* Clusters are grown only to columns larger than the start column, except with the expert `start`
+   * list, where clusters are unlimited (columns already in `err` are skipped via `one_ordered_search`). */
+  const int col_min = (p->start_num > 0) ? -1 : urr->vec[0];
 
   /* Leaf level: w + 1 == current_limit */
   if (w + 1 == current_limit) {
@@ -733,8 +746,10 @@ static void *worker_thread_func(void *arg) {
               atomic_store(&ctx->stop_flag, true);
               break;
             }
-            int col = atomic_fetch_add_explicit(&ctx->cc_col_next, 1, memory_order_relaxed);
-            if (col > end) break;
+            int idx = atomic_fetch_add_explicit(&ctx->cc_col_next, 1, memory_order_relaxed);
+            if (idx > end) break;
+            /* with the expert `start` list, `idx` enumerates the listed start columns */
+            const int col = (ctx->p->start_num > 0) ? ctx->p->start_list[idx] : idx;
 
             err->vec[0] = urr->vec[0] = col;
             err->wei = urr->wei = 1;
@@ -760,6 +775,7 @@ static void *worker_thread_func(void *arg) {
                   pthread_mutex_lock(&ctx->cw_mutex);
                   ctx->p->codewords = codeword_add_maybe(ctx->p, err->vec, 1);
                   atomic_store(&ctx->cc_found_weight, 1);
+                  atomic_store(&ctx->cc_exact, true); /* weight 1 is always the exact distance */
                   atomic_store(&ctx->dmin, 1);
                   atomic_store(&ctx->dmax, 1);
                   atomic_store(&ctx->stop_flag, true);
@@ -923,8 +939,16 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       }
     }
 
-    int beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
-    int end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
+    int beg, end;
+    if (ctx->p->start_num > 0) { /* expert `start` list: enumerate all listed columns (unlimited clusters) */
+      beg = 0;
+      end = ctx->p->start_num - 1;
+    } else {
+      beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
+      end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
+    }
+    /* all weights below w analyzed (or a supplied dmin): a codeword of weight w found is exact */
+    const bool certified = (w == atomic_load(&ctx->dmin));
 
     atomic_store(&ctx->cc_weight, w);
     ctx->cc_col_beg = beg;
@@ -936,8 +960,14 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     double cc_start = get_time_sec();
 
     if (ctx->p->debug & 2) {
-      fprintf(stderr, "# searching w=%d with %d CC threads, columns [%d, %d]\n",
-              w, ctx->num_threads, beg, end);
+      const char *note = (certified || atomic_load(&ctx->cc_exact)) ? "" : " (lower weights not scanned)";
+      if (ctx->p->start_num > 0) {
+        fprintf(stderr, "# searching w=%d with %d CC threads, start list (%d columns)%s\n",
+                w, ctx->num_threads, ctx->p->start_num, note);
+      } else {
+        fprintf(stderr, "# searching w=%d with %d CC threads, columns [%d, %d]%s\n",
+                w, ctx->num_threads, beg, end, note);
+      }
     }
 
     bool round_completed = false;
@@ -961,7 +991,11 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     }
 
     int cw_found = atomic_load(&ctx->cc_found_weight);
-    if (cw_found > 0) {
+    if (cw_found > 0 && certified && cw_found == w && !atomic_load(&ctx->cc_exact)) {
+      atomic_store(&ctx->cc_exact, true);
+    }
+    const bool exact = (cw_found > 0) && atomic_load(&ctx->cc_exact);
+    if (exact) {
       atomic_store(&ctx->dmin, cw_found);
       atomic_store(&ctx->dmax, cw_found);
 
@@ -999,15 +1033,31 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
           break;
         }
       }
+    } else if (cw_found > 0) {
+      /* noscan=1 without dmin=wmax: lower weights not scanned, the codeword only gives an upper bound */
+      if (ctx->p->debug & 1) {
+        fprintf(stderr,
+                "# CC round w=%d finished in %.3fs (%d CC threads): found codeword of weight %d -> dmax=%d "
+                "(dmin=%d not certified: lower weights not scanned)\n",
+                w, cc_dur, ctx->num_threads, cw_found, atomic_load(&ctx->dmax), atomic_load(&ctx->dmin));
+      }
+      atomic_store(&ctx->stop_flag, true);
+      break;
     } else {
       if (!round_completed) {
         break;
       }
-      /* Weight w analyzed without success */
-      atomic_store(&ctx->dmin, w + 1);
-      if (ctx->p->debug & 1) {
-        fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found -> dmin=%d\n",
-                w, cc_dur, ctx->num_threads, w + 1);
+      if (certified) {
+        /* Weight w analyzed without success */
+        atomic_store(&ctx->dmin, w + 1);
+        if (ctx->p->debug & 1) {
+          fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found -> dmin=%d\n",
+                  w, cc_dur, ctx->num_threads, w + 1);
+        }
+      } else if (ctx->p->debug & 1) {
+        fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found "
+                "(dmin=%d not raised: lower weights not scanned)\n",
+                w, cc_dur, ctx->num_threads, atomic_load(&ctx->dmin));
       }
     }
   }
@@ -1152,8 +1202,16 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
     int n_rw = ctx->num_threads - n_cc;
 
-    int beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
-    int end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
+    int beg, end;
+    if (ctx->p->start_num > 0) { /* expert `start` list: enumerate all listed columns (unlimited clusters) */
+      beg = 0;
+      end = ctx->p->start_num - 1;
+    } else {
+      beg = (ctx->p->cbeg >= 0) ? ctx->p->cbeg : 0;
+      end = (ctx->p->cend >= 0) ? minint(ctx->p->cend, nvar - w) : (nvar - w);
+    }
+    /* all weights below w analyzed (or a supplied dmin): a codeword of weight w found is exact */
+    const bool certified = (w == atomic_load(&ctx->dmin));
 
     atomic_store(&ctx->cc_weight, w);
     ctx->cc_col_beg = beg;
@@ -1192,7 +1250,11 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     }
 
     int cw_found = atomic_load(&ctx->cc_found_weight);
-    if (cw_found > 0) {
+    if (cw_found > 0 && certified && cw_found == w && !atomic_load(&ctx->cc_exact)) {
+      atomic_store(&ctx->cc_exact, true);
+    }
+    const bool exact = (cw_found > 0) && atomic_load(&ctx->cc_exact);
+    if (exact) {
       atomic_store(&ctx->dmin, cw_found);
       atomic_store(&ctx->dmax, cw_found);
 
@@ -1400,6 +1462,7 @@ int main(int argc, char **argv) {
   }
 
   atomic_init(&ctx.cc_found_weight, 0);
+  atomic_init(&ctx.cc_exact, false);
   atomic_init(&ctx.stop_flag, false);
   atomic_init(&ctx.rw_stop_flag, false);
   atomic_init(&ctx.rw_steps_started, 0);
@@ -1472,8 +1535,12 @@ int main(int argc, char **argv) {
   int final_dmin = atomic_load(&ctx.dmin);
   int final_dmax = atomic_load(&ctx.dmax);
   int cc_found = atomic_load(&ctx.cc_found_weight);
+  /* A CC codeword gives the exact distance only if found in a round where all lower weights had
+   * been analyzed (not with noscan=1 unless dmin=wmax is supplied); see `cc_exact`. */
+  const bool cc_exact = (cc_found > 0) && atomic_load(&ctx.cc_exact) &&
+                        (final_dmax == 0 || cc_found <= final_dmax);
 
-  if (cc_found > 0) {
+  if (cc_exact) {
     final_dmin = cc_found;
     final_dmax = cc_found;
   } else if (final_dmax > 0 && final_dmin >= final_dmax) {
@@ -1487,7 +1554,7 @@ int main(int argc, char **argv) {
   /* Confinement profile output (if smax > 0 and CC was run) */
   if (p->smax && p->method >= 2) {
     int max_w_analyzed = (final_dmin > 1) ? (final_dmin - 1) : ((p->wmax > 0) ? p->wmax : 0);
-    if (cc_found > 0) max_w_analyzed = cc_found;
+    if (cc_exact) max_w_analyzed = cc_found;
     if (max_w_analyzed > 0) {
       int global_swei[MAX_W];
       for (int i = 0; i < MAX_W; i++) global_swei[i] = p->spaH->rows + 1;
@@ -1528,7 +1595,7 @@ int main(int argc, char **argv) {
   }
 
   long reported_rw_steps = 0;
-  if (p->method != 2 && cc_found == 0) {
+  if (p->method != 2 && !cc_exact) {
     reported_rw_steps = atomic_load(&ctx.rw_steps_completed);
   }
 
