@@ -28,7 +28,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.10.1"
+__version__ = "0.10.2"
 
 
 def _get_codedistance():
@@ -4849,7 +4849,8 @@ Calculation method:
                            exact distance if run to completion.
                         3: Bracketing mode (concurrent RW and CC).
                            Dynamically allocates worker threads between CC (lower bound) and
-                           RW (upper bound) to converge on the exact distance rapidly.
+                           RW (upper bound) to converge on the exact distance rapidly, based on
+                           the measured CC and RW times, the bounds, and the remaining timeout.
 
 Distance bounds and guidance:
   dmin=N                Known certified lower bound on distance (default: 0).
@@ -4857,7 +4858,9 @@ Distance bounds and guidance:
   dmax=N                Known upper bound on distance (default: 0).
                         RW ignores candidate codewords of weight >= dmax.
   dexp=N                Expected code distance estimate (alias: dest) (default: 0).
-                        Guides dynamic thread balancing in method=3 and feasibility checks.
+                        Hint for method=3: as long as RW has found no codeword, CC rounds at
+                        w > dexp run only on threads which cannot run RW (CC pauses if RW can
+                        use all threads); CC resumes once RW finds a codeword or ends.
 
 Search limits and stopping criteria:
   steps=N               Maximum number of RW steps / information sets across all threads
@@ -4866,6 +4869,9 @@ Search limits and stopping criteria:
   wmin=N                Minimum distance threshold (default: 1).
                         If a codeword of weight w <= wmin is discovered, search halts immediately.
   timeout=SEC           Execution timeout in seconds (default: 60.0; set 0 for infinite).
+                        In method=3, it guides the CC vs RW thread balance, and a CC round predicted
+                        not to finish in time is not started while RW runs (in method=2, and with
+                        steps=0, it is started anyway: it may still find a codeword of weight dmin).
 
 Multithreading & throttling:
   threads=N             Maximum number of worker threads to allocate (default: min(CPU cores, 64)).

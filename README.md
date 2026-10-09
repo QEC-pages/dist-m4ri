@@ -13,7 +13,8 @@ The program implements three main methods (with `method=3` as the default):
   enumeration to compute **exact distance** or establish a certified **lower distance bound** $d_{\min}$.
 - **Method 3 (`method=3`, default) - Bracketing Mode (Artillery Fork / Вилка)**: Concurrently runs CC and RW on multiple
   threads, dynamically balancing CPU cores between CC and RW based on current bounds $[d_{\min}, d_{\max}]$, distance
-  estimate (`dexp`/`dest`), remaining RW steps, timeout, and the measured scaling characteristics of CC.
+  estimate (`dexp`/`dest`), remaining RW steps and their measured time, timeout, and the measured scaling
+  characteristics of CC.
 
 For a classical binary linear code, only the parity-check matrix $H$ is needed.
 
@@ -86,6 +87,10 @@ columns for weight $w$ to collect all unique minimum-weight codewords.
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
 $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
 soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`).
+With a `timeout`, each round is started even if it is predicted not to finish in time (its CC work, the total CC
+thread time, is extrapolated from the last two rounds with their growth factor, clamped to $[2, 10]$; a note is
+printed): a round which cannot be completed may still find a codeword of weight $w = d_{\min}$, i.e., the exact
+distance.
 
 Relevant parameters:
 - `wmax=[int]`: Maximum cluster weight to search (optional if `timeout>0` or `dmax>0` is specified; otherwise required
@@ -155,33 +160,52 @@ determine the exact code distance as quickly as possible.
 
 #### Dynamic Thread Allocation & Role of `dexp`:
 1. **Target Search Depth**:
-   - Before RW discovers a candidate codeword, $d_{\max}$ is unknown. Providing `dexp=D` (alias: `dest=D`) tells the
-     coordinator to plan CC verification up to target weight $D - 1$ (or $D$).
+   - Once a codeword has been found, CC rounds continue up to $w = d_{\max} - 1$: the round $w = d_{\max} - 1$
+     certifies $d_{\min} = d_{\max}$ (with `outC` and `dW>0`, CC continues up to $w = d_{\max} + \text{dW}$). Before
+     that, CC is limited only by `wmax` and the `timeout`.
+   - `dexp=D` (alias: `dest=D`) is a hint: as long as RW has not found any codeword, CC rounds $w > D$ run only on the
+     threads which cannot run RW (see
+     [Multithreading, Throttling & Batch Sizing](#4-multithreading-throttling--batch-sizing)), i.e., CC pauses if RW
+     can use all threads. CC resumes as soon as RW finds a codeword, or when RW ends.
 2. **Predictive Workload Modeling**:
-   - The coordinator measures empirical single-thread speed for RW steps ($t_{\text{RW}}$) and fits exponential growth
-     to completed CC rounds to estimate time $T_{\text{CC}}$ required to reach $\min(d_{\max}, d_{\exp})$.
-   - It computes the remaining work ratio:
-     $$\text{ratio} = \frac{T_{\text{CC}}}{T_{\text{CC}} + T_{\text{RW}}}$$
-     and dynamically splits threads at each round:
+   - The RW threads measure the RW step time $t_{\text{RW}}$ (thread time per step) continuously. The CC work of each
+     round is measured as the total CC thread time, and the work of the next round is extrapolated with the growth
+     factor of the last two rounds (clamped to $[2, 10]$).
+   - For each round, the coordinator compares the remaining work in thread-seconds: $T_{\text{CC}}$ of the rounds
+     $w, w+1, w+2$ (up to $d_{\max} - 1$, or up to $d_{\exp}$ before a codeword is found), and
+     $T_{\text{RW}} = t_{\text{RW}} \times$ (remaining RW steps, at most 2000 once $d_{\max}$ is known), but no more
+     than the RW threads can do before the `timeout`. It splits the threads as
+     $$\text{ratio} = \frac{T_{\text{CC}}}{T_{\text{CC}} + T_{\text{RW}}},$$
      $$N_{\text{CC}} = \text{round}(N_{\text{threads}} \times \text{ratio}),$$
      $$N_{\text{RW}} = N_{\text{threads}} - N_{\text{CC}}$$
-     where $N_{\text{RW}}$ cannot exceed the number of threads allowed to run RW (see
-     [Multithreading, Throttling & Batch Sizing](#4-multithreading-throttling--batch-sizing)).
-   - **Small $d_{\exp}$**: CC requires little work, so only 1–2 threads run CC while the majority maximize RW sampling
+     with $1 \le N_{\text{CC}} \le N_{\text{threads}} - 1$, where $N_{\text{RW}}$ cannot exceed the number of threads
+     allowed to run RW (see [Multithreading, Throttling & Batch Sizing](#4-multithreading-throttling--batch-sizing)).
+   - **Small rounds** (estimated CC work below 5 ms): only 1–2 threads run CC while the majority maximize RW sampling
      speed.
-   - **Heavier rounds**: As $w$ grows toward $d_{\exp}$, $T_{\text{CC}}$ increases and additional threads are shifted
-     to CC to ensure both algorithms converge on the exact distance simultaneously.
-3. **Adaptive Early Cutoff & RW Convergence**:
+   - **Heavier rounds**: as the CC work grows, additional threads are shifted to CC, so that both algorithms converge
+     on the exact distance simultaneously.
+   - **The certifying round** $w = d_{\max} - 1$ (and any later codeword collection round) runs on all threads, since
+     RW can no longer improve the result.
+   - **The first round at a supplied `dmin`** (no measured round yet) runs on half of the threads.
+   - **During a round**, CC threads are added when RW finds a new $d_{\max}$ (e.g., if the round now certifies
+     $d_{\min} = d_{\max}$), and all threads join a round which takes more than 1.5 times its predicted time. A busy
+     RW thread joins a CC round when its current RW batch is done.
+3. **Timeout, Early Cutoff & RW Convergence**:
+   - With a `timeout`, a CC round gets enough CC threads to finish within 3/4 of the remaining time. A round predicted
+     not to finish in time on all threads is not started while RW runs; once RW has ended, the run ends instead. With
+     `steps=0` (no RW), as in `method=2`, such a round is started anyway, since it may still find a codeword of weight
+     $w = d_{\min}$.
+   - The coordinator never ends CC while RW runs. Whenever no CC round can be started (CC done up to `wmax`, a round
+     predicted to exceed the `timeout`, or CC paused by `dexp`), it waits for RW and re-plans when RW finds a new
+     $d_{\max}$ or ends. The run ends once RW has ended and no CC round can be started.
    - When RW satisfies the `min_hits` convergence criterion, RW workers stop early and yield 100% of threads to CC
      to finish certifying $d_{\min}$.
    - Likewise, once all RW `steps` have been claimed, RW threads join the current CC round instead of waiting for it
-     to finish. The CC work of each round is measured as the total CC thread time.
-   - If CC reaches $w > d_{\exp}$ before a codeword is found, CC halts and yields 100% of threads to RW.
-   - If a projected CC round is estimated to exceed the remaining `timeout`, the coordinator terminates CC early and
-     devotes remaining time entirely to RW.
+     to finish.
 
 Relevant parameters:
-- `dexp=[int]` (alias: `dest=[int]`): Expected code distance to guide target search depth and thread allocation.
+- `dexp=[int]` (alias: `dest=[int]`): Expected code distance, a hint for the thread allocation before RW finds a
+  codeword (see above).
 - `threads=[int]`: Maximum number of worker threads (default: hardware concurrency; subject to throttling unless
   `nothrottle=1` is specified).
 - `nothrottle=[int]`: Disable automatic thread throttling (default: 0; CLI flag: `--no-throttle`).
@@ -189,9 +213,11 @@ Relevant parameters:
   When `chunk_size=0` (default in Python and binary), chunk size is chosen adaptively based on $n$ and step budget:
   - Small codes ($n < 500$): 50 steps/chunk (250 for $\ge 10^3$ steps; 500 for $\ge 5 \times 10^4$ steps).
   - Medium codes ($500 \le n < 5000$): 50 steps/chunk (100 for $\ge 10^4$ steps).
-  - Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps;
-    bounds timeout overshoot to $\le 2\text{--}3$s).
-- `timeout=[sec]`: Maximum execution time in seconds (default: 60.0; set to `0` for infinite / no timeout).
+  - Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps).
+- `timeout=[sec]`: Maximum execution time in seconds (default: 60.0; set to `0` for infinite / no timeout). RW threads
+  check the timeout (and the other stop conditions) between RW steps, and also within a step (every 16 columns of the
+  Gaussian elimination), so that even on huge matrices, where a single RW step may take many seconds, the run ends
+  shortly after the timeout.
 - `steps=[int]`: Maximum total RW steps (default: 100000; set to `0` to run pure CC via bracketing coordinator).
 - `min_hits=[int]`: Minimum hit count per minimum-weight codeword for early RW termination (default: 5; 0 to disable).
 - `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
@@ -274,7 +300,7 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.10.1): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.10.2): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -459,7 +485,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (74 tests)
+# Run full C test suite (77 tests)
 make test
 ```
 

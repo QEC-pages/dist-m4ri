@@ -210,7 +210,7 @@ void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cn
  */
 void print_codeword_stats(FILE *stream, const params_t * const p);
 
-#define DIST_M4RI_VERSION "0.10.1"
+#define DIST_M4RI_VERSION "0.10.2"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -298,8 +298,9 @@ void print_short_help(const char *prog);
   "                        distance if run to completion.\n" \
   "                     3: Bracketing mode (concurrent RW and CC)\n" \
   "                        Dynamically balances CC (lower bound) and RW (upper\n" \
-  "                        bound) worker threads based on distance estimate (dexp),\n" \
-  "                        current bounds [dmin, dmax], and remaining timeout.\n\n" \
+  "                        bound) worker threads based on measured CC and RW times,\n" \
+  "                        current bounds [dmin, dmax], remaining timeout, and the\n" \
+  "                        distance estimate (dexp).\n\n" \
   "Input matrices and code specification:\n" \
   "  finH=[file]        Parity check matrix H (for classical codes) or Hx (for\n" \
   "                     quantum CSS codes) in Matrix Market (.mmx / .mtx) format.\n" \
@@ -332,8 +333,10 @@ void print_short_help(const char *prog);
   "                     In RW (method 1/3), codewords of weight >= dmax are ignored\n" \
   "                     unless collecting codewords.\n" \
   "  dexp=[int]         Expected code distance (alias: dest) (default: 0).\n" \
-  "                     Used in method=3 (bracketing) to balance worker threads\n" \
-  "                     between CC and RW and estimate search feasibility.\n\n" \
+  "                     Hint for method=3 (bracketing): as long as RW has found no\n" \
+  "                     codeword, CC rounds at w > dexp run only on threads which\n" \
+  "                     cannot run RW (CC pauses if RW can use all threads); CC\n" \
+  "                     resumes once RW finds a codeword or ends.\n\n" \
   "Search limits and Connected Cluster (CC) options:\n" \
   "  steps=[int]        Maximum number of RW decoding steps / information sets\n" \
   "                     (default: 100000). Ignored in method=2.\n" \
@@ -380,7 +383,10 @@ void print_short_help(const char *prog);
   "                     hardware concurrency, capped at 64). Subject to throttling\n" \
   "                     for small codes or large matrices unless nothrottle=1 is set.\n" \
   "  timeout=[sec]      Execution timeout in seconds (default: 60.0, 0 = infinite).\n" \
-  "                     In method=3, dynamically guides CC vs RW thread balance.\n" \
+  "                     In method=3, it guides the CC vs RW thread balance, and a\n" \
+  "                     CC round predicted not to finish in time is not started\n" \
+  "                     while RW runs (in method=2, and with steps=0, it is started\n" \
+  "                     anyway: it may still find a codeword of weight w=dmin).\n" \
   "  nothrottle=[0|1]   Disable automatic thread throttling (default: 0).\n" \
   "                     Aliases: --no-throttle, -no-throttle, nothrottle.\n" \
   "                     By default, threads are throttled for very small codes or\n" \

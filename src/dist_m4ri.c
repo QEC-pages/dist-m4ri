@@ -33,6 +33,14 @@
  * the step count; in method=3 this limits only the RW share, and CC rounds can use all workers.
  * A worker without RW work (RW steps all claimed, RW stopped by min_hits) joins the current CC round.
  *
+ * Timing model (method=2, 3): the CC work of a round is measured as the total CC thread time, and the work of the
+ * next round is extrapolated with the growth factor of the last two rounds.  With a timeout, a CC round predicted not
+ * to finish in time on all threads is not started in method=3 while RW runs (once RW has ended, the run ends); in
+ * method=2 (and method=3 with steps=0), it is started anyway, as it can still find a codeword of weight w = dmin.  In
+ * method=3, the RW step time is measured continuously; the round w = dmax-1 (which certifies dmin = dmax) gets all
+ * threads, and while RW has not found any codeword, CC rounds w > dexp run only on the threads which cannot run RW.
+ * The coordinator never ends CC while RW still runs.
+ *
  * All debugging messages and confinement profile are sent to stderr.
  *
  * author: Leonid Pryadko <leonid.pryadko@ucr.edu>
@@ -147,6 +155,8 @@ typedef struct {
   _Alignas(64) long total_rw_steps;
   atomic_long rw_steps_started;
   atomic_long rw_steps_completed;
+  atomic_llong rw_busy_ns;           /* thread time in ns of the timed RW steps, for the method-3 timing model */
+  atomic_long rw_timed_steps;        /* number of RW steps timed in `rw_busy_ns` */
 
   /* CC state for current weight (cache-line isolated) */
   _Alignas(64) atomic_llong cc_next; /* weight of the current CC round and next start index, see `cc_pack()` */
@@ -155,7 +165,7 @@ typedef struct {
   atomic_int cc_active_workers;
   atomic_int cc_target_workers;
   atomic_int cc_round_active;
-  atomic_llong cc_busy_ns;           /* total CC thread time in ns (all rounds), for the method-3 timing model */
+  atomic_llong cc_busy_ns;           /* total CC thread time in ns (all rounds), for the CC timing model */
 
   /* Codeword synchronization */
   pthread_mutex_t cw_mutex;
@@ -166,9 +176,8 @@ typedef struct {
   pthread_rwlock_t basis_rwlock;
   atomic_long next_refresh_step;
 
-  /* Timing stats */
+  /* Timing stats: CC work of each completed round in thread-seconds (total CC thread time) */
   double cc_time_per_weight[MAX_W];
-  double avg_rw_step_time;
 
   /* Thread handles */
   pthread_t *threads;
@@ -356,13 +365,33 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   return 0;
 }
 
-/* Run RW batch */
-static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
-                         mzd_t *mH, mzd_t *mHT, rci_t *ee,
-                         mzp_t *perm, mzp_t *pivs, word *piv_mask,
-                         int *eff_nrows_ptr,
-                         int *visited_cols, int *visited_checks, int *col_queue,
-                         int *visit_marker, uint64_t *rng_state, int tid) {
+/* Add the thread time `*acc_t` of `*acc_n` completed RW steps to the totals of the RW timing model, and reset them */
+static inline void rw_time_publish(distfork_ctx_t *ctx, double *acc_t, int *acc_n) {
+  if (*acc_n > 0) {
+    atomic_fetch_add_explicit(&ctx->rw_busy_ns, (long long)(*acc_t * 1e9), memory_order_relaxed);
+    atomic_fetch_add_explicit(&ctx->rw_timed_steps, *acc_n, memory_order_relaxed);
+  }
+  *acc_t = 0.0;
+  *acc_n = 0;
+}
+
+/* Time of a completed RW step since `*t_last`: published at least every 2 ms (after every step if steps are slow),
+ * and right away for the first step of a batch (`first`), so that the coordinator gets the step time early */
+static inline void rw_time_step(distfork_ctx_t *ctx, double *t_last, double *acc_t, int *acc_n, const bool first) {
+  const double t_now = get_time_sec();
+  *acc_t += t_now - *t_last;
+  *t_last = t_now;
+  (*acc_n)++;
+  if (first || *acc_t >= 0.002) rw_time_publish(ctx, acc_t, acc_n);
+}
+
+/* Run RW batch; returns the number of completed steps */
+static int run_rw_steps(distfork_ctx_t *ctx, int n_steps,
+                        mzd_t *mH, mzd_t *mHT, rci_t *ee,
+                        mzp_t *perm, mzp_t *pivs, word *piv_mask,
+                        int *eff_nrows_ptr,
+                        int *visited_cols, int *visited_checks, int *col_queue,
+                        int *visit_marker, uint64_t *rng_state, int tid) {
   params_t * const p = ctx->p;
   const csr_t * const spaL0 = p->spaL;
   const int nvar = p->spaH->cols;
@@ -370,6 +399,9 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
   const int kwin = p->kwin;
   const int win_mode = p->win_mode;
   int eff_nrows = *eff_nrows_ptr;
+  int n_done = 0;
+  double t_last = get_time_sec(), acc_t = 0.0;
+  int acc_n = 0;
 
   for (int step = 0; step < n_steps; step++) {
     if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
@@ -398,13 +430,22 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
 
     memset(piv_mask, 0, mH->width * sizeof(word));
     int rank = 0;
+    bool interrupted = false;
     for (int i = 0; i < nvar && rank < eff_nrows; i++) {
+      /* a step on a large matrix can take many seconds: check the stop flags also every 16 columns */
+      if ((i & 15) == 15 && (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+                             atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed))) {
+        interrupted = true;
+        break;
+      }
       int col = perm->values[i];
       if (gauss_one_rows(mH, col, rank, eff_nrows)) {
         pivs->values[rank++] = col;
         piv_mask[col >> 6] |= (word)1 << (col & 63);
       }
     }
+    /* abandon the step: `eff_nrows` is kept, as rows rank..eff_nrows-1 are not processed (same row space) */
+    if (interrupted) break;
     eff_nrows = rank;
     *eff_nrows_ptr = eff_nrows;
 
@@ -489,14 +530,18 @@ static void run_rw_steps(distfork_ctx_t *ctx, int n_steps,
       }
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
+    n_done++;
+    rw_time_step(ctx, &t_last, &acc_t, &acc_n, n_done == 1);
   }
+  rw_time_publish(ctx, &acc_t, &acc_n);
+  return n_done;
 }
 
-/* Run compact subspace RW batch (ksub > 0) */
-static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
-                              mzd_t *M_sub, rci_t *ee, mzp_t *perm, mzp_t *pivs,
-                              int *visited_cols, int *visited_checks, int *col_queue,
-                              int *visit_marker, uint64_t *rng_state, int tid) {
+/* Run compact subspace RW batch (ksub > 0); returns the number of completed steps */
+static int run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
+                             mzd_t *M_sub, rci_t *ee, mzp_t *perm, mzp_t *pivs,
+                             int *visited_cols, int *visited_checks, int *col_queue,
+                             int *visit_marker, uint64_t *rng_state, int tid) {
   params_t * const p = ctx->p;
   const csr_t * const spaL0 = p->spaL;
   const int nvar = p->spaH->cols;
@@ -506,8 +551,14 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
   const int kwin = p->kwin;
   const int win_mode = p->win_mode;
 
-  if (nu <= 0 || ksub <= 0 || !ctx->N_global) return;
+  if (nu <= 0 || ksub <= 0 || !ctx->N_global) { /* not reached: no subspace to sample, count the steps as done */
+    atomic_fetch_add(&ctx->rw_steps_completed, n_steps);
+    return 0;
+  }
 
+  int n_done = 0;
+  double t_last = get_time_sec(), acc_t = 0.0;
+  int acc_n = 0;
   pthread_rwlock_rdlock(&ctx->basis_rwlock);
   const mzd_t * const N = ctx->N_global;
 
@@ -645,7 +696,10 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
       }
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
+    n_done++;
+    rw_time_step(ctx, &t_last, &acc_t, &acc_n, n_done == 1);
   }
+  rw_time_publish(ctx, &acc_t, &acc_n);
 
   pthread_rwlock_unlock(&ctx->basis_rwlock);
 
@@ -679,6 +733,7 @@ static void run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
       }
     }
   }
+  return n_done;
 }
 
 /* Worker thread main loop */
@@ -925,6 +980,23 @@ static void run_method1_coordinator(distfork_ctx_t *ctx) {
   }
 }
 
+/* Estimated work of the CC round at weight w in thread-seconds (the unit of `cc_time_per_weight`, i.e., wall time
+ * times the number of CC threads): the measured work W(w-1) of the previous round times the growth factor
+ * W(w-1)/W(w-2), clamped to [2, 10] (4 if W(w-2) is not known), also returned in `*growth`.  Returns 0 if W(w-1)
+ * has not been measured (the first round at a supplied dmin > 1). */
+static double cc_work_estimate(const distfork_ctx_t * const ctx, const int w, double * const growth) {
+  *growth = 4.0;
+  if (w <= 1) return 1e-4; /* one syndrome per column */
+  if (w > MAX_W) return 0.0;
+  const double prev = ctx->cc_time_per_weight[w - 1];
+  if (!(prev > 0.0)) return 0.0;
+  if (w >= 3 && ctx->cc_time_per_weight[w - 2] > 1e-4) {
+    const double g = prev / ctx->cc_time_per_weight[w - 2];
+    *growth = (g < 2.0) ? 2.0 : ((g > 10.0) ? 10.0 : g);
+  }
+  return ((prev > 1e-4) ? prev : 1e-4) * (*growth);
+}
+
 /* Method 2 coordinator */
 static void run_method2_coordinator(distfork_ctx_t *ctx) {
   const int wmax = ctx->p->wmax;
@@ -964,24 +1036,14 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       break;
     }
 
-    /* Estimate CC time for weight w if timeout > 0 */
-    if (ctx->timeout > 0.0 && w > w_start) {
-      double prev = ctx->cc_time_per_weight[w - 1];
-      if (prev <= 0.0001) prev = 0.001;
-      double growth = 4.0;
-      if (w >= 3 && ctx->cc_time_per_weight[w - 2] > 0.0001) {
-        growth = ctx->cc_time_per_weight[w - 1] / ctx->cc_time_per_weight[w - 2];
-        if (growth < 2.0) growth = 2.0;
-        if (growth > 10.0) growth = 10.0;
-      }
-      double t_cc_est = prev * growth;
-      if ((t_cc_est / ctx->num_threads) > remaining_time * 1.5) {
-        if (ctx->p->debug & 1) {
-          fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, terminating early (dmin=%d)\n",
-                  w, t_cc_est / ctx->num_threads, remaining_time, atomic_load(&ctx->dmin));
-        }
-        atomic_store(&ctx->stop_flag, true);
-        break;
+    /* With a timeout, a round predicted not to finish in time is started anyway: it can still end early with a
+     * codeword of weight w, which gives the exact distance (all lower weights have been analyzed) */
+    if (ctx->timeout > 0.0 && (ctx->p->debug & 1)) {
+      double growth;
+      const double t_cc_est = cc_work_estimate(ctx, w, &growth) / ctx->num_threads; /* wall time */
+      if (t_cc_est > remaining_time) {
+        fprintf(stderr, "# CC for w=%d (est %.2fs) may not finish in the remaining time %.2fs, searching anyway "
+                "(dmin=%d)\n", w, t_cc_est, remaining_time, atomic_load(&ctx->dmin));
       }
     }
 
@@ -991,6 +1053,7 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     const bool certified = (w == atomic_load(&ctx->dmin));
 
     atomic_store(&ctx->cc_target_workers, ctx->num_threads);
+    const long long busy_ns0 = atomic_load(&ctx->cc_busy_ns);
     atomic_store(&ctx->cc_next, cc_pack(w, beg));
     atomic_store(&ctx->cc_round_active, 1);
 
@@ -1023,8 +1086,8 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_round_active, 0);
 
     double cc_dur = get_time_sec() - cc_start;
-    if (w < MAX_W) {
-      ctx->cc_time_per_weight[w] = cc_dur;
+    if (w < MAX_W) { /* CC work of the round in thread-seconds, as measured by the workers */
+      ctx->cc_time_per_weight[w] = 1e-9 * (double)(atomic_load(&ctx->cc_busy_ns) - busy_ns0);
     }
 
     int cw_found = atomic_load(&ctx->cc_found_weight);
@@ -1088,9 +1151,110 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
   }
 }
 
+/* Method 3: RW still runs (RW threads, RW steps not all completed, RW not stopped by min_hits) */
+static inline bool m3_rw_running(distfork_ctx_t * const ctx) {
+  return ctx->rw_threads > 0 && !atomic_load(&ctx->rw_stop_flag) &&
+         atomic_load(&ctx->rw_steps_completed) < ctx->total_rw_steps;
+}
+
+/* Method 3: RW thread time per step, measured continuously by the RW workers (before the first step is completed, a
+ * step takes at least the time elapsed since the start) */
+static double m3_rw_step_time(distfork_ctx_t * const ctx) {
+  const long n = atomic_load(&ctx->rw_timed_steps);
+  if (n > 0) return 1e-9 * (double)atomic_load(&ctx->rw_busy_ns) / (double)n;
+  const double elapsed = get_time_sec() - ctx->start_time;
+  return (elapsed > 5e-5) ? elapsed : 5e-5;
+}
+
+/* Method 3: the largest CC weight needed: dmax-1 once an upper bound dmax is known (dmax+dW when exporting codewords
+ * with outC), otherwise wmax (or n); at most MAX_W-2.  (`dexp` only affects the thread split, see
+ * m3_plan_cc_threads().) */
+static int m3_cc_target_w(const distfork_ctx_t * const ctx, const int cur_dmin, const int cur_dmax) {
+  const params_t * const p = ctx->p;
+  int target;
+  if (cur_dmax > 0) {
+    if (p->outC && (p->dW > 0 || cur_dmin >= cur_dmax)) {
+      target = cur_dmax + (p->dW > 0 ? p->dW : 0);
+    } else {
+      target = cur_dmax - 1;
+    }
+  } else {
+    target = (p->wmax > 0) ? p->wmax : p->spaH->cols;
+  }
+  const int max_allowed_w = (p->wmax > 0) ? minint(p->wmax, MAX_W - 2) : (MAX_W - 2);
+  return minint(target, max_allowed_w);
+}
+
+#define M3_DEADLINE_FRACTION 0.75 /* with a timeout, a round gets enough CC threads to finish in 3/4 of the time left */
+#define M3_OVERRUN_FACTOR 1.5     /* a round taking 1.5 times (+20 ms) longer than predicted gets all threads */
+
+/* Method 3: number of CC threads for the round at weight w with the estimated work `est` (thread-seconds, 0 if not
+ * known) and the growth factor `growth` (see cc_work_estimate()); the other threads run RW.  Returns 0 if CC is
+ * paused (`dexp`, below). */
+static int m3_plan_cc_threads(distfork_ctx_t * const ctx, const int w, const double est, const double growth,
+                              const double remaining_time) {
+  const int nthr = ctx->num_threads;
+  if (nthr <= 1) return 1;
+  /* RW finished, or all RW steps claimed: the RW workers join the round anyway */
+  if (!m3_rw_running(ctx) || atomic_load(&ctx->rw_steps_started) >= ctx->total_rw_steps) return nthr;
+  const int cur_dmin = atomic_load(&ctx->dmin);
+  const int cur_dmax = atomic_load(&ctx->dmax);
+  /* The round w = dmax-1 certifies dmin = dmax (later rounds only collect codewords).  RW cannot improve this result,
+   * it could only find a codeword of weight w before CC does: all threads run CC. */
+  if (cur_dmax > 0 && (w >= cur_dmax - 1 || cur_dmin >= cur_dmax)) return nthr;
+  /* `dexp` hint: as long as RW has not found any codeword, CC rounds w > dexp run only on the threads which cannot
+   * run RW (none: CC pauses) */
+  if (cur_dmax == 0 && ctx->dexp > 0 && w > ctx->dexp) return nthr - ctx->rw_threads;
+
+  int n_cc;
+  if (!(est > 0.0)) {
+    n_cc = nthr / 2; /* the first round at a supplied dmin: its work is not known */
+  } else if (est < 0.005) {
+    n_cc = (nthr >= 4) ? 2 : 1;
+  } else {
+    /* Split by the remaining work in thread-seconds: the CC rounds w, w+1, w+2 up to the horizon (dmax-1, or dexp
+     * before RW has found a codeword), and the remaining RW steps (at most 2000 once dmax is known), but not more RW
+     * work than the RW threads can do before the timeout */
+    int horizon = m3_cc_target_w(ctx, cur_dmin, cur_dmax);
+    if (cur_dmax == 0 && ctx->dexp > 0 && ctx->dexp < horizon) horizon = ctx->dexp;
+    double t_cc = est, t_k = est;
+    for (int k = w + 1; k <= horizon && k <= w + 2; k++) {
+      t_k *= growth;
+      t_cc += t_k;
+    }
+    const long steps_rem = ctx->total_rw_steps - atomic_load(&ctx->rw_steps_completed);
+    const long eff_steps = (cur_dmax > 0 && steps_rem > 2000) ? 2000 : steps_rem;
+    double t_rw = (double)eff_steps * m3_rw_step_time(ctx);
+    if (ctx->timeout > 0.0 && t_rw > remaining_time * ctx->rw_threads) t_rw = remaining_time * ctx->rw_threads;
+    n_cc = (int)round((double)nthr * t_cc / (t_cc + t_rw));
+    if (n_cc < 1) n_cc = 1;
+    if (n_cc > nthr - 1) n_cc = nthr - 1; /* keep at least one RW thread */
+  }
+  /* timeout: enough CC threads to finish the round in time */
+  if (ctx->timeout > 0.0 && est > 0.0 && remaining_time > 0.0) {
+    const double n_min = ceil(est / (M3_DEADLINE_FRACTION * remaining_time));
+    if (n_min > n_cc) n_cc = (n_min < nthr) ? (int)n_min : nthr;
+  }
+  /* only `rw_threads` workers can run RW (memory / steps limits): the other workers always run CC */
+  if (nthr - n_cc > ctx->rw_threads) n_cc = nthr - ctx->rw_threads;
+  return n_cc;
+}
+
+/* Method 3: wait while RW runs, until the upper bound dmax differs from `dmax0`, RW ends, or the run stops */
+static void m3_wait_rw(distfork_ctx_t * const ctx, const int dmax0) {
+  while (!atomic_load(&ctx->stop_flag) && m3_rw_running(ctx) && atomic_load(&ctx->dmax) == dmax0) {
+    if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
+      atomic_store(&ctx->stop_flag, true);
+      break;
+    }
+    usleep(1000);
+  }
+}
+
 /* Method 3 coordinator */
 static void run_method3_coordinator(distfork_ctx_t *ctx) {
   const int nvar = ctx->p->spaH->cols;
+  const int nthr = ctx->num_threads;
   int w = ctx->p->noscan ? ctx->p->wmax : (ctx->p->dmin > 1 ? ctx->p->dmin : 1);
 
   if (ctx->p->debug & 2) {
@@ -1105,17 +1269,10 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     return;
   }
 
-  /* Initial RW probe to measure average step time (no CC round yet: the `rw_threads` RW workers run RW) */
-  double t_rw_start = get_time_sec();
-  usleep(2000);
-  double t_rw_dur = get_time_sec() - t_rw_start;
-  long initial_steps = atomic_load(&ctx->rw_steps_completed);
-  if (initial_steps > 0 && ctx->rw_threads > 0) {
-    ctx->avg_rw_step_time = (t_rw_dur * (double)ctx->rw_threads) / (double)initial_steps;
-  } else {
-    ctx->avg_rw_step_time = 0.00005;
-  }
-
+  /* No RW probe: the RW step time is measured continuously by the RW workers (m3_rw_step_time()).  CC is never ended
+   * while RW still runs: if no CC round can be started (CC done up to wmax, a round predicted to exceed the timeout,
+   * or CC paused by `dexp`), the coordinator waits for RW and re-plans when dmax changes or RW ends. */
+  int wait_msg_w = 0; /* weight w for which a waiting message was printed (once per round) */
   while (!atomic_load(&ctx->stop_flag)) {
     double now = get_time_sec();
     double remaining_time = (ctx->timeout > 0.0) ? (ctx->timeout - (now - ctx->start_time)) : 1e9;
@@ -1126,28 +1283,10 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
     int cur_dmax = atomic_load(&ctx->dmax);
     int cur_dmin = atomic_load(&ctx->dmin);
+    const bool rw_on = m3_rw_running(ctx);
 
     /* Target cluster size for CC */
-    int target_cc_w;
-    if (cur_dmax > 0) {
-      if (ctx->p->outC && (ctx->p->dW > 0 || cur_dmin >= cur_dmax)) {
-        target_cc_w = cur_dmax + (ctx->p->dW > 0 ? ctx->p->dW : 0);
-      } else {
-        target_cc_w = cur_dmax - 1;
-      }
-    } else if (ctx->dexp > 0) {
-      target_cc_w = ctx->dexp;
-    } else if (ctx->p->wmax > 0) {
-      target_cc_w = ctx->p->wmax;
-    } else {
-      target_cc_w = nvar;
-    }
-
-    int max_allowed_w = (ctx->p->wmax > 0)
-                        ? minint(ctx->p->wmax, MAX_W - 2) : (MAX_W - 2);
-    if (target_cc_w > max_allowed_w) {
-      target_cc_w = max_allowed_w;
-    }
+    const int target_cc_w = m3_cc_target_w(ctx, cur_dmin, cur_dmax);
 
     if (cur_dmax > 0 && cur_dmin >= cur_dmax && w > target_cc_w) {
       /* Bracketing converged and all requested dW rounds completed */
@@ -1157,81 +1296,59 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     }
 
     if (w > target_cc_w) {
-      /* Let remaining RW steps finish */
-      while (!atomic_load(&ctx->stop_flag) && !atomic_load(&ctx->rw_stop_flag)) {
-        if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) break;
-        if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
-        usleep(1000);
+      /* CC done up to wmax: only RW can still lower dmax */
+      if (!rw_on) break;
+      if ((ctx->p->debug & 2) && wait_msg_w != w) {
+        wait_msg_w = w;
+        fprintf(stderr, "# CC done up to w=%d, waiting for RW (bounds [%d, %d])\n", target_cc_w, cur_dmin, cur_dmax);
       }
-      break;
+      m3_wait_rw(ctx, cur_dmax);
+      continue;
     }
 
-    /* Estimate CC time for weight w */
-    double t_cc_est;
-    if (w == 1) {
-      t_cc_est = 0.0001;
-    } else if (w == 2) {
-      t_cc_est = 0.001;
-    } else {
-      double prev = ctx->cc_time_per_weight[w - 1];
-      if (prev <= 0.0001) prev = 0.001;
-      double growth = 4.0;
-      if (w >= 3 && ctx->cc_time_per_weight[w - 2] > 0.0001) {
-        growth = ctx->cc_time_per_weight[w - 1] / ctx->cc_time_per_weight[w - 2];
-        if (growth < 2.0) growth = 2.0;
-        if (growth > 10.0) growth = 10.0;
+    /* Estimated CC work of the round (thread-seconds).  A round predicted not to finish in time on all threads is not
+     * started while RW runs; once RW has ended, the run ends.  Without RW (steps=0), as in method 2, the round is
+     * started anyway: it can still end early with a codeword of weight w (exact if w = dmin). */
+    double growth;
+    const double t_cc_est = cc_work_estimate(ctx, w, &growth);
+    if (ctx->timeout > 0.0 && t_cc_est / nthr > remaining_time) {
+      if (rw_on) {
+        if ((ctx->p->debug & 2) && wait_msg_w != w) {
+          wait_msg_w = w;
+          fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting %d threads to RW\n",
+                  w, t_cc_est / nthr, remaining_time, ctx->rw_threads);
+        }
+        m3_wait_rw(ctx, cur_dmax);
+        continue;
       }
-      t_cc_est = prev * growth;
-    }
-
-    /* Check if CC for weight w can finish within timeout */
-    if (ctx->timeout > 0.0 && (t_cc_est / ctx->num_threads > remaining_time * 1.5)) {
-      if (ctx->p->debug & 2) {
-        fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, devoting %d threads to RW\n",
-                w, t_cc_est / ctx->num_threads, remaining_time, ctx->rw_threads);
+      if (ctx->rw_threads > 0) {
+        if (ctx->p->debug & 1) {
+          fprintf(stderr, "# CC for w=%d (est %.2fs) exceeds remaining timeout %.2fs, RW ended: terminating early "
+                  "(dmin=%d)\n", w, t_cc_est / nthr, remaining_time, cur_dmin);
+        }
+        atomic_store(&ctx->stop_flag, true);
+        break;
       }
-      while (!atomic_load(&ctx->stop_flag) && !atomic_load(&ctx->rw_stop_flag)) {
-        if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) break;
-        if (atomic_load(&ctx->rw_steps_completed) >= ctx->total_rw_steps) break;
-        usleep(1000);
+      if ((ctx->p->debug & 1) && wait_msg_w != w) {
+        wait_msg_w = w;
+        fprintf(stderr, "# CC for w=%d (est %.2fs) may not finish in the remaining time %.2fs, searching anyway "
+                "(dmin=%d)\n", w, t_cc_est / nthr, remaining_time, cur_dmin);
       }
-      break;
     }
 
     /* Calculate thread balancing */
-    long steps_done = atomic_load(&ctx->rw_steps_completed);
-    long steps_rem = (!atomic_load(&ctx->rw_stop_flag) && ctx->total_rw_steps > steps_done)
-                     ? (ctx->total_rw_steps - steps_done) : 0;
-    /* all RW steps claimed: the RW workers join the CC round once their current batch is done */
-    const bool rw_all_claimed = (atomic_load(&ctx->rw_steps_started) >= ctx->total_rw_steps);
-
-    int n_cc;
-    if (ctx->num_threads == 1) {
-      n_cc = 1;
-    } else if (steps_rem == 0 || rw_all_claimed) {
-      n_cc = ctx->num_threads;
-    } else if (t_cc_est < 0.005) {
-      n_cc = (ctx->num_threads >= 4) ? 2 : 1;
-    } else {
-      long eff_steps_rem = (cur_dmax > 0 && steps_rem > 2000) ? 2000 : steps_rem;
-      double t_rw_total_1t = (double)eff_steps_rem * ctx->avg_rw_step_time;
-      double t_cc_total_1t = t_cc_est;
-      double est_accum = t_cc_est;
-      for (int k = w + 1; k <= target_cc_w && k <= w + 2; k++) {
-        est_accum *= 4.0;
-        t_cc_total_1t += est_accum;
+    int n_cc = m3_plan_cc_threads(ctx, w, t_cc_est, growth, remaining_time);
+    if (n_cc <= 0) {
+      if ((ctx->p->debug & 2) && wait_msg_w != w) {
+        wait_msg_w = w;
+        fprintf(stderr, "# CC paused before w=%d > dexp=%d until RW finds a codeword (or ends)\n", w, ctx->dexp);
       }
-      double ratio = t_cc_total_1t / (t_cc_total_1t + t_rw_total_1t);
-      n_cc = (int)round((double)ctx->num_threads * ratio);
-      if (n_cc < 1) n_cc = 1;
-      if (n_cc >= ctx->num_threads && steps_rem > 0) n_cc = ctx->num_threads - 1;
+      m3_wait_rw(ctx, cur_dmax);
+      continue;
     }
-    /* only `rw_threads` workers can run RW (memory / steps limits): the other workers always run CC */
-    if (ctx->num_threads - n_cc > ctx->rw_threads) {
-      n_cc = ctx->num_threads - ctx->rw_threads;
-    }
-
-    int n_rw = ctx->num_threads - n_cc;
+    const int n_cc0 = n_cc;
+    int n_rw = nthr - n_cc;
+    const long steps_rem = rw_on ? ctx->total_rw_steps - atomic_load(&ctx->rw_steps_completed) : 0;
 
     const int beg = cc_round_beg(ctx->p);
     const int end = cc_round_end(ctx->p, w);
@@ -1244,23 +1361,57 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_round_active, 1);
 
     if (ctx->p->debug & 2) {
+      char est_str[64] = "unknown";
+      char rw_str[64] = "";
+      if (t_cc_est > 0.0) snprintf(est_str, sizeof(est_str), "%.3g thread-s", t_cc_est);
+      if (rw_on) snprintf(rw_str, sizeof(rw_str), ", RW step %.3g s", m3_rw_step_time(ctx));
       fprintf(stderr,
               "# CC round w=%d started: %d CC threads, %d RW threads "
-              "(bounds [%d, %d], rem_rw=%ld, rem_time=%.2fs)\n",
-              w, n_cc, n_rw, cur_dmin, cur_dmax, steps_rem, remaining_time);
+              "(bounds [%d, %d], rem_rw=%ld, rem_time=%.2fs, est %s%s)\n",
+              w, n_cc, n_rw, cur_dmin, cur_dmax, steps_rem, remaining_time, est_str, rw_str);
     }
 
     double cc_start = get_time_sec();
     bool round_completed = false;
+    int dmax_seen = cur_dmax;
+    unsigned int poll = 0;
 
     while (!atomic_load(&ctx->stop_flag)) {
-      if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
+      const double t = get_time_sec();
+      if (ctx->timeout > 0.0 && (t - ctx->start_time >= ctx->timeout)) {
         atomic_store(&ctx->stop_flag, true);
         break;
       }
       if (cc_unpack_idx(atomic_load(&ctx->cc_next)) > end && atomic_load(&ctx->cc_active_workers) == 0) {
         round_completed = true;
         break;
+      }
+      /* Re-plan during the round (only adding CC threads, workers do not leave a round): when RW finds a new upper
+       * bound (e.g., this round now certifies dmin = dmax), and when the round takes much longer than predicted */
+      if ((++poll & 15) == 0 && n_cc < nthr) {
+        int n_new = n_cc;
+        const char *why = "";
+        const int d_now = atomic_load(&ctx->dmax);
+        if (d_now != dmax_seen) {
+          dmax_seen = d_now;
+          const double rem = (ctx->timeout > 0.0) ? ctx->timeout - (t - ctx->start_time) : 1e9;
+          n_new = m3_plan_cc_threads(ctx, w, t_cc_est, growth, rem);
+          why = "new upper bound";
+        }
+        const bool paused = (d_now == 0 && ctx->dexp > 0 && w > ctx->dexp && m3_rw_running(ctx));
+        if (!paused && t_cc_est > 0.0 && t - cc_start > M3_OVERRUN_FACTOR * t_cc_est / n_cc0 + 0.02) {
+          n_new = nthr;
+          why = "longer than predicted";
+        }
+        if (n_new > n_cc) {
+          if (ctx->p->debug & 2) {
+            fprintf(stderr, "# CC round w=%d: %d -> %d CC threads (%s, bounds [%d, %d], %.3fs into the round)\n",
+                    w, n_cc, n_new, why, atomic_load(&ctx->dmin), d_now, t - cc_start);
+          }
+          n_cc = n_new;
+          n_rw = nthr - n_cc;
+          atomic_store(&ctx->cc_target_workers, n_cc);
+        }
       }
       usleep(100);
     }
@@ -1524,6 +1675,8 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.rw_stop_flag, false);
   atomic_init(&ctx.rw_steps_started, 0);
   atomic_init(&ctx.rw_steps_completed, 0);
+  atomic_init(&ctx.rw_busy_ns, 0);
+  atomic_init(&ctx.rw_timed_steps, 0);
   atomic_init(&ctx.cc_next, cc_pack(0, 0));
   atomic_init(&ctx.cc_active_workers, 0);
   atomic_init(&ctx.cc_target_workers, 0);

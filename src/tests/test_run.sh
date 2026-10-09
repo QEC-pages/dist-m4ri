@@ -333,10 +333,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.10.1" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.10.2" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.10.1" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.10.2" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -487,6 +487,18 @@ assert_output "$BIN_FORK method=3 $S5 steps=10 threads=8 debug=3" \
 
 # Test 74: method=3 with steps=0 runs pure CC on all threads without RW threads
 assert_output "$BIN_FORK method=3 $S5 steps=0 threads=4 debug=3" 0 "^5 5 0$" "steps=0, no RW"
+
+# Test 75: method=3 with a low dexp: CC rounds w > dexp are paused (not ended) until RW finds a codeword
+assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/c1920H.mmx dexp=2 timeout=2 threads=4 debug=0" \
+    0 "^([4-9]|[1-9][0-9]) [0-9]+ [0-9]+$" ""
+
+# Test 76: method=3: the round w=dmax-1, which certifies dmin=dmax, runs on all threads
+assert_output "$BIN_FORK method=3 $S5 dmax=5 threads=8 nothrottle=1 debug=3" \
+    0 "^5 5 [0-9]+$" "CC round w=4 started: 8 CC threads"
+
+# Test 77: method=3 with a supplied dmin: the first CC round (work not known yet) runs on half of the threads
+assert_output "$BIN_FORK method=3 $S5 dmin=3 min_hits=0 threads=8 nothrottle=1 debug=3" \
+    0 "^5 5 [0-9]+$" "CC round w=3 started: 4 CC threads"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
