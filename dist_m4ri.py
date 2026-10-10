@@ -29,7 +29,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -451,7 +451,8 @@ def explain_bounds(
     bounds: List[int],
     method: Optional[int] = None,
     label: str = "",
-    stats: Optional[Dict[str, Any]] = None
+    stats: Optional[Dict[str, Any]] = None,
+    dstop: int = 0
 ) -> str:
     """
     Returns a human-readable explanation of [dmin, dmax, num_rw] following README.md.
@@ -461,6 +462,8 @@ def explain_bounds(
         method: Optional solver method (1=RW, 2=CC, 3=Bracketing).
         label: Optional prefix/label (e.g. "dX", "dZ", "").
         stats: Optional dictionary of codeword and hit statistics parsed from dist_m4ri.
+        dstop: Stop target of the search (0: none); once dmin >= dstop, the upper bound is not needed, and the
+            estimates of the probability that RW missed a lighter codeword are skipped.
 
     Returns:
         Multi-line formatted explanation string.
@@ -468,6 +471,7 @@ def explain_bounds(
     dmin, dmax, num_rw = bounds[0], bounds[1], bounds[2]
     lines = []
     prefix = f"{label} " if label else ""
+    stopped = dstop > 0 and dmin >= dstop and not (dmin > 0 and dmin == dmax)
 
     # Lower bound explanation
     if dmin > 0 and dmin == dmax:
@@ -483,6 +487,9 @@ def explain_bounds(
         lines.append(f"  {prefix}Upper bound (dmax = {dmax}): Weight of the smallest non-trivial codeword discovered.")
     else:
         lines.append(f"  {prefix}Upper bound (dmax = {dmax}): No non-trivial codeword discovered yet (dmax = 0).")
+    if stopped:
+        lines.append(f"  {prefix}Stop target (dstop = {dstop}): reached, the search ended once dmin >= {dstop} was "
+                     f"certified (no codeword of weight < {dstop}); the upper bound is not needed.")
 
     # RW steps explanation (and why it is zero if num_rw == 0)
     if num_rw > 0:
@@ -528,7 +535,7 @@ def explain_bounds(
             lines.append(f"  {prefix}Codewords accumulated: 0 distinct non-trivial codewords found.")
 
     # The RW upper bound is not certified: estimated probability that RW missed a lighter codeword
-    if stats and num_rw > 0 and dmax > max(dmin, 1):
+    if stats and num_rw > 0 and dmax > max(dmin, 1) and not stopped:
         import math
         rw_threads = stats.get("rw_threads", 0)
         step_wall = stats.get("rw_step_time", 0.0) / rw_threads if rw_threads > 0 else 0.0
@@ -598,6 +605,10 @@ def get_cached_distance(
     If the expert CC start-column list `start` is given (see compute_classical_distance), the
     separate start-list record (cache key suffix ':start=a,b,c') is returned instead of the main record.
 
+    For a CSS code (Hx and Hz, optionally Lx / Lz), the entry is assembled from the records of its two sectors,
+    the quantum codes (H=Hx, G=Hz) -> dZ and (H=Hz, G=Hx) -> dX (shared with compute_quantum_distance()): the fields
+    dmin_X, dmax_X, rw_steps_X, dX, cws_X (the same for Z), and dist, dmin, dmax, rw_steps of d = min(dX, dZ).
+
     Returns:
         dict with keys {"dist", "dmin", "dmax", "rw_steps", ...} or None if not cached.
     """
@@ -620,24 +631,25 @@ def get_cached_distance(
             entry["d_info"] = format_bounds_list(entry.get("dmin", 0), entry.get("dmax", 0), entry.get("rw_steps", 0))
         return entry
     elif Hx is not None or Hz is not None:
-        hx_st = get_sparse_array_state(Hx) if Hx is not None else "none"
-        hz_st = get_sparse_array_state(Hz) if Hz is not None else "none"
-        key = f"css:X={hx_st}:Z={hz_st}"
-        if Lx is not None or Lz is not None:
-            lx_st = get_sparse_array_state(Lx) if Lx is not None else "none"
-            lz_st = get_sparse_array_state(Lz) if Lz is not None else "none"
-            key = f"{key}:Lx={lx_st}:Lz={lz_st}"
-        entry = _distance_cache.get(key + sfx)
-        if entry:
-            entry = dict(entry)
-            if "dmin_X" in entry:
-                entry["dX"] = format_bounds_list(
-                    entry.get("dmin_X", 0), entry.get("dmax_X", 0), entry.get("rw_steps_X", 0)
-                )
-            if "dmin_Z" in entry:
-                entry["dZ"] = format_bounds_list(
-                    entry.get("dmin_Z", 0), entry.get("dmax_Z", 0), entry.get("rw_steps_Z", 0)
-                )
+        # a CSS code is cached as its two sectors (H=Hx, G=Hz) -> dZ and (H=Hz, G=Hx) -> dX, see compute_css_distance()
+        if Hx is None or Hz is None:
+            return None
+        _migrate_css_records(Hx, Hz, Lx, Lz, eff_cache_file)
+        codes = _css_sector_codes(Hx, Hz, Lx, Lz)
+        sec = {s: _distance_cache.get(_matrix_cache_key(*codes[s]) + sfx) for s in ("X", "Z")}
+        if not sec["X"] and not sec["Z"]:
+            return None
+        entry = {}
+        bounds = {}
+        for s in ("X", "Z"):
+            rec = sec[s] or {}
+            b = (rec.get("dmin", 0) or 0, rec.get("dmax", 0) or 0, rec.get("rw_steps", 0) or 0)
+            bounds[s] = b
+            entry[f"dmin_{s}"], entry[f"dmax_{s}"], entry[f"rw_steps_{s}"] = b
+            entry[f"d{s}"] = format_bounds_list(*b)
+            entry[f"cws_{s}"] = list(rec.get("cws", []))
+        dist, d_lo, d_hi, rw = _css_combine(bounds["X"], bounds["Z"])
+        entry.update({"dist": dist, "dmin": d_lo, "dmax": d_hi, "rw_steps": rw})
         return entry
     elif dem is not None or circuit is not None:
         if dem is None and circuit is not None:
@@ -1136,17 +1148,15 @@ def _prepare_start_option(
     return start_list
 
 
-def _seed_bounds_from_entry(
-    eff_dmin: int, eff_dmax: int, entry: Optional[Dict[str, Any]], sfx: str = ""
-) -> Tuple[int, int]:
+def _seed_bounds_from_entry(eff_dmin: int, eff_dmax: int, entry: Optional[Dict[str, Any]]) -> Tuple[int, int]:
     """
-    Tightens the bounds (eff_dmin, eff_dmax) with those stored in a cache entry (for a CSS entry, use the
-    sector suffix sfx='_X' or '_Z'; missing sector fields fall back to the combined 'dmin' / 'dmax').
+    Tightens the bounds (eff_dmin, eff_dmax) with those stored in a cache entry (a CSS code is cached as the
+    records of its two sectors, see _matrix_cache_key()).
     """
     if not entry:
         return eff_dmin, eff_dmax
-    c_dmin = entry.get(f"dmin{sfx}", entry.get("dmin", 0)) or 0
-    c_dmax = entry.get(f"dmax{sfx}", entry.get("dmax", 0)) or 0
+    c_dmin = entry.get("dmin", 0) or 0
+    c_dmax = entry.get("dmax", 0) or 0
     if c_dmax > 0:
         eff_dmax = min(eff_dmax, c_dmax) if eff_dmax > 0 else c_dmax
     if c_dmin > 1:
@@ -1167,32 +1177,27 @@ def _union_cws(base: Optional[List[List[int]]], extra: Optional[List[List[int]]]
     return combined
 
 
-def _single_entry_is_exact(entry: Dict[str, Any], need_cws: bool = False) -> bool:
-    """Cache hit test for a classical / quantum / DEM entry (exact distance, and codewords if needed)."""
-    if not (entry.get("dmin", 0) > 0 and entry.get("dmin") == entry.get("dmax")):
+def _dist_from_bounds(dmin: int, dmax: int) -> int:
+    """The distance reported for the bounds [dmin, dmax]: dmin if exact or without an upper bound, otherwise dmax."""
+    return dmin if (dmin == dmax or dmax == 0) else dmax
+
+
+def _single_entry_is_exact(entry: Dict[str, Any], need_cws: bool = False, dstop: int = 0) -> bool:
+    """
+    Cache hit test for a classical / quantum / DEM entry: the exact distance, or with the stop target dstop > 0 a
+    lower bound dmin >= dstop (and codewords if needed).
+    """
+    c_dmin = entry.get("dmin", 0) or 0
+    if not ((c_dmin > 0 and c_dmin == entry.get("dmax")) or (dstop > 0 and c_dmin >= dstop)):
         return False
     return (not need_cws) or bool(entry.get("cws"))
-
-
-def _css_entry_is_exact(entry: Dict[str, Any], can_x: bool, can_z: bool, need_cws: bool = False) -> bool:
-    """Cache hit test for a CSS entry (exact distance in all computed sectors, and codewords if needed)."""
-    c_dmin_x = entry.get("dmin_X", entry.get("dmin", 0))
-    c_dmax_x = entry.get("dmax_X", entry.get("dmax", 0))
-    c_dmin_z = entry.get("dmin_Z", entry.get("dmin", 0))
-    c_dmax_z = entry.get("dmax_Z", entry.get("dmax", 0))
-    x_exact = (not can_x) or (c_dmin_x > 0 and c_dmin_x == c_dmax_x)
-    z_exact = (not can_z) or (c_dmin_z > 0 and c_dmin_z == c_dmax_z)
-    if not (x_exact and z_exact and (c_dmax_x > 0 or c_dmax_z > 0)):
-        return False
-    return (not need_cws) or bool(entry.get("cws_X") and entry.get("cws_Z"))
 
 
 def _merge_start_into_plain(
     plain_key: str,
     src: Dict[str, Any],
     trust: bool = False,
-    rw_delta: Optional[Dict[str, int]] = None,
-    sectors: Optional[Sequence[str]] = None
+    rw_delta: Optional[Dict[str, int]] = None
 ) -> bool:
     """
     Merges the start-list cache record `src` (key plain_key + ':start=...') into the main record `plain_key`.
@@ -1201,14 +1206,13 @@ def _merge_start_into_plain(
     are always merged.  Only with `trust` (expert option trust_start) the lower bound dmin is merged as well
     (maximum, capped at dmax), and rw_steps are either incremented by the steps of the run, `rw_delta`
     (after a calculation), or set to the maximum of the two records (copy of a cached record, rw_delta=None).
+    (A CSS code is cached as the records of its two sectors, see _matrix_cache_key().)
 
     Args:
         plain_key: Main cache key.
         src: Start-list cache record.
         trust: Accept the start-list lower bound as valid.
-        rw_delta: RW steps of the run by key suffix ('' for a single record; '_X', '_Z' for CSS sectors).
-        sectors: None for a single (classical, quantum, or DEM) record; for a CSS record, the list of
-            computed sectors among 'X' and 'Z'.
+        rw_delta: RW steps of the run, {'': steps}.
 
     Returns:
         True if the main record was created or modified.
@@ -1216,57 +1220,28 @@ def _merge_start_into_plain(
     global _distance_cache
     prev = _distance_cache.get(plain_key)
     new: Dict[str, Any] = dict(prev) if prev else {}
-    sfx_list = [""] if sectors is None else [f"_{s}" for s in sectors]
-    useful = trust
-    res: Dict[str, Tuple[int, int, int]] = {}
-    for sfx in sfx_list:
-        s_dmin = src.get(f"dmin{sfx}", 0) or 0
-        s_dmax = src.get(f"dmax{sfx}", 0) or 0
-        p_dmin = new.get(f"dmin{sfx}", 0) or 0
-        p_dmax = new.get(f"dmax{sfx}", 0) or 0
-        p_rw = new.get(f"rw_steps{sfx}", 0) or 0
-        dmax = min(p_dmax, s_dmax) if (p_dmax > 0 and s_dmax > 0) else (p_dmax if p_dmax > 0 else s_dmax)
-        dmin, rw = p_dmin, p_rw
-        if trust:
-            dmin = max(p_dmin, s_dmin)
-            if rw_delta is not None:
-                rw = p_rw + (rw_delta.get(sfx, 0) or 0)
-            else:
-                rw = max(p_rw, src.get(f"rw_steps{sfx}", 0) or 0)
-        if dmax > 0 and dmin > dmax:
-            dmin = dmax
-        if sectors is not None and dmin > 0 and dmin == dmax:
-            rw = 0  # CSS sector convention (see compute_css_distance)
-        s_cws = src.get(f"cws{sfx}", []) or []
-        if s_dmax > 0 or s_cws:
-            useful = True
-        new[f"cws{sfx}"] = _union_cws(new.get(f"cws{sfx}", []), s_cws)
-        res[sfx] = (dmin, dmax, rw)
-    if not prev and not useful:
+    s_dmin = src.get("dmin", 0) or 0
+    s_dmax = src.get("dmax", 0) or 0
+    p_dmin = new.get("dmin", 0) or 0
+    p_dmax = new.get("dmax", 0) or 0
+    p_rw = new.get("rw_steps", 0) or 0
+    dmax = min(p_dmax, s_dmax) if (p_dmax > 0 and s_dmax > 0) else (p_dmax if p_dmax > 0 else s_dmax)
+    dmin, rw = p_dmin, p_rw
+    if trust:
+        dmin = max(p_dmin, s_dmin)
+        if rw_delta is not None:
+            rw = p_rw + (rw_delta.get("", 0) or 0)
+        else:
+            rw = max(p_rw, src.get("rw_steps", 0) or 0)
+    if dmax > 0 and dmin > dmax:
+        dmin = dmax
+    s_cws = src.get("cws", []) or []
+    if not prev and not (trust or s_dmax > 0 or s_cws):
         return False
-
-    if sectors is None:
-        dmin, dmax, rw = res[""]
-        new["dist"] = dmin if (dmin == dmax or dmax == 0) else dmax
-        new["dmin"], new["dmax"], new["rw_steps"] = dmin, dmax, rw
-        new["d_info"] = format_bounds_list(dmin, dmax, rw)
-    else:
-        for s in ("X", "Z"):
-            sfx = f"_{s}"
-            if sfx in res:
-                dmin, dmax, rw = res[sfx]
-                new[f"dmin{sfx}"], new[f"dmax{sfx}"], new[f"rw_steps{sfx}"] = dmin, dmax, rw
-                new[f"d{s}"] = format_bounds_list(dmin, dmax, rw)
-            else:
-                for fld, dflt in (("dmin", 0), ("dmax", 0), ("rw_steps", 0), ("cws", [])):
-                    new.setdefault(f"{fld}{sfx}", dflt)
-                new.setdefault(f"d{s}", None)
-        vals = list(res.values())
-        dists = [dmin if (dmin == dmax or dmax == 0) else dmax for dmin, dmax, _ in vals]
-        new["dist"] = min(dists) if all(d > 0 for d in dists) else max(dists)
-        new["dmin"] = min(v[0] for v in vals)
-        new["dmax"] = min(v[1] for v in vals) if all(v[1] > 0 for v in vals) else 0
-        new["rw_steps"] = sum(v[2] for v in vals)
+    new["cws"] = _union_cws(new.get("cws", []), s_cws)
+    new["dist"] = _dist_from_bounds(dmin, dmax)
+    new["dmin"], new["dmax"], new["rw_steps"] = dmin, dmax, rw
+    new["d_info"] = format_bounds_list(dmin, dmax, rw)
     _distance_cache[plain_key] = new
     return True
 
@@ -1324,6 +1299,7 @@ def run_dist_m4ri(
     wmin: int = 1,
     dexp: int = 0,
     dest: int = 0,
+    dstop: int = 0,
     steps: Optional[int] = None,
     threads: Optional[int] = None,
     timeout: float = 60.0,
@@ -1355,6 +1331,12 @@ def run_dist_m4ri(
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
+
+    Stop target:
+        dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
+            weight < dstop, unless a lighter codeword is found (default: 0 = off).  Unlike dmax, dstop is not an
+            upper bound and is not reported as dmax: the result is (dmin, w, rw_steps), where w is the weight of the
+            lightest codeword found (0: none).
 
     Expert CC options:
         start: List of CC start columns (int, comma-separated string "a,b,c", or sequence of ints;
@@ -1400,8 +1382,10 @@ def run_dist_m4ri(
     if method == 2 and wmax <= 0:
         if dmax > 0:
             wmax = dmax
-        elif timeout <= 0.0:
-            raise ValueError("either parameter wmax>0, dmax>0, or timeout>0 should be specified for CC method=2.")
+        elif timeout <= 0.0 and dstop <= 0:
+            raise ValueError(
+                "either parameter wmax>0, dmax>0, dstop>0, or timeout>0 should be specified for CC method=2."
+            )
 
     eff_debug = (debug | VERBOSE_DEBUG) if verbose else debug
     bin_debug = eff_debug & BIN_DBG_MASK  # the higher bits are used by the Python wrapper only
@@ -1415,6 +1399,7 @@ def run_dist_m4ri(
     if fdem: cmd.append(f"fdem={fdem}")
     if dmin > 0: cmd.append(f"dmin={dmin}")
     if dmax > 0: cmd.append(f"dmax={dmax}")
+    if dstop > 0: cmd.append(f"dstop={dstop}")
     if wmax > 0: cmd.append(f"wmax={wmax}")
     if wmin is not None and wmin != 1: cmd.append(f"wmin={wmin}")
     if dexp > 0: cmd.append(f"dexp={dexp}")
@@ -2921,6 +2906,320 @@ def strip_minority_detectors(
     return simp_circuit, stripped_count, kept_count
 
 
+def _matrix_cache_key(H: Any, G: Optional[Any] = None, L: Optional[Any] = None, classical: bool = False) -> str:
+    """
+    Cache key of a classical code (H), or of a quantum code given by H with G (or with L).  The two sectors of a CSS
+    code are stored as the quantum codes (H=Hx, G=Hz) -> dZ and (H=Hz, G=Hx) -> dX (with L=Lx / L=Lz if given), so
+    that compute_css_distance() and compute_quantum_distance() share their cache records.
+    """
+    h_state = get_sparse_array_state(H)
+    if classical:
+        return f"classical:{h_state}"
+    if G is not None:
+        return f"quantum:H={h_state}:G={get_sparse_array_state(G)}"
+    return f"quantum:H={h_state}:L={get_sparse_array_state(L)}"
+
+
+def _css_sector_codes(Hx: Any, Hz: Any, Lx: Optional[Any], Lz: Optional[Any]) -> Dict[str, Tuple[Any, Any, Any]]:
+    """The quantum codes (H, G, L) of the two sectors of a CSS code: Z -> (Hx, Hz or Lx), X -> (Hz, Hx or Lz)."""
+    return {
+        "Z": (Hx, Hz if Lx is None else None, Lx),
+        "X": (Hz, Hx if Lz is None else None, Lz),
+    }
+
+
+def _css_combine(
+    x: Tuple[int, int, int], z: Tuple[int, int, int], dmax: int = 0
+) -> Tuple[int, int, int, int]:
+    """
+    Bounds of the CSS distance d = min(dX, dZ) from the sector bounds x, z = (dmin, dmax, rw_steps), and an upper
+    bound `dmax` on d supplied by the user (0: none).
+
+    Returns:
+        (dist, dmin, dmax, rw_steps): dist is the smaller sector distance (see _dist_from_bounds(); the larger one if
+        a sector distance is 0), at most the user's dmax; dmin = min(dmin_X, dmin_Z); dmax is the smallest of the
+        positive upper bounds (0: none).
+    """
+    d_lo = min(x[0], z[0])
+    uppers = [v for v in (x[1], z[1], dmax) if v > 0]
+    d_hi = min(uppers) if uppers else 0
+    if d_hi > 0 and d_lo > d_hi:
+        d_lo = d_hi
+    dist_x, dist_z = _dist_from_bounds(x[0], x[1]), _dist_from_bounds(z[0], z[1])
+    dist = min(dist_x, dist_z) if (dist_x > 0 and dist_z > 0) else max(dist_x, dist_z)
+    if dmax > 0 and dist > dmax:
+        dist = dmax
+    if d_lo > 0 and d_lo == d_hi:
+        dist = d_lo
+    return dist, d_lo, d_hi, x[2] + z[2]
+
+
+def _sector_record(dmin: int, dmax: int, rw_steps: int, cws: List[List[int]]) -> Dict[str, Any]:
+    """A cache record of a classical or quantum code (or of a CSS sector) with the bounds [dmin, dmax]."""
+    if dmax > 0 and dmin > dmax:
+        dmin = dmax
+    return {
+        "dist": _dist_from_bounds(dmin, dmax),
+        "dmin": dmin,
+        "dmax": dmax,
+        "rw_steps": rw_steps,
+        "d_info": format_bounds_list(dmin, dmax, rw_steps),
+        "cws": cws,
+    }
+
+
+def _migrate_css_records(
+    Hx: Any, Hz: Any, Lx: Optional[Any] = None, Lz: Optional[Any] = None, eff_cache_file: Optional[str] = None
+) -> bool:
+    """
+    Converts the CSS cache records written before version 0.12.0 (key 'css:X=<Hx>:Z=<Hz>[:Lx=<Lx>:Lz=<Lz>]', also
+    with a ':start=...' suffix) into the records of the two sectors (see _matrix_cache_key()), and removes them.
+
+    The lower bounds dmin_X and dmin_Z are kept.  An upper bound dmax_X or dmax_Z is kept only if a stored codeword
+    confirms it, or if it is smaller than the upper bound of the other sector: earlier versions passed an upper bound
+    dmax given to compute_css_distance() (a bound on min(dX, dZ)) to both sectors, where it was reported back as the
+    upper bound of the sector, which is not valid for the sector with the larger distance.  Otherwise, the weight of
+    the lightest stored codeword (if any) is used.
+
+    Returns:
+        True if a record was converted (the cache file, if any, is then saved).
+    """
+    global _distance_cache
+    old = f"css:X={get_sparse_array_state(Hx)}:Z={get_sparse_array_state(Hz)}"
+    if Lx is not None or Lz is not None:
+        old = f"{old}:Lx={get_sparse_array_state(Lx)}:Lz={get_sparse_array_state(Lz)}"
+    old_keys = [k for k in list(_distance_cache) if k == old or k.startswith(old + ":start=")]
+    if not old_keys:
+        return False
+    codes = _css_sector_codes(Hx, Hz, Lx, Lz)
+    base = {s: _matrix_cache_key(*codes[s]) for s in ("X", "Z")}
+    for key in old_keys:
+        rec = _distance_cache.pop(key)
+        if not isinstance(rec, dict):
+            continue
+        sfx = key[len(old):]
+        for s, other in (("X", "Z"), ("Z", "X")):
+            dmin = int(rec.get(f"dmin_{s}", rec.get("dmin", 0)) or 0)
+            dmax = int(rec.get(f"dmax_{s}", 0) or 0)
+            other_dmax = int(rec.get(f"dmax_{other}", 0) or 0)
+            cws = [list(cw) for cw in (rec.get(f"cws_{s}") or [])]
+            w_cw = min((len(cw) for cw in cws), default=0)
+            if dmax > 0 and w_cw != dmax and not (dmax < other_dmax):
+                dmax = 0  # possibly the upper bound on min(dX, dZ) reported back by the binary
+            if w_cw > 0:
+                dmax = min(dmax, w_cw) if dmax > 0 else w_cw
+            rw = int(rec.get(f"rw_steps_{s}", 0) or 0)
+            skey = base[s] + sfx
+            prev = _distance_cache.get(skey)
+            if prev:
+                p_dmax = prev.get("dmax", 0) or 0
+                dmax = min(p_dmax, dmax) if (p_dmax > 0 and dmax > 0) else max(p_dmax, dmax)
+                dmin = max(prev.get("dmin", 0) or 0, dmin)
+                rw = max(prev.get("rw_steps", 0) or 0, rw)
+                cws = _union_cws(prev.get("cws", []), cws)
+            _distance_cache[skey] = _sector_record(dmin, dmax, rw, cws)
+    if eff_cache_file:
+        save_distance_cache(eff_cache_file)
+    return True
+
+
+def _cached_code_distance(
+    H: Any,
+    G: Optional[Any],
+    L: Optional[Any],
+    classical: bool,
+    kind: str,
+    dist_m4ri: Optional[str],
+    method: int,
+    threads: Optional[int],
+    timeout: float,
+    num_steps: Optional[int],
+    d_exp: int,
+    dmin: int,
+    dmax: int,
+    dstop: int,
+    wmin: int,
+    wmax: int,
+    smax: Optional[int],
+    start_list: Optional[List[int]],
+    dW: int,
+    maxC: int,
+    finC: Optional[str],
+    outC: Optional[str],
+    need_cws: bool,
+    eff_cache_file: Optional[str],
+    seed: int,
+    debug: int,
+    verbose: bool,
+    nothrottle: bool,
+    chunk_size: int,
+    ksub: int,
+    kwin: int,
+    win_mode: int,
+    min_hits: Optional[int],
+    cov_cws: int,
+    refresh: int,
+    trust_start: bool
+) -> Dict[str, Any]:
+    """
+    Distance of a classical code (H) or of a quantum code (H with G or L) with the dist_m4ri binary, using the
+    distance cache shared by compute_classical_distance(), compute_quantum_distance(), and the two sectors of
+    compute_css_distance() (the warnings for the expert options are issued by the callers).
+
+    A cache record answers the request if it holds the exact distance, or with the stop target dstop > 0 a lower
+    bound dmin >= dstop (and the codewords, if needed).  Otherwise, the binary is run, starting from the cached bounds,
+    and the merged bounds are stored.  The codewords of the run (or the cached ones) are written to outC.
+
+    Returns:
+        dict with the distance "dist" (see _dist_from_bounds()), the bounds "dmin", "dmax", "rw_steps", "d_info"
+        (see format_bounds_list()), the codewords "cws" (empty unless need_cws), and "cached" (True if no binary run).
+    """
+    global _distance_cache
+    finC_given = finC
+    finC = check_finc_outc(finC, outC, verbose=verbose)
+
+    def write_cached_cws(cws_res: List[List[int]]) -> None:
+        # the cached codewords to outC; with finC identical to outC, the codewords already in the file are kept
+        if outC and cws_res:
+            if finC_given and os.path.abspath(finC_given) == os.path.abspath(outC) and os.path.isfile(outC):
+                cws_res = _union_cws(read_sparse_vectors(outC), cws_res)
+            _write_nzlist_file(outC, cws_res)
+
+    code_key = cached_entry = plain_key = plain_entry = None
+    eff_dmin, eff_dmax = dmin, dmax
+    if _use_distance_cache:
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
+        try:
+            plain_key = _matrix_cache_key(H, G, L, classical)
+            code_key, cached_entry, plain_entry = _resolve_start_cache(
+                plain_key, start_list, lambda e: _single_entry_is_exact(e, need_cws, dstop), trust_start,
+                lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
+            )
+            eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
+            if cached_entry is not None:
+                c_dmin, c_dmax = cached_entry.get("dmin", 0) or 0, cached_entry.get("dmax", 0) or 0
+                if _single_entry_is_exact(cached_entry, need_cws, dstop):
+                    c_rw = cached_entry.get("rw_steps", 0) or 0
+                    d_info = format_bounds_list(c_dmin, c_dmax, c_rw)
+                    found = "exact distance" if (c_dmin > 0 and c_dmin == c_dmax) else f"dmin={c_dmin} >= dstop={dstop}"
+                    if verbose:
+                        print(f"[dist_m4ri] Cache retrieval: SUCCESS (found cached {found} for '{code_key}')")
+                        print(f"[dist_m4ri] Cached result: dist={_dist_from_bounds(c_dmin, c_dmax)}, "
+                              f"bounds={format_bounds_str(d_info)}")
+                    elif debug & PY_DBG_CACHE:
+                        print(f"[dist_m4ri] Cache hit for {kind} distance ({found} known)!")
+                    cws_res = [list(cw) for cw in cached_entry.get("cws", [])] if need_cws else []
+                    write_cached_cws(cws_res)
+                    return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax,
+                            "rw_steps": c_rw, "d_info": d_info, "cws": cws_res, "cached": True}
+                if verbose:
+                    print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached bounds: dmin={c_dmin}, dmax={c_dmax}, "
+                          f"rw_steps={cached_entry.get('rw_steps', 0)}; continuing search)")
+                eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, cached_entry)
+            elif verbose:
+                print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
+        except Exception:
+            code_key = cached_entry = plain_key = plain_entry = None
+    elif verbose:
+        print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
+
+    if wmax > 0 and eff_dmin > max(wmax, dmin):  # a cached lower bound beyond wmax (the binary needs dmin <= wmax)
+        src = cached_entry or plain_entry
+        if not (method & 1) and src is not None:  # CC only: all weights up to wmax have been analyzed already
+            c_dmin, c_dmax, c_rw = src.get("dmin", 0) or 0, src.get("dmax", 0) or 0, src.get("rw_steps", 0) or 0
+            if verbose:
+                print(f"[dist_m4ri] Cached lower bound dmin={c_dmin} > wmax={wmax}: no CC round needed")
+            cws_res = [list(cw) for cw in src.get("cws", [])] if need_cws else []
+            write_cached_cws(cws_res)
+            return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax, "rw_steps": c_rw,
+                    "d_info": format_bounds_list(c_dmin, c_dmax, c_rw), "cws": cws_res, "cached": True}
+        eff_dmin = max(wmax, dmin)
+
+    temp_files: List[str] = []
+    try:
+        def input_file(M: Any, ext: str) -> Optional[str]:
+            if M is None:
+                return None
+            if isinstance(M, (str, Path)) and os.path.exists(str(M)):
+                return str(M)
+            path = _matrix_to_file(M, extension=ext)
+            temp_files.append(path)
+            return path
+
+        file_H, file_G, file_L = input_file(H, "_H.mtx"), input_file(G, "_G.mtx"), input_file(L, "_L.mtx")
+        outC_file = None
+        if need_cws:
+            outC_file = create_unique_file(extension="_cws.nz")
+            temp_files.append(outC_file)
+
+        dmin_res, dmax_res, rw_steps = run_dist_m4ri(
+            dist_m4ri_path=dist_m4ri,
+            method=method,
+            finH=file_H,
+            finG=file_G,
+            finL=file_L,
+            finC=finC,
+            classical=1 if classical else 0,
+            dmin=eff_dmin,
+            dmax=eff_dmax,
+            dstop=dstop,
+            wmin=wmin,
+            wmax=wmax,
+            smax=smax,
+            start=start_list,
+            warn_start=False,
+            warn_ksub=False,
+            dexp=d_exp,
+            steps=num_steps,
+            threads=threads,
+            timeout=timeout,
+            dW=dW,
+            maxC=maxC,
+            outC=outC_file,
+            seed=seed,
+            debug=debug,
+            nothrottle=nothrottle,
+            chunk_size=chunk_size,
+            ksub=ksub,
+            kwin=kwin,
+            win_mode=win_mode,
+            min_hits=min_hits,
+            cov_cws=cov_cws,
+            refresh=refresh,
+            verbose=verbose
+        )
+
+        cws: List[List[int]] = []
+        if need_cws and outC_file and os.path.exists(outC_file):
+            cws = read_sparse_vectors(outC_file)
+            cws.sort(key=len)
+            if outC:
+                _write_nzlist_file(outC, cws)
+
+        if _use_distance_cache and code_key is not None:
+            prev = cached_entry or {}
+            p_dmax = prev.get("dmax", 0) or 0
+            best_dmax = min(p_dmax, dmax_res) if (p_dmax > 0 and dmax_res > 0) else max(p_dmax, dmax_res)
+            best_dmin = max(prev.get("dmin", 0) or 0, dmin_res)
+            total_rw = (prev.get("rw_steps", 0) or 0) + rw_steps
+            record = _sector_record(best_dmin, best_dmax, total_rw, _union_cws(prev.get("cws", []), cws))
+            _distance_cache[code_key] = record
+            if plain_key is not None and code_key != plain_key:
+                # start-list run: merge the valid part (or all, with trust_start) into the main record
+                _merge_start_into_plain(plain_key, record, trust_start, {"": rw_steps})
+            if eff_cache_file:
+                save_distance_cache(eff_cache_file)
+            return {"dist": record["dist"], "dmin": record["dmin"], "dmax": record["dmax"], "rw_steps": total_rw,
+                    "d_info": record["d_info"], "cws": record["cws"] if need_cws else [], "cached": False}
+
+        return {"dist": _dist_from_bounds(dmin_res, dmax_res), "dmin": dmin_res, "dmax": dmax_res,
+                "rw_steps": rw_steps, "d_info": format_bounds_list(dmin_res, dmax_res, rw_steps), "cws": cws,
+                "cached": False}
+    finally:
+        _remove_temp_files(temp_files, debug)
+
+
 def compute_classical_distance(
     H: Any,
     dist_m4ri: Optional[str] = None,
@@ -2933,6 +3232,7 @@ def compute_classical_distance(
     d_max: int = 0,
     dmin: int = 0,
     dmax: int = 0,
+    dstop: int = 0,
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
@@ -2977,6 +3277,11 @@ def compute_classical_distance(
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance.
         d_max / dmax: Known upper bound on distance.
+        dstop: Stop target for the lower bound (default: 0 = off): the search ends once CC has certified
+            dmin >= dstop (method=2 or 3), unless a lighter codeword is found.  Unlike dmax, dstop is not an upper
+            bound, and it is not reported as dmax: d_info = [dmin, w, rw_steps] with dmin >= dstop and the weight w
+            of the lightest codeword found (0: none).  A cached lower bound dmin >= dstop answers the request without
+            a calculation.
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
@@ -3016,15 +3321,6 @@ def compute_classical_distance(
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
 
-    finC = check_finc_outc(finC, outC, verbose=verbose)
-
-    global _distance_cache, _use_distance_cache, _distance_cache_file
-    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
-    code_key = None
-    cached_entry = None
-    plain_key = None
-    plain_entry = None
-
     if solver == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
@@ -3048,171 +3344,19 @@ def compute_classical_distance(
         return d
 
     # Solver is native multithreaded dist_m4ri (supports bounds caching and cumulative RW steps)
-    if _use_distance_cache:
-        if eff_cache_file:
-            load_distance_cache(eff_cache_file)
-        try:
-            h_state = get_sparse_array_state(H)
-            plain_key = f"classical:{h_state}"
-            code_key, cached_entry, plain_entry = _resolve_start_cache(
-                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC)), trust_start,
-                lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
-            )
-            eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
-            if cached_entry is not None:
-                # If exact distance is already proven and not asking for more codewords
-                if cached_entry.get("dmin", 0) > 0 and cached_entry.get("dmin") == cached_entry.get("dmax"):
-                    if not (do_cws or outC) or (cached_entry.get("cws") and len(cached_entry["cws"]) > 0):
-                        d_info = format_bounds_list(
-                            cached_entry.get("dmin", 0), cached_entry.get("dmax", 0), cached_entry.get("rw_steps", 0)
-                        )
-                        if verbose:
-                            print(f"[dist_m4ri] Cache retrieval: SUCCESS "
-                                  f"(found cached exact distance for '{code_key}')")
-                            print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
-                                  f"bounds={format_bounds_str(d_info)}")
-                        elif debug & PY_DBG_CACHE:
-                            print("[dist_m4ri] Cache hit for classical distance (exact distance known)!")
-                        cws_res = cached_entry.get("cws", [])
-                        if outC and cws_res:
-                            _write_nzlist_file(outC, cws_res)
-                        if return_info:
-                            return (
-                                cached_entry["dist"], d_info, cws_res
-                            ) if do_cws else (
-                                cached_entry["dist"], d_info
-                            )
-                        return (cached_entry["dist"], cws_res) if do_cws else cached_entry["dist"]
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached bounds: "
-                          f"dmin={cached_entry.get('dmin', 0)}, dmax={cached_entry.get('dmax', 0)}, "
-                          f"rw_steps={cached_entry.get('rw_steps', 0)}; continuing search)")
-                # Use existing cached bounds to accelerate subsequent runs
-                if eff_dmax == 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = cached_entry["dmax"]
-                elif eff_dmax > 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = min(eff_dmax, cached_entry["dmax"])
-                if eff_dmin <= 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = cached_entry["dmin"]
-                elif eff_dmin > 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = max(eff_dmin, cached_entry["dmin"])
-            else:
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
-        except Exception:
-            code_key = None
-            cached_entry = None
-            plain_key = None
-            plain_entry = None
-    else:
-        if verbose:
-            print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
-
-    temp_files = []
-    try:
-        if isinstance(H, (str, Path)) and os.path.exists(str(H)):
-            file_H = str(H)
-        else:
-            file_H = _matrix_to_file(H, extension="_H.mtx")
-            temp_files.append(file_H)
-
-        outC_file = None
-        if do_cws or outC:
-            outC_file = create_unique_file(extension="_cws.nz")
-            temp_files.append(outC_file)
-
-        dmin_res, dmax_res, rw_steps = run_dist_m4ri(
-            dist_m4ri_path=dist_m4ri,
-            method=method,
-            finH=file_H,
-            finC=finC,
-            classical=1,
-            dmin=eff_dmin,
-            dmax=eff_dmax,
-            wmin=wmin,
-            wmax=wmax,
-            smax=smax,
-            start=start_list,
-            warn_start=False,
-            warn_ksub=False,
-            dexp=d_exp,
-            steps=num_steps,
-            threads=threads,
-            timeout=timeout,
-            dW=dW,
-            maxC=maxC,
-            outC=outC_file,
-            seed=seed,
-            debug=debug,
-            nothrottle=nothrottle,
-            chunk_size=chunk_size,
-            ksub=ksub,
-            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-            win_mode=win_mode,
-            min_hits=min_hits,
-            cov_cws=cov_cws,
-            refresh=refresh,
-            verbose=verbose
-        )
-
-        dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
-        cws = []
-        if (do_cws or outC) and outC_file and os.path.exists(outC_file):
-            cws = read_sparse_vectors(outC_file)
-            cws.sort(key=len)
-            if outC:
-                _write_nzlist_file(outC, cws)
-
-        d_info = format_bounds_list(dmin_res, dmax_res, rw_steps)
-
-        if _use_distance_cache and code_key is not None:
-            prev_steps = cached_entry.get("rw_steps", 0) if cached_entry else 0
-            prev_dmax = cached_entry.get("dmax", 0) if cached_entry else 0
-            prev_dmin = cached_entry.get("dmin", 0) if cached_entry else 0
-            prev_cws = list(cached_entry.get("cws", [])) if cached_entry else []
-
-            total_rw_steps = prev_steps + rw_steps
-            best_dmax = (
-                min(prev_dmax, dmax_res) if (prev_dmax > 0 and dmax_res > 0)
-                else (dmax_res if dmax_res > 0 else prev_dmax)
-            )
-            best_dmin = max(prev_dmin, dmin_res)
-
-            combined_cws = prev_cws
-            if cws:
-                existing_set = {tuple(cw) for cw in combined_cws}
-                for cw in cws:
-                    if tuple(cw) not in existing_set:
-                        combined_cws.append(cw)
-                        existing_set.add(tuple(cw))
-                combined_cws.sort(key=len)
-
-            d_info = format_bounds_list(best_dmin, best_dmax, total_rw_steps)
-
-            _distance_cache[code_key] = {
-                "dist": dist,
-                "dmin": best_dmin,
-                "dmax": best_dmax,
-                "rw_steps": total_rw_steps,
-                "d_info": d_info,
-                "cws": combined_cws
-            }
-            if plain_key is not None and code_key != plain_key:
-                # start-list run: merge the valid part (or all, with trust_start) into the main record
-                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, {"": rw_steps})
-            if eff_cache_file:
-                save_distance_cache(eff_cache_file)
-
-            if return_info:
-                return (dist, d_info, combined_cws) if do_cws else (dist, d_info)
-            return (dist, combined_cws) if do_cws else dist
-
-        if return_info:
-            return (dist, d_info, cws) if do_cws else (dist, d_info)
-        return (dist, cws) if do_cws else dist
-
-    finally:
-        _remove_temp_files(temp_files, debug)
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    res = _cached_code_distance(
+        H, None, None, True, "classical", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
+        num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
+        smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
+        eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
+        chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+    )
+    dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
+    if return_info:
+        return (dist, d_info, cws) if do_cws else (dist, d_info)
+    return (dist, cws) if do_cws else dist
 
 
 def compute_quantum_distance(
@@ -3229,6 +3373,7 @@ def compute_quantum_distance(
     d_max: int = 0,
     dmin: int = 0,
     dmax: int = 0,
+    dstop: int = 0,
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
@@ -3276,6 +3421,11 @@ def compute_quantum_distance(
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance.
         d_max / dmax: Known upper bound on distance.
+        dstop: Stop target for the lower bound (default: 0 = off): the search ends once CC has certified
+            dmin >= dstop (method=2 or 3), unless a lighter codeword is found.  Unlike dmax, dstop is not an upper
+            bound, and it is not reported as dmax: d_info = [dmin, w, rw_steps] with dmin >= dstop and the weight w
+            of the lightest codeword found (0: none).  A cached lower bound dmin >= dstop answers the request without
+            a calculation.
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
@@ -3321,15 +3471,6 @@ def compute_quantum_distance(
             "must be specified for quantum distance."
         )
 
-    finC = check_finc_outc(finC, outC, verbose=verbose)
-
-    global _distance_cache, _use_distance_cache, _distance_cache_file
-    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
-    code_key = None
-    cached_entry = None
-    plain_key = None
-    plain_entry = None
-
     if solver == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
@@ -3362,193 +3503,20 @@ def compute_quantum_distance(
             return d, d_info
         return d
 
-    # Solver is native multithreaded dist_m4ri
-    if _use_distance_cache:
-        if eff_cache_file:
-            load_distance_cache(eff_cache_file)
-        try:
-            h_state = get_sparse_array_state(H)
-            if G is not None:
-                g_state = get_sparse_array_state(G)
-                plain_key = f"quantum:H={h_state}:G={g_state}"
-            else:
-                l_state = get_sparse_array_state(L)
-                plain_key = f"quantum:H={h_state}:L={l_state}"
-            code_key, cached_entry, plain_entry = _resolve_start_cache(
-                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC)), trust_start,
-                lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
-            )
-            eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
-            if cached_entry is not None:
-                if cached_entry.get("dmin", 0) > 0 and cached_entry.get("dmin") == cached_entry.get("dmax"):
-                    if not (do_cws or outC) or (cached_entry.get("cws") and len(cached_entry["cws"]) > 0):
-                        d_info = format_bounds_list(
-                            cached_entry.get("dmin", 0), cached_entry.get("dmax", 0), cached_entry.get("rw_steps", 0)
-                        )
-                        if verbose:
-                            print(f"[dist_m4ri] Cache retrieval: SUCCESS "
-                                  f"(found cached exact distance for '{code_key}')")
-                            print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
-                                  f"bounds={format_bounds_str(d_info)}")
-                        elif debug & PY_DBG_CACHE:
-                            print("[dist_m4ri] Cache hit for quantum distance (exact distance known)!")
-                        cws_res = cached_entry.get("cws", [])
-                        if outC and cws_res:
-                            _write_nzlist_file(outC, cws_res)
-                        if return_info:
-                            return (
-                                cached_entry["dist"], d_info, cws_res
-                            ) if do_cws else (
-                                cached_entry["dist"], d_info
-                            )
-                        return (cached_entry["dist"], cws_res) if do_cws else cached_entry["dist"]
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached bounds: "
-                          f"dmin={cached_entry.get('dmin', 0)}, dmax={cached_entry.get('dmax', 0)}, "
-                          f"rw_steps={cached_entry.get('rw_steps', 0)}; continuing search)")
-                if eff_dmax == 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = cached_entry["dmax"]
-                elif eff_dmax > 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = min(eff_dmax, cached_entry["dmax"])
-                if eff_dmin <= 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = cached_entry["dmin"]
-                elif eff_dmin > 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = max(eff_dmin, cached_entry["dmin"])
-            else:
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
-        except Exception:
-            code_key = None
-            cached_entry = None
-            plain_key = None
-            plain_entry = None
-    else:
-        if verbose:
-            print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
-
-    temp_files = []
-    try:
-        if isinstance(H, (str, Path)) and os.path.exists(str(H)):
-            file_H = str(H)
-        else:
-            file_H = _matrix_to_file(H, extension="_H.mtx")
-            temp_files.append(file_H)
-
-        file_G = None
-        if G is not None:
-            if isinstance(G, (str, Path)) and os.path.exists(str(G)):
-                file_G = str(G)
-            else:
-                file_G = _matrix_to_file(G, extension="_G.mtx")
-                temp_files.append(file_G)
-
-        file_L = None
-        if L is not None:
-            if isinstance(L, (str, Path)) and os.path.exists(str(L)):
-                file_L = str(L)
-            else:
-                file_L = _matrix_to_file(L, extension="_L.mtx")
-                temp_files.append(file_L)
-
-        outC_file = None
-        if do_cws or outC:
-            outC_file = create_unique_file(extension="_cws.nz")
-            temp_files.append(outC_file)
-
-        dmin_res, dmax_res, rw_steps = run_dist_m4ri(
-            dist_m4ri_path=dist_m4ri,
-            method=method,
-            finH=file_H,
-            finG=file_G,
-            finL=file_L,
-            finC=finC,
-            classical=0,
-            dmin=eff_dmin,
-            dmax=eff_dmax,
-            wmin=wmin,
-            wmax=wmax,
-            smax=smax,
-            start=start_list,
-            warn_start=False,
-            warn_ksub=False,
-            dexp=d_exp,
-            steps=num_steps,
-            threads=threads,
-            timeout=timeout,
-            dW=dW,
-            maxC=maxC,
-            outC=outC_file,
-            seed=seed,
-            debug=debug,
-            nothrottle=nothrottle,
-            chunk_size=chunk_size,
-            ksub=ksub,
-            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-            win_mode=win_mode,
-            min_hits=min_hits,
-            cov_cws=cov_cws,
-            refresh=refresh,
-            verbose=verbose
-        )
-
-        dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
-        cws = []
-        if (do_cws or outC) and outC_file and os.path.exists(outC_file):
-            cws = read_sparse_vectors(outC_file)
-            cws.sort(key=len)
-            if outC:
-                _write_nzlist_file(outC, cws)
-
-        d_info = format_bounds_list(dmin_res, dmax_res, rw_steps)
-
-        if _use_distance_cache and code_key is not None:
-            prev_steps = cached_entry.get("rw_steps", 0) if cached_entry else 0
-            prev_dmax = cached_entry.get("dmax", 0) if cached_entry else 0
-            prev_dmin = cached_entry.get("dmin", 0) if cached_entry else 0
-            prev_cws = list(cached_entry.get("cws", [])) if cached_entry else []
-
-            total_rw_steps = prev_steps + rw_steps
-            best_dmax = (
-                min(prev_dmax, dmax_res) if (prev_dmax > 0 and dmax_res > 0)
-                else (dmax_res if dmax_res > 0 else prev_dmax)
-            )
-            best_dmin = max(prev_dmin, dmin_res)
-
-            combined_cws = prev_cws
-            if cws:
-                existing_set = {tuple(cw) for cw in combined_cws}
-                for cw in cws:
-                    if tuple(cw) not in existing_set:
-                        combined_cws.append(cw)
-                        existing_set.add(tuple(cw))
-                combined_cws.sort(key=len)
-
-            d_info = format_bounds_list(best_dmin, best_dmax, total_rw_steps)
-
-            _distance_cache[code_key] = {
-                "dist": dist,
-                "dmin": best_dmin,
-                "dmax": best_dmax,
-                "rw_steps": total_rw_steps,
-                "d_info": d_info,
-                "cws": combined_cws
-            }
-            if plain_key is not None and code_key != plain_key:
-                # start-list run: merge the valid part (or all, with trust_start) into the main record
-                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, {"": rw_steps})
-            if eff_cache_file:
-                save_distance_cache(eff_cache_file)
-
-            if return_info:
-                return (dist, d_info, combined_cws) if do_cws else (dist, d_info)
-            return (dist, combined_cws) if do_cws else dist
-
-        if return_info:
-            return (dist, d_info, cws) if do_cws else (dist, d_info)
-        return (dist, cws) if do_cws else dist
-
-    finally:
-        _remove_temp_files(temp_files, debug)
+    # Solver is native multithreaded dist_m4ri (the cache records are shared with the sectors of CSS codes)
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    res = _cached_code_distance(
+        H, G, L, False, "quantum", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
+        num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
+        smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
+        eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
+        chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+    )
+    dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
+    if return_info:
+        return (dist, d_info, cws) if do_cws else (dist, d_info)
+    return (dist, cws) if do_cws else dist
 
 
 def _split_css_filename(filepath: Optional[str], sector: str) -> Optional[str]:
@@ -3597,6 +3565,7 @@ def compute_css_distance(
     d_max: int = 0,
     dmin: int = 0,
     dmax: int = 0,
+    dstop: int = 0,
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
@@ -3641,8 +3610,12 @@ def compute_css_distance(
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
-        d_min / dmin: Known lower bound on distance, inclusive.
-        d_max / dmax: Known upper bound on distance, inclusive.
+        d_min / dmin: Known lower bound on d = min(dX, dZ), inclusive (a lower bound of both sectors).
+        d_max / dmax: Known upper bound on d = min(dX, dZ), inclusive.  As it is not an upper bound of either
+            sector, it is passed to both sector runs as the stop target dstop (each sector is needed only up to this
+            weight), and it is not stored in the sector cache records; the returned d is at most dmax.
+        dstop: Stop target for the lower bound of d (default: 0 = off): both sector runs end once CC has certified
+            dmin >= dstop, unless a lighter codeword is found (see compute_classical_distance()).
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
@@ -3665,7 +3638,9 @@ def compute_css_distance(
         finC: Input file with initial codewords.
         outC: Output file to save codewords (NZLIST format).
         do_cws: Whether to return extracted X and Z codewords.
-        cache_file: Optional JSON file path for persistent distance caching.
+        cache_file: Optional JSON file path for persistent distance caching.  The two sectors are cached as the
+            quantum codes (H=Hx, G=Hz) -> dZ and (H=Hz, G=Hx) -> dX (with L=Lx / L=Lz if given), i.e., they share
+            the records of compute_quantum_distance(); CSS records written before version 0.12.0 are converted.
         solver: "dist_m4ri" or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
@@ -3689,21 +3664,11 @@ def compute_css_distance(
             "compute_css_distance() requires both Hx and Hz (file names, or matrices with at least one row); "
             "use compute_quantum_distance() for one sector, or compute_classical_distance() for a classical code."
         )
-    can_compute_Z = can_compute_X = True  # both sectors are always computed
-    css_sectors = ["X", "Z"]
 
     eff_dmin = dmin if dmin > 0 else d_min
-    eff_dmax = dmax if dmax > 0 else d_max
+    eff_dmax = dmax if dmax > 0 else d_max  # an upper bound on d = min(dX, dZ), not on either sector
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
-    # finC: the sector files finC_X / finC_Z (or finC itself) are resolved by _css_sector_finc() below
-
-    global _distance_cache, _use_distance_cache, _distance_cache_file
-    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
-    code_key = None
-    cached_entry = None
-    plain_key = None
-    plain_entry = None
 
     if solver == "codedistance":
         if do_cws or outC:
@@ -3714,380 +3679,79 @@ def compute_css_distance(
         if num_steps is not None and "iterCount" not in params:
             params["iterCount"] = num_steps
 
-        dist_Z, dist_X = None, None
-        dX_info, dZ_info = None, None
-
         Hx_mat = Hx.toarray() if hasattr(Hx, 'toarray') else (
             np.asarray(Hx, dtype=np.int8) if isinstance(Hx, (np.ndarray, list)) else None
         )
         Hz_mat = Hz.toarray() if hasattr(Hz, 'toarray') else (
             np.asarray(Hz, dtype=np.int8) if isinstance(Hz, (np.ndarray, list)) else None
         )
-
-        if can_compute_Z:
-            res_Z = codedistance.CSScodeDistance(
+        sector_d: Dict[str, int] = {}
+        sector_info: Dict[str, List[int]] = {}
+        for s in ("Z", "X"):
+            res_s = codedistance.CSScodeDistance(
                 Hx_mat, Hz_mat, method=codedistance_method, params=params.copy(),
-                component="Z", seed=seed if seed != 0 else None
+                component=s, seed=seed if seed != 0 else None
             )
-            dist_Z = res_Z.get("d", -1)
-            dZ_info = format_bounds_list(dist_Z, dist_Z, 0) if dist_Z > 0 else [0, 0, 0]
+            sector_d[s] = res_s.get("d", -1)
+            sector_info[s] = format_bounds_list(sector_d[s], sector_d[s], 0) if sector_d[s] > 0 else [0, 0, 0]
+        d_z, d_x = sector_d["Z"], sector_d["X"]
+        dist = min(d_z, d_x) if (d_z > 0 and d_x > 0) else max(d_z, d_x)
+        return (dist, sector_info["X"], sector_info["Z"])
 
-        if can_compute_X:
-            res_X = codedistance.CSScodeDistance(
-                Hx_mat, Hz_mat, method=codedistance_method, params=params.copy(),
-                component="X", seed=seed if seed != 0 else None
-            )
-            dist_X = res_X.get("d", -1)
-            dX_info = format_bounds_list(dist_X, dist_X, 0) if dist_X > 0 else [0, 0, 0]
+    # Solver is native multithreaded dist_m4ri: the two sectors are quantum codes, (H=Hx, G=Hz) -> dZ and
+    # (H=Hz, G=Hx) -> dX (with L=Lx / L=Lz instead if given), with the same cache records as compute_quantum_distance().
+    # A user dmax (a bound on min(dX, dZ)) is not an upper bound of either sector: it is passed as the stop target.
+    global _last_run_stats
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    stops = [v for v in (dstop, eff_dmax) if v > 0]
+    sector_stop = min(stops) if stops else 0
+    need_cws = bool(do_cws or outC)
 
-        if dist_X is not None and dist_Z is not None:
-            dist = min(dist_Z, dist_X) if (dist_Z > 0 and dist_X > 0) else max(dist_Z, dist_X)
-        elif dist_X is not None:
-            dist = dist_X
-        else:
-            dist = dist_Z
-
-        return (dist, dX_info, dZ_info)
-
-    # Solver is native multithreaded dist_m4ri
+    # Sector-specific input codewords: the files finC_X / finC_Z if they exist, otherwise finC itself
+    finC_X, finC_Z = _css_sector_finc(finC, outC)
+    if verbose and finC and not (finC_X or finC_Z):
+        print(f"[dist_m4ri] Warning: finC='{finC}' (identical to outC) and its sector files are empty or "
+              f"non-existent; silently ignoring input codewords.")
     if _use_distance_cache:
         if eff_cache_file:
             load_distance_cache(eff_cache_file)
         try:
-            hx_state = get_sparse_array_state(Hx) if can_compute_Z else "none"
-            hz_state = get_sparse_array_state(Hz) if can_compute_X else "none"
-            plain_key = f"css:X={hx_state}:Z={hz_state}"
-            if Lx is not None or Lz is not None:
-                lx_state = get_sparse_array_state(Lx) if Lx is not None else "none"
-                lz_state = get_sparse_array_state(Lz) if Lz is not None else "none"
-                plain_key = f"{plain_key}:Lx={lx_state}:Lz={lz_state}"
-            code_key, cached_entry, plain_entry = _resolve_start_cache(
-                plain_key, start_list,
-                lambda e: _css_entry_is_exact(e, can_compute_X, can_compute_Z, bool(do_cws or outC)), trust_start,
-                lambda e: _merge_start_into_plain(plain_key, e, True, None, css_sectors), eff_cache_file, verbose
-            )
-            if cached_entry is not None:
-                c_dmin_x = cached_entry.get("dmin_X", cached_entry.get("dmin", 0))
-                c_dmax_x = cached_entry.get("dmax_X", cached_entry.get("dmax", 0))
-                c_dmin_z = cached_entry.get("dmin_Z", cached_entry.get("dmin", 0))
-                c_dmax_z = cached_entry.get("dmax_Z", cached_entry.get("dmax", 0))
-                x_exact = (not can_compute_X) or (c_dmin_x > 0 and c_dmin_x == c_dmax_x)
-                z_exact = (not can_compute_Z) or (c_dmin_z > 0 and c_dmin_z == c_dmax_z)
-                # If exact distance is already proven for all requested sectors and not asking for more codewords
-                if x_exact and z_exact and (c_dmax_x > 0 or c_dmax_z > 0):
-                    if not (do_cws or outC) or (cached_entry.get("cws_X") and cached_entry.get("cws_Z")):
-                        dx_res = cached_entry.get(
-                            "dX",
-                            format_bounds_list(
-                                c_dmin_x,
-                                c_dmax_x,
-                                cached_entry.get("rw_steps_X", 0)
-                            )
-                        )
-                        dz_res = cached_entry.get(
-                            "dZ",
-                            format_bounds_list(
-                                c_dmin_z,
-                                c_dmax_z,
-                                cached_entry.get("rw_steps_Z", 0)
-                            )
-                        )
-                        if verbose:
-                            print(f"[dist_m4ri] Cache retrieval: SUCCESS "
-                                  f"(found cached exact CSS distance for '{code_key}')")
-                            print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
-                                  f"dX={format_bounds_str(dx_res)}, dZ={format_bounds_str(dz_res)}")
-                        elif debug & PY_DBG_CACHE:
-                            print("[dist_m4ri] Cache hit for CSS distance (exact distance known)!")
-                        cws_x = cached_entry.get("cws_X", [])
-                        cws_z = cached_entry.get("cws_Z", [])
-                        if outC:  # the sector files outC_X / outC_Z, as after a calculation
-                            same_file = bool(finC) and os.path.abspath(finC) == os.path.abspath(outC)
-                            for sector, cws_s in (("X", cws_x), ("Z", cws_z)):
-                                out_s = _split_css_filename(outC, sector)
-                                existing = read_sparse_vectors(out_s) if (same_file and os.path.exists(out_s)) else []
-                                unique = list({tuple(cw): cw for cw in existing + (cws_s or [])}.values())
-                                unique.sort(key=len)
-                                if unique:
-                                    _write_nzlist_file(out_s, unique)
-                        return (
-                            cached_entry["dist"], dx_res, dz_res,
-                            cws_x, cws_z
-                        ) if do_cws else (
-                            cached_entry["dist"], dx_res, dz_res
-                        )
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached CSS bounds: "
-                          f"dmin={cached_entry.get('dmin', 0)}, dmax={cached_entry.get('dmax', 0)}; "
-                          f"continuing search)")
-            else:
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
+            if _migrate_css_records(Hx, Hz, Lx, Lz, eff_cache_file) and verbose:
+                print("[dist_m4ri] Converted the CSS cache records written before version 0.12.0 into sector records")
         except Exception:
-            code_key = None
-            cached_entry = None
-            plain_key = None
-            plain_entry = None
-    else:
+            pass
+
+    codes = _css_sector_codes(Hx, Hz, Lx, Lz)
+    res: Dict[str, Dict[str, Any]] = {}
+    for s, finC_s in (("Z", finC_Z), ("X", finC_X)):
+        H_s, G_s, L_s = codes[s]
         if verbose:
-            print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
+            dual = ("Hx" if s == "X" else "Hz") if G_s is not None else ("Lz" if s == "X" else "Lx")
+            print(f"[dist_m4ri] CSS sector d{s}: H={'Hz' if s == 'X' else 'Hx'} with "
+                  f"{'G' if G_s is not None else 'L'}={dual}")
+        _last_run_stats = {}
+        res[s] = _cached_code_distance(
+            H_s, G_s, L_s, False, f"CSS {s}-sector", dist_m4ri=dist_m4ri, method=method, threads=threads,
+            timeout=timeout, num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=0, dstop=sector_stop, wmin=wmin,
+            wmax=wmax, smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC_s,
+            outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
+            seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
+            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+        )
+        _last_css_stats[s] = dict(_last_run_stats)
 
-    temp_files = []
-    try:
-        if can_compute_Z and not isinstance(Hx, (str, Path)):
-            file_Hx = _matrix_to_file(Hx, extension="_Hx.mtx")
-            temp_files.append(file_Hx)
-        else:
-            file_Hx = str(Hx) if can_compute_Z else None
-
-        if can_compute_X and not isinstance(Hz, (str, Path)):
-            file_Hz = _matrix_to_file(Hz, extension="_Hz.mtx")
-            temp_files.append(file_Hz)
-        else:
-            file_Hz = str(Hz) if can_compute_X else None
-
-        if Lx is not None and not isinstance(Lx, (str, Path)):
-            file_Lx = _matrix_to_file(Lx, extension="_Lx.mtx")
-            temp_files.append(file_Lx)
-        else:
-            file_Lx = str(Lx) if Lx is not None else None
-
-        if Lz is not None and not isinstance(Lz, (str, Path)):
-            file_Lz = _matrix_to_file(Lz, extension="_Lz.mtx")
-            temp_files.append(file_Lz)
-        else:
-            file_Lz = str(Lz) if Lz is not None else None
-
-        outZ = create_unique_file(extension="_Z.nz") if ((do_cws or outC) and can_compute_Z) else None
-        outX = create_unique_file(extension="_X.nz") if ((do_cws or outC) and can_compute_X) else None
-        if outZ:
-            temp_files.append(outZ)
-        if outX:
-            temp_files.append(outX)
-
-        dist_Z, dist_X = None, None
-        dmin_z, dmax_z, rw_steps_z = 0, 0, 0
-        dmin_x, dmax_x, rw_steps_x = 0, 0, 0
-        cws_Z, cws_X = [], []
-
-        # Sector-specific input codewords: the files finC_X / finC_Z if they exist, otherwise finC itself
-        finC_X, finC_Z = _css_sector_finc(finC, outC)
-        if verbose and finC and not (finC_X or finC_Z):
-            print(f"[dist_m4ri] Warning: finC='{finC}' (identical to outC) and its sector files are empty or "
-                  f"non-existent; silently ignoring input codewords.")
-
-        # Seed sector-specific bounds from cache if available
-        eff_dmin_z, eff_dmax_z = eff_dmin, eff_dmax
-        eff_dmin_x, eff_dmax_x = eff_dmin, eff_dmax
-        if cached_entry is not None:
-            cz_min = cached_entry.get("dmin_Z", cached_entry.get("dmin", 0))
-            cz_max = cached_entry.get("dmax_Z", cached_entry.get("dmax", 0))
-            cx_min = cached_entry.get("dmin_X", cached_entry.get("dmin", 0))
-            cx_max = cached_entry.get("dmax_X", cached_entry.get("dmax", 0))
-            if cz_min > 1:
-                eff_dmin_z = max(eff_dmin_z, cz_min) if eff_dmin_z > 1 else cz_min
-            if cz_max > 0:
-                eff_dmax_z = min(eff_dmax_z, cz_max) if eff_dmax_z > 0 else cz_max
-            if cx_min > 1:
-                eff_dmin_x = max(eff_dmin_x, cx_min) if eff_dmin_x > 1 else cx_min
-            if cx_max > 0:
-                eff_dmax_x = min(eff_dmax_x, cx_max) if eff_dmax_x > 0 else cx_max
-        # Start-list run: also seed from the main (plain-key) record
-        eff_dmin_z, eff_dmax_z = _seed_bounds_from_entry(eff_dmin_z, eff_dmax_z, plain_entry, "_Z")
-        eff_dmin_x, eff_dmax_x = _seed_bounds_from_entry(eff_dmin_x, eff_dmax_x, plain_entry, "_X")
-
-        # Z-distance: Hx as finH, Hz as finG (or Lx as finL dual logical operators)
-        if can_compute_Z:
-            dmin_z, dmax_z, rw_steps_z = run_dist_m4ri(
-                dist_m4ri_path=dist_m4ri,
-                method=method,
-                finH=file_Hx,
-                finG=file_Hz if file_Lx is None else None,
-                finL=file_Lx,
-                finC=finC_Z,
-                dmin=eff_dmin_z,
-                dmax=eff_dmax_z,
-                wmin=wmin,
-                wmax=wmax,
-                smax=smax,
-                start=start_list,
-                warn_start=False,
-                warn_ksub=False,
-                dexp=d_exp,
-                steps=num_steps,
-                threads=threads,
-                timeout=timeout,
-                dW=dW,
-                maxC=maxC,
-                outC=outZ,
-                seed=seed,
-                debug=debug,
-                nothrottle=nothrottle,
-                chunk_size=chunk_size,
-                ksub=ksub,
-                kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-                win_mode=win_mode,
-                min_hits=min_hits,
-                cov_cws=cov_cws,
-                refresh=refresh,
-                verbose=verbose
-            )
-            _last_css_stats["Z"] = dict(_last_run_stats)
-            dist_Z = dmin_z if (dmin_z == dmax_z or dmax_z == 0) else dmax_z
-            if (do_cws or outC) and outZ and os.path.exists(outZ):
-                cws_Z = read_sparse_vectors(outZ)
-                cws_Z.sort(key=len)
-
-        # X-distance: Hz as finH, Hx as finG (or Lz as finL dual logical operators)
-        if can_compute_X:
-            dmin_x, dmax_x, rw_steps_x = run_dist_m4ri(
-                dist_m4ri_path=dist_m4ri,
-                method=method,
-                finH=file_Hz,
-                finG=file_Hx if file_Lz is None else None,
-                finL=file_Lz,
-                finC=finC_X,
-                dmin=eff_dmin_x,
-                dmax=eff_dmax_x,
-                wmin=wmin,
-                wmax=wmax,
-                smax=smax,
-                start=start_list,
-                warn_start=False,
-                warn_ksub=False,
-                dexp=d_exp,
-                steps=num_steps,
-                threads=threads,
-                timeout=timeout,
-                dW=dW,
-                maxC=maxC,
-                outC=outX,
-                seed=seed,
-                debug=debug,
-                nothrottle=nothrottle,
-                chunk_size=chunk_size,
-                ksub=ksub,
-                kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-                win_mode=win_mode,
-                min_hits=min_hits,
-                cov_cws=cov_cws,
-                refresh=refresh,
-                verbose=verbose
-            )
-            _last_css_stats["X"] = dict(_last_run_stats)
-            dist_X = dmin_x if (dmin_x == dmax_x or dmax_x == 0) else dmax_x
-            if (do_cws or outC) and outX and os.path.exists(outX):
-                cws_X = read_sparse_vectors(outX)
-                cws_X.sort(key=len)
-
-        run_rw_steps = {"_X": rw_steps_x, "_Z": rw_steps_z}  # RW steps of this run (before merging the cache)
-        if _use_distance_cache and cached_entry is not None:
-            if can_compute_Z:
-                pz_min = cached_entry.get("dmin_Z", 0)
-                pz_max = cached_entry.get("dmax_Z", 0)
-                pz_rw = cached_entry.get("rw_steps_Z", 0)
-                dmin_z = max(pz_min, dmin_z)
-                dmax_z = min(pz_max, dmax_z) if (pz_max > 0 and dmax_z > 0) else (dmax_z if dmax_z > 0 else pz_max)
-                if dmax_z > 0 and dmin_z >= dmax_z:
-                    dmin_z = dmax_z
-                rw_steps_z = 0 if (dmin_z > 0 and dmin_z == dmax_z) else (pz_rw + rw_steps_z)
-                dist_Z = dmin_z if (dmin_z == dmax_z or dmax_z == 0) else dmax_z
-            if can_compute_X:
-                px_min = cached_entry.get("dmin_X", 0)
-                px_max = cached_entry.get("dmax_X", 0)
-                px_rw = cached_entry.get("rw_steps_X", 0)
-                dmin_x = max(px_min, dmin_x)
-                dmax_x = min(px_max, dmax_x) if (px_max > 0 and dmax_x > 0) else (dmax_x if dmax_x > 0 else px_max)
-                if dmax_x > 0 and dmin_x >= dmax_x:
-                    dmin_x = dmax_x
-                rw_steps_x = 0 if (dmin_x > 0 and dmin_x == dmax_x) else (px_rw + rw_steps_x)
-                dist_X = dmin_x if (dmin_x == dmax_x or dmax_x == 0) else dmax_x
-
-        dX_info = format_bounds_list(dmin_x, dmax_x, rw_steps_x) if can_compute_X else None
-        dZ_info = format_bounds_list(dmin_z, dmax_z, rw_steps_z) if can_compute_Z else None
-
-        if dist_X is not None and dist_Z is not None:
-            dist = min(dist_Z, dist_X) if (dist_Z > 0 and dist_X > 0) else max(dist_Z, dist_X)
-        elif dist_X is not None:
-            dist = dist_X
-        else:
-            dist = dist_Z
-
-        if outC:
-            outC_X = _split_css_filename(outC, "X")
-            outC_Z = _split_css_filename(outC, "Z")
-            if cws_X:
-                _write_nzlist_file(outC_X, cws_X)
-            if cws_Z:
-                _write_nzlist_file(outC_Z, cws_Z)
-
-        res_tuple = (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws else (dist, dX_info, dZ_info)
-
-        if _use_distance_cache and code_key is not None:
-            total_rw_steps = (rw_steps_z if can_compute_Z else 0) + (rw_steps_x if can_compute_X else 0)
-
-            curr_dmax = 0
-            if can_compute_Z and can_compute_X:
-                if dmax_z > 0 and dmax_x > 0:
-                    curr_dmax = min(dmax_z, dmax_x)
-            elif can_compute_Z:
-                curr_dmax = dmax_z
-            elif can_compute_X:
-                curr_dmax = dmax_x
-            best_dmax = curr_dmax
-
-            curr_dmin = 0
-            if can_compute_Z and can_compute_X:
-                curr_dmin = min(dmin_z, dmin_x)
-            elif can_compute_Z:
-                curr_dmin = dmin_z
-            elif can_compute_X:
-                curr_dmin = dmin_x
-            best_dmin = curr_dmin
-
-            combined_cws_x = list(cached_entry.get("cws_X", [])) if cached_entry else []
-            if cws_X:
-                existing_x = {tuple(cw) for cw in combined_cws_x}
-                for cw in cws_X:
-                    if tuple(cw) not in existing_x:
-                        combined_cws_x.append(cw)
-                        existing_x.add(tuple(cw))
-                combined_cws_x.sort(key=len)
-
-            combined_cws_z = list(cached_entry.get("cws_Z", [])) if cached_entry else []
-            if cws_Z:
-                existing_z = {tuple(cw) for cw in combined_cws_z}
-                for cw in cws_Z:
-                    if tuple(cw) not in existing_z:
-                        combined_cws_z.append(cw)
-                        existing_z.add(tuple(cw))
-                combined_cws_z.sort(key=len)
-
-            _distance_cache[code_key] = {
-                "dist": dist,
-                "dmin": best_dmin,
-                "dmax": best_dmax,
-                "rw_steps": total_rw_steps,
-                "dmin_X": dmin_x,
-                "dmax_X": dmax_x,
-                "rw_steps_X": rw_steps_x,
-                "dmin_Z": dmin_z,
-                "dmax_Z": dmax_z,
-                "rw_steps_Z": rw_steps_z,
-                "dX": dX_info,
-                "dZ": dZ_info,
-                "cws_X": combined_cws_x,
-                "cws_Z": combined_cws_z
-            }
-            if plain_key is not None and code_key != plain_key:
-                # start-list run: merge the valid part (or all, with trust_start) into the main record
-                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, run_rw_steps, css_sectors)
-            if eff_cache_file:
-                save_distance_cache(eff_cache_file)
-        return res_tuple
-
-    finally:
-        _remove_temp_files(temp_files, debug)
+    rx, rz = res["X"], res["Z"]
+    dist, d_lo, d_hi, _ = _css_combine((rx["dmin"], rx["dmax"], rx["rw_steps"]),
+                                       (rz["dmin"], rz["dmax"], rz["rw_steps"]), eff_dmax)
+    if rx["cached"] and rz["cached"] and (debug & PY_DBG_CACHE) and not verbose:
+        found = ("exact distance" if (d_lo > 0 and d_lo == d_hi) else
+                 f"dmin={d_lo} >= dstop={sector_stop}" if (sector_stop > 0 and d_lo >= sector_stop) else
+                 f"bounds dmin={d_lo}, dmax={d_hi}")
+        print(f"[dist_m4ri] Cache hit for CSS distance ({found} known)!")
+    if do_cws:
+        return (dist, rx["d_info"], rz["d_info"], rx["cws"], rz["cws"])
+    return (dist, rx["d_info"], rz["d_info"])
 
 
 def _resolve_stim_dem_out_path(
@@ -4155,6 +3819,7 @@ def compute_dem_distance(
     d_max: int = 0,
     dmin: int = 0,
     dmax: int = 0,
+    dstop: int = 0,
     wmin: int = 1,
     wmax: int = 0,
     smax: Optional[int] = None,
@@ -4207,6 +3872,7 @@ def compute_dem_distance(
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance, inclusive.
         d_max / dmax: Known upper bound on distance, inclusive.
+        dstop: Stop target for the lower bound (see compute_classical_distance(); default: 0 = off).
         wmin: Minimum distance of interest (terminate early if cw of weight <= wmin is found in RW or CC, default: 1).
         wmax: Maximum weight to search in CC.
         smax: Maximum syndrome weight for CC confinement profile.
@@ -4479,32 +4145,28 @@ def compute_dem_distance(
             dem_state = get_sparse_array_state(dem_obj)
             plain_key = f"dem:{dem_state}" if pmin <= 0.0 else f"dem:{dem_state}:pmin={pmin}"
             code_key, cached_entry, plain_entry = _resolve_start_cache(
-                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC)), trust_start,
+                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC), dstop), trust_start,
                 lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
             )
             eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
             if cached_entry is not None:
-                # If exact distance is already proven and not asking for more codewords
-                if cached_entry.get("dmin", 0) > 0 and cached_entry.get("dmin") == cached_entry.get("dmax"):
-                    if not (do_cws or outC) or (cached_entry.get("cws") and len(cached_entry["cws"]) > 0):
-                        d_info = format_bounds_list(
-                            cached_entry.get("dmin", 0), cached_entry.get("dmax", 0), cached_entry.get("rw_steps", 0)
-                        )
-                        if verbose:
-                            print(f"[dist_m4ri] Cache retrieval: SUCCESS "
-                                  f"(found cached exact DEM distance for '{code_key}')")
-                            print(f"[dist_m4ri] Cached result: dist={cached_entry['dist']}, "
-                                  f"bounds={format_bounds_str(d_info)}")
-                        elif debug & PY_DBG_CACHE:
-                            print("[dist_m4ri] Cache hit for DEM distance (exact distance known)!")
-                        cws_res = cached_entry.get("cws", [])
-                        if outC and cws_res:
-                            _write_nzlist_file(outC, cws_res)
-                        return (
-                            cached_entry["dist"], d_info, cws_res
-                        ) if do_cws else (
-                            cached_entry["dist"], d_info
-                        )
+                # The exact distance (or with dstop > 0 a lower bound dmin >= dstop), and codewords if needed
+                if _single_entry_is_exact(cached_entry, bool(do_cws or outC), dstop):
+                    c_dmin, c_dmax = cached_entry.get("dmin", 0) or 0, cached_entry.get("dmax", 0) or 0
+                    d_info = format_bounds_list(c_dmin, c_dmax, cached_entry.get("rw_steps", 0))
+                    found = ("exact DEM distance" if (c_dmin > 0 and c_dmin == c_dmax)
+                             else f"DEM bound dmin={c_dmin} >= dstop={dstop}")
+                    if verbose:
+                        print(f"[dist_m4ri] Cache retrieval: SUCCESS (found cached {found} for '{code_key}')")
+                        print(f"[dist_m4ri] Cached result: dist={_dist_from_bounds(c_dmin, c_dmax)}, "
+                              f"bounds={format_bounds_str(d_info)}")
+                    elif debug & PY_DBG_CACHE:
+                        print(f"[dist_m4ri] Cache hit for DEM distance ({found} known)!")
+                    cws_res = cached_entry.get("cws", [])
+                    if outC and cws_res:
+                        _write_nzlist_file(outC, cws_res)
+                    c_dist = _dist_from_bounds(c_dmin, c_dmax)
+                    return (c_dist, d_info, cws_res) if do_cws else (c_dist, d_info)
                 if verbose:
                     print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached DEM bounds: "
                           f"dmin={cached_entry.get('dmin', 0)}, dmax={cached_entry.get('dmax', 0)}; "
@@ -4529,6 +4191,21 @@ def compute_dem_distance(
     else:
         if verbose:
             print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
+
+    user_dmin = dmin if dmin > 0 else d_min
+    if wmax > 0 and eff_dmin > max(wmax, user_dmin):  # a cached lower bound beyond wmax (the binary needs dmin <= wmax)
+        src = cached_entry or plain_entry
+        if not (method & 1) and src is not None:  # CC only: all weights up to wmax have been analyzed already
+            c_dmin, c_dmax = src.get("dmin", 0) or 0, src.get("dmax", 0) or 0
+            if verbose:
+                print(f"[dist_m4ri] Cached lower bound dmin={c_dmin} > wmax={wmax}: no CC round needed")
+            d_info = format_bounds_list(c_dmin, c_dmax, src.get("rw_steps", 0) or 0)
+            cws_res = list(src.get("cws", []))
+            if outC and cws_res:
+                _write_nzlist_file(outC, cws_res)
+            c_dist = _dist_from_bounds(c_dmin, c_dmax)
+            return (c_dist, d_info, cws_res) if do_cws else (c_dist, d_info)
+        eff_dmin = max(wmax, user_dmin)
 
     temp_files = []
     try:
@@ -4559,6 +4236,7 @@ def compute_dem_distance(
             finC=finC,
             dmin=eff_dmin,
             dmax=eff_dmax,
+            dstop=dstop,
             wmin=wmin,
             wmax=wmax,
             smax=smax if smax is not None else 0,
@@ -4672,6 +4350,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "outC": None,
         "dmin": 0,
         "dmax": 0,
+        "dstop": 0,
         "wmin": 1,
         "wmax": 0,
         "smax": None,
@@ -4912,6 +4591,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["dmin"] = int(val)
             elif key_lower in ("dmax", "d_max"):
                 args["dmax"] = int(val)
+            elif key_lower == "dstop":
+                args["dstop"] = int(val)
+                if args["dstop"] < 0:
+                    raise ValueError(f"invalid '{arg}': dstop must be non-negative")
             elif key_lower in ("wmin", "w_min"):
                 args["wmin"] = int(val)
             elif key_lower in ("wmax", "w_max"):
@@ -5043,7 +4726,7 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 Allowed parameters:
   fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, classical,
   --simple, --full, basis, --rounds, --out-dir, --out-dem, --out-stim,
-  method, dmin, dmax, dexp (dest), steps, wmin, wmax, timeout, threads,
+  method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax, timeout, threads,
   nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, min_hits,
   cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC,
   dW, seed, debug, solver, cache, --no-cache, --verbose, --cws, --trust-start
@@ -5080,6 +4763,7 @@ Method and distance bounds:
   method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
   dmin=N                Certified lower bound, inclusive (CC starts from dmin) (default: 0)
   dmax=N                Known upper bound, inclusive (CC up to w=dmax-1 only) (default: 0)
+  dstop=N               Stop once CC certifies dmin>=dstop (not an upper bound) (default: 0)
   dexp=N                Expected distance estimate (alias: dest) (default: 0)
 
 Search limits and stopping criteria:
@@ -5184,7 +4868,14 @@ Distance bounds and guidance:
   dmax=N                Known upper bound on distance (default: 0).
                         CC ends once dmin = dmax (with outC, after the rounds w = dmax..dmax+dW);
                         RW ignores candidate codewords of weight >= dmax unless collecting codewords
-                        or needed for min_hits.
+                        or needed for min_hits.  For a CSS code (Hx=, Hz=), dmax is a bound on
+                        d = min(dX, dZ), not on either sector: it is used as dstop for both sectors.
+  dstop=N               Stop target for the lower bound (default: 0 = off): the search (method=2
+                        or 3) ends once CC has certified dmin >= dstop, unless a lighter codeword is
+                        found.  Unlike dmax, dstop is not an upper bound and is not reported as dmax
+                        (the bounds are 'dmin w steps' with dmin >= dstop, w: the lightest codeword
+                        found, or 0); a cached lower bound dmin >= dstop answers the request without
+                        a calculation.  E.g., dstop=U wmin=U-1 decides whether d >= U.
   dexp=N                Expected code distance estimate (alias: dest) (default: 0).
                         Hint for method=3: as long as RW has found no codeword, CC rounds at
                         w > dexp run only on threads which cannot run RW (CC pauses if RW can
@@ -5388,6 +5079,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 d_exp=args["dexp"],
                 dmin=args["dmin"],
                 dmax=args["dmax"],
+                dstop=args["dstop"],
                 wmin=args["wmin"],
                 wmax=args["wmax"],
                 smax=args["smax"],
@@ -5433,7 +5125,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args["verbose"]:
                 print("=== DEM Distance Results ===")
                 print(explain_bounds(
-                    d_info, method=args["method"], label="DEM", stats=_last_run_stats
+                    d_info, method=args["method"], label="DEM", stats=_last_run_stats, dstop=args["dstop"]
                 ))
                 print(f"  Summary bounds: {format_bounds_str(d_info)}")
             print(format_bounds_str(d_info))
@@ -5457,6 +5149,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 d_exp=args["dexp"],
                 dmin=args["dmin"],
                 dmax=args["dmax"],
+                dstop=args["dstop"],
                 wmin=args["wmin"],
                 wmax=args["wmax"],
                 smax=args["smax"],
@@ -5496,27 +5189,26 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 dist, dx_info, dz_info = res
 
-            exact_tag = (
-                " (exact)" if (
-                    dx_info and dx_info[0] > 0 and dx_info[0] == dx_info[1]
-                    and dz_info and dz_info[0] > 0 and dz_info[0] == dz_info[1]
-                ) else ""
-            )
-            
+            # d = min(dX, dZ) is exact if its bounds coincide (a user dmax is a bound on d, see compute_css_distance)
+            _, d_lo, d_hi, _ = _css_combine(tuple(dx_info), tuple(dz_info), args["dmax"])
+            exact_tag = " (exact)" if (d_lo > 0 and d_lo == d_hi) else ""
+            stops = [v for v in (args["dstop"], args["dmax"]) if v > 0]
+            sector_stop = min(stops) if stops else 0
+
             if args["verbose"]:
                 print("=== CSS Quantum Code Distance Results ===")
                 if dx_info:
                     print("--- X-Component Distance (dX) ---")
                     print(explain_bounds(
                         dx_info, method=args["method"], label="dX",
-                        stats=_last_css_stats.get("X")
+                        stats=_last_css_stats.get("X"), dstop=sector_stop
                     ))
                     print(f"  dX bounds: {format_bounds_str(dx_info)}")
                 if dz_info:
                     print("--- Z-Component Distance (dZ) ---")
                     print(explain_bounds(
                         dz_info, method=args["method"], label="dZ",
-                        stats=_last_css_stats.get("Z")
+                        stats=_last_css_stats.get("Z"), dstop=sector_stop
                     ))
                     print(f"  dZ bounds: {format_bounds_str(dz_info)}")
                 print("--- Overall CSS Code Distance ---")
@@ -5547,6 +5239,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 d_exp=args["dexp"],
                 dmin=args["dmin"],
                 dmax=args["dmax"],
+                dstop=args["dstop"],
                 wmin=args["wmin"],
                 wmax=args["wmax"],
                 smax=args["smax"],
@@ -5585,7 +5278,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args["verbose"]:
                 print("=== Quantum Code Distance Results (Single-Sided) ===")
                 print(explain_bounds(
-                    d_info, method=args["method"], label="Quantum", stats=_last_run_stats
+                    d_info, method=args["method"], label="Quantum", stats=_last_run_stats, dstop=args["dstop"]
                 ))
                 print(f"  Summary bounds: {format_bounds_str(d_info)}")
             print(format_bounds_str(d_info))
@@ -5602,6 +5295,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 d_exp=args["dexp"],
                 dmin=args["dmin"],
                 dmax=args["dmax"],
+                dstop=args["dstop"],
                 wmin=args["wmin"],
                 wmax=args["wmax"],
                 smax=args["smax"],
@@ -5640,7 +5334,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if args["verbose"]:
                 print("=== Classical Code Distance Results ===")
                 print(explain_bounds(
-                    d_info, method=args["method"], label="Classical", stats=_last_run_stats
+                    d_info, method=args["method"], label="Classical", stats=_last_run_stats, dstop=args["dstop"]
                 ))
                 print(f"  Summary bounds: {format_bounds_str(d_info)}")
             print(format_bounds_str(d_info))

@@ -44,6 +44,9 @@ $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits 
   - `rw_steps` is the number of completed RW steps across all threads (`0` if CC found a minimum-weight codeword, or
     if RW did not run in `method=2`).
   - When `dmin = dmax = d`, the exact code distance is confirmed.
+  - With a stop target `dstop=U` (`method=2` or `3`), the run ends once CC has certified `dmin >= U`, unless a codeword
+    of weight `< U` is found; `dmax` is then the weight of the lightest codeword found (`0` if none), never `U`, since
+    `dstop` is not an upper bound (see [Bracketing Mode](#3-bracketing-mode-method3-default)).
 
 > **Note on Compatibility**: This 3-number output format (`dmin dmax rw_steps`) is specific to the multithreaded
 > `dist_m4ri` and is incompatible with the legacy single-threaded `dist_m4ri_old` (which returned a single integer `d`
@@ -108,15 +111,18 @@ If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `out
 columns for weight $w$ to collect all unique minimum-weight codewords.
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
 $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
-soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`).
+soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`). A stop target `dstop=U` ends the scan
+once $d_{\min} \ge U$ (with `outC`, after the rounds $w = U, \dots, U + \text{dW}$), and $d_{\max}$ remains the weight
+of the lightest codeword found (`0` if none).
 With a `timeout`, each round is started even if it is predicted not to finish in time (its CC work, the total CC
 thread time, is extrapolated from the last two rounds with their growth factor, clamped to $[2, 10]$; a note is
 printed): a round which cannot be completed may still find a codeword of weight $w = d_{\min}$, i.e., the exact
 distance.
 
 Relevant parameters:
-- `wmax=[int]`: Maximum cluster weight to search (optional with `timeout>0`, the default, or with `dmax>0`, where the
-  rounds end once $d_{\min} = d_{\max}$; otherwise required for `method=2`).
+- `wmax=[int]`: Maximum cluster weight to search (optional with `timeout>0`, the default, with `dmax>0`, where the
+  rounds end once $d_{\min} = d_{\max}$, or with `dstop>0`, where they end once $d_{\min} \ge$ `dstop`; otherwise
+  required for `method=2`).
 - `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning;
   set e.g. `smax=5` to compute confinement).
 
@@ -189,6 +195,11 @@ determine the exact code distance as quickly as possible.
      threads which cannot run RW (see
      [Multithreading, Throttling & Batch Sizing](#4-multithreading-throttling--batch-sizing)), i.e., CC pauses if RW
      can use all threads. CC resumes as soon as RW finds a codeword, or when RW ends.
+   - A stop target `dstop=U` (not an upper bound) takes the place of $d_{\max}$ as long as no codeword of weight
+     $< U$ is known: the run ends once the round $w = U - 1$ certifies $d_{\min} \ge U$ (with `outC`, after the rounds
+     $w = U, \dots, U + \text{dW}$), without waiting for RW, and $d_{\max}$ is the weight of the lightest codeword found
+     (`0` if none). E.g., `dstop=U wmin=U-1` decides whether $d \ge U$, and for a CSS code with
+     $d = \min(d_X, d_Z) \le U$ known (e.g., from the other sector), `dstop=U` is all that is needed.
 2. **Predictive Workload Modeling**:
    - The RW threads measure the RW step time $t_{\text{RW}}$ (thread time per step) continuously. The CC work of each
      round is measured as the total CC thread time, and the work of the next round is extrapolated with the growth
@@ -228,6 +239,9 @@ determine the exact code distance as quickly as possible.
 Relevant parameters:
 - `dexp=[int]` (alias: `dest=[int]`): Expected code distance, a hint for the thread allocation before RW finds a
   codeword (see above).
+- `dstop=[int]`: Stop target for the lower bound (default: 0, off; see above, also for `method=2`). Unlike `dmax`, it is
+  not an upper bound, and it is never reported as `dmax`. A supplied `dmin >= dstop` ends the run without a search
+  (unless codewords are collected with `outC` or `maxC`); otherwise, `dstop` has no effect with `method=1`.
 - `threads=[int]`: Maximum number of worker threads (default: hardware concurrency; subject to throttling unless
   `nothrottle=1` is specified).
 - `nothrottle=[int]`: Disable automatic thread throttling (default: 0; CLI flag: `--no-throttle`).
@@ -379,8 +393,8 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 - **`outC=[file.nz]`**: Saves the discovered codewords of weight up to $w_{\min} + \text{dW}$ ($w_{\min}$: the minimum
   weight found) in standard **NZLIST** format (heavier codewords kept only for the `min_hits` statistic are not
   exported). With `method=2` or `3`, once the distance $d$ is known, the CC rounds $w = d, \dots, d + \text{dW}$
-  enumerate all such codewords (unless the `timeout` is hit); with `method=1`, only the codewords found by RW are
-  exported:
+  enumerate all such codewords (unless the `timeout` is hit; with a stop target `dstop=U` below $d$, only the rounds up
+  to $w = U + \text{dW}$ run); with `method=1`, only the codewords found by RW are exported:
   ```text
   %% NZLIST
   % generated by dist_m4ri
@@ -408,7 +422,7 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.11.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.12.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -429,6 +443,7 @@ Input matrices (Matrix Market .mmx/.mtx format or Stim DEM):
 Distance bounds and guidance:
   dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)
   dmax=[int]         Known upper bound on distance (CC up to w=dmax-1 only) (0)
+  dstop=[int]        Stop once CC certifies dmin>=dstop (not an upper bound) (0)
   dexp=[int]         Expected distance for method=3 thread allocation (alias: dest) (0)
 
 Search limits and stopping criteria:
@@ -545,7 +560,11 @@ interoperability without manual threading overhead.
   of the binary, one for each sector); both `Hx` and `Hz` are required (otherwise `ValueError`; use
   `compute_quantum_distance()` for one sector). With `outC="cws.nz"`, the $X$- and $Z$-codewords are saved to
   `cws_X.nz` and `cws_Z.nz`; with `finC="cws.nz"`, the files `cws_X.nz` and `cws_Z.nz` are read if they exist, and
-  otherwise the same file is given to both runs (codewords which are not valid in a sector are skipped).
+  otherwise the same file is given to both runs (codewords which are not valid in a sector are skipped). A known upper
+  bound `dmax` on $d$ is not an upper bound of either sector: it is passed to both sector runs as the stop target
+  `dstop` (and it is not stored in the cache), and the returned $d$ is at most `dmax`. The two sectors are cached as
+  the quantum codes `(H=Hx, G=Hz)` ($d_Z$) and `(H=Hz, G=Hx)` ($d_X$), with `L=Lx` / `L=Lz` if given, i.e., with the
+  same cache records as `compute_quantum_distance()`.
 - `compute_dem_distance(dem=None, circuit=None, simple=None, full=False, basis=None, rounds=None, out_dir=None,`:
   `out_dem=None, out_stim=None, ...)`:
   Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file:
@@ -576,7 +595,15 @@ interoperability without manual threading overhead.
   `get_cached_distance(..., start=None)`, and the `cache_file` argument of the `compute_*_distance()` functions (a
   persistent JSON file with the version `"__version__"`; the CLI uses `tmp_dist_cache.json` in the working directory
   unless `--no-cache` or `cache=FILE` is given). A cache file written by a newer version is ignored (with a warning)
-  and is not overwritten.
+  and is not overwritten. The CSS records written before version 0.12.0 (keys `css:...`) are converted into the two
+  sector records: the lower bounds are kept, but an upper bound only if a stored codeword confirms it, or if it is
+  smaller than that of the other sector (earlier versions could store a `dmax` given to `compute_css_distance()` as the
+  upper bound of both sectors). Earlier versions ignore a cache file written by version 0.12.0 (with a warning), and
+  they may overwrite it with their own results: use separate cache files for different versions.
+- Stop target `dstop` of all `compute_*_distance()` functions (CLI: `dstop=U`): the search ends once CC has certified
+  `dmin >= dstop`, unless a lighter codeword is found (see [Bracketing Mode](#3-bracketing-mode-method3-default));
+  the bounds are then `[dmin, w, rw_steps]` with `dmin >= dstop` and the weight `w` of the lightest codeword found
+  (`0` if none). A cached lower bound `dmin >= dstop` answers the request without a calculation.
 - Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
   separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
   results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
@@ -647,7 +674,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (94 tests)
+# Run full C test suite (95 tests)
 make test
 ```
 

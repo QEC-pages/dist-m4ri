@@ -571,7 +571,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.11.0" in captured.out
+    assert "0.12.0" in captured.out
 
 
 def test_cli_binary_compatibility_silent(capsys):
@@ -580,7 +580,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.11.0" in captured.out
+    assert "0.12.0" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -599,7 +599,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.11.0" in older_warn
+    assert "expected >= 0.12.0" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1346,6 +1346,157 @@ def test_css_outc_sector_files_and_finc(tmp_path, capsys):
         assert capsys.readouterr().out.count("codewords from " + str(mixed)) == 2
     finally:
         dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def _hgp_rep(a: int, b: int):
+    """Hypergraph product of the repetition codes of lengths a and b (a planar surface code): dZ = a, dX = b."""
+    def rep(n):
+        H = np.zeros((n - 1, n), dtype=np.int8)
+        for i in range(n - 1):
+            H[i, i] = H[i, i + 1] = 1
+        return H
+    H1, H2 = rep(a), rep(b)
+    Hx = np.hstack([np.kron(H1, np.eye(b, dtype=np.int8)), np.kron(np.eye(a - 1, dtype=np.int8), H2.T)]) % 2
+    Hz = np.hstack([np.kron(np.eye(a, dtype=np.int8), H2), np.kron(H1.T, np.eye(b - 1, dtype=np.int8))]) % 2
+    return Hx.astype(np.int8), Hz.astype(np.int8)
+
+
+def test_dstop_stop_target(tmp_path, capsys):
+    import time
+    s5 = dict(finH=S5_H, finL=S5_L)  # d = 5
+    # method=3: the run ends once CC has certified dmin >= dstop, without waiting for RW (here: until the timeout)
+    t0 = time.time()
+    res = dist_m4ri.run_dist_m4ri(method=3, dstop=4, steps=10**8, min_hits=0, timeout=60, threads=4, **s5)
+    assert res[0] == 4 and res[1] in (0, 5) and time.time() - t0 < 30
+    # method=2 needs no wmax with dstop; dstop is not an upper bound (dmax = 0: no codeword found)
+    assert tuple(dist_m4ri.run_dist_m4ri(method=2, dstop=4, threads=2, **s5)) == (4, 0, 0)
+    with pytest.raises(ValueError, match="dstop>0"):
+        dist_m4ri.run_dist_m4ri(method=2, timeout=0, threads=2, **s5)
+
+    cache_file = str(tmp_path / "dstop_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, threads=2, return_info=True, cache_file=cache_file)
+    try:
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, dstop=4, **kw) == (4, [4, 0, 0])
+        # a cached lower bound dmin >= dstop answers the request
+        capsys.readouterr()
+        res2 = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, dstop=3, debug=dist_m4ri.PY_DBG_CACHE, **kw)
+        assert res2 == (4, [4, 0, 0])
+        assert "Cache hit for quantum distance (dmin=4 >= dstop=3 known)!" in capsys.readouterr().out
+        # a larger stop target continues from the cached lower bound, and so does the exact calculation
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, dstop=5, **kw) == (5, [5, 0, 0])
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, wmax=5, **kw) == (5, [5, 5, 0])
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+    text = dist_m4ri.explain_bounds([4, 0, 0], method=2, dstop=4)
+    assert "Stop target (dstop = 4): reached" in text
+    assert "Stop target" not in dist_m4ri.explain_bounds([4, 0, 0], method=2)
+    assert "Stop target" not in dist_m4ri.explain_bounds([5, 5, 0], method=2, dstop=4)
+
+
+def test_cli_dstop(capsys):
+    assert dist_m4ri.parse_cli_args(["dstop=4"])["dstop"] == 4
+    assert dist_m4ri.parse_cli_args([])["dstop"] == 0
+    try:
+        assert dist_m4ri.main([f"finH={S5_H}", "dstop=-1", "--no-cache"]) == 1
+        assert "invalid 'dstop=-1': dstop must be non-negative" in capsys.readouterr().err
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=2", "dstop=4", "threads=2", "--no-cache", "-v"])
+        assert ret == 0
+        out = capsys.readouterr().out
+        assert out.rstrip().endswith("4 0 0") and "Stop target (dstop = 4): reached" in out
+        # CSS: a user dmax (a bound on d = min(dX, dZ)) only stops both sector runs; then d = dmax
+        ret = dist_m4ri.main([f"Hx={TRY_X}", f"Hz={TRY_Z}", "method=2", "dmax=4", "threads=2", "--no-cache"])
+        assert ret == 0
+        assert "dX: 4 0 0  dZ: 4 0 0  (d = 4) (exact)" in capsys.readouterr().out
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_css_user_dmax_and_sector_records(tmp_path, capsys):
+    Hx, Hz = _hgp_rep(3, 5)  # dZ = 3, dX = 5
+    cache_file = str(tmp_path / "css_sectors.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, wmax=6, threads=2, cache_file=cache_file)
+    try:
+        # A user dmax is a bound on d = min(dX, dZ), not on either sector: it stops both sector runs (dstop),
+        # and it is neither reported as nor stored as the upper bound of a sector
+        assert dist_m4ri.compute_css_distance(Hx, Hz, dmax=3, **kw) == (3, [3, 0, 0], [3, 0, 0])
+        assert dist_m4ri.get_cached_distance(H=Hz, G=Hx, cache_file=cache_file)["d_info"] == [3, 0, 0]
+        # Without dmax, both sectors are computed (from the cached lower bounds)
+        assert dist_m4ri.compute_css_distance(Hx, Hz, **kw) == (3, [5, 5, 0], [3, 3, 0])
+        # The sector records are those of compute_quantum_distance(): (H=Hz, G=Hx) -> dX, (H=Hx, G=Hz) -> dZ
+        capsys.readouterr()
+        dbg = dist_m4ri.PY_DBG_CACHE
+        assert dist_m4ri.compute_quantum_distance(Hz, G=Hx, return_info=True, debug=dbg, **kw) == (5, [5, 5, 0])
+        assert dist_m4ri.compute_quantum_distance(Hx, G=Hz, return_info=True, debug=dbg, **kw) == (3, [3, 3, 0])
+        assert capsys.readouterr().out.count("Cache hit for quantum distance (exact distance known)!") == 2
+        entry = dist_m4ri.get_cached_distance(Hx=Hx, Hz=Hz, cache_file=cache_file)
+        assert entry["dX"] == [5, 5, 0] and entry["dZ"] == [3, 3, 0]
+        assert (entry["dist"], entry["dmin"], entry["dmax"]) == (3, 3, 3)
+        assert dist_m4ri.compute_css_distance(Hx, Hz, dstop=3, debug=dbg, **kw) == (3, [5, 5, 0], [3, 3, 0])
+        assert "Cache hit for CSS distance (exact distance known)!" in capsys.readouterr().out
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_css_cache_migration(tmp_path):
+    import json
+    Hx, Hz = _hgp_rep(3, 5)  # dZ = 3, dX = 5
+    st = dist_m4ri.get_sparse_array_state
+    key = f"css:X={st(Hx)}:Z={st(Hz)}"
+    key_x, key_z = f"quantum:H={st(Hz)}:G={st(Hx)}", f"quantum:H={st(Hx)}:G={st(Hz)}"
+    # A CSS record of an earlier version after compute_css_distance(dmax=3): the bound on d = min(dX, dZ) was
+    # reported back as the upper bound of both sectors (wrong for dX = 5)
+    old = {"dist": 3, "dmin": 3, "dmax": 3, "rw_steps": 0, "dmin_X": 3, "dmax_X": 3, "rw_steps_X": 0,
+           "dmin_Z": 3, "dmax_Z": 3, "rw_steps_Z": 0, "dX": [3, 3, 0], "dZ": [3, 3, 0], "cws_X": [], "cws_Z": []}
+    cache_file = tmp_path / "old_css_cache.json"
+    cache_file.write_text(json.dumps({"__version__": dist_m4ri.__version__, key: old}))
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        # The lower bounds are kept, the unconfirmed upper bounds are dropped, and the old record is removed
+        entry = dist_m4ri.get_cached_distance(Hx=Hx, Hz=Hz, cache_file=str(cache_file))
+        assert entry["dX"] == [3, 0, 0] and entry["dZ"] == [3, 0, 0]
+        data = json.loads(cache_file.read_text())
+        assert key not in data and key_x in data and key_z in data
+        res = dist_m4ri.compute_css_distance(Hx, Hz, method=2, wmax=6, threads=2, cache_file=str(cache_file))
+        assert res == (3, [5, 5, 0], [3, 3, 0])
+
+        # An upper bound confirmed by a stored codeword (only its weight is used here), or smaller than the upper
+        # bound of the other sector, is kept
+        dist_m4ri.clear_distance_cache()
+        old2 = dict(old, dmax_X=5, cws_X=[[0, 1, 2, 3, 4]], dmax_Z=3)
+        cache_file.write_text(json.dumps({"__version__": dist_m4ri.__version__, key: old2}))
+        entry2 = dist_m4ri.get_cached_distance(Hx=Hx, Hz=Hz, cache_file=str(cache_file))
+        assert entry2["dX"] == [3, 5, 0] and entry2["dZ"] == [3, 3, 0] and entry2["cws_X"] == [[0, 1, 2, 3, 4]]
+        assert (entry2["dist"], entry2["dmin"], entry2["dmax"]) == (3, 3, 3)
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_cached_outc_keeps_finc_codewords(tmp_path):
+    cache_file = str(tmp_path / "cws_cache.json")
+    out = str(tmp_path / "cws.nz")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, wmax=5, threads=2, cache_file=cache_file)
+    try:
+        d, cws = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, outC=out, do_cws=True, **kw)
+        assert d == 5 and len(cws) >= 2
+        extra = sorted(set(cws[0]) ^ set(cws[1]))  # another vector (of even weight, not in cws)
+        dist_m4ri._write_nzlist_file(out, cws + [extra])
+        # A cache hit with finC identical to outC keeps the codewords in the file
+        d2, cws2 = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, finC=out, outC=out, do_cws=True, **kw)
+        assert d2 == 5 and sorted(map(tuple, cws2)) == sorted(map(tuple, cws))
+        assert sorted(map(tuple, dist_m4ri.read_sparse_vectors(out))) == sorted(map(tuple, cws + [extra]))
+        # Without finC, outC gets the cached codewords
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, outC=out, **kw)
+        assert sorted(map(tuple, dist_m4ri.read_sparse_vectors(out))) == sorted(map(tuple, cws))
+    finally:
         dist_m4ri.clear_distance_cache()
 
 

@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.11.0" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.0" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.11.0" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.12.0" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -688,11 +688,11 @@ assert_output "$BIN_FORK method=3 $S5 dmin=5 dmax=5 threads=2 debug=1" 0 "^5 5 0
 assert_output "$BIN_FORK method=2 $S5 wmax=4 threads=2 debug=8" 0 "^5 0 0$" \
     "^# CC round w=4 work: [0-9.e+-]+ thread-s measured, [0-9.e+-]+ thread-s predicted"
 
-# Test 90: method=2 without wmax and timeout: a known upper bound dmax suffices (CC ends once dmin=dmax), otherwise
-# an error
+# Test 90: method=2 without wmax and timeout: a known upper bound dmax (or a stop target dstop) suffices (CC ends once
+# dmin=dmax, or dmin=dstop), otherwise an error
 assert_output "$BIN_FORK method=2 $S5 dmax=5 timeout=0 threads=2 debug=0" 0 "^5 5 0$" ""
 assert_output "$BIN_FORK method=2 $S5 timeout=0 threads=2 debug=0" 255 "" \
-    "either parameter wmax>0, dmax>0, or timeout>0 should be specified for CC method=2"
+    "either parameter wmax>0, dmax>0, dstop>0, or timeout>0 should be specified for CC method=2"
 
 # Test 91: logical check L c != 0 with the column bit masks of L for more than 64 logical operators ([[900,182,8]]:
 # three words per column), in RW and in CC
@@ -727,6 +727,25 @@ assert_output "$BIN_FORK method=2 wmax=8 threads=2 debug=0 fin=" 255 "" "'fin=':
 # the steps are uniform also for batches of one step (chunk_size=1)
 assert_output "$BIN_FORK method=1 $S5 steps=1000 chunk_size=1 min_hits=0 threads=2 debug=1" 0 "^1 [0-9]+ 1000$" \
     "^# RW information sets: n=1958, rank\(H\)=120, steps=1000 \(uniform permutations: 500\)"
+
+# Test 95: stop target dstop (not an upper bound): method=3 ends once CC certifies dmin=dstop, without waiting for RW
+# (which would run until the timeout here); dmax is the lightest codeword found (0: none), never dstop; method=2 needs
+# no wmax; a lighter codeword gives the exact distance; a supplied dmin >= dstop needs no search; dstop >= 0
+assert_output "$BIN_FORK method=3 $S5 dstop=4 steps=100000000 min_hits=0 timeout=60 threads=4 debug=1" \
+    0 "^4 (0|5) [0-9]+$" "^# stopped after [0-9.]+s: lower bound dmin=4 reached dstop=4$"
+assert_output "$BIN_FORK method=2 $S5 dstop=4 threads=2 debug=1" 0 "^4 0 0$" \
+    "^# stopped after [0-9.]+s: lower bound dmin=4 reached dstop=4$"
+assert_output "$BIN_FORK method=3 $S5 dstop=7 threads=2 debug=0" 0 "^5 5 [0-9]+$" ""
+assert_output "$BIN_FORK method=1 $S5 dmin=4 dstop=4 debug=1" 0 "^4 0 0$" \
+    "^# stopped: lower bound dmin=4 >= dstop=4 \(supplied, no search\)$"
+assert_output "$BIN_FORK method=3 $S5 dstop=-1 debug=0" 255 "" "invalid 'dstop=-1': dstop must be non-negative"
+# with outC, the codewords of weight up to dstop+dW are collected (here d=5: the round w=6 is not needed)
+CWS95=$(mktemp --suffix=.nz)
+for m in 2 3; do
+    assert_output "$BIN_FORK method=$m $S5 dstop=4 dW=1 outC=$CWS95 threads=4 debug=1" 0 "^5 5 0$" \
+        "^# stopped after [0-9.]+s: CC enumerated all codewords of weight 5 \(for outC\)$"
+done
+rm -f "$CWS95"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

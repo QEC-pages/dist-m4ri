@@ -18,6 +18,11 @@
  * or if RW did not run in method=2).
  * NOTE: This 3-number output format is incompatible with legacy single-threaded dist_m4ri_old.
  *
+ * Stop target dstop (method=2, 3): the run ends once CC has certified dmin >= dstop, i.e., that there is no codeword
+ * of weight < dstop (with outC, after the rounds w = dstop..dstop+dW which collect codewords), unless a lighter
+ * codeword has been found (then the search goes on as usual).  Unlike dmax, dstop is not an upper bound and is never
+ * reported as dmax.  E.g., for d = min(dX, dZ) of a CSS code with d <= U known, the sector runs need dstop=U only.
+ *
  * Expert CC options (see `--morehelp`) restrict the CC search:
  * - noscan=1 (method=2): a single CC round at w=wmax.  Unless the supplied dmin equals wmax,
  *   lower weights are not scanned, so a codeword found only sets dmax and dmin is not raised.
@@ -225,7 +230,8 @@ enum {
   STOP_CC_SLOW,      /* method 3: the next CC round is predicted not to finish before the timeout, and RW ended */
   STOP_WMIN,         /* a codeword of weight <= wmin found */
   STOP_MAXC,         /* maxC codewords collected */
-  STOP_COLLECTED     /* the CC rounds w = d..d+dW enumerated all codewords to collect (outC, maxC) */
+  STOP_COLLECTED,    /* the CC rounds w = d..d+dW enumerated all codewords to collect (outC, maxC) */
+  STOP_DSTOP         /* the lower bound reached the stop target: dmin >= dstop */
 };
 
 /* Stop all threads, recording the `reason` unless one is already recorded */
@@ -233,6 +239,14 @@ static inline void ctx_stop(distfork_ctx_t * const ctx, const int reason) {
   int none = STOP_NONE;
   atomic_compare_exchange_strong(&ctx->stop_reason, &none, reason);
   atomic_store(&ctx->stop_flag, true);
+}
+
+/* The target t of the CC rounds: the upper bound dmax, or the stop target dstop if smaller (0: neither).  The rounds
+ * w <= t-1 certify dmin = t (with outC, the rounds w = t..t+dW collect codewords).  Unlike dmax, dstop is not an upper
+ * bound: once dmin >= dstop, the run ends with the bounds [dmin, dmax] (dmax = 0 if no codeword was found). */
+static inline int ctx_target(const distfork_ctx_t * const ctx, const int cur_dmax) {
+  const int dstop = ctx->p->dstop;
+  return (dstop > 0 && (cur_dmax == 0 || dstop < cur_dmax)) ? dstop : cur_dmax;
 }
 
 typedef struct {
@@ -1150,9 +1164,23 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       }
       w_limit = minint(w_limit, cur_dmax + extra_w);
     }
+    /* The stop target dstop (if below dmax): no rounds w >= dstop are needed, except the rounds w = dstop..dstop+dW
+     * which collect codewords */
+    const int dstop = ctx->p->dstop;
+    if (dstop > 0 && (cur_dmax == 0 || dstop < cur_dmax)) {
+      if (!collecting && atomic_load(&ctx->dmin) >= dstop) {
+        if (ctx->p->debug & DBG_PROGRESS) {
+          fprintf(stderr, "# lower bound dmin=%d reached dstop=%d (CC round w=%d not needed)\n",
+                  atomic_load(&ctx->dmin), dstop, w);
+        }
+        ctx_stop(ctx, STOP_DSTOP);
+        break;
+      }
+      w_limit = minint(w_limit, collecting ? dstop + extra_w : dstop - 1);
+    }
     if (w > w_limit) {
       ctx->stop_w = w - 1;
-      ctx_stop(ctx, STOP_CC_DONE);
+      ctx_stop(ctx, (dstop > 0 && atomic_load(&ctx->dmin) >= dstop) ? STOP_DSTOP : STOP_CC_DONE);
       break;
     }
 
@@ -1310,17 +1338,18 @@ static double m3_rw_step_time(distfork_ctx_t * const ctx) {
   return (elapsed > 5e-5) ? elapsed : 5e-5;
 }
 
-/* Method 3: the largest CC weight needed: dmax-1 once an upper bound dmax is known (with outC, dmax+dW: the rounds
- * w = dmax..dmax+dW enumerate the codewords to export), otherwise wmax (or n); at most MAX_W-2.  (`dexp` only affects
- * the thread split, see m3_plan_cc_threads().) */
+/* Method 3: the largest CC weight needed: t-1 once the target t is known, i.e., the upper bound dmax or the stop
+ * target dstop if smaller (with outC, t+dW: the rounds w = t..t+dW enumerate the codewords to export), otherwise wmax
+ * (or n); at most MAX_W-2.  (`dexp` only affects the thread split, see m3_plan_cc_threads().) */
 static int m3_cc_target_w(const distfork_ctx_t * const ctx, const int cur_dmin, const int cur_dmax) {
   const params_t * const p = ctx->p;
+  const int t = ctx_target(ctx, cur_dmax);
   int target;
-  if (cur_dmax > 0) {
-    if (p->outC && (p->dW > 0 || cur_dmin >= cur_dmax)) {
-      target = cur_dmax + (p->dW > 0 ? p->dW : 0);
+  if (t > 0) {
+    if (p->outC && (p->dW > 0 || cur_dmin >= t)) {
+      target = t + (p->dW > 0 ? p->dW : 0);
     } else {
-      target = cur_dmax - 1;
+      target = t - 1;
     }
   } else {
     target = (p->wmax > 0) ? p->wmax : p->spaH->cols;
@@ -1343,9 +1372,11 @@ static int m3_plan_cc_threads(distfork_ctx_t * const ctx, const int w, const dou
   if (!m3_rw_running(ctx) || atomic_load(&ctx->rw_steps_started) >= ctx->total_rw_steps) return nthr;
   const int cur_dmin = atomic_load(&ctx->dmin);
   const int cur_dmax = atomic_load(&ctx->dmax);
-  /* The round w = dmax-1 certifies dmin = dmax (later rounds only collect codewords).  RW cannot improve this result,
-   * it could only find a codeword of weight w before CC does: all threads run CC. */
-  if (cur_dmax > 0 && (w >= cur_dmax - 1 || cur_dmin >= cur_dmax)) return nthr;
+  /* The round w = t-1 certifies dmin = t (t: dmax, or the stop target dstop if smaller; later rounds only collect
+   * codewords).  RW cannot improve this result, it could only find a codeword of weight w before CC does: all threads
+   * run CC. */
+  const int t = ctx_target(ctx, cur_dmax);
+  if (t > 0 && (w >= t - 1 || cur_dmin >= t)) return nthr;
   /* `dexp` hint: as long as RW has not found any codeword, CC rounds w > dexp run only on the threads which cannot
    * run RW (none: CC pauses) */
   if (cur_dmax == 0 && ctx->dexp > 0 && w > ctx->dexp) return nthr - ctx->rw_threads;
@@ -1435,6 +1466,11 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       /* Bracketing converged and all requested dW rounds completed */
       atomic_store(&ctx->dmin, cur_dmax);
       ctx_stop(ctx, (ctx->p->outC && w > cur_dmax) ? STOP_COLLECTED : STOP_BOUNDS);
+      break;
+    }
+    if (ctx->p->dstop > 0 && cur_dmin >= ctx->p->dstop && w > target_cc_w) {
+      /* The stop target dstop reached (with outC, after the rounds w = dstop..dstop+dW which collect codewords) */
+      ctx_stop(ctx, STOP_DSTOP);
       break;
     }
 
@@ -1599,6 +1635,10 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       atomic_store(&ctx->dmax, cw_found);
 
       int max_w_lim = minint(ctx->p->wmax > 0 ? ctx->p->wmax : nvar, cw_found + ctx->p->dW);
+      if (ctx->p->dstop > 0 && ctx->p->dstop < cw_found) {
+        /* a stop target dstop below the distance: the codewords of weight up to dstop + dW only (as in method 2) */
+        max_w_lim = minint(max_w_lim, ctx->p->dstop + (ctx->p->dW > 0 ? ctx->p->dW : 0));
+      }
       if (ctx->p->outC && ctx->p->dW > 0 && w < max_w_lim) {
         if (ctx->p->debug & DBG_PROGRESS) {
           if (w == cw_found) {
@@ -1672,6 +1712,22 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
           }
           break;
         }
+      } else if (ctx->p->dstop > 0 && new_dmin >= ctx->p->dstop) {
+        /* the stop target dstop reached: no codeword of weight < dstop (RW may still find heavier codewords, but they
+         * are not needed); with outC, the CC rounds w = dstop..dstop+dW collect codewords first */
+        const int w_last = ctx->p->outC ? m3_cc_target_w(ctx, new_dmin, cur_dmax) : 0;
+        if (w_last > w) {
+          if (ctx->p->debug & DBG_PROGRESS) {
+            fprintf(stderr, "# lower bound dmin=%d reached dstop=%d (continuing up to w=%d for dW=%d to export "
+                    "codewords)\n", new_dmin, ctx->p->dstop, w_last, ctx->p->dW > 0 ? ctx->p->dW : 0);
+          }
+        } else {
+          ctx_stop(ctx, STOP_DSTOP);
+          if (ctx->p->debug & DBG_PROGRESS) {
+            fprintf(stderr, "# lower bound dmin=%d reached dstop=%d\n", new_dmin, ctx->p->dstop);
+          }
+          break;
+        }
       }
     }
 
@@ -1724,6 +1780,7 @@ static void print_run_plan(const distfork_ctx_t * const ctx, const int init_dmax
     if (p->method == 3 && ctx->dexp > 0) fprintf(stderr, ", dexp=%d", ctx->dexp);
   }
   if (init_dmax > 0) fprintf(stderr, ", dmax=%d", init_dmax);
+  if (p->dstop > 0) fprintf(stderr, ", dstop=%d", p->dstop);
   if (ctx->timeout > 0.0) fprintf(stderr, ", timeout=%gs", ctx->timeout);
   else fprintf(stderr, ", no timeout");
   fprintf(stderr, ", seed=%d\n", p->seed);
@@ -1776,10 +1833,21 @@ static void print_stop_reason(distfork_ctx_t * const ctx, const int final_dmax, 
   case STOP_MAXC:
     fprintf(stderr, "maxC=%lld codewords collected", p->maxC);
     break;
-  case STOP_COLLECTED:
+  case STOP_COLLECTED: {
+    /* the collection rounds w = d..d+dW (with outC), but at most up to dstop+dW (a stop target dstop < d) and wmax */
+    int w_hi = final_dmax;
+    if (p->outC && p->dW > 0) {
+      w_hi = final_dmax + p->dW;
+      if (p->dstop > 0 && p->dstop < final_dmax) w_hi = minint(w_hi, p->dstop + p->dW);
+      if (p->wmax > 0) w_hi = minint(w_hi, p->wmax);
+    }
     fprintf(stderr, "CC enumerated all codewords of weight %d", final_dmax);
-    if (p->outC && p->dW > 0) fprintf(stderr, "..%d", final_dmax + p->dW);
+    if (w_hi > final_dmax) fprintf(stderr, "..%d", w_hi);
     if (p->outC) fprintf(stderr, " (for outC)");
+    break;
+  }
+  case STOP_DSTOP:
+    fprintf(stderr, "lower bound dmin=%d reached dstop=%d", atomic_load(&ctx->dmin), p->dstop);
     break;
   default:
     fprintf(stderr, "search ended");
@@ -1908,6 +1976,17 @@ int main(int argc, char **argv) {
       fprintf(stderr, "# stopped: bounds coincide: dmin = dmax = %d (supplied, no search)\n", init_dmax);
     }
     printf("%d %d 0\n", p->dmin, init_dmax);
+    var_kill(p);
+    return 0;
+  }
+
+  /* the supplied dmin already reaches the stop target dstop (any method; with outC or maxC, the CC rounds which collect
+   * codewords still run) */
+  if (p->dstop > 0 && p->dmin >= p->dstop && !p->outC && p->maxC == 0) {
+    if (p->debug & DBG_SUMMARY) {
+      fprintf(stderr, "# stopped: lower bound dmin=%d >= dstop=%d (supplied, no search)\n", p->dmin, p->dstop);
+    }
+    printf("%d %d 0\n", (init_dmax > 0 && p->dmin >= init_dmax) ? init_dmax : p->dmin, init_dmax);
     var_kill(p);
     return 0;
   }
@@ -2095,9 +2174,10 @@ int main(int argc, char **argv) {
     }
     /* the RW upper bound is not certified: warn if the hit counts suggest that some codewords are much harder to
      * find than others of the same weight (one pass over the codewords in hash), and then also print the
-     * information-set estimate of the probability that RW missed a lighter codeword */
-    if (reported_rw_steps > 0 && final_dmin < final_dmax && codeword_hit_check(stderr, p) > 0 &&
-        rw_unif > 0 && rw_rank > 0) {
+     * information-set estimate of the probability that RW missed a lighter codeword (not after the stop target
+     * dstop was reached: codewords of weight >= dstop are not needed) */
+    if (reported_rw_steps > 0 && final_dmin < final_dmax && atomic_load(&ctx.stop_reason) != STOP_DSTOP &&
+        codeword_hit_check(stderr, p) > 0 && rw_unif > 0 && rw_rank > 0) {
       print_rw_infoset_estimate(stderr, p->nvar, rw_rank, (final_dmin > 1) ? final_dmin : 1, final_dmax - 1,
                                 rw_unif, rw_done, (ctx.rw_threads > 0) ? t_step / ctx.rw_threads : 0.0);
     }

@@ -105,6 +105,8 @@ typedef struct{
   colmask_t *maskL; /* column masks of L for fast checks L c != 0 (NULL for a classical code), see var_init() */
   int threads; /* number of threads to use (0 for auto) */
   int dexp;    /* expected distance value (0 for auto/none) */
+  int dstop;   /* stop target for the lower bound: the run ends once CC certifies dmin >= dstop (0: off); unlike dmax,
+                  not an upper bound, and not reported as dmax */
   double timeout; /* timeout in seconds (default 60.0, 0 for infinite) */
   int nothrottle; /* 1: disable automatic thread throttling */
   int chunk_size; /* RW chunk/batch size (0 for auto) */
@@ -387,7 +389,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.11.0"
+#define DIST_M4RI_VERSION "0.12.0"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -401,8 +403,8 @@ void print_short_help(const char *prog);
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
   "  method, finH, finG, finL, fin, fdem, pmin, classical, css,\n" \
-  "  steps, wmin, wmax, dmin, dmax, dexp (dest), smax, start, cbeg,\n" \
-  "  cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
+  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start,\n" \
+  "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, min_hits, cov_cws, refresh,\n" \
   "  finC, outC, maxC, dW, seed, debug\n\n" \
   "Help options:\n" \
@@ -428,6 +430,7 @@ void print_short_help(const char *prog);
   "Distance bounds and guidance:\n" \
   "  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)\n" \
   "  dmax=[int]         Known upper bound on distance (CC up to w=dmax-1 only) (0)\n" \
+  "  dstop=[int]        Stop once CC certifies dmin>=dstop (not an upper bound) (0)\n" \
   "  dexp=[int]         Expected distance for method=3 thread allocation (alias: dest) (0)\n\n" \
   "Search limits and stopping criteria:\n" \
   "  steps=[int]        Maximum RW decoding steps / information sets (100000)\n" \
@@ -511,6 +514,17 @@ void print_short_help(const char *prog);
   "                     rounds w = dmax..dmax+dW).  In RW (method 1/3), codewords\n" \
   "                     of weight >= dmax are ignored unless collecting codewords\n" \
   "                     or needed for min_hits.\n" \
+  "  dstop=[int]        Stop target for the lower bound (default: 0 = off): the run\n" \
+  "                     (method 2/3) ends once CC has certified dmin >= dstop, that\n" \
+  "                     is, that there is no codeword of weight < dstop (with outC,\n" \
+  "                     after the rounds w = dstop..dstop+dW), unless a lighter\n" \
+  "                     codeword is found (then the search goes on as usual).\n" \
+  "                     Unlike dmax, dstop is not an upper bound and is not\n" \
+  "                     reported as dmax: the output is 'dmin w steps', where w is\n" \
+  "                     the weight of the lightest codeword found (0: none).  E.g.,\n" \
+  "                     dstop=U wmin=U-1 decides whether d >= U, and for a CSS code\n" \
+  "                     with d = min(dX, dZ) <= U, dstop=U is all that is needed.\n" \
+  "                     With method=1, it only applies to a supplied dmin >= dstop.\n" \
   "  dexp=[int]         Expected code distance (alias: dest) (default: 0).\n" \
   "                     Hint for method=3 (bracketing): as long as RW has found no\n" \
   "                     codeword, CC rounds at w > dexp run only on threads which\n" \

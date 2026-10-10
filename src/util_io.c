@@ -52,6 +52,7 @@ params_t prm={
   .maskL=NULL,
   .threads=0,
   .dexp=0,
+  .dstop=0,
   .timeout=60.0,
   .nothrottle=0,
   .chunk_size=0,
@@ -446,6 +447,13 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dest=%d (alias for dexp)\n",argv[i],p->dexp);
     }
+    else if (sscanf(argv[i],"dstop=%d",&dbg)==1){ /** `dstop`: stop once CC certifies dmin >= dstop */
+      if (dbg < 0)
+        ERROR("invalid '%s': dstop must be non-negative", argv[i]);
+      p->dstop=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, dstop=%d\n",argv[i],p->dstop);
+    }
     else if (sscanf(argv[i],"timeout=%lf",&prob)==1){
       p->timeout=prob;
       if (p->debug & DBG_ARGS)
@@ -648,9 +656,11 @@ void var_init(int argc, char **argv, params_t * const p){
 
   if(p->method & 2){ /* CC */
     if ((p->wmax<=0) && ((p->method & 1 )==0)) {
-      /* the CC rounds end with the timeout, or at the latest once the bounds coincide (w = dmax - 1) */
-      if (p->timeout <= 0.0 && p->dmax <= 0) {
-        ERROR("either parameter wmax>0, dmax>0, or timeout>0 should be specified for CC method=%d", p->method);
+      /* the CC rounds end with the timeout, or at the latest once the bounds coincide (w = dmax - 1), or once
+       * dmin >= dstop (w = dstop - 1) */
+      if (p->timeout <= 0.0 && p->dmax <= 0 && p->dstop <= 0) {
+        ERROR("either parameter wmax>0, dmax>0, dstop>0, or timeout>0 should be specified for CC method=%d",
+              p->method);
       }
       p->wmax = MAX_W - 1;
     }

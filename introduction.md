@@ -76,7 +76,9 @@ round (the measured work of the previous round times its growth factor), the mea
 of remaining RW steps, and the remaining time. Once a codeword of weight `dmax` is known, the round `w = dmax - 1`,
 which certifies `dmin = dmax`, runs on all threads; the expected distance `dexp` only affects the thread split before
 RW finds any codeword. When RW converges (`min_hits`) or runs out of steps, its threads join the CC rounds. A CC round
-predicted not to finish before the timeout is not started while RW runs.
+predicted not to finish before the timeout is not started while RW runs. With a stop target `dstop = U` (not an upper
+bound), the run ends as soon as CC has certified `dmin >= U`, unless a codeword of weight `< U` is found; e.g., for a
+CSS code with `d = min(dX, dZ) <= U` already known, the sector runs need no more.
 
 ## Convergence of RW
 
@@ -93,10 +95,11 @@ Test and Probability to Find a Codeword" in `README.md` for details.
 ## Output
 
 The program prints one line to `stdout`, `dmin dmax rw_steps`: `dmin - 1` is the largest cluster weight analyzed by CC
-without finding a codeword, `dmax` the smallest weight of a codeword found (or the supplied upper bound `dmax`), and
-`rw_steps` the number of completed RW steps (0 if CC found a minimum-weight codeword); `dmin = dmax` is the exact
-distance. All diagnostic output goes to `stderr`, as selected by the `debug` bitmap (default: 3, the summary and the
-progress; `debug=0` is silent, `debug=7` adds a periodic status line). Example (run from the repository root):
+without finding a codeword, `dmax` the smallest weight of a codeword found (or the supplied upper bound `dmax`; never
+the stop target `dstop`), and `rw_steps` the number of completed RW steps (0 if CC found a minimum-weight codeword);
+`dmin = dmax` is the exact distance. All diagnostic output goes to `stderr`, as selected by the `debug` bitmap
+(default: 3, the summary and the progress; `debug=0` is silent, `debug=7` adds a periodic status line). Example (run
+from the repository root):
 
 ```text
 $ ./src/dist_m4ri finH=examples/c204H.mmx threads=8 seed=7
