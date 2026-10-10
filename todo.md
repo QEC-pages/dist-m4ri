@@ -231,3 +231,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   starts (e.g., `c1920H.mmx`: 100 RW steps of 6.6 ms per batch, i.e., 0.66 s): smaller RW batches while CC rounds
   are short, or an RW batch interruption when a CC round starts.
 
+### More improvements 
+- [ ] try verifying (using cluster decomposition from vecdec (?)) if the
+      constructed / imported non-trivial CW can be decomposed into disconnected
+      components.  Keep only non-trivial part (does it ever happen? how
+      expensive is this?)
+- [ ] See that matrices constructed when generating L from H (e.g.) are reused when codeword searching.
+- [ ] For a very large circuit, when RW is very slow, should we try constructing
+      codewords from the underlying code (can this even be done from a DEM ---
+      or should it be done in python?)
+- [ ] 

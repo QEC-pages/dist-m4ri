@@ -333,19 +333,19 @@ result):
 ```text
 $ ./src/dist_m4ri method=1 finH=examples/surf_d5_H.mmx finL=examples/surf_d5_L.mmx steps=10000 seed=1 threads=1 debug=1
 ...
-# codewords accumulated: total=100, min_w=5: cws=100, total_hits=282, hits min=1, max=26, avg=2.82, ...
+# codewords accumulated: total=100, min_w=5: cws=100, total_hits=208, hits min=1, max=33, avg=2.08, ...
 # RW information sets: n=1958, rank(H)=120, steps=10000 (uniform permutations: 5000), ksub=0, ...
-# Warning: non-uniform RW hit counts of the 100 codewords of weight 5: hits min=1, max=26, avg=2.82, ...
-#   some codewords are found much more often than others of the same weight (relative spread of hit rates 1.70):
-#   a lighter codeword may be missed with probability ~0.48 rather than exp(-2.61)=0.073; consider a larger min_hits
+# Warning: non-uniform RW hit counts of the 100 codewords of weight 5: hits min=1, max=33, avg=2.08, ...
+#   some codewords are found much more often than others of the same weight (relative spread of hit rates 1.89):
+#   a lighter codeword may be missed with probability ~0.58 rather than exp(-1.70)=0.18; consider a larger min_hits
 #   information-set estimate (uniform random information sets, n=1958, rank(H)=120): a codeword of weight 4
 #   is found with probability 0.000845 per RW step, missed in 5000 uniform steps with probability 0.015 (1% ...
 1 5 10000
 ```
 
-Here, 10000 steps are not enough for `min_hits=5` ($\langle n\rangle = 2.82$). The hit counts of the 100 logical
-operators of weight 5 range from 1 to 26, far from the Poisson distribution ($p = 1.4 \cdot 10^{-128}$), and the
-probability to miss a lighter codeword is estimated as 0.48 instead of $e^{-\mu} = 0.073$, where $\mu = 2.61$ is the
+Here, 10000 steps are not enough for `min_hits=5` ($\langle n\rangle = 2.08$). The hit counts of the 100 logical
+operators of weight 5 range from 1 to 33, far from the Poisson distribution ($p = 4.3 \cdot 10^{-116}$), and the
+probability to miss a lighter codeword is estimated as 0.58 instead of $e^{-\mu} = 0.18$, where $\mu = 1.70$ is the
 Poisson mean fitted to the zero-truncated hit counts. The information-set estimate for the weight $w = 4$, the hardest
 to find, gives the miss probability 0.015, and 1% after 10890 RW steps in total (half of them uniform, since
 $n \ge 500$). In fact, the distance is 5: `method=2` with `wmax=4` finds no codeword in 0.1 s.
@@ -516,7 +516,7 @@ Repeated `debug` arguments with different values were rejected.
 ```bash
 # 1. Classical linear code using 8 threads in bracketing mode (method=3 is default); the number of RW steps varies
 $ ./src/dist_m4ri finH=./examples/c204H.mmx dest=10 steps=100000 threads=8 debug=0
-8 8 5326
+8 8 6154
 
 # 2. Stim Detector Error Model (DEM) with timeout and codeword export (rw_steps=0: CC found a codeword of weight dmin)
 $ ./src/dist_m4ri fdem=./examples/surf_d3.dem dexp=3 timeout=10 outC=cws.nz threads=4 debug=0
@@ -542,9 +542,10 @@ interoperability without manual threading overhead.
 - `compute_quantum_distance(H, G=None, L=None, ...)`: Distance of one sector of a quantum CSS code, i.e., the minimum
   weight of a codeword $c$ with $Hc = 0$ and $Lc \neq 0$ (with $L$ constructed from $H$ and $G$ if not given).
 - `compute_css_distance(Hx, Hz, Lx=None, Lz=None, ...)`: Distance $d = \min(d_X, d_Z)$ of a CSS quantum code (two runs
-  of the binary, one for each sector). With `outC="cws.nz"`, the $X$- and $Z$-codewords are saved to `cws_X.nz` and
-  `cws_Z.nz`; with `finC="cws.nz"`, the files `cws_X.nz` and `cws_Z.nz` are read if they exist, and otherwise the
-  same file is given to both runs (codewords which are not valid in a sector are skipped).
+  of the binary, one for each sector); both `Hx` and `Hz` are required (otherwise `ValueError`; use
+  `compute_quantum_distance()` for one sector). With `outC="cws.nz"`, the $X$- and $Z$-codewords are saved to
+  `cws_X.nz` and `cws_Z.nz`; with `finC="cws.nz"`, the files `cws_X.nz` and `cws_Z.nz` are read if they exist, and
+  otherwise the same file is given to both runs (codewords which are not valid in a sector are skipped).
 - `compute_dem_distance(dem=None, circuit=None, simple=None, full=False, basis=None, rounds=None, out_dir=None,`:
   `out_dem=None, out_stim=None, ...)`:
   Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file:
@@ -566,15 +567,16 @@ interoperability without manual threading overhead.
   `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping, and
   `REPEAT` block round adjustment.
 - `has_noise(circuit)` / `add_noise(circuit, p=0.001)`: Inspects a `stim.Circuit` for noise instructions, and adds
-  uniform circuit-level noise to a noiseless circuit: `DEPOLARIZE2(p)` after two-qubit gates, `DEPOLARIZE1(p/10)` after
-  single-qubit gates and on idle qubits in each `TICK`, and bit or phase flips with probability `p` after resets and
-  before measurements (`compute_dem_distance()` does this for a noiseless circuit; for the distance, only which errors
-  are possible matters, as long as `pmin=0`).
+  uniform circuit-level noise to a noiseless circuit: `DEPOLARIZE2(p)` after two-qubit gates (except classically
+  controlled ones, e.g., `CX rec[-1] 5`), `DEPOLARIZE1(p/10)` after single-qubit gates and on idle qubits in each
+  `TICK`, and bit or phase flips with probability `p` after resets and before measurements (`compute_dem_distance()`
+  does this for a noiseless circuit; for the distance, only which errors are possible matters, as long as `pmin=0`).
 - `read_sparse_vectors(filepath)`: Parses NZLIST files into lists of 0-based integer support indices.
 - Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`,
   `get_cached_distance(..., start=None)`, and the `cache_file` argument of the `compute_*_distance()` functions (a
   persistent JSON file with the version `"__version__"`; the CLI uses `tmp_dist_cache.json` in the working directory
-  unless `--no-cache` or `cache=FILE` is given).
+  unless `--no-cache` or `cache=FILE` is given). A cache file written by a newer version is ignored (with a warning)
+  and is not overwritten.
 - Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
   separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
   results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
@@ -645,7 +647,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (92 tests)
+# Run full C test suite (94 tests)
 make test
 ```
 

@@ -104,20 +104,20 @@ $ ./src/dist_m4ri finH=examples/c204H.mmx threads=8 seed=7
 #   H: 102 x 204, 606 nonzeros, max row weight 6, max column weight 3
 # Warning: smax=0, confinement profile is not computed
 # run plan: method=3 (bracketing), 8 threads (RW on up to 8), steps=100000, min_hits=5, ksub=0, CC from w=1, ...
-# [thread 0] RW found new upper bound cw of weight 48 (using 6 RW threads)
+# [thread 0] RW found new upper bound cw of weight 48 (using 8 RW threads)
 ...
-# [thread 2] RW found new upper bound cw of weight 8 (using 6 RW threads)
-# CC round w=1 finished in 0.010s (2 CC threads, 6 RW threads): no codewords -> dmin=2
+# [thread 3] RW found new upper bound cw of weight 8 (using 6 RW threads)
+# CC round w=3 finished in 0.019s (2 CC threads, 6 RW threads): no codewords -> dmin=4
 ...
-# CC round w=6 finished in 0.004s (2 CC threads, 6 RW threads): no codewords -> dmin=7
+# CC round w=6 finished in 0.002s (2 CC threads, 6 RW threads): no codewords -> dmin=7
 # RW convergence reached: <n>=5.00 >= min_hits=5 average hits per codeword (100 cws of weight 8..15; ...
-# CC round w=7 finished in 0.010s (8 CC threads, 0 RW threads): no codewords -> dmin=8
+# CC round w=7 finished in 0.008s (8 CC threads, 0 RW threads): no codewords -> dmin=8
 # bracketing bounds coincide: dmin = dmax = 8
-# stopped after 0.080s: bounds coincide: dmin = dmax = 8
-# codewords accumulated: total=100, min_w=8: cws=1, total_hits=172, hits min=172, max=172, avg=172.00, ...
+# stopped after 0.031s: bounds coincide: dmin = dmax = 8
+# codewords accumulated: total=100, min_w=8: cws=1, total_hits=161, hits min=161, max=161, avg=161.00, ...
 ...
-# RW information sets: n=204, rank(H)=101, steps=5570 (uniform permutations: 5570), ksub=0, ...
-8 8 5570
+# RW information sets: n=204, rank(H)=101, steps=5944 (uniform permutations: 5944), ksub=0, ...
+8 8 5944
 ```
 
 ## Compilation and tests

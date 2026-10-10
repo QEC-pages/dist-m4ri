@@ -1194,6 +1194,161 @@ def test_cli_start_trust_start_and_disabled_options(capsys):
         dist_m4ri.enable_distance_cache()
 
 
+TRY_X = os.path.join(EXAMPLES_DIR, "tryX.mtx")  # small CSS code [[40,10,4]]
+TRY_Z = os.path.join(EXAMPLES_DIR, "tryZ.mtx")
+
+
+def test_css_distance_requires_both_matrices(capsys):
+    empty = np.zeros((0, 40), dtype=np.int8)
+    for hx, hz in ((TRY_X, None), (None, TRY_Z), (TRY_X, empty), (None, None)):
+        with pytest.raises(ValueError, match="requires both Hx and Hz"):
+            dist_m4ri.compute_css_distance(Hx=hx, Hz=hz, method=2, wmax=4, threads=2)
+    try:
+        # CLI: an error message and exit code 1
+        ret = dist_m4ri.main([f"Hx={TRY_X}", "method=2", "wmax=4", "--no-cache"])
+        assert ret == 1
+        assert "requires both Hx and Hz" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_distance_result_eq():
+    r = dist_m4ri.DistanceResult(5, 5, 0)
+    assert r == 5 and r == np.int64(5) and r != 4
+    assert r == (5, 5, 0) and r == [5, 5, 0]
+    assert r == dist_m4ri.DistanceResult(5, 5, 0) and r != dist_m4ri.DistanceResult(5, 5, 10)
+    assert r != "5"
+    assert len(r) == 3 and r[1] == 5 and tuple(r) == (5, 5, 0)
+    rc = dist_m4ri.DistanceResult(4, 4, 0, cws=[[0, 1, 2, 3]])
+    assert len(rc) == 4 and rc[3] == [[0, 1, 2, 3]] and rc == (4, 4, 0, [[0, 1, 2, 3]])
+    assert int(dist_m4ri.DistanceResult(3, 6, 100)) == 6
+
+
+def test_cache_newer_version_not_overwritten(tmp_path, capsys):
+    import json
+    cache_file = tmp_path / "newer_cache.json"
+    newer = {"__version__": "99.0.0", "some_key": {"dist": 7}}
+    cache_file.write_text(json.dumps(newer))
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        dist_m4ri.load_distance_cache(str(cache_file))
+        assert "has newer version 99.0.0" in capsys.readouterr().err
+        assert "some_key" not in dist_m4ri._distance_cache
+        # neither a calculation with this cache file nor save_distance_cache() overwrites it
+        d = dist_m4ri.compute_classical_distance(S5_H, method=2, wmax=3, threads=2, cache_file=str(cache_file))
+        assert d == 2
+        dist_m4ri.save_distance_cache(str(cache_file))
+        assert json.loads(cache_file.read_text()) == newer
+        # once the file is deleted with clear_distance_cache(clear_file=True), it is written again
+        dist_m4ri.clear_distance_cache(str(cache_file), clear_file=True)
+        dist_m4ri._distance_cache["code_test"] = {"dist": 3, "dmin": 3, "dmax": 3}
+        dist_m4ri.save_distance_cache(str(cache_file))
+        assert json.loads(cache_file.read_text())["__version__"] == dist_m4ri.__version__
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_run_dist_m4ri_stop_event(capsys):
+    import threading
+    import time
+    s5 = dict(finH=S5_H, finL=S5_L)
+    # More than 64 KB of stderr (the matrices: debug=128|2048) with a stop_event which is not set: no deadlock
+    result = {}
+
+    def run():
+        result["res"] = dist_m4ri.run_dist_m4ri(
+            method=2, wmax=3, threads=2, debug=128 | 2048, stop_event=threading.Event(), **s5
+        )
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout=120)
+    assert not worker.is_alive(), "run_dist_m4ri() with stop_event is blocked by a full stderr pipe"
+    assert tuple(result["res"]) == (4, 0, 0)
+    assert len(capsys.readouterr().out) > 65536  # the stderr of the binary is printed (debug > 0)
+
+    # Cancelled run: the binary is terminated, and RuntimeError is raised
+    stop = threading.Event()
+    timer = threading.Timer(0.3, stop.set)
+    timer.start()
+    t0 = time.time()
+    try:
+        with pytest.raises(RuntimeError, match="cancelled by stop_event"):
+            dist_m4ri.run_dist_m4ri(method=1, steps=10**9, min_hits=0, timeout=60, threads=2, stop_event=stop, **s5)
+        assert time.time() - t0 < 30
+    finally:
+        timer.cancel()
+
+
+def test_add_noise_classically_controlled():
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circuit = stim.Circuit("""
+        R 0 1 2
+        TICK
+        H 0
+        CX 0 1
+        TICK
+        M 0
+        CX rec[-1] 1
+        CZ sweep[0] 2
+        TICK
+        M 1 2
+        DETECTOR rec[-2]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+    """)
+    noisy = dist_m4ri.add_noise(circuit, p=0.01)
+    assert "DEPOLARIZE2(0.01) 0 1" in str(noisy)
+    # noise only on qubits: no DEPOLARIZE2 after the classically controlled gates
+    for inst in noisy.flattened():
+        if inst.name in ("DEPOLARIZE1", "DEPOLARIZE2"):
+            assert all(t.qubit_value is not None for t in inst.targets_copy())
+    assert noisy.detector_error_model().num_errors > 0
+
+
+def test_css_outc_sector_files_and_finc(tmp_path, capsys):
+    cache_file = str(tmp_path / "css_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(Hx=TRY_X, Hz=TRY_Z, method=2, wmax=8, threads=2)
+    try:
+        # A calculation writes the sector files outC_X / outC_Z ...
+        res1 = dist_m4ri.compute_css_distance(outC=str(tmp_path / "cws1.nz"), cache_file=cache_file, **kw)
+        assert res1 == (4, [4, 4, 0], [4, 4, 0])
+        # ... and so does the cached exact result
+        capsys.readouterr()
+        res2 = dist_m4ri.compute_css_distance(
+            outC=str(tmp_path / "cws2.nz"), cache_file=cache_file, debug=dist_m4ri.PY_DBG_CACHE, **kw
+        )
+        assert res2 == res1
+        assert "Cache hit for CSS distance" in capsys.readouterr().out
+        assert not (tmp_path / "cws2.nz").exists()
+        for s in ("X", "Z"):
+            cws1 = dist_m4ri.read_sparse_vectors(str(tmp_path / f"cws1_{s}.nz"))
+            cws2 = dist_m4ri.read_sparse_vectors(str(tmp_path / f"cws2_{s}.nz"))
+            assert len(cws1) == 40 and sorted(map(tuple, cws1)) == sorted(map(tuple, cws2))
+
+        dist_m4ri.disable_distance_cache()
+        # finC identical to outC: the sector files are read (finC itself does not exist)
+        same = str(tmp_path / "cws1.nz")
+        res3 = dist_m4ri.compute_css_distance(finC=same, outC=same, debug=1, **kw)
+        assert res3 == res1
+        out = capsys.readouterr().out
+        assert "codewords from " + str(tmp_path / "cws1_X.nz") in out
+        assert "codewords from " + str(tmp_path / "cws1_Z.nz") in out
+        # Without sector files, finC itself is given to both runs (codewords not valid in a sector are skipped)
+        mixed = tmp_path / "mixed.nz"
+        mixed.write_text((tmp_path / "cws1_X.nz").read_text())
+        res4 = dist_m4ri.compute_css_distance(finC=str(mixed), debug=1, **kw)
+        assert res4 == res1
+        assert capsys.readouterr().out.count("codewords from " + str(mixed)) == 2
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

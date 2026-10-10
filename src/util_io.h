@@ -617,8 +617,8 @@ void print_short_help(const char *prog);
   "                     low-weight codeword exchange and re-echelonization, only\n" \
   "                     with the experimental ksub > 0 (default: 5000 when\n" \
   "                     ksub > 0, 0 = off).\n" \
-  "  seed=[int]         Random number generator seed (default: 0 = initialize from\n" \
-  "                     current time).\n\n" \
+  "  seed=[int]         Random number generator seed (default: 0; seed<=0 is\n" \
+  "                     replaced by time(NULL) + 10*pid - 1000*seed).\n\n" \
   "Debug output bitmap (debug=[int], default: 3):\n" \
   "  Diagnostic output goes to stderr (stdout only has the result line); lower\n" \
   "  bits are more informative.  The value is decimal or hexadecimal (0x...).\n" \

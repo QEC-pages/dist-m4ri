@@ -127,6 +127,16 @@ static int parse_debug_value(const char * const str, const char * const arg){
   return (int) val;
 }
 
+/** @brief The file name given in the argument `argv[*i]` = `name=file` (`len` is the length of `name=`), or in the
+ *  space form `name= file`; then the file name is the next argument, and `*i` is advanced */
+static char * file_arg_value(const int argc, char **argv, int * const i, const size_t len){
+  if (strlen(argv[*i]) > len)
+    return argv[*i] + len;
+  if (*i + 1 >= argc)
+    ERROR("argv[%d]='%s': missing file name", *i, argv[*i]);
+  return argv[++(*i)];
+}
+
 /** @brief Number of nonzero entries of a CSR matrix (compressed or pair form) */
 static int csr_nnz(const csr_t * const M){
   return (M->nz == -1) ? M->p[M->rows] : M->nz;
@@ -294,28 +304,19 @@ void var_init(int argc, char **argv, params_t * const p){
 	fprintf(stderr, "# read %s, css=%d\n",argv[i],p->css);
     }
     else if (0==strncmp(argv[i],"finH=",5)){ /** `finH` */
-      if(strlen(argv[i])>5)
-        p->finH = argv[i]+5;
-      else
-        p->finH = argv[++i]; /**< allow space before file name */
+      p->finH = file_arg_value(argc, argv, &i, 5); /**< allow space before file name */
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finH=%s; setting fin=\"\"\n",argv[i],p->finH);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finL=",5)){ /** `finL` */
-      if(strlen(argv[i])>5)
-        p->finL = argv[i]+5;
-      else
-        p->finL = argv[++i]; /**< allow space before file name */
+      p->finL = file_arg_value(argc, argv, &i, 5); /**< allow space before file name */
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finL=%s; setting fin=\"\"\n",argv[i],p->finL);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finG=",5)){/** `finG` degeneracy generator matrix */
-      if(strlen(argv[i])>5)
-        p->finG = argv[i]+5;
-      else
-        p->finG = argv[++i]; /**< allow space before file name */
+      p->finG = file_arg_value(argc, argv, &i, 5); /**< allow space before file name */
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finG=%s; setting fin=\"\"\n",argv[i],p->finG);
       p->fin="";
@@ -327,14 +328,7 @@ void var_init(int argc, char **argv, params_t * const p){
 	ERROR("arg[%d]='%s' in conflict with finG=%s\n",i,argv[i],p->finG);
       if(p->finL)
 	ERROR("arg[%d]='%s' in conflict with finL=%s\n",i,argv[i],p->finL);
-      if (strlen(argv[i])>4)
-	p->fin = argv[i]+4;
-      else{
-	if (i+1 < argc)
-	  p->fin = argv[i+1];
-	else
-	  ERROR("argv[%d]='%s', empty string for 'fin'\n",i,argv[i]);
-      }
+      p->fin = file_arg_value(argc, argv, &i, 4); /**< allow space before file name */
     }
     else if (sscanf(argv[i],"method=%d",&dbg)==1){
       p->method=dbg;
@@ -403,10 +397,7 @@ void var_init(int argc, char **argv, params_t * const p){
 	fprintf(stderr, "# read %s, noscan=%d\n",argv[i],p->noscan);
     }
     else if (0==strncmp(argv[i],"fdem=",5)){
-      if(strlen(argv[i])>5)
-        p->fdem = argv[i]+5;
-      else
-        p->fdem = argv[++i];
+      p->fdem = file_arg_value(argc, argv, &i, 5);
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, fdem=%s\n",argv[i],p->fdem);
     }
@@ -416,18 +407,12 @@ void var_init(int argc, char **argv, params_t * const p){
 	fprintf(stderr, "# read %s, pmin=%g\n",argv[i],p->pmin);
     }
     else if (0==strncmp(argv[i],"finC=",5)){
-      if(strlen(argv[i])>5)
-        p->finC = argv[i]+5;
-      else
-        p->finC = argv[++i];
+      p->finC = file_arg_value(argc, argv, &i, 5);
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finC=%s\n",argv[i],p->finC);
     }
     else if (0==strncmp(argv[i],"outC=",5)){
-      if(strlen(argv[i])>5)
-        p->outC = argv[i]+5;
-      else
-        p->outC = argv[++i];
+      p->outC = file_arg_value(argc, argv, &i, 5);
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, outC=%s\n",argv[i],p->outC);
     }

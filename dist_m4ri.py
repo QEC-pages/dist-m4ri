@@ -19,6 +19,7 @@ import time
 import random
 import shutil
 import hashlib
+import numbers
 import tempfile
 import threading
 import subprocess
@@ -115,6 +116,7 @@ def __getattr__(name: str) -> Any:
 _distance_cache: Dict[str, Any] = {}
 _use_distance_cache: bool = True
 _distance_cache_file: Optional[str] = None
+_newer_cache_files: Set[str] = set()  # cache files written by a newer version: ignored and never overwritten
 _last_run_stats: Dict[str, Any] = {}
 _last_css_stats: Dict[str, Dict[str, Any]] = {"X": {}, "Z": {}}
 
@@ -139,8 +141,8 @@ def set_distance_cache_file(filepath: Optional[Union[str, Path]] = None) -> None
 def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     """
     Loads distance cache from a JSON file into memory.
-    Inspects cache version silently; if an incompatible version is detected in the future,
-    triggers a warning and bypasses/updates the cache.
+    Inspects cache version silently; a cache file written by a newer version is ignored with a warning, and it is
+    never overwritten by save_distance_cache().
     """
     global _distance_cache, _distance_cache_file
     target_file = str(Path(filepath).resolve()) if filepath is not None else _distance_cache_file
@@ -150,11 +152,12 @@ def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str
                 data = json.load(f)
             if isinstance(data, dict):
                 cache_ver = data.pop("__version__", None)
-                # If cache is from a future incompatible version, skip loading
+                # If cache is from a future incompatible version, skip loading (and do not overwrite it)
                 if cache_ver is not None and _parse_version(cache_ver) > _parse_version(__version__):
+                    _newer_cache_files.add(target_file)
                     sys.stderr.write(
                         f"# Warning: Cache file '{target_file}' has newer version {cache_ver} "
-                        f"(current {__version__}); ignoring incompatible cache.\n"
+                        f"(current {__version__}); ignoring incompatible cache (the file is not overwritten).\n"
                     )
                     return _distance_cache
                 # Sanitize any legacy CSS cache entries where dmax was set from dmin when dmax_X == dmax_Z == 0
@@ -173,10 +176,11 @@ def save_distance_cache(filepath: Optional[Union[str, Path]] = None) -> None:
     Saves the in-memory distance cache to a JSON file.
     Silently writes "__version__": __version__ into the file.
     Uses atomic write via a temporary file to prevent corruption.
+    A cache file written by a newer version (see load_distance_cache()) is not overwritten.
     """
     global _distance_cache, _distance_cache_file
     target_file = str(Path(filepath).resolve()) if filepath is not None else _distance_cache_file
-    if not target_file:
+    if not target_file or target_file in _newer_cache_files:
         return
 
     parent_dir = os.path.dirname(os.path.abspath(target_file)) or "."
@@ -205,6 +209,7 @@ def clear_distance_cache(cache_file: Optional[Union[str, Path]] = None, clear_fi
     if clear_file and target_file and os.path.isfile(target_file):
         try:
             os.remove(target_file)
+            _newer_cache_files.discard(target_file)
         except OSError:
             pass
 
@@ -918,23 +923,27 @@ class DistanceResult:
         if isinstance(other, DistanceResult):
             return (self.dmin, self.dmax, self.rw_steps) == (other.dmin, other.dmax, other.rw_steps)
         if isinstance(other, (tuple, list)):
-            return tuple(self) == tuple(other)
-        if isinstance(other, (int, np.integer)):
+            return self._fields() == tuple(other)
+        if isinstance(other, numbers.Integral):  # int, bool, and numpy integers
             return self.dist == other
         return False
 
-    def __iter__(self):
+    def _fields(self) -> tuple:
+        """The result as a tuple (dmin, dmax, rw_steps[, cws] or [, cws_X, cws_Z])."""
         if self.cws_X is not None or self.cws_Z is not None:
-            return iter((self.dmin, self.dmax, self.rw_steps, self.cws_X or [], self.cws_Z or []))
+            return (self.dmin, self.dmax, self.rw_steps, self.cws_X or [], self.cws_Z or [])
         if self.cws is not None:
-            return iter((self.dmin, self.dmax, self.rw_steps, self.cws))
-        return iter((self.dmin, self.dmax, self.rw_steps))
+            return (self.dmin, self.dmax, self.rw_steps, self.cws)
+        return (self.dmin, self.dmax, self.rw_steps)
+
+    def __iter__(self):
+        return iter(self._fields())
 
     def __getitem__(self, index: int):
-        return tuple(self)[index]
+        return self._fields()[index]
 
-    def __len__(self) -> int:
-        return len(tuple(self))
+    def __len__(self) -> int:  # (not len(tuple(self)): tuple() calls __len__)
+        return len(self._fields())
 
     def __str__(self) -> str:
         if self.is_exact:
@@ -1369,6 +1378,10 @@ def run_dist_m4ri(
             is printed), and PY_DBG_COMMANDS echoes the command line and the run time.  verbose=True implies
             the bits VERBOSE_DEBUG.
 
+    Cancellation:
+        stop_event: Optional threading.Event; once it is set, the binary is terminated and RuntimeError is raised
+            (the binary is also terminated on any other exception, e.g., KeyboardInterrupt).
+
     Returns:
         tuple (dmin, dmax, rw_steps)
     """
@@ -1432,20 +1445,28 @@ def run_dist_m4ri(
 
     t_start = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-    if stop_event is not None:
-        while proc.poll() is None:
-            if stop_event.is_set():
-                proc.terminate()
+    try:
+        if stop_event is None:
+            stdout, stderr = proc.communicate()
+        else:
+            while True:  # communicate() with a timeout keeps draining the pipes (no deadlock on a full pipe)
                 try:
-                    proc.wait(timeout=1.0)
+                    stdout, stderr = proc.communicate(timeout=0.05)
+                    break
                 except subprocess.TimeoutExpired:
-                    proc.kill()
-                raise RuntimeError("dist_m4ri execution cancelled by stop_event")
-            time.sleep(0.05)
-        stdout, stderr = proc.communicate()
-    else:
-        stdout, stderr = proc.communicate()
+                    if stop_event.is_set():
+                        raise RuntimeError("dist_m4ri execution cancelled by stop_event")
+    except BaseException:  # cancelled, KeyboardInterrupt, ...: do not leave the child process running
+        try:
+            proc.terminate()
+            proc.communicate(timeout=1.0)
+        except Exception:
+            try:
+                proc.kill()
+                proc.wait()
+            except Exception:
+                pass
+        raise
 
     if eff_debug & PY_DBG_COMMANDS:
         print(f"[dist_m4ri] Finished in {time.time() - t_start:.3f} s (exit code {proc.returncode})")
@@ -1527,14 +1548,12 @@ def _add_noise_recursive(
             noisy_circuit.append(inst)
             active_qubits.clear()
         else:
+            targets = inst.targets_copy()
+            # qubit_value is None for measurement records (rec[-k]), sweep bits (sweep[k]), and combiners (*)
+            qubit_targets = [t.qubit_value for t in targets if t.qubit_value is not None]
             if inst.name not in annotations:
-                for t in inst.targets_copy():
-                    if t.value >= 0:
-                        active_qubits.add(t.value)
+                active_qubits.update(qubit_targets)
 
-            qubit_targets = [
-                t.value for t in inst.targets_copy() if t.value >= 0
-            ]
             if inst.name == "RX":
                 noisy_circuit.append(inst)
                 if qubit_targets:
@@ -1570,13 +1589,18 @@ def _add_noise_recursive(
                     "SQRT_X", "SQRT_X_DAG", "SQRT_Y", "SQRT_Y_DAG",
                     "SQRT_Z", "SQRT_Z_DAG"
                 ]:
-                    noisy_circuit.append(
-                        "DEPOLARIZE1", inst.targets_copy(), 0.1 * p
-                    )
+                    if qubit_targets:
+                        noisy_circuit.append("DEPOLARIZE1", qubit_targets, 0.1 * p)
                 elif inst.name in [
                     "CX", "CY", "CZ", "SWAP", "XCZ", "YCX", "YCY", "YCZ"
                 ]:
-                    noisy_circuit.append("DEPOLARIZE2", inst.targets_copy(), p)
+                    # target pairs of two qubits; classically controlled pairs (e.g., CX rec[-1] 5) are skipped
+                    pair_targets = [
+                        t.qubit_value for a, b in zip(targets[::2], targets[1::2])
+                        if a.qubit_value is not None and b.qubit_value is not None for t in (a, b)
+                    ]
+                    if pair_targets:
+                        noisy_circuit.append("DEPOLARIZE2", pair_targets, p)
     return noisy_circuit
 
 
@@ -1584,7 +1608,8 @@ def add_noise(circuit: Any, p: float = 0.001) -> Any:
     """
     Adds uniform circuit-level noise to a Stim circuit: DEPOLARIZE2(p) after two-qubit gates, DEPOLARIZE1(p/10) after
     single-qubit gates and on the idle qubits in each TICK, and X (Z) flips with probability p after Z-basis (X-basis)
-    resets and before measurements.
+    resets and before measurements.  Classically controlled two-qubit gates (e.g., CX rec[-1] 5 or CZ sweep[0] 5) get
+    no DEPOLARIZE2 noise.
 
     Args:
         circuit: stim.Circuit or path to a .stim file.
@@ -3540,6 +3565,23 @@ def _split_css_filename(filepath: Optional[str], sector: str) -> Optional[str]:
     return f"{base}_{sector}{ext}"
 
 
+def _css_sector_finc(finC: Optional[str], outC: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Input codeword files (finC_X, finC_Z) of the two CSS sectors: the sector files (e.g. 'cws.nz' -> 'cws_X.nz' and
+    'cws_Z.nz') which exist and are not empty; if there are none, finC itself for both sectors (codewords which are
+    not valid in a sector are skipped by the binary), unless finC is identical to outC and does not exist or is
+    empty (see check_finc_outc()).
+    """
+    if not finC:
+        return None, None
+    files = [_split_css_filename(finC, s) for s in ("X", "Z")]
+    files = [f if (os.path.isfile(f) and os.path.getsize(f) > 0) else None for f in files]
+    if files[0] or files[1]:
+        return files[0], files[1]
+    raw = check_finc_outc(finC, outC)
+    return raw, raw
+
+
 def compute_css_distance(
     Hx: Any,
     Hz: Any,
@@ -3589,8 +3631,8 @@ def compute_css_distance(
     Computes CSS quantum code distance d = min(d_X, d_Z).
 
     Args:
-        Hx: X-stabilizer parity check matrix.
-        Hz: Z-stabilizer parity check matrix.
+        Hx: X-stabilizer parity check matrix (required, at least one row).
+        Hz: Z-stabilizer parity check matrix (required, at least one row).
         Lx: Optional X-logical operator matrix (alternative to Hz as finG).
         Lz: Optional Z-logical operator matrix (alternative to Hx as finG).
         dist_m4ri: Path to dist_m4ri executable (optional).
@@ -3634,26 +3676,27 @@ def compute_css_distance(
     Returns:
         tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
         else (dist, dX_info, dZ_info)
+
+    Raises:
+        ValueError: if Hx or Hz is missing or empty; use compute_quantum_distance() for one sector, or
+            compute_classical_distance() for a classical code.
     """
+    def _nonempty(M: Any) -> bool:
+        return M is not None and (isinstance(M, (str, Path)) or (hasattr(M, 'shape') and M.shape[0] > 0))
+
+    if not (_nonempty(Hx) and _nonempty(Hz)):
+        raise ValueError(
+            "compute_css_distance() requires both Hx and Hz (file names, or matrices with at least one row); "
+            "use compute_quantum_distance() for one sector, or compute_classical_distance() for a classical code."
+        )
+    can_compute_Z = can_compute_X = True  # both sectors are always computed
+    css_sectors = ["X", "Z"]
+
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
-
-    can_compute_Z = (
-        Hx is not None
-        and (hasattr(Hx, 'shape') and Hx.shape[0] > 0 if not isinstance(Hx, (str, Path)) else True)
-    )
-    can_compute_X = (
-        Hz is not None
-        and (hasattr(Hz, 'shape') and Hz.shape[0] > 0 if not isinstance(Hz, (str, Path)) else True)
-    )
-
-    if not can_compute_Z and not can_compute_X:
-        raise ValueError("Cannot compute CSS distance: Both Hx and Hz are empty.")
-    css_sectors = [s for s, ok in (("X", can_compute_X), ("Z", can_compute_Z)) if ok]
-
-    finC = check_finc_outc(finC, outC, verbose=verbose)
+    # finC: the sector files finC_X / finC_Z (or finC itself) are resolved by _css_sector_finc() below
 
     global _distance_cache, _use_distance_cache, _distance_cache_file
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
@@ -3758,24 +3801,15 @@ def compute_css_distance(
                             print("[dist_m4ri] Cache hit for CSS distance (exact distance known)!")
                         cws_x = cached_entry.get("cws_X", [])
                         cws_z = cached_entry.get("cws_Z", [])
-                        if outC:
-                            existing_cws = (
-                                read_sparse_vectors(finC)
-                                if (finC and os.path.exists(finC)
-                                    and (finC == outC or os.path.abspath(finC) == os.path.abspath(outC)))
-                                else []
-                            )
-                            combined = existing_cws + (cws_x or []) + (cws_z or [])
-                            seen = set()
-                            unique = []
-                            for cw in combined:
-                                t = tuple(cw)
-                                if t not in seen:
-                                    seen.add(t)
-                                    unique.append(cw)
-                            unique.sort(key=len)
-                            if unique:
-                                _write_nzlist_file(outC, unique)
+                        if outC:  # the sector files outC_X / outC_Z, as after a calculation
+                            same_file = bool(finC) and os.path.abspath(finC) == os.path.abspath(outC)
+                            for sector, cws_s in (("X", cws_x), ("Z", cws_z)):
+                                out_s = _split_css_filename(outC, sector)
+                                existing = read_sparse_vectors(out_s) if (same_file and os.path.exists(out_s)) else []
+                                unique = list({tuple(cw): cw for cw in existing + (cws_s or [])}.values())
+                                unique.sort(key=len)
+                                if unique:
+                                    _write_nzlist_file(out_s, unique)
                         return (
                             cached_entry["dist"], dx_res, dz_res,
                             cws_x, cws_z
@@ -3836,22 +3870,11 @@ def compute_css_distance(
         dmin_x, dmax_x, rw_steps_x = 0, 0, 0
         cws_Z, cws_X = [], []
 
-        # Resolve sector-specific input codewords (finC_Z and finC_X)
-        finC_Z = None
-        finC_X = None
-        if finC:
-            outC_Z_name = _split_css_filename(outC, "Z") if outC else None
-            outC_X_name = _split_css_filename(outC, "X") if outC else None
-            cand_Z = _split_css_filename(finC, "Z")
-            cand_X = _split_css_filename(finC, "X")
-
-            finC_Z = check_finc_outc(cand_Z, outC_Z_name, verbose=False)
-            finC_X = check_finc_outc(cand_X, outC_X_name, verbose=False)
-
-            # Fallback: if sector-suffixed files don't exist, check raw finC
-            if not finC_Z and not finC_X and os.path.exists(finC):
-                finC_Z = check_finc_outc(finC, outC_Z_name, verbose=False)
-                finC_X = check_finc_outc(finC, outC_X_name, verbose=False)
+        # Sector-specific input codewords: the files finC_X / finC_Z if they exist, otherwise finC itself
+        finC_X, finC_Z = _css_sector_finc(finC, outC)
+        if verbose and finC and not (finC_X or finC_Z):
+            print(f"[dist_m4ri] Warning: finC='{finC}' (identical to outC) and its sector files are empty or "
+                  f"non-existent; silently ignoring input codewords.")
 
         # Seed sector-specific bounds from cache if available
         eff_dmin_z, eff_dmax_z = eff_dmin, eff_dmax
@@ -5041,7 +5064,7 @@ Input matrices & models:
   finH=FILE             Parity check matrix H (classical) or Hx (CSS quantum) (.mmx/.mtx)
   finG=FILE, finL=FILE  Hz check matrix or Lx logical operator matrix (quantum CSS)
   fin=PREFIX            Base prefix for CSS matrices (loads ${{fin}}X.mtx, ${{fin}}Z.mtx, e.g. try -> tryX.mtx)
-  Hx=FILE, Hz=FILE      CSS check matrices (alternative to finH/finG)
+  Hx=FILE, Hz=FILE      CSS check matrices, both required (computes dX and dZ)
   Lx=FILE, Lz=FILE      CSS logical operators (optional, constructed if omitted)
   pmin=PROB             Minimum error probability threshold for DEM errors (default: 0.0)
   classical=0|1         1: classical code (Hx only), 0: quantum CSS (auto-detected)
@@ -5116,7 +5139,8 @@ Required input (at least one matrix/model specification):
   finL=FILE             Logical operator matrix Lx for quantum CSS codes in Matrix Market format.
                         Note: For a quantum CSS code, either finL (Lx) or finG (Hz) is required.
   fin=PREFIX            Base prefix for CSS matrices (loads ${{fin}}X.mtx and ${{fin}}Z.mtx, e.g. try -> tryX.mtx).
-  Hx=FILE, Hz=FILE      Alternative syntax for specifying CSS check matrices Hx and Hz.
+  Hx=FILE, Hz=FILE      CSS check matrices Hx and Hz, both required: computes both dX and dZ, and
+                        d = min(dX, dZ) (finH=Hx with finG=Hz gives dZ only).
   Lx=FILE, Lz=FILE      Alternative syntax for specifying CSS logical operator matrices.
   pmin=PROB             Minimum error probability threshold for DEM parsing (default: 0.0).
                         Error mechanisms with probability < pmin are filtered out.
@@ -5283,7 +5307,8 @@ General options:
                         (from the average hits <n>, and from uniform random information sets
                         with n, rank(H), and the RW steps), with the RW steps and time needed
                         for a 1% miss probability.
-  seed=N                Random number generator seed (default: 0 = current time).
+  seed=N                Random number generator seed (default: 0; the binary replaces seed<=0 by
+                        time(NULL) + 10*pid - 1000*seed).
   debug=N               Debug bitmap (default: 0), a decimal or hexadecimal (0x...) integer;
                         multiple debug arguments are OR-combined.  Bits 1 to 32768 are passed
                         to the dist_m4ri binary, which prints diagnostic output to stderr (see
@@ -5345,8 +5370,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         print_cli_short_help(file=sys.stderr)
         return 255
 
-    # When finC and outC are identical, empty or non-existent file is silently ignored (with a warning if verbose)
-    args["finC"] = check_finc_outc(args["finC"], args["outC"], verbose=args["verbose"])
+    # When finC and outC are identical, an empty or non-existent file is silently ignored (with a warning if verbose)
+    # by the compute_*_distance() functions (for CSS codes, after checking the sector files finC_X and finC_Z)
 
     cache_file = args["cache_file"] if args["use_cache"] else None
     if not args["use_cache"]:

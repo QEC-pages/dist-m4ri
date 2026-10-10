@@ -119,11 +119,15 @@ static inline double get_time_sec(void) {
   return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
-static inline uint64_t splitmix64(uint64_t *state) {
-  uint64_t z = (*state += 0x9e3779b97f4a7c15ULL);
+/* The splitmix64 output function: a bijective 64-bit hash */
+static inline uint64_t mix64(uint64_t z) {
   z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
   z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
   return z ^ (z >> 31);
+}
+
+static inline uint64_t splitmix64(uint64_t *state) {
+  return mix64(*state += 0x9e3779b97f4a7c15ULL);
 }
 
 static inline int rand_uniform_thread(int max, uint64_t *state) {
@@ -383,13 +387,9 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   /* Internal level: w + 1 < current_limit */
   const int rem = current_limit - (w + 1);
   int max_s_needed = 0;
-  if (p->smax > 0) {
-    if (p->noscan || p->dmin > 1) {
-      max_s_needed = p->smax;
-    } else if (current_limit < MAX_W) {
-      int cur_min = warg->min_swei[current_limit] - 1;
-      max_s_needed = (cur_min < p->smax) ? (cur_min > 0 ? cur_min : 0) : p->smax;
-    }
+  if (p->smax > 0 && current_limit < MAX_W) { /* smax > 0 only without noscan and with dmin <= 1 (var_init) */
+    int cur_min = warg->min_swei[current_limit] - 1;
+    max_s_needed = (cur_min < p->smax) ? (cur_min > 0 ? cur_min : 0) : p->smax;
   }
   const int max_reach = rem * max_col_wt + max_s_needed;
 
@@ -515,8 +515,8 @@ static void rw_record_codeword(distfork_ctx_t * const ctx, const rci_t * const e
   pthread_mutex_unlock(&ctx->cw_mutex);
 }
 
-/* Run RW batch; returns the number of completed steps */
-static int run_rw_steps(distfork_ctx_t *ctx, int n_steps,
+/* Run RW batch of the global steps step0 .. step0+n_steps-1; returns the number of completed steps */
+static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
                         mzd_t *mH, mzd_t *mHT, rci_t *ee,
                         mzp_t *perm, mzp_t *pivs, word *piv_mask,
                         int *eff_nrows_ptr,
@@ -542,7 +542,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, int n_steps,
 
     int eff_kwin = kwin;
     int eff_win_mode = win_mode;
-    if (eff_kwin == 0 && nvar >= 500 && (step & 1) == 1) {
+    if (eff_kwin == 0 && nvar >= 500 && ((step0 + step) & 1) == 1) { /* hybrid: every other global step */
       eff_kwin = minint(512, (nvar * 3) / 4);
       eff_win_mode = 1;
     }
@@ -649,9 +649,10 @@ static inline bool ksub_row_in_window(const mzd_t * const N, const int r, const 
   return false;
 }
 
-/* Run compact subspace RW batch (ksub > 0); returns the number of completed steps.  `nidx` is the thread's
- * permutation of the row indices 0..nu-1 of N, used to sample ksub distinct rows (partial Fisher-Yates shuffle) */
-static int run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
+/* Run compact subspace RW batch (ksub > 0) of the global steps step0 .. step0+n_steps-1; returns the number of
+ * completed steps.  `nidx` is the thread's permutation of the row indices 0..nu-1 of N, used to sample ksub distinct
+ * rows (partial Fisher-Yates shuffle) */
+static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
                              mzd_t *M_sub, rci_t *ee, mzp_t *perm, mzp_t *pivs, int *nidx,
                              int *visited_cols, int *visited_checks, int *col_queue,
                              int *visit_marker, uint64_t *rng_state, int tid) {
@@ -684,7 +685,7 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
     /* 1. Generate column permutation (localized window or uniform) */
     int eff_kwin = kwin;
     int eff_win_mode = win_mode;
-    if (eff_kwin == 0 && nvar >= 500 && (step & 1) == 1) {
+    if (eff_kwin == 0 && nvar >= 500 && ((step0 + step) & 1) == 1) { /* hybrid: every other global step */
       eff_kwin = minint(512, (nvar * 3) / 4);
       eff_win_mode = 1;
     }
@@ -792,11 +793,7 @@ static void *worker_thread_func(void *arg) {
   const bool enable_rw = ((ctx->p->method & 1) != 0) && (tid < ctx->rw_threads);
   const bool use_ksub = enable_rw && (ctx->p->ksub > 0);
   const int ksub_eff = (use_ksub && ctx->nu > 0) ? minint(ctx->p->ksub, ctx->nu) : 0;
-
-  /* Initialize min_swei for this thread */
-  for (int i = 0; i < MAX_W; i++) {
-    warg->min_swei[i] = ctx->p->spaH->rows + 1;
-  }
+  /* (warg->min_swei is initialized by the main thread before the workers are launched) */
 
   /* Thread-local RW matrices (allocated safely only if RW is enabled) */
   mzd_t *mH = NULL;
@@ -812,9 +809,9 @@ static void *worker_thread_func(void *arg) {
   int *visited_checks = NULL;
   int *col_queue = NULL;
   int visit_marker = 0;
-  uint64_t rng_state = (uint64_t)ctx->p->seed
-                       + (uint64_t)tid * 0x9e3779b97f4a7c15ULL
-                       + 0x517cc1b727220a95ULL;
+  /* RNG stream of this thread: a hashed starting point of splitmix64 (consecutive starting points would give
+   * shifted copies of one stream) */
+  uint64_t rng_state = mix64((uint64_t)ctx->p->seed ^ mix64((uint64_t)tid + 0x517cc1b727220a95ULL));
 
   if (enable_rw) {
     ee = malloc((nvar + 2) * sizeof(rci_t));
@@ -839,19 +836,18 @@ static void *worker_thread_func(void *arg) {
     }
   }
 
-  /* Thread-local CC memory */
+  /* Thread-local CC memory (only for CC, method 2 or 3) */
   const int wmax_alloc = MAX_W - 1;
-  one_vec_t *err = calloc(
-      1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2)
-  );
-  one_vec_t *urr = calloc(
-      1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2)
-  );
-  one_vec_t **syn = calloc(wmax_alloc + 3, sizeof(one_vec_t *));
-  for (int i = 0; i <= wmax_alloc + 2; i++) {
-    syn[i] = calloc(
-        1, sizeof(one_vec_t) + sizeof(int) * (ctx->p->spaH->rows + 1)
-    );
+  one_vec_t *err = NULL, *urr = NULL, **syn = NULL;
+  if (ctx->p->method >= 2) {
+    err = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2));
+    urr = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2));
+    syn = calloc(wmax_alloc + 3, sizeof(one_vec_t *));
+    if (!err || !urr || !syn) ERROR("memory allocation");
+    for (int i = 0; i <= wmax_alloc + 2; i++) {
+      syn[i] = calloc(1, sizeof(one_vec_t) + sizeof(int) * (ctx->p->spaH->rows + 1));
+      if (!syn[i]) ERROR("memory allocation");
+    }
   }
 
   while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
@@ -979,14 +975,14 @@ static void *worker_thread_func(void *arg) {
           int n_steps = (int)(target_s - cur_s);
           if (use_ksub) {
             if (ksub_eff > 0) {
-              run_rw_steps_ksub(ctx, n_steps, M_sub, ee, perm, pivs, nidx,
+              run_rw_steps_ksub(ctx, cur_s, n_steps, M_sub, ee, perm, pivs, nidx,
                                 visited_cols, visited_checks, col_queue,
                                 &visit_marker, &rng_state, tid);
             } else {
               atomic_fetch_add(&ctx->rw_steps_completed, n_steps);
             }
           } else {
-            run_rw_steps(ctx, n_steps, mH, mHT_rw, ee, perm, pivs,
+            run_rw_steps(ctx, cur_s, n_steps, mH, mHT_rw, ee, perm, pivs,
                          piv_mask, &eff_nrows, visited_cols, visited_checks,
                          col_queue, &visit_marker, &rng_state, tid);
             if (eff_nrows > 0 && eff_nrows < mH->nrows) rw_shrink_matrices(&mH, &mHT_rw, eff_nrows);
@@ -1016,8 +1012,10 @@ static void *worker_thread_func(void *arg) {
     safe_mzd_free(mH);
   }
 
-  for (int i = 0; i <= wmax_alloc + 2; i++) free(syn[i]);
-  free(syn);
+  if (syn) {
+    for (int i = 0; i <= wmax_alloc + 2; i++) free(syn[i]);
+    free(syn);
+  }
   free(err);
   free(urr);
 
@@ -1936,7 +1934,16 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.next_refresh_step, p->refresh > 0 ? p->refresh : 0);
 
   pthread_mutex_init(&ctx.cw_mutex, NULL);
-  pthread_rwlock_init(&ctx.basis_rwlock, NULL);
+  { /* ksub basis lock: writer-preferring (glibc), so that a waiting refresh (writer) is not starved by overlapping RW
+     * batches (readers, which never hold the lock recursively) */
+    pthread_rwlockattr_t rwattr;
+    pthread_rwlockattr_init(&rwattr);
+#ifdef __GLIBC__
+    pthread_rwlockattr_setkind_np(&rwattr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+#endif
+    pthread_rwlock_init(&ctx.basis_rwlock, &rwattr);
+    pthread_rwlockattr_destroy(&rwattr);
+  }
 
   ctx.mHT_cc = csr_transpose(NULL, p->spaH);
   ctx.max_col_W = csr_max_row_wght(ctx.mHT_cc);

@@ -716,6 +716,18 @@ if $BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem ksub=32 wmax=3 threads=2 de
     FAILED=1
 fi
 
+# Test 93: space form of the file arguments ("fin= name", "finH= name", ...); a missing file name is an error
+assert_output "$BIN_FORK method=2 fin= $EXAMPLES_DIR/try wmax=8 threads=2 debug=0" 0 "^4 4 0$" ""
+assert_output \
+    "$BIN_FORK method=2 finH= $EXAMPLES_DIR/tryX.mtx finG= $EXAMPLES_DIR/tryZ.mtx wmax=8 threads=2 debug=0" \
+    0 "^4 4 0$" ""
+assert_output "$BIN_FORK method=2 wmax=8 threads=2 debug=0 fin=" 255 "" "'fin=': missing file name"
+
+# Test 94: hybrid RW (n >= 500): uniform and window permutations alternate with the global step index, i.e., half of
+# the steps are uniform also for batches of one step (chunk_size=1)
+assert_output "$BIN_FORK method=1 $S5 steps=1000 chunk_size=1 min_hits=0 threads=2 debug=1" 0 "^1 [0-9]+ 1000$" \
+    "^# RW information sets: n=1958, rank\(H\)=120, steps=1000 \(uniform permutations: 500\)"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1
