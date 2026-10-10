@@ -22,7 +22,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ---
 
-### Task 1: Subspace Sketching (`ksub`) for In-Cache Multicore Scaling
+### Task 1: Subspace Sketching (`ksub`, experimental) for In-Cache Multicore Scaling
 - [x] Add CLI parameter `ksub=[int]` (default `0` retains original full-matrix RW).
 - [x] **Main Thread Precomputation**:
   - Compute a basis of the null space $N = \ker(H)$ (dimension $\nu \times n$, where $\nu = n - \mathrm{rank}(H)$) once
@@ -34,12 +34,26 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - For $k_{\text{sub}} = 64$ and $n = 5000$, working memory per thread is $\approx 40\text{--}80 \text{ KB}$, fitting
     entirely within private L1/L2 cache and eliminating L3 cache and DRAM bandwidth contention.
 - [x] **Per-Trial Hot Loop**:
-  1. Sample $k_{\text{sub}}$ rows uniformly from $N$ into the thread-local working matrix `M_sub`.
+  1. Sample $k_{\text{sub}}$ distinct rows of $N$ (partial Fisher–Yates shuffle of the row indices; rows drawn with
+     replacement would repeat and reduce the rank) into the thread-local working matrix `M_sub`.
   2. Perform in-place RREF via `gauss_one(M_sub, perm->values[i], rank)` in permuted column order (stopping as soon as
      `rank == ksub`, avoiding matrix transpositions and non-thread-safe `m4ri_mmc` allocations).
   3. Directly extract candidate codewords from the reduced non-zero rows (already in sorted original column
      coordinates; no dual transposition, coordinate unpermutation, or `qsort` needed).
-  4. Test logical non-triviality against $L$ (`sparse_syndrome_non_zero`), and atomically update `dmax`.
+  4. Test logical non-triviality against $L$ (column masks of $L$, see **Faster Logical Check**), and atomically
+     update `dmax`.
+- Findings (Oct 2026, `ksub` forced also for $m < \nu$, 8 threads): `ksub` explores only the span of $k_{\text{sub}}$
+  rows of the fixed basis $N$ in each step, so a codeword is found only if all basis rows in its expansion are
+  sampled. The hit counts are then concentrated on a few codewords, and `min_hits` stops RW early: e.g., for
+  `bb72_si1000_X.dem`, after $\sim 2500$ steps with only 4–7 distinct codewords of weight 6 (full RW: 100 distinct
+  codewords after $\sim 40000$ steps); for `torus60_d14_X.dem`, a codeword of weight 6 took 3–14 s instead of 3–15 ms.
+  For `c1920H.mmx` (where `ksub` is allowed), the lightest codewords found in 20 s were similar to full RW. The
+  fallback rule $m < \nu \Rightarrow$ `ksub=0` thus stays (it disables `ksub` for DEMs and most quantum codes).
+- [x] `ksub` is kept for now, but marked experimental (should not be used) in the documentation, `--help`, and
+  `--morehelp`; a warning is printed whenever `ksub>0` is given for RW (with or without `min_hits`, regardless of
+  `debug`; in Python, once per `compute_*_distance()` call), as a reminder that the option does not do what it is
+  supposed to.
+- [ ] Find a subspace sampling for which the hit counts are uniform (or drop `ksub`).
 
 ---
 
@@ -155,10 +169,27 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] **Sparse Gaussian Elimination**:
   - Evaluate whether sparse elimination (e.g. CSR row combining) can outperform dense bit-matrices for very large,
     highly sparse DEMs where $k_{\text{sub}}$ is small.
-- [ ] **Faster Logical Check**:
-  - `sparse_syndrome_non_zero(L, ...)` costs $O(\mathrm{nnz}(L))$ per RW candidate; with the transpose of $L$ and a
-    small bit set for the $k$ syndrome bits, it costs $O(w)$. For DEMs, most candidates below the weight limit are
-    trivial (e.g., $3.4\cdot 10^{6}$ $L$-orthogonal candidates in 5000 steps on `gross_uniform_X.dem`).
+- [x] **Faster Logical Check**:
+  - `sparse_syndrome_non_zero(L, ...)` cost $O(\mathrm{nnz}(L))$ per candidate, and it was the largest part of a RW
+    step for DEMs, where most candidates below the weight limit are trivial (e.g., 248 candidates per step for
+    `bb72_si1000_X.dem`, 1.5 ms of a 1.9 ms step), and also of CC rounds on DEMs (trivial zero-syndrome clusters).
+  - Now the column bit masks of $L$ (`colmask_t`, `p->maskL`, $\lceil k/64\rceil$ words per column) give the check
+    in $O(w)$ operations, for RW (also before sorting the support), `ksub` RW, and CC. Same results, one thread, the
+    same RW steps (times include reading the input): `bb72_si1000_X.dem` RW 3.6 s $\to$ 0.63 s, CC (`wmax=6`)
+    2.4 s $\to$ 1.1 s, `method=3` 3.2 s $\to$ 1.2 s; `gross_uniform_X.dem` 3.3 s $\to$ 1.5 s; `QX900` 0.68 s $\to$
+    0.23 s; `surf_d5` 0.77 s $\to$ 0.51 s.
+- [x] **RW Step Profile** (Oct 2026, one thread, after the faster logical check): the Gaussian elimination takes
+  70–95% of a RW step for DEMs (`bb72_si1000_X.dem`: 215 of $\sim$310 µs; `gross_uniform_X.dem`: 6.8 of 7.8 ms), the
+  transposition 7–15%, the extraction of the candidates the rest. Faster elimination (Task 5, or M4RI on a
+  column-permuted copy, which needs thread-safe allocations) is the next step.
+  - The weight of each candidate is now counted first (word-wise popcount, ending at the weight limit), and only the
+    candidates below the limit are formed: `surf_d5` $-11\%$, `c1920H.mmx` $-9\%$ of the RW time.
+  - With redundant rows of $H$, the RW matrices keep only the $\mathrm{rank}\,H$ non-zero rows after the first step,
+    so that the transposition skips the zero rows.
+  - Contention on `cw_mutex` is negligible: only the candidates below the weight limit and with $Lc \neq 0$ are
+    recorded, and with `min_hits` about `min_hits` $\times$ `cov_cws` hits are recorded until convergence (e.g., 1.4 µs
+    of lock wait per step of $\sim$260 µs for `surf_d5` with 32 threads); it only shows in runs of a few
+    milliseconds.
 - [ ] **Distance Benchmark Update**:
   - Run the longer benchmark to certify or tighten the provisional distances in `benchmark/BENCHMARK.md` (plan in
     `tmp/benchmark_distance_plan.md`).

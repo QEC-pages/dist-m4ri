@@ -59,11 +59,13 @@ $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits 
 ### 1. Multithreaded RW Algorithm (`method=1`)
 Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$.
 Threads independently generate random column permutations, compute Gaussian elimination to find information sets,
-and extract candidate dual-row codewords. When a lighter codeword is discovered, all worker threads atomically update
-the global upper bound $d_{\max}$. The found codewords are kept in a hash table with their hit counts (the number of
-times RW found each codeword): the collection window for `outC` (weight up to $w_{\min} + \text{dW}$, where
-$w_{\min}$ is the minimum weight found) and, for `min_hits`, a representative set of `cov_cws` lowest-weight codewords,
-where heavier codewords are gradually replaced as lighter ones are found.
+and extract candidate dual-row codewords. Only the candidates lighter than the current weight limit are formed (the
+weight of each candidate is counted first), and they are checked for $Lc \neq 0$ with bit masks of the columns of $L$,
+in $O(|c|)$ operations: for DEMs, most such candidates are trivial. When a lighter codeword is discovered, all worker
+threads atomically update the global upper bound $d_{\max}$. The found codewords are kept in a hash table with their
+hit counts (the number of times RW found each codeword): the collection window for `outC` (weight up to
+$w_{\min} + \text{dW}$, where $w_{\min}$ is the minimum weight found) and, for `min_hits`, a representative set of
+`cov_cws` lowest-weight codewords, where heavier codewords are gradually replaced as lighter ones are found.
 
 Relevant parameters:
 - `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 100000).
@@ -84,10 +86,14 @@ Relevant parameters:
   random permutations).
 - `win_mode=[0|1]`: Window construction mode when `kwin > 0`: `0` for Tanner graph BFS neighborhood, `1` for contiguous
   column index window (default: 0).
-- `ksub=[int]`: Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for full-matrix
-  RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$).
+- `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
+  without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
+  full-matrix RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$, e.g., for DEMs
+  and most quantum codes). Each step reduces the span of `ksub` distinct rows of a fixed basis of $\ker(H)$, so that a
+  few codewords are found much more often than others: then $e^{-\langle n\rangle}$ is optimistic, and `min_hits` may
+  end RW early.
 - `refresh=[int]`: RW step interval for adaptive $\ker(H)$ basis refresh via low-weight codeword exchange and
-  re-echelonization (default: 5000 when `ksub > 0`, 0 to disable).
+  re-echelonization, only with the experimental `ksub>0` (default: 5000 when `ksub > 0`, 0 to disable).
 - `wmin=[int]`: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found;
   not when collecting codewords with `outC` or `maxC`).
 - `threads=[int]`: Maximum number of POSIX worker threads to run (default: number of CPU cores; subject to automatic
@@ -434,7 +440,7 @@ Search limits and stopping criteria:
 
 Multithreading and RW optimization:
   threads=[int]      Max worker threads to use (0: auto CPU count) (0)
-  ksub=[int]         Subspace dimension sampled from ker(H) for RW (0: full H) (0)
+  ksub=[int]         EXPERIMENTAL, do not use: subspace dimension sampled from ker(H) for RW (0)
   kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)
 
 Codeword collection:
@@ -452,7 +458,7 @@ Extra parameters (see --morehelp for details):
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
   cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
-  refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (auto 5000 if ksub>0)
+  refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]
   debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)
 
@@ -474,8 +480,8 @@ selects the diagnostic output, where lower bits are more informative. The value 
 integer. Multiple `debug` arguments are OR-combined, where the first one replaces the default `debug=3`: e.g.,
 `debug=0` alone is silent, while `debug=4` and `debug=0 debug=4` both give only the periodic status.
 
-- `0`: silent, except for errors, warnings on the validity of the result (expert options, invalid `finC` codewords),
-  and the confinement profile with `smax>0`.
+- `0`: silent, except for errors, warnings on the validity of the result (expert options, the experimental `ksub`,
+  invalid `finC` codewords), and the confinement profile with `smax>0`.
 - `1` (default) **summary**: input matrices (sizes, numbers of nonzeros, maximum row and column weights), warnings,
   the reason why the run ended (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`, `timeout=60s
   reached during CC round w=9 (37.5% of start columns claimed)`, or `RW convergence reached`), codeword and hit
@@ -574,6 +580,8 @@ interoperability without manual threading overhead.
   results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
   disabled in Python (ignored with a warning to `stderr`); see
   [Restricting the CC Search](#restricting-the-cc-search-expert-options).
+- The experimental RW option `ksub` of the `compute_*_distance()` functions and the CLI should not be used: with
+  `ksub>0` (and `method=1` or `3`), the same warning as from the binary is written to `stderr`.
 - Optional solver backend: `solver="codedistance"` (uses the `codedistance` library if installed).
 - Debug output: `debug=N` (default: 0) is a bitmap, where the bits `1` to `32768` are passed to the binary (see
   [Debug Output](#debug-output-debugint); its `stderr` is then printed), and the higher bits are used by the wrapper:
@@ -637,7 +645,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (90 tests)
+# Run full C test suite (92 tests)
 make test
 ```
 

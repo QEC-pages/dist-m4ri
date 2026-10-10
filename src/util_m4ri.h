@@ -119,6 +119,19 @@ typedef struct{    /*  */
 
 typedef struct { int a; int b; } int_pair;
 
+/**
+ * Column bit masks of a sparse binary matrix A (e.g., the logical operators L), see colmask_from_csr():
+ * column j is the set of rows i with A[i][j]=1, stored in `kw` words.  The syndrome A e of a sparse
+ * vector e is then the XOR of the masks of its columns (colmask_syndrome_non_zero()), which takes
+ * O(|e| kw) operations instead of O(nnz(A)) for sparse_syndrome_non_zero().
+ */
+typedef struct {
+  int rows;   /**< number of rows of A */
+  int cols;   /**< number of columns of A */
+  int kw;     /**< number of words per column, ceil(rows/64) */
+  word *mask; /**< cols * kw words: the mask of column j starts at mask[j * kw] */
+} colmask_t;
+
 #define SORT_NAME rci
 #define SORT_TYPE rci_t
 #define SORT_CMP(x, y) ((x) - (y))
@@ -510,6 +523,36 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
   return 0;
 }
 
+/**
+ * @brief Check if the syndrome A e of a sparse vector e is non-zero, with the column masks of A.
+ *
+ * Same result as sparse_syndrome_non_zero(A, cnt, ee), in O(cnt kw) operations; the indices need not
+ * be sorted.
+ *
+ * @param cm Column masks of A (see colmask_from_csr()).
+ * @param cnt Weight of the vector e.
+ * @param ee Array of the indices of the non-zero entries of e (each index at most once).
+ * @return 1 if the syndrome is non-zero, 0 if it is zero.
+ */
+static inline int colmask_syndrome_non_zero(const colmask_t * const cm, const int cnt, const int ee[]) {
+  const int kw = cm->kw;
+  const word * const mask = cm->mask;
+  if (kw == 1) {
+    word s = 0;
+    for (int i = 0; i < cnt; i++)
+      s ^= mask[ee[i]];
+    return s != 0;
+  }
+  for (int w = 0; w < kw; w++) {
+    word s = 0;
+    for (int i = 0; i < cnt; i++)
+      s ^= mask[(size_t)ee[i] * kw + w];
+    if (s)
+      return 1;
+  }
+  return 0;
+}
+
   /** 
    * @brief Check if the product of two sparse matrices A * B^T is non-zero.
    * @param A First sparse matrix.
@@ -570,6 +613,23 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
    * @return Newly allocated dense matrix N, or NULL if kernel is trivial.
    */
   mzd_t * mzd_nullspace(const csr_t * const H);
+
+  /**
+   * @brief Construct the column bit masks of a sparse binary matrix (see colmask_t).
+   *
+   * Duplicate entries of A cancel (mod 2), as in sparse_syndrome_non_zero().
+   *
+   * @param A Sparse matrix in CSR form.
+   * @return Newly allocated column masks (free with colmask_free()).
+   */
+  colmask_t * colmask_from_csr(const csr_t * const A);
+
+  /**
+   * @brief Free the column masks allocated by colmask_from_csr().
+   * @param cm Column masks (may be NULL).
+   * @return Always returns NULL.
+   */
+  colmask_t * colmask_free(colmask_t *cm);
 
   /**
    * @brief Construct a column permutation with a localized window at the front.

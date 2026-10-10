@@ -627,6 +627,7 @@ def test_rw_ksub_kwin_min_hits(capsys):
     dist_m4ri.disable_distance_cache()
     try:
         dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        capsys.readouterr()
         d, d_info = dist_m4ri.compute_dem_distance(
             dem=dem_file, method=1, num_steps=2000, ksub=32, kwin=48,
             win_mode=0, min_hits=3, cov_cws=2, refresh=50, threads=4, seed=42
@@ -634,6 +635,8 @@ def test_rw_ksub_kwin_min_hits(capsys):
         assert d == 3
         assert d_info[1] == 3
         assert 0 < d_info[2] < 2000
+        # the experimental ksub: one warning per call (also when the binary falls back to full-matrix RW)
+        assert capsys.readouterr().err.count("# WARNING: ksub=32 is experimental and should not be used") == 1
 
         args = dist_m4ri.parse_cli_args([
             "method=1", "ksub=64", "win=128", "win_mode=1",
@@ -655,6 +658,7 @@ def test_rw_ksub_kwin_min_hits(capsys):
         )
         assert d3 == 3
         assert d3_info[0] == 3 and d3_info[1] == 3
+        assert "is experimental" not in capsys.readouterr().err
     finally:
         dist_m4ri.enable_distance_cache()
 

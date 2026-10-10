@@ -49,6 +49,7 @@ params_t prm={
   .spaH=NULL,
   .spaG=NULL,
   .spaL=NULL,
+  .maskL=NULL,
   .threads=0,
   .dexp=0,
   .timeout=60.0,
@@ -735,6 +736,9 @@ void var_init(int argc, char **argv, params_t * const p){
             "Provide finL, fdem, or finG to construct it. Alternatively, set classical=1 "
             "to find the distance of the stabilizer code as a classical code.");
     }
+    /* column masks of L: the check L c != 0 of a candidate codeword c takes O(|c|) operations (for up to 64 rows
+     * of L) instead of O(nnz(L)) */
+    p->maskL = colmask_from_csr(p->spaL);
   }
 
   if ((p->method <= 0) || (p->method > 3)){
@@ -752,7 +756,7 @@ void var_init(int argc, char **argv, params_t * const p){
     fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
   }
 
-  /* Warnings for the expert CC options (printed regardless of `debug`) */
+  /* Warnings for the expert CC options and for the experimental ksub (printed regardless of `debug`) */
   if (p->noscan) {
     const int d0 = (p->dmin > 1) ? p->dmin : 1;
     if (d0 < p->wmax)
@@ -783,6 +787,14 @@ void var_init(int argc, char **argv, params_t * const p){
             "#   dmin only covers codewords whose smallest column is in this range; take the minimum of\n"
             "#   dmin (and of dmax) over runs covering all columns 0..%d\n", beg, end, p->nvar - 1);
   }
+  /* The experimental RW option ksub (with or without min_hits, also if it falls back to ksub=0 for m < nu) */
+  if (p->ksub > 0 && (p->method & 1)) {
+    fprintf(stderr,
+            "# WARNING: ksub=%d is experimental and should not be used: a RW step reduces the span of ksub rows\n"
+            "#   of a fixed basis of ker(H), so that a few codewords are found much more often than others; with\n"
+            "#   min_hits, RW may end early, and exp(-<n>) underestimates the probability to miss a lighter codeword\n",
+            p->ksub);
+  }
 }
 
 void var_kill(params_t * const p){
@@ -793,6 +805,7 @@ void var_kill(params_t * const p){
   }
   if(p->spaL)
     csr_free(p->spaL);
+  p->maskL = colmask_free(p->maskL);
   if(p->spaH)
     csr_free(p->spaH);
   if(p->spaG)

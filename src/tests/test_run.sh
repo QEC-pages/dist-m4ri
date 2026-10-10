@@ -694,6 +694,28 @@ assert_output "$BIN_FORK method=2 $S5 dmax=5 timeout=0 threads=2 debug=0" 0 "^5 
 assert_output "$BIN_FORK method=2 $S5 timeout=0 threads=2 debug=0" 255 "" \
     "either parameter wmax>0, dmax>0, or timeout>0 should be specified for CC method=2"
 
+# Test 91: logical check L c != 0 with the column bit masks of L for more than 64 logical operators ([[900,182,8]]:
+# three words per column), in RW and in CC
+Q900="finH=$EXAMPLES_DIR/QX900.mtx finG=$EXAMPLES_DIR/QZ900.mtx"
+assert_output "$BIN_FORK method=1 $Q900 steps=2000 min_hits=0 seed=11 threads=1 debug=0" 0 "^1 8 2000$" ""
+assert_output "$BIN_FORK method=2 $Q900 wmax=8 threads=2 debug=0" 0 "^8 8 0$" ""
+
+# Test 92: the experimental ksub prints a warning regardless of debug, without and with min_hits (c1920H: ksub is
+# used, m >= nu), and also when it falls back to full-matrix RW (surf_d3.dem: m < nu); no warning without RW
+KSUB_WARN="^# WARNING: ksub=[0-9]+ is experimental and should not be used"
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx ksub=32 steps=100 min_hits=0 threads=2 debug=0" \
+    0 "^1 [0-9]+ 100$" "$KSUB_WARN"
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx ksub=16 steps=100 threads=2 debug=0" \
+    0 "^1 [0-9]+ 100$" "$KSUB_WARN"
+assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem ksub=32 steps=200 threads=2 debug=0" \
+    0 "^1 3 [0-9]+$" "$KSUB_WARN"
+echo "Running Test 92: no ksub warning with method=2"
+if $BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem ksub=32 wmax=3 threads=2 debug=0 2>&1 | \
+    grep -q "is experimental"; then
+    echo "  [FAIL] Test 92: unexpected ksub warning with method=2"
+    FAILED=1
+fi
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

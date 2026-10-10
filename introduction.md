@@ -46,8 +46,10 @@ A codeword `c` is found in a step if exactly one of its positions is a non-pivot
 minimum weight is found with some column order (see the QDistRnd manual, Sec. 3.1). The candidates with `L c != 0`
 are kept in a hash table, together with the number of times each of them has been found (hit counts).
 
-Variants: with `ksub > 0`, each step samples a `ksub`-dimensional subspace of `ker(H)` (cache-resident elimination);
-`kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default).
+Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default).
+With `ksub > 0` (**experimental, should not be used**; a warning is printed), each step reduces the span of `ksub`
+rows of a fixed basis of `ker(H)` (cache-resident elimination): a few codewords are then found much more often than
+others, so that the hit-count criterion `min_hits` may end RW early.
 
 RW ends after `steps` steps (default: 100000), at the `timeout`, as soon as a codeword of weight at most `wmin` is
 found, or when the hit-count criterion `min_hits` is met (see Convergence below).

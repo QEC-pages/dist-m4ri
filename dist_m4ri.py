@@ -1070,6 +1070,28 @@ def _start_warning_text(start_list: List[int]) -> str:
     )
 
 
+def _ksub_warning_text(ksub: int) -> str:
+    """Returns the stderr warning for the experimental RW option ksub (same wording as the dist_m4ri binary)."""
+    return (
+        f"# WARNING: ksub={ksub} is experimental and should not be used: a RW step reduces the span of ksub rows\n"
+        f"#   of a fixed basis of ker(H), so that a few codewords are found much more often than others; with\n"
+        f"#   min_hits, RW may end early, and exp(-<n>) underestimates the probability to miss a lighter codeword\n"
+    )
+
+
+def _warn_experimental_ksub(ksub: Any, method: int, solver: str = "dist_m4ri") -> None:
+    """
+    Issues the warning for the experimental RW option ksub > 0 to stderr (with or without min_hits), if RW runs
+    (method=1 or 3) with the dist_m4ri binary.
+    """
+    try:
+        ival = int(ksub or 0)
+    except (TypeError, ValueError):
+        return
+    if ival > 0 and (int(method) & 1) and solver != "codedistance":
+        sys.stderr.write(_ksub_warning_text(ival))
+
+
 def _prepare_start_option(
     start: Any,
     trust_start: bool = False,
@@ -1319,7 +1341,8 @@ def run_dist_m4ri(
     refresh: int = 0,
     verbose: bool = False,
     stop_event: Optional[threading.Event] = None,
-    warn_start: bool = True
+    warn_start: bool = True,
+    warn_ksub: bool = True
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
@@ -1334,6 +1357,12 @@ def run_dist_m4ri(
         warn_start: If True (default), issue the start-list warning to stderr.
         noscan / cbeg / cend: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+
+    Experimental RW option:
+        ksub: Experimental, should not be used: subspace dimension sampled from ker(H) in RW (0: full-matrix RW).
+            A RW step reduces the span of ksub rows of a fixed basis of ker(H), so that a few codewords are found
+            much more often than others (min_hits may end RW early).
+        warn_ksub: If True (default), issue the warning for ksub > 0 to stderr (with method=1 or 3).
 
     Debug output:
         debug: Debug bitmap; the bits in BIN_DBG_MASK are passed to the binary (its diagnostic output on stderr
@@ -1350,6 +1379,8 @@ def run_dist_m4ri(
     _warn_disabled_options(noscan, cbeg, cend)
     if start_list and warn_start:
         sys.stderr.write(_start_warning_text(start_list))
+    if warn_ksub:
+        _warn_experimental_ksub(ksub, method)
 
     finC = check_finc_outc(finC, outC, verbose=False)
 
@@ -2936,6 +2967,8 @@ def compute_classical_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
+            subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
@@ -2956,6 +2989,7 @@ def compute_classical_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    _warn_experimental_ksub(ksub, method, solver)
 
     finC = check_finc_outc(finC, outC, verbose=verbose)
 
@@ -3075,6 +3109,7 @@ def compute_classical_distance(
             smax=smax,
             start=start_list,
             warn_start=False,
+            warn_ksub=False,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
@@ -3231,6 +3266,8 @@ def compute_quantum_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
+            subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
@@ -3251,6 +3288,7 @@ def compute_quantum_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    _warn_experimental_ksub(ksub, method, solver)
 
     if G is None and L is None:
         raise ValueError(
@@ -3407,6 +3445,7 @@ def compute_quantum_distance(
             smax=smax,
             start=start_list,
             warn_start=False,
+            warn_ksub=False,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
@@ -3577,6 +3616,8 @@ def compute_css_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
+            subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
@@ -3597,6 +3638,7 @@ def compute_css_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    _warn_experimental_ksub(ksub, method, solver)
 
     can_compute_Z = (
         Hx is not None
@@ -3847,6 +3889,7 @@ def compute_css_distance(
                 smax=smax,
                 start=start_list,
                 warn_start=False,
+                warn_ksub=False,
                 dexp=d_exp,
                 steps=num_steps,
                 threads=threads,
@@ -3888,6 +3931,7 @@ def compute_css_distance(
                 smax=smax,
                 start=start_list,
                 warn_start=False,
+                warn_ksub=False,
                 dexp=d_exp,
                 steps=num_steps,
                 threads=threads,
@@ -4155,6 +4199,8 @@ def compute_dem_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
+            subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
         maxC: Maximum number of codewords to collect.
         pmin: Probability cutoff for error mechanisms in DEM.
@@ -4186,6 +4232,7 @@ def compute_dem_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    _warn_experimental_ksub(ksub, method, solver)
 
     if dem is not None and isinstance(dem, (str, Path)) and str(dem).endswith(".stim"):
         circuit = dem
@@ -4494,6 +4541,7 @@ def compute_dem_distance(
             smax=smax if smax is not None else 0,
             start=start_list,
             warn_start=False,
+            warn_ksub=False,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
@@ -5038,11 +5086,11 @@ Extra parameters (see --morehelp for details):
   noscan, cbeg, cend    Disabled in Python (ignored with a warning); use the dist_m4ri binary
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      RW batch chunk size (default: 0 for adaptive 25-500, alias: batch)
-  ksub=N (0)            RW subspace sketch dimension (0: full matrix; auto-disabled if m < nu)
+  ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
   kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
   cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
-  refresh=N (0)         Periodic N basis refresh interval in RW steps (auto 5000 when ksub > 0)
+  refresh=N (0)         Periodic N basis refresh interval in RW steps (experimental ksub only)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
   dW=N (0)              Extra weight window above dmin to collect codewords
   seed=N (0)            Random number generator seed
@@ -5145,10 +5193,14 @@ Multithreading & throttling:
                         Forces allocation of the exact number of threads requested.
   chunk_size=N          RW batch chunk size per thread (default: 0 = adaptive 25-500).
                         Alias: batch=N.
-  ksub=N                Subspace sketch dimension for RW (default: 0 = full matrix).
+  ksub=N                EXPERIMENTAL, should not be used (a warning is printed): subspace sketch
+                        dimension for RW (default: 0 = full matrix).
                         Precomputes N = ker(H) once; each thread echelonizes a compact
                         ksub x n sampled subspace in L1/L2 cache (e.g. ksub=32 or 64).
                         Automatically falls back to ksub=0 with a warning if m < nu = dim(ker H).
+                        Each step reduces the span of ksub distinct rows of N, so that a few
+                        codewords are found much more often than others, and min_hits may end
+                        RW early.
   kwin=N                Localized column permutation window size W around a random seed
                         column j0 (default: 0 = automatic hybrid window/uniform for n>=500).
                         Alias: win=N.
@@ -5172,9 +5224,10 @@ Multithreading & throttling:
                         most cov_cws minimum-weight codewords are tracked (all if cov_cws=0).
                         With fewer minimum-weight codewords, a smaller cov_cws may stop RW
                         earlier.
-  refresh=N             Periodic adaptive basis refresh interval in RW steps when ksub > 0
-                        (default: 5000 when ksub > 0, 0 to disable). Re-echelonizes N and
-                        substitutes heavier basis rows with discovered min-weight codewords.
+  refresh=N             Periodic adaptive basis refresh interval in RW steps, only with the
+                        experimental ksub > 0 (default: 5000 when ksub > 0, 0 to disable).
+                        Re-echelonizes N and substitutes heavier basis rows with discovered
+                        min-weight codewords.
 
 Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 0).

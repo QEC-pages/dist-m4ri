@@ -102,12 +102,13 @@ typedef struct{
   csr_t *spaH;
   csr_t *spaG;
   csr_t *spaL;
+  colmask_t *maskL; /* column masks of L for fast checks L c != 0 (NULL for a classical code), see var_init() */
   int threads; /* number of threads to use (0 for auto) */
   int dexp;    /* expected distance value (0 for auto/none) */
   double timeout; /* timeout in seconds (default 60.0, 0 for infinite) */
   int nothrottle; /* 1: disable automatic thread throttling */
   int chunk_size; /* RW chunk/batch size (0 for auto) */
-  int ksub;       /* RW subspace dimension sampled from ker(H) (0 for full H) */
+  int ksub;       /* RW subspace dimension sampled from ker(H) (0 for full H); experimental, should not be used */
   int kwin;       /* RW localized window size W (0 for uniform permutation) */
   int win_mode;   /* RW window mode: 0 = Tanner BFS, 1 = index proximity */
   int min_hits;   /* RW stopping criterion: average hits <n> per lowest-weight cw (0 = off) */
@@ -436,7 +437,7 @@ void print_short_help(const char *prog);
   "  timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)\n\n" \
   "Multithreading and RW optimization:\n" \
   "  threads=[int]      Max worker threads to use (0: auto CPU count) (0)\n" \
-  "  ksub=[int]         Subspace dimension sampled from ker(H) for RW (0: full H) (0)\n" \
+  "  ksub=[int]         EXPERIMENTAL, do not use: subspace dimension sampled from ker(H) for RW (0)\n" \
   "  kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)\n\n" \
   "Codeword collection:\n" \
   "  outC=[file]        Export found min-weight codewords (up to +dW) to file (.nz format)\n" \
@@ -452,7 +453,7 @@ void print_short_help(const char *prog);
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
   "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
-  "  refresh=[int] (0)      RW steps between adaptive ker(H) basis refreshes (auto 5000 if ksub>0)\n" \
+  "  refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
   "  debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)\n\n" \
   "Help options:\n" \
@@ -579,10 +580,14 @@ void print_short_help(const char *prog);
   "                     in method=3, CC rounds can use all threads.\n" \
   "  chunk_size=[int]   RW batch chunk size per worker (default: 0 = adaptive).\n" \
   "                     Alias: batch=[int].\n" \
-  "  ksub=[int]         Subspace dimension sampled from ker(H) in RW (default: 0 =\n" \
+  "  ksub=[int]         EXPERIMENTAL, should not be used (a warning is printed):\n" \
+  "                     subspace dimension sampled from ker(H) in RW (default: 0 =\n" \
   "                     original full-matrix RW). E.g. ksub=32 or 64 keeps working\n" \
   "                     matrices inside L1/L2 cache. Automatically falls back to\n" \
-  "                     ksub=0 (with a warning) if m < nu = dim(ker(H)).\n" \
+  "                     ksub=0 (with a warning) if m < nu = dim(ker(H)).  Each step\n" \
+  "                     reduces the span of ksub distinct rows of a fixed basis of\n" \
+  "                     ker(H), so that a few codewords are found much more often\n" \
+  "                     than others, and min_hits may end RW early.\n" \
   "  kwin=[int]         Localized column permutation window size W (default: 0 =\n" \
   "                     automatic hybrid window/uniform for n>=500; alias: win=[int]).\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
@@ -609,8 +614,9 @@ void print_short_help(const char *prog);
   "                     minimum-weight codewords, a smaller cov_cws may stop RW\n" \
   "                     earlier.\n" \
   "  refresh=[int]      RW steps interval for adaptive ker(H) basis refresh via\n" \
-  "                     low-weight codeword exchange and re-echelonization\n" \
-  "                     (default: 5000 when ksub > 0, 0 = off).\n" \
+  "                     low-weight codeword exchange and re-echelonization, only\n" \
+  "                     with the experimental ksub > 0 (default: 5000 when\n" \
+  "                     ksub > 0, 0 = off).\n" \
   "  seed=[int]         Random number generator seed (default: 0 = initialize from\n" \
   "                     current time).\n\n" \
   "Debug output bitmap (debug=[int], default: 3):\n" \
@@ -620,8 +626,8 @@ void print_short_help(const char *prog);
   "  default: e.g., debug=0 alone is silent, while debug=4 and debug=0 debug=4\n" \
   "  both give only the periodic status.\n" \
   "    0    : Silent: errors and warnings on the validity of the result (expert\n" \
-  "           options, invalid finC codewords) only, and the confinement\n" \
-  "           profile with smax > 0\n" \
+  "           options, experimental ksub, invalid finC codewords) only, and the\n" \
+  "           confinement profile with smax > 0\n" \
   "    1    : Summary (default): input matrices, warnings, stop reason,\n" \
   "           codeword and hit statistics, RW information sets, export\n" \
   "    2    : Progress (default): run plan (threads, steps, timeout, seed),\n" \

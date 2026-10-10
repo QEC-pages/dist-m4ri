@@ -919,6 +919,32 @@ mzd_t * mzd_nullspace(const csr_t * const H) {
   return N;
 }
 
+colmask_t * colmask_from_csr(const csr_t * const A) {
+  if (!A || A->nz != -1) ERROR("expected a sparse matrix in CSR form");
+  colmask_t *cm = malloc(sizeof(colmask_t));
+  if (!cm) ERROR("memory allocation");
+  cm->rows = A->rows;
+  cm->cols = A->cols;
+  cm->kw = (A->rows + 63) >> 6;
+  const size_t num = (size_t)A->cols * (size_t)cm->kw;
+  cm->mask = calloc(num > 0 ? num : 1, sizeof(word));
+  if (!cm->mask) ERROR("memory allocation");
+  for (int ir = 0; ir < A->rows; ir++) {
+    const word bit = (word)1 << (ir & 63);
+    for (int iL = A->p[ir]; iL < A->p[ir + 1]; iL++)
+      cm->mask[(size_t)A->i[iL] * cm->kw + (ir >> 6)] ^= bit; /* duplicate entries cancel */
+  }
+  return cm;
+}
+
+colmask_t * colmask_free(colmask_t *cm) {
+  if (cm) {
+    free(cm->mask);
+    free(cm);
+  }
+  return NULL;
+}
+
 static inline uint64_t util_splitmix64(uint64_t *state) {
   uint64_t z = (*state += 0x9e3779b97f4a7c15ULL);
   z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;

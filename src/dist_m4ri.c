@@ -292,7 +292,7 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   const one_vec_t * const syn_w = syn[w];
   const int syn_w_wei = syn_w->wei;
   const int row = syn_w->vec[0];
-  const csr_t * const mL = p->spaL;
+  const colmask_t * const mL = p->maskL; /* NULL for a classical code */
   /* Clusters are grown only to columns larger than the start column, except with the expert `start`
    * list, where clusters are unlimited (columns already in `err` are skipped via `one_ordered_search`). */
   const int col_min = (p->start_num > 0) ? -1 : urr->vec[0];
@@ -341,7 +341,7 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
 
       /* swei == 0: insert col into err to verify against mL and record codeword */
       int pos = one_ordered_ins(err, col);
-      int nz = (!mL) || sparse_syndrome_non_zero(mL, err->wei, err->vec);
+      int nz = (!mL) || colmask_syndrome_non_zero(mL, err->wei, err->vec);
       if (nz) {
         bool stop = false;
         pthread_mutex_lock(&ctx->cw_mutex);
@@ -523,7 +523,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, int n_steps,
                         int *visited_cols, int *visited_checks, int *col_queue,
                         int *visit_marker, uint64_t *rng_state, int tid) {
   params_t * const p = ctx->p;
-  const csr_t * const spaL0 = p->spaL;
+  const colmask_t * const maskL = p->maskL; /* NULL for a classical code */
   const int nvar = p->spaH->cols;
   const int classical = p->classical;
   const int kwin = p->kwin;
@@ -587,26 +587,31 @@ static int run_rw_steps(distfork_ctx_t *ctx, int n_steps,
     mzd_transpose(mHT, mH);
 
     const int active_width = (rank + 63) >> 6;
+    const word last_mask = (rank & 63) ? (((word)1 << (rank & 63)) - 1) : ~(word)0; /* bits of rows < rank */
     for (int col = 0; col < nvar; col++) {
       if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
+      const int limit = rw_cw_limit(ctx);
+      word *rawrow = mzd_row(mHT, col);
+      /* the weight 1 + (the number of pivot rows with a 1 in column col) first: word-wise popcount, which ends as soon
+       * as the weight reaches the limit (most candidates are much heavier) */
+      int wt = 1;
+      for (int iw = 0; iw < active_width - 1 && wt < limit; iw++) wt += __builtin_popcountll(rawrow[iw]);
+      if (wt < limit && active_width > 0) wt += __builtin_popcountll(rawrow[active_width - 1] & last_mask);
+      if (wt >= limit) continue;
+
       int cnt = 0;
       ee[cnt++] = col;
-      const int limit = rw_cw_limit(ctx);
-
-      word *rawrow = mzd_row(mHT, col);
       rci_t j = -1;
-      while (cnt < limit) {
+      while (cnt < wt) {
         j = nextelement(rawrow, active_width, j);
         if (j == -1 || j >= rank) break;
         ee[cnt++] = pivs->values[j++];
       }
 
-      if (cnt < limit) {
+      /* the check L c != 0 needs no sorted support: only the codewords recorded are sorted (hash key) */
+      if (classical || colmask_syndrome_non_zero(maskL, cnt, ee)) {
         rci_quick_sort(ee, cnt);
-        int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
-        if (nz) {
-          rw_record_codeword(ctx, ee, cnt, tid, 0);
-        }
+        rw_record_codeword(ctx, ee, cnt, tid, 0);
       }
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
@@ -619,13 +624,39 @@ static int run_rw_steps(distfork_ctx_t *ctx, int n_steps,
   return n_done;
 }
 
-/* Run compact subspace RW batch (ksub > 0); returns the number of completed steps */
+/* After a completed RW step, only the first `rank` = rank(H) rows of the reduced thread-local matrix `*mH` are non-zero
+ * (they span the rows of H), and the later steps eliminate only these rows: keep just these rows, so that the
+ * transposition in each RW step skips the zero rows (for H with redundant rows) */
+static void rw_shrink_matrices(mzd_t **mH, mzd_t **mHT, const int rank) {
+  pthread_mutex_lock(&m4ri_mem_mutex);
+  mzd_t * const top = mzd_init_window(*mH, 0, 0, rank, (*mH)->ncols);
+  mzd_t * const small = mzd_copy(NULL, top);
+  mzd_free_window(top);
+  mzd_free(*mH);
+  *mH = small;
+  mzd_free(*mHT);
+  *mHT = mzd_init(small->ncols, rank);
+  pthread_mutex_unlock(&m4ri_mem_mutex);
+}
+
+/* Whether row `r` of N has a non-zero entry in a column of the current RW window (visited_cols[j] == marker) */
+static inline bool ksub_row_in_window(const mzd_t * const N, const int r, const int nvar,
+                                      const int * const visited_cols, const int marker) {
+  const word * const raw_n = mzd_row_cons(N, r);
+  for (int j = nextelement(raw_n, N->width, -1); j >= 0 && j < nvar; j = nextelement(raw_n, N->width, j + 1)) {
+    if (visited_cols[j] == marker) return true;
+  }
+  return false;
+}
+
+/* Run compact subspace RW batch (ksub > 0); returns the number of completed steps.  `nidx` is the thread's
+ * permutation of the row indices 0..nu-1 of N, used to sample ksub distinct rows (partial Fisher-Yates shuffle) */
 static int run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
-                             mzd_t *M_sub, rci_t *ee, mzp_t *perm, mzp_t *pivs,
+                             mzd_t *M_sub, rci_t *ee, mzp_t *perm, mzp_t *pivs, int *nidx,
                              int *visited_cols, int *visited_checks, int *col_queue,
                              int *visit_marker, uint64_t *rng_state, int tid) {
   params_t * const p = ctx->p;
-  const csr_t * const spaL0 = p->spaL;
+  const colmask_t * const maskL = p->maskL; /* NULL for a classical code */
   const int nvar = p->spaH->cols;
   const int classical = p->classical;
   const int nu = ctx->nu;
@@ -670,27 +701,18 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
       perm = perm_p_trans(perm, pivs, 0);
     }
 
-    /* 2. Sample ksub rows from N into M_sub (with optional window overlap preference) */
+    /* 2. Sample ksub distinct rows of N into M_sub: partial Fisher-Yates shuffle of the row indices (rows drawn
+     * with replacement would repeat and reduce the rank), with up to 4 redraws to prefer rows overlapping the window */
     const int marker = *visit_marker;
+    const bool in_window = (eff_kwin > 0 && eff_kwin < nvar && visited_cols);
     for (int i = 0; i < ksub; i++) {
-      int r = rand_uniform_thread(nu, rng_state);
-      if (eff_kwin > 0 && eff_kwin < nvar && visited_cols) {
-        for (int attempt = 0; attempt < 4; attempt++) {
-          const word *raw_n = mzd_row_cons(N, r);
-          int j_bit = nextelement(raw_n, N->width, -1);
-          int overlaps = 0;
-          while (j_bit >= 0 && j_bit < nvar) {
-            if (visited_cols[j_bit] == marker) {
-              overlaps = 1;
-              break;
-            }
-            j_bit = nextelement(raw_n, N->width, j_bit + 1);
-          }
-          if (overlaps) break;
-          r = rand_uniform_thread(nu, rng_state);
-        }
+      int j = i + rand_uniform_thread(nu - i, rng_state);
+      for (int attempt = 0; in_window && attempt < 4 && !ksub_row_in_window(N, nidx[j], nvar, visited_cols, marker);
+           attempt++) {
+        j = i + rand_uniform_thread(nu - i, rng_state);
       }
-      mzd_copy_row(M_sub, i, N, r);
+      SWAPINT(nidx[i], nidx[j]);
+      mzd_copy_row(M_sub, i, N, nidx[i]);
     }
 
     /* 3. Echelonize M_sub directly in L1/L2 cache using permuted column order */
@@ -715,11 +737,8 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, int n_steps,
         ee[cnt++] = j++;
       }
 
-      if (cnt > 0 && cnt < limit) {
-        int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
-        if (nz) {
-          rw_record_codeword(ctx, ee, cnt, tid, ksub);
-        }
+      if (cnt > 0 && cnt < limit && (classical || colmask_syndrome_non_zero(maskL, cnt, ee))) {
+        rw_record_codeword(ctx, ee, cnt, tid, ksub);
       }
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
@@ -783,6 +802,7 @@ static void *worker_thread_func(void *arg) {
   mzd_t *mH = NULL;
   mzd_t *mHT_rw = NULL;
   mzd_t *M_sub = NULL;
+  int *nidx = NULL; /* ksub: permutation of the row indices of N, for sampling distinct rows */
   rci_t *ee = NULL;
   mzp_t *perm = NULL;
   mzp_t *pivs = NULL;
@@ -808,6 +828,9 @@ static void *worker_thread_func(void *arg) {
     if (use_ksub) {
       if (ksub_eff > 0) {
         M_sub = safe_mzd_init(ksub_eff, nvar);
+        nidx = malloc((size_t)ctx->nu * sizeof(int));
+        if (!nidx) ERROR("memory allocation");
+        for (int i = 0; i < ctx->nu; i++) nidx[i] = i;
       }
     } else {
       mH = safe_mzd_from_csr(NULL, ctx->p->spaH);
@@ -884,8 +907,7 @@ static void *worker_thread_func(void *arg) {
               }
             } else {
               if (!swei) {
-                int nz = (!ctx->p->spaL) ||
-                         sparse_syndrome_non_zero(ctx->p->spaL, 1, err->vec);
+                int nz = (!ctx->p->maskL) || colmask_syndrome_non_zero(ctx->p->maskL, 1, err->vec);
                 if (nz) {
                   params_t * const p = ctx->p;
                   pthread_mutex_lock(&ctx->cw_mutex);
@@ -957,7 +979,7 @@ static void *worker_thread_func(void *arg) {
           int n_steps = (int)(target_s - cur_s);
           if (use_ksub) {
             if (ksub_eff > 0) {
-              run_rw_steps_ksub(ctx, n_steps, M_sub, ee, perm, pivs,
+              run_rw_steps_ksub(ctx, n_steps, M_sub, ee, perm, pivs, nidx,
                                 visited_cols, visited_checks, col_queue,
                                 &visit_marker, &rng_state, tid);
             } else {
@@ -967,6 +989,7 @@ static void *worker_thread_func(void *arg) {
             run_rw_steps(ctx, n_steps, mH, mHT_rw, ee, perm, pivs,
                          piv_mask, &eff_nrows, visited_cols, visited_checks,
                          col_queue, &visit_marker, &rng_state, tid);
+            if (eff_nrows > 0 && eff_nrows < mH->nrows) rw_shrink_matrices(&mH, &mHT_rw, eff_nrows);
           }
           did_work = true;
           continue;
@@ -987,6 +1010,7 @@ static void *worker_thread_func(void *arg) {
     free(visited_cols);
     free(visited_checks);
     free(col_queue);
+    free(nidx);
     safe_mzd_free(M_sub);
     safe_mzd_free(mHT_rw);
     safe_mzd_free(mH);
