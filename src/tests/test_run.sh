@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.0" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.1" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.12.0" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.12.1" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -746,6 +746,15 @@ for m in 2 3; do
         "^# stopped after [0-9.]+s: CC enumerated all codewords of weight 5 \(for outC\)$"
 done
 rm -f "$CWS95"
+
+# Test 96: conflicting inputs: fin followed by finH/finG/finL is replaced by them (with a warning); fdem together with
+# matrix files, and pmin without fdem, are errors
+assert_output "$BIN_FORK method=2 fin=$EXAMPLES_DIR/try $S5 wmax=5 threads=2 debug=0" 0 "^5 5 0$" \
+    "^# Warning: finH='.*surf_d5_H.mmx' given: ignoring fin='.*try'$"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 threads=2 \
+debug=0" 255 "" "Cannot specify matrix files \(fin, finH, finG, finL\) along with fdem"
+assert_output "$BIN_FORK method=2 $S5 pmin=0.01 wmax=5 threads=2 debug=0" 255 "" \
+    "pmin can only be used when fdem is specified"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

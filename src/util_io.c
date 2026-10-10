@@ -13,7 +13,7 @@ params_t prm={
   .css=1,
   .smax=0,
   .wmax=0,
-  .dmin=0,
+  .dmin=1, /* the trivial lower bound (as documented in --help); smaller values are treated as 1 */
   .dmax=0,
   .wmin=1,
   .noscan=0,
@@ -308,18 +308,24 @@ void var_init(int argc, char **argv, params_t * const p){
       p->finH = file_arg_value(argc, argv, &i, 5); /**< allow space before file name */
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finH=%s; setting fin=\"\"\n",argv[i],p->finH);
+      if (strlen(p->fin) != 0)
+        fprintf(stderr, "# Warning: finH='%s' given: ignoring fin='%s'\n", p->finH, p->fin);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finL=",5)){ /** `finL` */
       p->finL = file_arg_value(argc, argv, &i, 5); /**< allow space before file name */
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finL=%s; setting fin=\"\"\n",argv[i],p->finL);
+      if (strlen(p->fin) != 0)
+        fprintf(stderr, "# Warning: finL='%s' given: ignoring fin='%s'\n", p->finL, p->fin);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"finG=",5)){/** `finG` degeneracy generator matrix */
       p->finG = file_arg_value(argc, argv, &i, 5); /**< allow space before file name */
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, finG=%s; setting fin=\"\"\n",argv[i],p->finG);
+      if (strlen(p->fin) != 0)
+        fprintf(stderr, "# Warning: finG='%s' given: ignoring fin='%s'\n", p->finG, p->fin);
       p->fin="";
     }
     else if (0==strncmp(argv[i],"fin=",4)){

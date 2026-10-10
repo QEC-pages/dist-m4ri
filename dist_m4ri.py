@@ -29,7 +29,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.12.0"
+__version__ = "0.12.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -596,7 +596,12 @@ def get_cached_distance(
     circuit: Optional[Any] = None,
     pmin: float = 0.0,
     cache_file: Optional[Union[str, Path]] = None,
-    start: Optional[Union[int, str, Sequence[int]]] = None
+    start: Optional[Union[int, str, Sequence[int]]] = None,
+    simple: Optional[bool] = None,
+    full: bool = False,
+    basis: Optional[str] = None,
+    rounds: Optional[int] = None,
+    p_noise: float = 0.001
 ) -> Optional[Dict[str, Any]]:
     """
     Retrieves the cached distance entry (including bounds and cumulative rw_steps)
@@ -609,6 +614,9 @@ def get_cached_distance(
     the quantum codes (H=Hx, G=Hz) -> dZ and (H=Hz, G=Hx) -> dX (shared with compute_quantum_distance()): the fields
     dmin_X, dmax_X, rw_steps_X, dX, cws_X (the same for Z), and dist, dmin, dmax, rw_steps of d = min(dX, dZ).
 
+    For a Stim circuit (circuit, or dem with a .stim file), the cache key is that of the DEM processed as in
+    compute_dem_distance(), with the same options simple, full, basis, rounds, and p_noise.
+
     Returns:
         dict with keys {"dist", "dmin", "dmax", "rw_steps", ...} or None if not cached.
     """
@@ -619,13 +627,7 @@ def get_cached_distance(
     sfx = _start_key_suffix(_normalize_start_list(start))
 
     if H is not None:
-        if G is not None:
-            key = f"quantum:H={get_sparse_array_state(H)}:G={get_sparse_array_state(G)}"
-        elif L is not None:
-            key = f"quantum:H={get_sparse_array_state(H)}:L={get_sparse_array_state(L)}"
-        else:
-            key = f"classical:{get_sparse_array_state(H)}"
-        entry = _distance_cache.get(key + sfx)
+        entry = _distance_cache.get(_matrix_cache_key(H, G, L, classical=(G is None and L is None)) + sfx)
         if entry:
             entry = dict(entry)
             entry["d_info"] = format_bounds_list(entry.get("dmin", 0), entry.get("dmax", 0), entry.get("rw_steps", 0))
@@ -652,16 +654,10 @@ def get_cached_distance(
         entry.update({"dist": dist, "dmin": d_lo, "dmax": d_hi, "rw_steps": rw})
         return entry
     elif dem is not None or circuit is not None:
-        if dem is None and circuit is not None:
-            if hasattr(circuit, 'detector_error_model'):
-                obj = circuit.detector_error_model(decompose_errors=True)
-            else:
-                obj = circuit
-        else:
-            obj = dem
-        dem_st = get_sparse_array_state(obj)
-        key = f"dem:{dem_st}" if pmin <= 0.0 else f"dem:{dem_st}:pmin={pmin}"
-        entry = _distance_cache.get(key + sfx)
+        # the key of compute_dem_distance(): a Stim circuit is processed and converted in the same way
+        dem_obj, _, _ = _dem_from_input(dem, circuit, simple=simple, full=full, basis=basis, rounds=rounds,
+                                        p_noise=p_noise)
+        entry = _distance_cache.get(_dem_cache_key(dem_obj, pmin) + sfx)
         if entry:
             entry = dict(entry)
             entry["d_info"] = format_bounds_list(entry.get("dmin", 0), entry.get("dmax", 0), entry.get("rw_steps", 0))
@@ -812,39 +808,49 @@ def _parse_version(v_str: str) -> Tuple[int, ...]:
     return tuple(int(p) for p in parts) if parts else (0,)
 
 
+def _binary_version(binary_path: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    The dist_m4ri binary and its version (from `dist_m4ri --version`).
+
+    Returns:
+        (path, version, error): path is None if the binary is not found; version is None if it is unknown (then
+        error is the reason, or None if the binary does not support --version).
+    """
+    try:
+        path = find_dist_m4ri_binary(binary_path)
+    except (RuntimeError, FileNotFoundError):
+        return None, None, None
+    try:
+        proc = subprocess.run([path, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                              timeout=2.0)
+    except Exception as e:
+        return path, None, str(e)
+    if proc.returncode == 0 and "version" in proc.stdout:
+        return path, proc.stdout.strip().split()[-1], None
+    return path, None, None
+
+
 def check_binary_compatibility(binary_path: Optional[str] = None) -> Optional[str]:
     """
     Checks if the backend dist_m4ri binary exists and is compatible (version >= __version__).
     Returns a warning message string if missing or older, or None if compatible (silent).
     """
-    try:
-        path = find_dist_m4ri_binary(binary_path)
-    except (RuntimeError, FileNotFoundError):
+    path, bin_ver, error = _binary_version(binary_path)
+    if path is None:
         return "Warning: backend binary 'dist_m4ri' not found (run 'make -C src' to build it)"
-
-    try:
-        proc = subprocess.run(
-            [path, "--version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=2.0
+    if error is not None:
+        return f"Warning: failed to check binary '{path}': {error}"
+    if bin_ver is None:
+        return (
+            f"Warning: backend binary '{path}' does not support --version "
+            f"(expected >= {__version__}; run 'make -C src' to rebuild)"
         )
-        if proc.returncode == 0 and "version" in proc.stdout:
-            bin_ver = proc.stdout.strip().split()[-1]
-            if _parse_version(bin_ver) < _parse_version(__version__):
-                return (
-                    f"Warning: backend binary '{path}' is version {bin_ver} "
-                    f"(expected >= {__version__}; run 'make -C src' to rebuild)"
-                )
-            return None  # Compatible and up-to-date: silent!
-        else:
-            return (
-                f"Warning: backend binary '{path}' does not support --version "
-                f"(expected >= {__version__}; run 'make -C src' to rebuild)"
-            )
-    except Exception as e:
-        return f"Warning: failed to check binary '{path}': {e}"
+    if _parse_version(bin_ver) < _parse_version(__version__):
+        return (
+            f"Warning: backend binary '{path}' is version {bin_ver} "
+            f"(expected >= {__version__}; run 'make -C src' to rebuild)"
+        )
+    return None  # Compatible and up-to-date: silent!
 
 
 def parse_dist_m4ri_output(stdout: str) -> Tuple[int, int, int]:
@@ -1111,6 +1117,27 @@ def _warn_experimental_ksub(ksub: Any, method: int, solver: str = "dist_m4ri") -
         return
     if ival > 0 and (int(method) & 1) and solver != "codedistance":
         sys.stderr.write(_ksub_warning_text(ival))
+
+
+def _check_kwargs(func: Callable[..., Any], kwargs: Dict[str, Any], aliases: Sequence[str] = ("win",)) -> None:
+    """
+    Raises TypeError for the keyword arguments in kwargs (the **kwargs of func) other than the accepted aliases
+    (`win` for kwin), e.g., misspelled or unsupported options, with the closest parameter names as hints.
+    """
+    unknown = [k for k in kwargs if k not in aliases]
+    if not unknown:
+        return
+    import difflib
+    import inspect
+    names = [n for n, p in inspect.signature(func).parameters.items() if p.kind is not inspect.Parameter.VAR_KEYWORD]
+    names += list(aliases)
+    items = []
+    for k in unknown:
+        close = difflib.get_close_matches(k, names, n=1)
+        items.append(f"'{k}'" + (f" (did you mean '{close[0]}'?)" if close else ""))
+    if len(items) == 1:
+        raise TypeError(f"{func.__name__}() got an unexpected keyword argument {items[0]}")
+    raise TypeError(f"{func.__name__}() got unexpected keyword arguments {', '.join(items)}")
 
 
 def _prepare_start_option(
@@ -2413,6 +2440,10 @@ def classify_qubits_thorough(
                     data_init_basis[q] = conj_1q(name, data_init_basis[q])
                 if q not in qx:
                     continue
+                # on a data qubit, the Paulis of all checks are transformed, also of the checks already measured:
+                # all checks are then expressed in the same frame (that of the data qubits at the end of the first
+                # round), e.g., for X checks measured in the Hadamard frame of the data qubits before the closing H
+                # gates (with active_anc_mask, such checks would look like Z checks; see the tests)
                 mask = active_anc_mask if q in anc_candidates else all_anc_mask
                 x_m = qx[q] & mask
                 z_m = qz[q] & mask
@@ -2920,6 +2951,23 @@ def _matrix_cache_key(H: Any, G: Optional[Any] = None, L: Optional[Any] = None, 
     return f"quantum:H={h_state}:L={get_sparse_array_state(L)}"
 
 
+def _dem_cache_key(dem: Any, pmin: float = 0.0) -> str:
+    """Cache key of a DEM (a stim.DetectorErrorModel or a .dem file) with the probability cutoff pmin."""
+    dem_state = get_sparse_array_state(dem)
+    return f"dem:{dem_state}" if pmin <= 0.0 else f"dem:{dem_state}:pmin={pmin}"
+
+
+def _write_dem_file(dem: Any, path: str) -> None:
+    """Writes a stim.DetectorErrorModel (flattened) or the text of a DEM to the file `path`."""
+    if hasattr(dem, 'flattened'):
+        dem.flattened().to_file(path)
+    elif hasattr(dem, 'to_file'):
+        dem.to_file(path)
+    else:
+        with open(path, 'w') as f:
+            f.write(str(dem))
+
+
 def _css_sector_codes(Hx: Any, Hz: Any, Lx: Optional[Any], Lz: Optional[Any]) -> Dict[str, Tuple[Any, Any, Any]]:
     """The quantum codes (H, G, L) of the two sectors of a CSS code: Z -> (Hx, Hz or Lx), X -> (Hz, Hx or Lz)."""
     return {
@@ -3059,29 +3107,36 @@ def _cached_code_distance(
     min_hits: Optional[int],
     cov_cws: int,
     refresh: int,
-    trust_start: bool
+    trust_start: bool,
+    fdem: Optional[Any] = None,
+    pmin: float = 0.0,
+    key_fn: Optional[Callable[[], str]] = None
 ) -> Dict[str, Any]:
     """
-    Distance of a classical code (H) or of a quantum code (H with G or L) with the dist_m4ri binary, using the
-    distance cache shared by compute_classical_distance(), compute_quantum_distance(), and the two sectors of
-    compute_css_distance() (the warnings for the expert options are issued by the callers).
+    Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
+    file, with the probability cutoff pmin) with the dist_m4ri binary, using the distance cache shared by
+    compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
+    compute_dem_distance() (the warnings for the expert options are issued by the callers).
 
-    A cache record answers the request if it holds the exact distance, or with the stop target dstop > 0 a lower
-    bound dmin >= dstop (and the codewords, if needed).  Otherwise, the binary is run, starting from the cached bounds,
-    and the merged bounds are stored.  The codewords of the run (or the cached ones) are written to outC.
+    A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
+    exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
+    Otherwise, the binary is run, starting from the cached bounds, and the merged bounds are stored.  The returned
+    codewords (those of the run merged with the cached ones, or the cached ones) are written to outC; with finC
+    identical to outC, the codewords already in the file are kept.
 
     Returns:
         dict with the distance "dist" (see _dist_from_bounds()), the bounds "dmin", "dmax", "rw_steps", "d_info"
         (see format_bounds_list()), the codewords "cws" (empty unless need_cws), and "cached" (True if no binary run).
     """
-    global _distance_cache
-    finC_given = finC
+    global _distance_cache, _last_run_stats
+    _last_run_stats = {}  # the statistics of the binary run (none if the result is cached)
+    same_file = bool(finC and outC) and os.path.abspath(str(finC)) == os.path.abspath(str(outC))
     finC = check_finc_outc(finC, outC, verbose=verbose)
 
-    def write_cached_cws(cws_res: List[List[int]]) -> None:
-        # the cached codewords to outC; with finC identical to outC, the codewords already in the file are kept
+    def write_out(cws_res: List[List[int]]) -> None:
+        # the codewords to outC; with finC identical to outC, the codewords already in the file are kept
         if outC and cws_res:
-            if finC_given and os.path.abspath(finC_given) == os.path.abspath(outC) and os.path.isfile(outC):
+            if same_file and os.path.isfile(outC):
                 cws_res = _union_cws(read_sparse_vectors(outC), cws_res)
             _write_nzlist_file(outC, cws_res)
 
@@ -3091,7 +3146,7 @@ def _cached_code_distance(
         if eff_cache_file:
             load_distance_cache(eff_cache_file)
         try:
-            plain_key = _matrix_cache_key(H, G, L, classical)
+            plain_key = key_fn() if key_fn is not None else _matrix_cache_key(H, G, L, classical)
             code_key, cached_entry, plain_entry = _resolve_start_cache(
                 plain_key, start_list, lambda e: _single_entry_is_exact(e, need_cws, dstop), trust_start,
                 lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
@@ -3110,7 +3165,7 @@ def _cached_code_distance(
                     elif debug & PY_DBG_CACHE:
                         print(f"[dist_m4ri] Cache hit for {kind} distance ({found} known)!")
                     cws_res = [list(cw) for cw in cached_entry.get("cws", [])] if need_cws else []
-                    write_cached_cws(cws_res)
+                    write_out(cws_res)
                     return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax,
                             "rw_steps": c_rw, "d_info": d_info, "cws": cws_res, "cached": True}
                 if verbose:
@@ -3131,7 +3186,7 @@ def _cached_code_distance(
             if verbose:
                 print(f"[dist_m4ri] Cached lower bound dmin={c_dmin} > wmax={wmax}: no CC round needed")
             cws_res = [list(cw) for cw in src.get("cws", [])] if need_cws else []
-            write_cached_cws(cws_res)
+            write_out(cws_res)
             return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax, "rw_steps": c_rw,
                     "d_info": format_bounds_list(c_dmin, c_dmax, c_rw), "cws": cws_res, "cached": True}
         eff_dmin = max(wmax, dmin)
@@ -3147,6 +3202,14 @@ def _cached_code_distance(
             temp_files.append(path)
             return path
 
+        file_dem = None
+        if fdem is not None:  # a DEM: the file, or the object written to a temporary file
+            if isinstance(fdem, (str, Path)) and os.path.exists(str(fdem)):
+                file_dem = str(fdem)
+            else:
+                file_dem = create_unique_file(extension=".dem")
+                temp_files.append(file_dem)
+                _write_dem_file(fdem, file_dem)
         file_H, file_G, file_L = input_file(H, "_H.mtx"), input_file(G, "_G.mtx"), input_file(L, "_L.mtx")
         outC_file = None
         if need_cws:
@@ -3159,8 +3222,9 @@ def _cached_code_distance(
             finH=file_H,
             finG=file_G,
             finL=file_L,
+            fdem=file_dem,
             finC=finC,
-            classical=1 if classical else 0,
+            classical=-1 if fdem is not None else (1 if classical else 0),
             dmin=eff_dmin,
             dmax=eff_dmax,
             dstop=dstop,
@@ -3174,6 +3238,7 @@ def _cached_code_distance(
             steps=num_steps,
             threads=threads,
             timeout=timeout,
+            pmin=pmin,
             dW=dW,
             maxC=maxC,
             outC=outC_file,
@@ -3194,8 +3259,6 @@ def _cached_code_distance(
         if need_cws and outC_file and os.path.exists(outC_file):
             cws = read_sparse_vectors(outC_file)
             cws.sort(key=len)
-            if outC:
-                _write_nzlist_file(outC, cws)
 
         if _use_distance_cache and code_key is not None:
             prev = cached_entry or {}
@@ -3210,12 +3273,14 @@ def _cached_code_distance(
                 _merge_start_into_plain(plain_key, record, trust_start, {"": rw_steps})
             if eff_cache_file:
                 save_distance_cache(eff_cache_file)
-            return {"dist": record["dist"], "dmin": record["dmin"], "dmax": record["dmax"], "rw_steps": total_rw,
-                    "d_info": record["d_info"], "cws": record["cws"] if need_cws else [], "cached": False}
-
-        return {"dist": _dist_from_bounds(dmin_res, dmax_res), "dmin": dmin_res, "dmax": dmax_res,
-                "rw_steps": rw_steps, "d_info": format_bounds_list(dmin_res, dmax_res, rw_steps), "cws": cws,
-                "cached": False}
+            res = {"dist": record["dist"], "dmin": record["dmin"], "dmax": record["dmax"], "rw_steps": total_rw,
+                   "d_info": record["d_info"], "cws": record["cws"] if need_cws else [], "cached": False}
+        else:
+            res = {"dist": _dist_from_bounds(dmin_res, dmax_res), "dmin": dmin_res, "dmax": dmax_res,
+                   "rw_steps": rw_steps, "d_info": format_bounds_list(dmin_res, dmax_res, rw_steps), "cws": cws,
+                   "cached": False}
+        write_out(res["cws"])
+        return res
     finally:
         _remove_temp_files(temp_files, debug)
 
@@ -3315,9 +3380,13 @@ def compute_classical_distance(
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
+
+    Raises:
+        TypeError: for an unknown keyword argument (e.g., a misspelled option).
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
+    _check_kwargs(compute_classical_distance, kwargs)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
 
@@ -3459,9 +3528,13 @@ def compute_quantum_distance(
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
+
+    Raises:
+        TypeError: for an unknown keyword argument (e.g., a misspelled option).
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
+    _check_kwargs(compute_quantum_distance, kwargs)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
 
@@ -3655,6 +3728,7 @@ def compute_css_distance(
     Raises:
         ValueError: if Hx or Hz is missing or empty; use compute_quantum_distance() for one sector, or
             compute_classical_distance() for a classical code.
+        TypeError: for an unknown keyword argument (e.g., a misspelled option).
     """
     def _nonempty(M: Any) -> bool:
         return M is not None and (isinstance(M, (str, Path)) or (hasattr(M, 'shape') and M.shape[0] > 0))
@@ -3667,6 +3741,7 @@ def compute_css_distance(
 
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max  # an upper bound on d = min(dX, dZ), not on either sector
+    _check_kwargs(compute_css_distance, kwargs)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
 
@@ -3701,7 +3776,6 @@ def compute_css_distance(
     # Solver is native multithreaded dist_m4ri: the two sectors are quantum codes, (H=Hx, G=Hz) -> dZ and
     # (H=Hz, G=Hx) -> dX (with L=Lx / L=Lz instead if given), with the same cache records as compute_quantum_distance().
     # A user dmax (a bound on min(dX, dZ)) is not an upper bound of either sector: it is passed as the stop target.
-    global _last_run_stats
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     stops = [v for v in (dstop, eff_dmax) if v > 0]
     sector_stop = min(stops) if stops else 0
@@ -3729,7 +3803,6 @@ def compute_css_distance(
             dual = ("Hx" if s == "X" else "Hz") if G_s is not None else ("Lz" if s == "X" else "Lx")
             print(f"[dist_m4ri] CSS sector d{s}: H={'Hz' if s == 'X' else 'Hx'} with "
                   f"{'G' if G_s is not None else 'L'}={dual}")
-        _last_run_stats = {}
         res[s] = _cached_code_distance(
             H_s, G_s, L_s, False, f"CSS {s}-sector", dist_m4ri=dist_m4ri, method=method, threads=threads,
             timeout=timeout, num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=0, dstop=sector_stop, wmin=wmin,
@@ -3806,6 +3879,162 @@ def _resolve_stim_dem_out_path(
     return str(out_path)
 
 
+def _dem_from_input(
+    dem: Optional[Any],
+    circuit: Optional[Any],
+    simple: Optional[bool] = None,
+    full: bool = False,
+    basis: Optional[str] = None,
+    rounds: Optional[int] = None,
+    p_noise: float = 0.001,
+    out_dir: Optional[Union[str, Path]] = None,
+    out_dem: Optional[Union[bool, str, Path]] = None,
+    out_stim: Optional[Union[bool, str, Path]] = None,
+    circ_verbose: bool = False
+) -> Tuple[Any, Optional[Any], Optional[str]]:
+    """
+    The DEM of compute_dem_distance() (also used by get_cached_distance() for the cache key).  A DEM
+    (stim.DetectorErrorModel or .dem file) is used as given.  A Stim circuit (stim.Circuit or .stim file, also when
+    given as `dem`) is processed: the empty detectors are removed, the qubits are classified, the REPEAT count is set
+    (rounds), the minority-basis detectors of a CSS circuit are stripped (simple, unless full=True), and circuit-level
+    noise of strength p_noise is added to a noiseless circuit (see add_noise()); then it is converted to a DEM.  The
+    processed circuit and the DEM are saved if requested (out_stim, out_dem, out_dir; see compute_dem_distance()).
+
+    Returns:
+        (dem, circuit, saved_dem_path): the DEM (object or file name), the processed circuit (None for a DEM input),
+        and the file to which the DEM was saved (None if it was not saved).
+    """
+    if dem is not None and circuit is not None:
+        sys.stderr.write("# Warning: both 'dem' and 'circuit' were given; using 'dem' (the circuit is ignored).\n")
+        circuit = None
+    if dem is not None and isinstance(dem, (str, Path)) and str(dem).endswith(".stim"):
+        circuit = dem
+        dem = None
+
+    if rounds is not None and circuit is None:
+        raise ValueError(
+            "--rounds option is only supported for Stim circuit (.stim) inputs."
+        )
+
+    saved_dem_path: Optional[str] = None
+    if dem is None and circuit is not None:
+        circuit_src = str(circuit) if isinstance(circuit, (str, Path)) else "stim.Circuit"
+        if isinstance(circuit, (str, Path)):
+            stim = _get_stim()
+            circuit = stim.Circuit.from_file(str(circuit))
+        if not hasattr(circuit, 'detector_error_model'):
+            raise ValueError("Provided circuit object does not have detector_error_model() method.")
+        has_rep = False
+        if rounds is not None:
+            if rounds < 0:
+                raise ValueError(f"Invalid rounds={rounds}; must be >= 0.")
+            has_rep = has_repeat_block(circuit)
+            if not has_rep:
+                sys.stderr.write(
+                    f"# Warning: Circuit '{circuit_src}' does not contain a "
+                    f"REPEAT block; ignoring rounds={rounds}.\n"
+                )
+
+        circuit, empty_removed = remove_empty_detectors(circuit)
+        if empty_removed > 0 and circ_verbose:
+            print(f"[dist_m4ri] Removed {empty_removed} empty DETECTOR(s) from '{circuit_src}'")
+
+        filepath_hint = circuit_src if circuit_src != "stim.Circuit" else None
+        t_res = classify_qubits_thorough(circuit, verbose=False, basis_arg=basis, filepath=filepath_hint)
+        eff_basis = t_res["basis"]
+        is_css_circ = t_res["is_css"]
+        is_rot_css = t_res.get("is_rotated_css", False)
+
+        if rounds is not None and has_rep:
+            circuit = set_circuit_rounds(circuit, rounds)
+
+        if full:
+            use_simple = False
+        elif simple is not None:
+            use_simple = bool(simple)
+        else:
+            use_simple = is_css_circ
+
+        stripped_det = 0
+        kept_det = circuit.num_detectors
+        if use_simple and is_css_circ:
+            circuit, stripped_det, kept_det = strip_minority_detectors(
+                circuit, eff_basis, verbose=circ_verbose, thorough=True, thorough_res=t_res
+            )
+        elif simple is True and not is_css_circ and circ_verbose:
+            print(
+                f"[dist_m4ri] Warning: --simple requested, but '{circuit_src}' "
+                "is not classified as a CSS circuit; keeping all detectors."
+            )
+
+        mode_tag = "_simp" if (use_simple and is_css_circ) else "_full"
+
+        if circ_verbose:
+            mode_str = ("simple (primary-basis detectors only)" if (use_simple and is_css_circ)
+                        else "full (all detectors)")
+            css_type = "rotated-CSS (e.g. XZZX)" if is_rot_css else ("CSS" if is_css_circ else "non-CSS")
+            rot_info = f", rotated_data={len(t_res.get('rotated_data_qubits', []))}" if is_rot_css else ""
+            rnd_cnt = count_circuit_rounds(circuit)
+            print(
+                f"[dist_m4ri] Circuit basis tracking: type={css_type}, "
+                f"basis={eff_basis}, data={len(t_res['data_qubits'])}, "
+                f"X_anc={len(t_res['x_ancillas'])}, "
+                f"Z_anc={len(t_res['z_ancillas'])}, "
+                f"routing={len(t_res['routing_qubits'])}{rot_info}, "
+                f"rounds={rnd_cnt}"
+            )
+            print(f"[dist_m4ri] Circuit mode: {mode_str} (kept={kept_det}, stripped={stripped_det} detectors)")
+
+        noise_added = False
+        if not has_noise(circuit):
+            circuit = add_noise(circuit, p=p_noise)
+            noise_added = True
+
+        stim_out_path = _resolve_stim_dem_out_path(out_stim, circuit_src, mode_tag, ".stim", out_dir=out_dir)
+        if stim_out_path is not None:
+            circuit.to_file(stim_out_path)
+            if circ_verbose:
+                print(f"[dist_m4ri] Saved Stim circuit to '{stim_out_path}'")
+
+        try:
+            dem = circuit.detector_error_model(decompose_errors=True)
+            decomp_used = True
+        except Exception:
+            dem = circuit.detector_error_model(decompose_errors=False)
+            decomp_used = False
+        if circ_verbose:
+            noise_msg = f"added circuit-level noise (p={p_noise})" if noise_added else "existing noise detected"
+            print(f"[dist_m4ri] Converted '{circuit_src}' to DEM ({noise_msg}, decompose_errors={decomp_used})")
+            if all(hasattr(dem, a) for a in ("num_detectors", "num_observables", "num_errors")):
+                print(
+                    f"[dist_m4ri] DEM size: {dem.num_detectors} detectors, {dem.num_observables} observables, "
+                    f"{dem.num_errors} error mechanisms"
+                )
+
+        dem_out_path = _resolve_stim_dem_out_path(out_dem, circuit_src, mode_tag, ".dem", out_dir=out_dir)
+        if dem_out_path is not None:
+            _write_dem_file(dem, dem_out_path)
+            saved_dem_path = dem_out_path
+            if circ_verbose:
+                print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
+    elif dem is not None and out_dem is not None and out_dem is not False:
+        dem_src = str(dem) if isinstance(dem, (str, Path)) else "stim.Circuit"
+        dem_out_path = _resolve_stim_dem_out_path(out_dem, dem_src, "_full", ".dem", out_dir=out_dir)
+        if dem_out_path is not None:
+            if isinstance(dem, (str, Path)) and os.path.exists(str(dem)):
+                if os.path.abspath(str(dem)) != os.path.abspath(dem_out_path):
+                    shutil.copyfile(str(dem), dem_out_path)
+            else:
+                _write_dem_file(dem, dem_out_path)
+            saved_dem_path = dem_out_path
+            if circ_verbose:
+                print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
+
+    if dem is None:
+        raise ValueError("Either 'dem' or 'circuit' must be provided.")
+    return dem, circuit, saved_dem_path
+
+
 def compute_dem_distance(
     dem: Optional[Any] = None,
     circuit: Optional[Any] = None,
@@ -3855,6 +4084,7 @@ def compute_dem_distance(
     out_dir: Optional[Union[str, Path]] = None,
     out_dem: Optional[Union[bool, str, Path]] = None,
     out_stim: Optional[Union[bool, str, Path]] = None,
+    p_noise: float = 0.001,
     trust_start: bool = False,
     **kwargs
 ) -> Tuple[Any, ...]:
@@ -3914,195 +4144,26 @@ def compute_dem_distance(
             <basename>_simp.dem or <basename>_full.dem).
         out_stim: Optional bool or filename to save the processed (noisy) Stim circuit
             (True = auto-named <basename>_simp.stim or <basename>_full.stim).
+        p_noise: Strength of the circuit-level noise added to a noiseless Stim circuit (see add_noise(); default:
+            0.001).  The distance does not depend on it (unless pmin > 0), only on which faults are possible.
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
+
+    Raises:
+        TypeError: for an unknown keyword argument (e.g., a misspelled option).
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
+    _check_kwargs(compute_dem_distance, kwargs)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
 
-    if dem is not None and isinstance(dem, (str, Path)) and str(dem).endswith(".stim"):
-        circuit = dem
-        dem = None
-
-    if rounds is not None and circuit is None:
-        raise ValueError(
-            "--rounds option is only supported for Stim circuit (.stim) inputs."
-        )
-
-    saved_dem_path: Optional[str] = None
     circ_verbose = verbose or bool(debug & PY_DBG_CIRCUITS)  # Stim circuit to DEM conversion details
-
-    if dem is None and circuit is not None:
-        circuit_src = str(circuit) if isinstance(circuit, (str, Path)) else "stim.Circuit"
-        if isinstance(circuit, (str, Path)):
-            stim = _get_stim()
-            circuit = stim.Circuit.from_file(str(circuit))
-        if hasattr(circuit, 'detector_error_model'):
-            has_rep = False
-            if rounds is not None:
-                if rounds < 0:
-                    raise ValueError(f"Invalid rounds={rounds}; must be >= 0.")
-                has_rep = has_repeat_block(circuit)
-                if not has_rep:
-                    sys.stderr.write(
-                        f"# Warning: Circuit '{circuit_src}' does not contain a "
-                        f"REPEAT block; ignoring rounds={rounds}.\n"
-                    )
-
-            circuit, empty_removed = remove_empty_detectors(circuit)
-            if empty_removed > 0 and circ_verbose:
-                print(
-                    f"[dist_m4ri] Removed {empty_removed} empty DETECTOR(s) "
-                    f"from '{circuit_src}'"
-                )
-
-            filepath_hint = circuit_src if circuit_src != "stim.Circuit" else None
-            t_res = classify_qubits_thorough(
-                circuit,
-                verbose=False,
-                basis_arg=basis,
-                filepath=filepath_hint
-            )
-            eff_basis = t_res["basis"]
-            is_css_circ = t_res["is_css"]
-            is_rot_css = t_res.get("is_rotated_css", False)
-
-            if rounds is not None and has_rep:
-                circuit = set_circuit_rounds(circuit, rounds)
-
-            if full:
-                use_simple = False
-            elif simple is not None:
-                use_simple = bool(simple)
-            else:
-                use_simple = is_css_circ
-
-            stripped_det = 0
-            kept_det = circuit.num_detectors
-            if use_simple and is_css_circ:
-                circuit, stripped_det, kept_det = strip_minority_detectors(
-                    circuit,
-                    eff_basis,
-                    verbose=circ_verbose,
-                    thorough=True,
-                    thorough_res=t_res
-                )
-            elif simple is True and not is_css_circ and circ_verbose:
-                print(
-                    f"[dist_m4ri] Warning: --simple requested, but '{circuit_src}' "
-                    "is not classified as a CSS circuit; keeping all detectors."
-                )
-
-            mode_tag = "_simp" if (use_simple and is_css_circ) else "_full"
-
-            if circ_verbose:
-                mode_str = (
-                    "simple (primary-basis detectors only)"
-                    if (use_simple and is_css_circ)
-                    else "full (all detectors)"
-                )
-                css_type = (
-                    "rotated-CSS (e.g. XZZX)"
-                    if is_rot_css
-                    else ("CSS" if is_css_circ else "non-CSS")
-                )
-                rot_info = (
-                    f", rotated_data={len(t_res.get('rotated_data_qubits', []))}"
-                    if is_rot_css
-                    else ""
-                )
-                rnd_cnt = count_circuit_rounds(circuit)
-                print(
-                    f"[dist_m4ri] Circuit basis tracking: type={css_type}, "
-                    f"basis={eff_basis}, data={len(t_res['data_qubits'])}, "
-                    f"X_anc={len(t_res['x_ancillas'])}, "
-                    f"Z_anc={len(t_res['z_ancillas'])}, "
-                    f"routing={len(t_res['routing_qubits'])}{rot_info}, "
-                    f"rounds={rnd_cnt}"
-                )
-                print(
-                    f"[dist_m4ri] Circuit mode: {mode_str} "
-                    f"(kept={kept_det}, stripped={stripped_det} detectors)"
-                )
-
-            noise_added = False
-            p_noise = float(kwargs.get("p_noise", 0.001))
-            if not has_noise(circuit):
-                circuit = add_noise(circuit, p=p_noise)
-                noise_added = True
-
-            stim_out_path = _resolve_stim_dem_out_path(
-                out_stim, circuit_src, mode_tag, ".stim", out_dir=out_dir
-            )
-            if stim_out_path is not None:
-                circuit.to_file(stim_out_path)
-                if circ_verbose:
-                    print(f"[dist_m4ri] Saved Stim circuit to '{stim_out_path}'")
-
-            try:
-                dem = circuit.detector_error_model(decompose_errors=True)
-                decomp_used = True
-            except Exception:
-                dem = circuit.detector_error_model(decompose_errors=False)
-                decomp_used = False
-            if circ_verbose:
-                noise_msg = (
-                    f"added circuit-level noise (p={p_noise})"
-                    if noise_added else "existing noise detected"
-                )
-                print(
-                    f"[dist_m4ri] Converted '{circuit_src}' to DEM "
-                    f"({noise_msg}, decompose_errors={decomp_used})"
-                )
-                if all(hasattr(dem, a) for a in ("num_detectors", "num_observables", "num_errors")):
-                    print(
-                        f"[dist_m4ri] DEM size: {dem.num_detectors} detectors, {dem.num_observables} observables, "
-                        f"{dem.num_errors} error mechanisms"
-                    )
-
-            dem_out_path = _resolve_stim_dem_out_path(
-                out_dem, circuit_src, mode_tag, ".dem", out_dir=out_dir
-            )
-            if dem_out_path is not None:
-                if hasattr(dem, 'flattened'):
-                    dem.flattened().to_file(dem_out_path)
-                elif hasattr(dem, 'to_file'):
-                    dem.to_file(dem_out_path)
-                else:
-                    with open(dem_out_path, 'w') as f_dem:
-                        f_dem.write(str(dem))
-                saved_dem_path = dem_out_path
-                if circ_verbose:
-                    print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
-        else:
-            raise ValueError("Provided circuit object does not have detector_error_model() method.")
-    elif dem is not None and out_dem is not None and out_dem is not False:
-        dem_src = str(dem) if isinstance(dem, (str, Path)) else "stim.Circuit"
-        dem_out_path = _resolve_stim_dem_out_path(
-            out_dem, dem_src, "_full", ".dem", out_dir=out_dir
-        )
-        if dem_out_path is not None:
-            if isinstance(dem, (str, Path)) and os.path.exists(str(dem)):
-                if os.path.abspath(str(dem)) != os.path.abspath(dem_out_path):
-                    shutil.copyfile(str(dem), dem_out_path)
-            elif hasattr(dem, 'flattened'):
-                dem.flattened().to_file(dem_out_path)
-            elif hasattr(dem, 'to_file'):
-                dem.to_file(dem_out_path)
-            else:
-                with open(dem_out_path, 'w') as f_dem:
-                    f_dem.write(str(dem))
-            saved_dem_path = dem_out_path
-            if circ_verbose:
-                print(f"[dist_m4ri] Saved DEM to '{dem_out_path}'")
-
-    if dem is None:
-        raise ValueError("Either 'dem' or 'circuit' must be provided.")
-
-    finC = check_finc_outc(finC, outC, verbose=verbose)
+    dem, circuit, saved_dem_path = _dem_from_input(
+        dem, circuit, simple=simple, full=full, basis=basis, rounds=rounds, p_noise=p_noise, out_dir=out_dir,
+        out_dem=out_dem, out_stim=out_stim, circ_verbose=circ_verbose
+    )
 
     if solver == "codedistance":
         if do_cws or outC:
@@ -4130,194 +4191,21 @@ def compute_dem_distance(
         d_info = format_bounds_list(d, d, 0) if d > 0 else [0, 0, 0]
         return d, d_info
 
-    # Solver is native multithreaded dist_m4ri
-    global _distance_cache, _use_distance_cache, _distance_cache_file
+    # Solver is native multithreaded dist_m4ri (the cache key is that of the processed DEM, see get_cached_distance())
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
-    code_key = None
-    cached_entry = None
-    plain_key = None
-    plain_entry = None
-    if _use_distance_cache:
-        if eff_cache_file:
-            load_distance_cache(eff_cache_file)
-        try:
-            dem_obj = dem if dem is not None else circuit
-            dem_state = get_sparse_array_state(dem_obj)
-            plain_key = f"dem:{dem_state}" if pmin <= 0.0 else f"dem:{dem_state}:pmin={pmin}"
-            code_key, cached_entry, plain_entry = _resolve_start_cache(
-                plain_key, start_list, lambda e: _single_entry_is_exact(e, bool(do_cws or outC), dstop), trust_start,
-                lambda e: _merge_start_into_plain(plain_key, e, True), eff_cache_file, verbose
-            )
-            eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, plain_entry)
-            if cached_entry is not None:
-                # The exact distance (or with dstop > 0 a lower bound dmin >= dstop), and codewords if needed
-                if _single_entry_is_exact(cached_entry, bool(do_cws or outC), dstop):
-                    c_dmin, c_dmax = cached_entry.get("dmin", 0) or 0, cached_entry.get("dmax", 0) or 0
-                    d_info = format_bounds_list(c_dmin, c_dmax, cached_entry.get("rw_steps", 0))
-                    found = ("exact DEM distance" if (c_dmin > 0 and c_dmin == c_dmax)
-                             else f"DEM bound dmin={c_dmin} >= dstop={dstop}")
-                    if verbose:
-                        print(f"[dist_m4ri] Cache retrieval: SUCCESS (found cached {found} for '{code_key}')")
-                        print(f"[dist_m4ri] Cached result: dist={_dist_from_bounds(c_dmin, c_dmax)}, "
-                              f"bounds={format_bounds_str(d_info)}")
-                    elif debug & PY_DBG_CACHE:
-                        print(f"[dist_m4ri] Cache hit for DEM distance ({found} known)!")
-                    cws_res = cached_entry.get("cws", [])
-                    if outC and cws_res:
-                        _write_nzlist_file(outC, cws_res)
-                    c_dist = _dist_from_bounds(c_dmin, c_dmax)
-                    return (c_dist, d_info, cws_res) if do_cws else (c_dist, d_info)
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached DEM bounds: "
-                          f"dmin={cached_entry.get('dmin', 0)}, dmax={cached_entry.get('dmax', 0)}; "
-                          f"continuing search)")
-                # Seed bounds from cache
-                if eff_dmax == 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = cached_entry["dmax"]
-                elif eff_dmax > 0 and cached_entry.get("dmax", 0) > 0:
-                    eff_dmax = min(eff_dmax, cached_entry["dmax"])
-                if eff_dmin <= 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = cached_entry["dmin"]
-                elif eff_dmin > 1 and cached_entry.get("dmin", 0) > 1:
-                    eff_dmin = max(eff_dmin, cached_entry["dmin"])
-            else:
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
-        except Exception:
-            code_key = None
-            cached_entry = None
-            plain_key = None
-            plain_entry = None
-    else:
-        if verbose:
-            print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
-
-    user_dmin = dmin if dmin > 0 else d_min
-    if wmax > 0 and eff_dmin > max(wmax, user_dmin):  # a cached lower bound beyond wmax (the binary needs dmin <= wmax)
-        src = cached_entry or plain_entry
-        if not (method & 1) and src is not None:  # CC only: all weights up to wmax have been analyzed already
-            c_dmin, c_dmax = src.get("dmin", 0) or 0, src.get("dmax", 0) or 0
-            if verbose:
-                print(f"[dist_m4ri] Cached lower bound dmin={c_dmin} > wmax={wmax}: no CC round needed")
-            d_info = format_bounds_list(c_dmin, c_dmax, src.get("rw_steps", 0) or 0)
-            cws_res = list(src.get("cws", []))
-            if outC and cws_res:
-                _write_nzlist_file(outC, cws_res)
-            c_dist = _dist_from_bounds(c_dmin, c_dmax)
-            return (c_dist, d_info, cws_res) if do_cws else (c_dist, d_info)
-        eff_dmin = max(wmax, user_dmin)
-
-    temp_files = []
-    try:
-        if saved_dem_path is not None and os.path.exists(saved_dem_path):
-            file_dem = saved_dem_path
-        elif isinstance(dem, (str, Path)) and os.path.exists(str(dem)):
-            file_dem = str(dem)
-        else:
-            file_dem = create_unique_file(extension=".dem")
-            temp_files.append(file_dem)
-            if hasattr(dem, 'flattened'):
-                dem.flattened().to_file(file_dem)
-            elif hasattr(dem, 'to_file'):
-                dem.to_file(file_dem)
-            else:
-                with open(file_dem, 'w') as f:
-                    f.write(str(dem))
-
-        outC_file = None
-        if do_cws or outC:
-            outC_file = create_unique_file(extension="_out.nz")
-            temp_files.append(outC_file)
-
-        dmin_res, dmax_res, rw_steps = run_dist_m4ri(
-            dist_m4ri_path=dist_m4ri,
-            method=method,
-            fdem=file_dem,
-            finC=finC,
-            dmin=eff_dmin,
-            dmax=eff_dmax,
-            dstop=dstop,
-            wmin=wmin,
-            wmax=wmax,
-            smax=smax if smax is not None else 0,
-            start=start_list,
-            warn_start=False,
-            warn_ksub=False,
-            dexp=d_exp,
-            steps=num_steps,
-            threads=threads,
-            timeout=timeout,
-            pmin=pmin,
-            dW=dW,
-            maxC=maxC,
-            outC=outC_file,
-            seed=seed,
-            debug=debug,
-            nothrottle=nothrottle,
-            chunk_size=chunk_size,
-            ksub=ksub,
-            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-            win_mode=win_mode,
-            min_hits=min_hits,
-            cov_cws=cov_cws,
-            refresh=refresh,
-            verbose=verbose
-        )
-
-        dist = dmin_res if (dmin_res == dmax_res or dmax_res == 0) else dmax_res
-        cws = []
-        if (do_cws or outC) and outC_file and os.path.exists(outC_file):
-            cws = read_sparse_vectors(outC_file)
-            cws.sort(key=len)
-            if outC:
-                _write_nzlist_file(outC, cws)
-
-        d_info = format_bounds_list(dmin_res, dmax_res, rw_steps)
-
-        if _use_distance_cache and code_key is not None:
-            prev_steps = cached_entry.get("rw_steps", 0) if cached_entry else 0
-            prev_dmax = cached_entry.get("dmax", 0) if cached_entry else 0
-            prev_dmin = cached_entry.get("dmin", 0) if cached_entry else 0
-            prev_cws = list(cached_entry.get("cws", [])) if cached_entry else []
-
-            total_rw_steps = prev_steps + rw_steps
-            best_dmax = (
-                min(prev_dmax, dmax_res) if (prev_dmax > 0 and dmax_res > 0)
-                else (dmax_res if dmax_res > 0 else prev_dmax)
-            )
-            best_dmin = max(prev_dmin, dmin_res)
-
-            combined_cws = prev_cws
-            if cws:
-                existing_set = {tuple(cw) for cw in combined_cws}
-                for cw in cws:
-                    if tuple(cw) not in existing_set:
-                        combined_cws.append(cw)
-                        existing_set.add(tuple(cw))
-                combined_cws.sort(key=len)
-
-            d_info = format_bounds_list(best_dmin, best_dmax, total_rw_steps)
-
-            _distance_cache[code_key] = {
-                "dist": dist,
-                "dmin": best_dmin,
-                "dmax": best_dmax,
-                "rw_steps": total_rw_steps,
-                "d_info": d_info,
-                "cws": combined_cws
-            }
-            if plain_key is not None and code_key != plain_key:
-                # start-list run: merge the valid part (or all, with trust_start) into the main record
-                _merge_start_into_plain(plain_key, _distance_cache[code_key], trust_start, {"": rw_steps})
-            if eff_cache_file:
-                save_distance_cache(eff_cache_file)
-
-        if do_cws:
-            return dist, d_info, cws
-        return dist, d_info
-
-    finally:
-        _remove_temp_files(temp_files, debug)
+    res = _cached_code_distance(
+        None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
+        num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
+        smax=smax if smax is not None else 0, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC,
+        need_cws=bool(do_cws or outC), eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose,
+        nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
+        kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+        cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
+        fdem=saved_dem_path if (saved_dem_path is not None and os.path.exists(saved_dem_path)) else dem, pmin=pmin,
+        key_fn=lambda: _dem_cache_key(dem, pmin)
+    )
+    dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
+    return (dist, d_info, cws) if do_cws else (dist, d_info)
 
 
 def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
@@ -4734,6 +4622,7 @@ Allowed parameters:
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows)
   --morehelp    : display full help for all available parameters
+  --version     : display the versions of dist_m4ri.py and of the dist_m4ri binary
 """
     print(text, file=file)
 
@@ -4806,6 +4695,7 @@ Extra parameters (see --morehelp for details):
 Help options:
   -h, --help            Display this help message (commonly used parameters)
   --morehelp            Display full help with all parameter descriptions
+  --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary
 """
     print(help_text, file=file)
 
@@ -4848,6 +4738,10 @@ Required input (at least one matrix/model specification):
   --out-stim [FILE]     Save processed (noisy, rounds-adjusted, detector-filtered) Stim circuit to
                         FILE. If given without a filename (or out_stim=1), automatically saves as
                         <basename>_simp.stim or <basename>_full.stim.
+  (conflicting inputs)  The input is selected in the order fdem, Hx/Hz (CSS code), and
+                        finH/finG/finL/fin (fin only supplies the missing finH and finG); the
+                        ignored inputs (e.g., matrices with fdem, pmin without fdem, fin with finH,
+                        classical=1 with finG) give a warning.
 
 Calculation method:
   method=1|2|3          Calculation method (default: 3):
@@ -4978,7 +4872,8 @@ Codeword collection and export:
                         known, CC rounds w = d..d+dW enumerate all such codewords (unless the
                         timeout is hit).
                         In CSS mode, automatically saves X-codewords to FILE_X.nz and
-                        Z-codewords to FILE_Z.nz.
+                        Z-codewords to FILE_Z.nz.  The codewords of the run are merged with the
+                        cached ones; with finC=FILE (the same file), those already in FILE are kept.
   finC=FILE             Import initial candidate codewords from file in .nz format.
                         In CSS mode, automatically resolves FILE_X.nz and FILE_Z.nz.
   maxC=N                Maximum number of codewords to collect (default: 0 = unlimited).
@@ -5019,8 +4914,53 @@ General options:
 Help options:
   -h, --help            Display summary help message (fits 80 rows).
   --morehelp            Display this full help message with all parameters.
+  --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary.
 """
     print(help_text, file=file)
+
+
+def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
+    """
+    Writes warnings to stderr for the CLI inputs which are ignored.  The input is selected in the order fdem (a DEM or
+    a Stim circuit), Hx / Hz (a CSS code), and finH / finG / finL / fin (one sector of a quantum code, or a classical
+    code); fin=PREFIX supplies only the missing finH (PREFIX + 'X.mtx') and finG (PREFIX + 'Z.mtx', unless finL).
+    """
+    def given(*keys: str) -> List[str]:
+        return [k for k in keys if args.get(k) is not None]
+
+    stim_opts = [opt for opt, on in (("--simple", args.get("simple") is not None), ("--full", bool(args.get("full"))),
+                                     ("basis=", args.get("basis") is not None),
+                                     ("--out-stim", args.get("out_stim") is not None)) if on]
+    warns = []
+    if args.get("fdem"):
+        ign = given("finH", "finG", "finL", "fin", "Hx", "Hz", "Lx", "Lz")
+        if ign:
+            warns.append(f"fdem={args['fdem']} given: ignoring {', '.join(k + '=' for k in ign)}")
+        if stim_opts and not str(args["fdem"]).endswith(".stim"):
+            warns.append(f"{', '.join(stim_opts)}: only used for a Stim circuit (.stim); ignored")
+    else:
+        dem_opts = stim_opts + [opt for opt, on in (("--out-dir", args.get("out_dir") is not None),
+                                                    ("--out-dem", args.get("out_dem") is not None)) if on]
+        if (args.get("pmin") or 0.0) > 0.0:
+            dem_opts.append("pmin=")
+        if dem_opts:
+            warns.append(f"{', '.join(dem_opts)}: only used with fdem= (a DEM or Stim circuit); ignored")
+        if args.get("Hx") is not None or args.get("Hz") is not None:
+            ign = given("finH", "finG", "finL", "fin")
+            if ign:
+                warns.append(f"Hx=/Hz= given (CSS code): ignoring {', '.join(k + '=' for k in ign)}")
+        else:
+            ign = given("Lx", "Lz")
+            if ign:
+                warns.append(f"{', '.join(k + '=' for k in ign)}: only used for a CSS code (Hx= and Hz=); ignored")
+            ign = given("finH", "finG", "finL")
+            if args.get("fin") is not None and ign:
+                warns.append(f"fin={args['fin']} together with {', '.join(k + '=' for k in ign)}: the explicit file "
+                             "names take precedence")
+    if args.get("classical") == 1 and given("finG", "finL", "fin", "fdem", "Hz", "Lx", "Lz"):
+        warns.append("classical=1 ignored: the input is a quantum code or a DEM")
+    for w in warns:
+        sys.stderr.write(f"# Warning: {w}\n")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -5035,6 +4975,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.get("version"):
         print(f"dist_m4ri.py version {__version__}")
+        bin_path, bin_ver, _ = _binary_version()
+        if bin_ver is not None:
+            print(f"dist_m4ri version {bin_ver} (binary '{bin_path}')")
+        compat_warn = check_binary_compatibility()
+        if compat_warn:
+            print(f"dist_m4ri.py: {compat_warn}", file=sys.stderr)
         return 0
 
     if args.get("morehelp") or args.get("help"):
@@ -5060,6 +5006,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("dist_m4ri.py: no input matrix or model specified", file=sys.stderr)
         print_cli_short_help(file=sys.stderr)
         return 255
+
+    _warn_cli_conflicts(args)
 
     # When finC and outC are identical, an empty or non-existent file is silently ignored (with a warning if verbose)
     # by the compute_*_distance() functions (for CSS codes, after checking the sector files finC_X and finC_Z)
@@ -5115,12 +5063,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 out_stim=args["out_stim"],
                 trust_start=args["trust_start"]
             )
-            if args["do_cws"] or (args["outC"] is not None):
-                dist, d_info, cws = res
-                if args["outC"]:
-                    _write_nzlist_file(args["outC"], cws)
-            else:
-                dist, d_info = res
+            dist, d_info = res[0], res[1]  # (compute_*_distance() writes the codewords to outC)
 
             if args["verbose"]:
                 print("=== DEM Distance Results ===")
@@ -5177,17 +5120,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 refresh=args["refresh"],
                 trust_start=args["trust_start"]
             )
-            if args["do_cws"] or (args["outC"] is not None):
-                dist, dx_info, dz_info, cws_x, cws_z = res
-                if args["outC"]:
-                    outC_X = _split_css_filename(args["outC"], "X")
-                    outC_Z = _split_css_filename(args["outC"], "Z")
-                    if cws_x:
-                        _write_nzlist_file(outC_X, cws_x)
-                    if cws_z:
-                        _write_nzlist_file(outC_Z, cws_z)
-            else:
-                dist, dx_info, dz_info = res
+            dist, dx_info, dz_info = res[0], res[1], res[2]  # (the sector files outC_X / outC_Z are written by
+            # compute_css_distance())
 
             # d = min(dX, dZ) is exact if its bounds coincide (a user dmax is a bound on d, see compute_css_distance)
             _, d_lo, d_hi, _ = _css_combine(tuple(dx_info), tuple(dz_info), args["dmax"])
@@ -5268,12 +5202,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 refresh=args["refresh"],
                 trust_start=args["trust_start"]
             )
-            if args["do_cws"] or (args["outC"] is not None):
-                dist, d_info, cws = res
-                if args["outC"]:
-                    _write_nzlist_file(args["outC"], cws)
-            else:
-                dist, d_info = res
+            dist, d_info = res[0], res[1]  # (compute_*_distance() writes the codewords to outC)
 
             if args["verbose"]:
                 print("=== Quantum Code Distance Results (Single-Sided) ===")
@@ -5324,12 +5253,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 refresh=args["refresh"],
                 trust_start=args["trust_start"]
             )
-            if args["do_cws"] or (args["outC"] is not None):
-                dist, d_info, cws = res
-                if args["outC"]:
-                    _write_nzlist_file(args["outC"], cws)
-            else:
-                dist, d_info = res
+            dist, d_info = res[0], res[1]  # (compute_*_distance() writes the codewords to outC)
 
             if args["verbose"]:
                 print("=== Classical Code Distance Results ===")

@@ -3,6 +3,7 @@ Unit tests for dist_m4ri.py Python wrapper.
 """
 
 import os
+import re
 import sys
 import pytest
 import numpy as np
@@ -571,7 +572,9 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.12.0" in captured.out
+    assert "0.12.1" in captured.out
+    # also the version of the binary
+    assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
 
 def test_cli_binary_compatibility_silent(capsys):
@@ -580,7 +583,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.12.0" in captured.out
+    assert "0.12.1" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -599,7 +602,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.12.0" in older_warn
+    assert "expected >= 0.12.1" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1498,6 +1501,158 @@ def test_cached_outc_keeps_finc_codewords(tmp_path):
         assert sorted(map(tuple, dist_m4ri.read_sparse_vectors(out))) == sorted(map(tuple, cws))
     finally:
         dist_m4ri.clear_distance_cache()
+
+
+SURF_D3_DEM = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+
+
+def test_unknown_keyword_arguments():
+    with pytest.raises(TypeError, match=r"compute_quantum_distance\(\) got an unexpected keyword argument 'dmx' "
+                                        r"\(did you mean 'dmax'\?\)"):
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=2, wmax=5, dmx=5)
+    with pytest.raises(TypeError, match=r"compute_css_distance\(\) got unexpected keyword arguments 'stpes'.*, "
+                                        r"'dexp' \(did you mean 'd_exp'\?\)"):
+        dist_m4ri.compute_css_distance(TRY_X, TRY_Z, method=2, wmax=4, stpes=10, dexp=4)
+    for func, kw in ((dist_m4ri.compute_classical_distance, dict(H=S5_H)),
+                     (dist_m4ri.compute_dem_distance, dict(dem=SURF_D3_DEM))):
+        with pytest.raises(TypeError, match="unexpected keyword argument 'foo'"):
+            func(foo=1, method=2, wmax=3, **kw)
+    # the alias win (of kwin) is accepted
+    assert dist_m4ri.compute_classical_distance(S5_H, method=2, wmax=3, threads=2, win=0) == 2
+
+
+def test_cli_conflict_warnings(capsys):
+    try:
+        ret = dist_m4ri.main([f"fdem={SURF_D3_DEM}", f"finH={S5_H}", "--simple", "method=2", "wmax=3", "threads=2",
+                              "--no-cache"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert f"# Warning: fdem={SURF_D3_DEM} given: ignoring finH=" in captured.err
+        assert "# Warning: --simple: only used for a Stim circuit (.stim); ignored" in captured.err
+        assert captured.out.rstrip().endswith("3 3 0 (exact)")
+
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", f"Lx={S5_L}", "pmin=0.01", "classical=1", "method=2",
+                              "wmax=5", "threads=2", "--no-cache"])
+        assert ret == 0
+        err = capsys.readouterr().err
+        assert "# Warning: pmin=: only used with fdem= (a DEM or Stim circuit); ignored" in err
+        assert "# Warning: Lx=: only used for a CSS code (Hx= and Hz=); ignored" in err
+        assert "# Warning: classical=1 ignored: the input is a quantum code or a DEM" in err
+
+        prefix = os.path.join(EXAMPLES_DIR, "try")
+        ret = dist_m4ri.main([f"fin={prefix}", f"finH={TRY_X}", "method=2", "wmax=4", "threads=2", "--no-cache"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert f"# Warning: fin={prefix} together with finH=: the explicit file names take precedence" in captured.err
+        assert captured.out.rstrip().endswith("4 4 0 (exact)")
+
+        ret = dist_m4ri.main([f"Hx={TRY_X}", f"Hz={TRY_Z}", f"finH={S5_H}", "method=2", "wmax=4", "threads=2",
+                              "--no-cache"])
+        assert ret == 0
+        assert "# Warning: Hx=/Hz= given (CSS code): ignoring finH=" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cli_outc_keeps_finc_codewords(tmp_path, capsys):
+    cache_file = str(tmp_path / "cli_cache.json")
+    out = str(tmp_path / "cli_cws.nz")
+    base = [f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=5", "threads=2", f"cache={cache_file}"]
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.main(base + [f"outC={out}"]) == 0
+        cws = dist_m4ri.read_sparse_vectors(out)
+        assert len(cws) >= 2
+        extra = sorted(set(cws[0]) ^ set(cws[1]))
+        dist_m4ri._write_nzlist_file(out, cws + [extra])
+        # a cache hit with finC identical to outC: the file is written once, keeping its codewords
+        assert dist_m4ri.main(base + [f"finC={out}", f"outC={out}"]) == 0
+        assert sorted(map(tuple, dist_m4ri.read_sparse_vectors(out))) == sorted(map(tuple, cws + [extra]))
+        capsys.readouterr()
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_dem_cache_merged_bounds_and_circuit_key(tmp_path):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated(
+        "surface_code:rotated_memory_z", rounds=3, distance=3, after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001, after_reset_flip_probability=0.001,
+    )
+    cache_file = str(tmp_path / "dem_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, threads=2, cache_file=cache_file)
+    try:
+        assert dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file) is None
+        assert dist_m4ri.compute_dem_distance(circuit=circ, dstop=2, **kw) == (2, [2, 0, 0])
+        # get_cached_distance(circuit=...) finds the record of the processed (here: stripped) DEM
+        assert dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file)["d_info"] == [2, 0, 0]
+        assert dist_m4ri.get_cached_distance(circuit=circ, full=True, cache_file=cache_file) is None
+        # the exact distance from the cached lower bound; the cached dist is that of the merged bounds
+        d, info, cws = dist_m4ri.compute_dem_distance(circuit=circ, wmax=3, do_cws=True, **kw)
+        assert d == 3 and info == [3, 3, 0] and len(cws) > 0
+        entry = dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file)
+        assert entry["dist"] == 3 and entry["d_info"] == [3, 3, 0] and len(entry["cws"]) == len(cws)
+        stim_file = tmp_path / "c.stim"
+        circ.to_file(str(stim_file))
+        assert dist_m4ri.get_cached_distance(circuit=str(stim_file), cache_file=cache_file)["dist"] == 3
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def _surface_memory_z(x_in_h_frame: bool, meas_before_h: bool, rounds: int = 3):
+    """
+    Memory-Z circuit of the d=3 rotated surface code (data 0..8, Z ancillas 9..12, X ancillas 13..16).  With
+    x_in_h_frame, the X checks are measured as Z checks in the Hadamard frame of the data qubits (H on all data, CX
+    data -> ancilla, H on all data), with the X ancillas measured before or after the closing H gates.
+    """
+    import stim
+    x_checks = [[1, 2, 4, 5], [3, 4, 6, 7], [0, 1], [7, 8]]
+    z_checks = [[0, 1, 3, 4], [4, 5, 7, 8], [3, 6], [2, 5]]
+    data, za, xa = list(range(9)), [9, 10, 11, 12], [13, 14, 15, 16]
+
+    def line(name, qubits):
+        return f"{name} " + " ".join(map(str, qubits)) + "\n"
+
+    def body():
+        s = "".join(line("CX", [x for q in row for x in (q, a)]) for a, row in zip(za, z_checks))
+        if x_in_h_frame:
+            s += line("MR", za) + line("H", data)
+            s += "".join(line("CX", [x for q in row for x in (q, a)]) for a, row in zip(xa, x_checks))
+            s += (line("MR", xa) + line("H", data)) if meas_before_h else (line("H", data) + line("MR", xa))
+        else:
+            s += line("H", xa)
+            s += "".join(line("CX", [x for q in row for x in (a, q)]) for a, row in zip(xa, x_checks))
+            s += line("H", xa) + line("MR", za + xa)
+        return s
+
+    c = line("R", data + za + xa) + body() + "".join(f"DETECTOR rec[-{k}]\n" for k in (8, 7, 6, 5))
+    c += f"REPEAT {rounds - 1} {{\n" + body()
+    c += "".join(f"DETECTOR rec[-{k}] rec[-{k + 8}]\n" for k in range(8, 0, -1)) + "}\n"
+    c += line("M", data)  # data 0..8: rec[-9]..rec[-1]; the last Z-ancilla results: rec[-17]..rec[-14]
+    for a_rec, row in zip((17, 16, 15, 14), z_checks):
+        c += "DETECTOR " + " ".join(f"rec[-{9 - q}]" for q in row) + f" rec[-{a_rec}]\n"
+    c += "OBSERVABLE_INCLUDE(0) rec[-9] rec[-8] rec[-7]\n"  # logical Z on the data qubits 0, 1, 2
+    return stim.Circuit(c)
+
+
+def test_classify_qubits_checks_measured_in_hadamard_frame():
+    # E.2.10: single-qubit gates on data qubits act on the Paulis of all checks, including those already measured,
+    # so that all checks are expressed in the same frame
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    for x_in_h_frame, meas_before_h in ((False, False), (True, False), (True, True)):
+        circ = _surface_memory_z(x_in_h_frame, meas_before_h)
+        circ.detector_error_model()  # deterministic detectors and observable
+        t_res = dist_m4ri.classify_qubits_thorough(circ)
+        assert t_res["is_css"] is True and t_res["is_rotated_css"] is False and t_res["basis"] == "Z"
+        assert t_res["data_qubits"] == list(range(9))
+        assert t_res["z_ancillas"] == [9, 10, 11, 12] and t_res["x_ancillas"] == [13, 14, 15, 16]
+        _, stripped, kept = dist_m4ri.strip_minority_detectors(circ, "Z", thorough_res=t_res)
+        assert (stripped, kept) == (8, 16)
 
 
 if __name__ == "__main__":

@@ -418,11 +418,15 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 3. **Full `--morehelp`**: Displays complete, detailed descriptions of all command-line parameters, debug bitmask flags,
    and output formats.
 
+`--help`, `--morehelp`, and `--version` print to `stdout`. Conflicting inputs: `fdem` together with matrix files
+(`finH`, `finG`, `finL`, `fin`), and `pmin` without `fdem`, are errors; `fin` followed by `finH`, `finG`, or `finL` is
+replaced by them (with a warning on `stderr`), while `fin` after them is an error.
+
 ### Standard Help (`dist_m4ri --help`)
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.12.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.12.1): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -566,8 +570,9 @@ interoperability without manual threading overhead.
   the quantum codes `(H=Hx, G=Hz)` ($d_Z$) and `(H=Hz, G=Hx)` ($d_X$), with `L=Lx` / `L=Lz` if given, i.e., with the
   same cache records as `compute_quantum_distance()`.
 - `compute_dem_distance(dem=None, circuit=None, simple=None, full=False, basis=None, rounds=None, out_dir=None,`:
-  `out_dem=None, out_stim=None, ...)`:
-  Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file:
+  `out_dem=None, out_stim=None, p_noise=0.001, ...)`:
+  Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file
+  (noise of strength `p_noise` is added to a noiseless circuit, see `add_noise()` below):
   - Always performs **ancilla and data basis tracking** (`classify_qubits_thorough`) across virtual SWAP permutations
     and Clifford gates to identify data qubits, $X$-sector and $Z$-sector ancillas, routing qubits, and local data basis
     rotations (automatically recognizing both standard CSS codes and locally basis-rotated CSS codes such as **XZZX**).
@@ -594,12 +599,17 @@ interoperability without manual threading overhead.
 - Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`,
   `get_cached_distance(..., start=None)`, and the `cache_file` argument of the `compute_*_distance()` functions (a
   persistent JSON file with the version `"__version__"`; the CLI uses `tmp_dist_cache.json` in the working directory
-  unless `--no-cache` or `cache=FILE` is given). A cache file written by a newer version is ignored (with a warning)
-  and is not overwritten. The CSS records written before version 0.12.0 (keys `css:...`) are converted into the two
-  sector records: the lower bounds are kept, but an upper bound only if a stored codeword confirms it, or if it is
-  smaller than that of the other sector (earlier versions could store a `dmax` given to `compute_css_distance()` as the
-  upper bound of both sectors). Earlier versions ignore a cache file written by version 0.12.0 (with a warning), and
-  they may overwrite it with their own results: use separate cache files for different versions.
+  unless `--no-cache` or `cache=FILE` is given). For a Stim circuit, `get_cached_distance(circuit=...)` processes it as
+  `compute_dem_distance()` does (with the same `simple`, `full`, `basis`, `rounds`, and `p_noise`), so that the same
+  DEM gives the cache key. A cache file written by a newer version is ignored (with a warning) and is not overwritten.
+  The CSS records written before version 0.12.0 (keys `css:...`) are converted into the two sector records: the lower
+  bounds are kept, but an upper bound only if a stored codeword confirms it, or if it is smaller than that of the other
+  sector (earlier versions could store a `dmax` given to `compute_css_distance()` as the upper bound of both sectors).
+  Earlier versions ignore a cache file written by a later version (with a warning), and they may overwrite it with their
+  own results: use separate cache files for different versions.
+- Codewords (`do_cws=True` or `outC=FILE`): the codewords of a run are merged with the cached ones (also in the cache
+  record), and they are written to `outC` (for CSS codes, to the sector files); with `finC` identical to `outC`, the
+  codewords already in the file are kept.
 - Stop target `dstop` of all `compute_*_distance()` functions (CLI: `dstop=U`): the search ends once CC has certified
   `dmin >= dstop`, unless a lighter codeword is found (see [Bracketing Mode](#3-bracketing-mode-method3-default));
   the bounds are then `[dmin, w, rw_steps]` with `dmin >= dstop` and the weight `w` of the lightest codeword found
@@ -611,6 +621,12 @@ interoperability without manual threading overhead.
   [Restricting the CC Search](#restricting-the-cc-search-expert-options).
 - The experimental RW option `ksub` of the `compute_*_distance()` functions and the CLI should not be used: with
   `ksub>0` (and `method=1` or `3`), the same warning as from the binary is written to `stderr`.
+- An unknown keyword argument of the `compute_*_distance()` functions (e.g., a misspelled option, or `steps=` for
+  `num_steps=`) raises `TypeError`, with the closest parameter name as a hint (`win=` is accepted for `kwin=`).
+- CLI (`python3 dist_m4ri.py`): `--version` also shows the version of the `dist_m4ri` binary; inputs which are ignored
+  give a warning on `stderr` (the input is selected in the order `fdem`, `Hx`/`Hz`, `finH`/`finG`/`finL`/`fin`; e.g.,
+  matrices with `fdem`, `pmin` without `fdem`, `fin` with `finH`, `classical=1` with `finG`), where the binary rejects
+  some of these combinations with an error.
 - Optional solver backend: `solver="codedistance"` (uses the `codedistance` library if installed).
 - Debug output: `debug=N` (default: 0) is a bitmap, where the bits `1` to `32768` are passed to the binary (see
   [Debug Output](#debug-output-debugint); its `stderr` is then printed), and the higher bits are used by the wrapper:
@@ -674,7 +690,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (95 tests)
+# Run full C test suite (96 tests)
 make test
 ```
 
