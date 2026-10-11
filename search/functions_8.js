@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['load_5fdistance_5fcache_0',['load_distance_cache',['../namespacedist__m4ri.html#ac3a455381820347aa7a0d7eaa875f8ee',1,'dist_m4ri']]],
-  ['lx_5ffor_5fcss_5fcode_1',['lx_for_css_code',['../util__m4ri_8c.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c']]]
+  ['has_5fnoise_0',['has_noise',['../namespacedist__m4ri.html#af6da541fc8054f730c34f7f85f32d7f0',1,'dist_m4ri']]],
+  ['has_5frepeat_5fblock_1',['has_repeat_block',['../namespacedist__m4ri.html#a1ad03491e25283321f68a32563af1b94',1,'dist_m4ri']]],
+  ['heap_5fsort_2',['HEAP_SORT',['../sort_8h.html#a48328f80cfc56781becf2446f8a1a470',1,'sort.h']]]
 ];

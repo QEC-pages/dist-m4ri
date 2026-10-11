@@ -1,5 +1,4 @@
 var searchData=
 [
-  ['todo_20notes_20for_20tt_20dist_5fm4ri_20tt_20program_0',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]],
-  ['tt_20dist_5fm4ri_20tt_20program_1',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]]
+  ['program_0',['Todo Notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; Program',['../md_todo.html',1,'']]]
 ];

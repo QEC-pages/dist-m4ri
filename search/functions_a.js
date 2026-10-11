@@ -1,9 +1,6 @@
 var searchData=
 [
-  ['nzlist_5fr_5fone_0',['nzlist_r_one',['../util__io_8c.html#a83ee27c031c32e09bb148aba892f8cb3',1,'util_io.c']]],
-  ['nzlist_5fr_5fopen_1',['nzlist_r_open',['../util__io_8c.html#a7a995e3d2040d1ec0db163548184caf6',1,'util_io.c']]],
-  ['nzlist_5fread_2',['nzlist_read',['../util__io_8c.html#a81a4ac93ecba5300f65aba3583774319',1,'nzlist_read(const char fnam[], params_t *p):&#160;util_io.c'],['../util__io_8h.html#a81a4ac93ecba5300f65aba3583774319',1,'nzlist_read(const char fnam[], params_t *p):&#160;util_io.c']]],
-  ['nzlist_5fw_5fappend_3',['nzlist_w_append',['../util__io_8c.html#a59684f93ed2fc82a2f81b55e01016e1b',1,'util_io.c']]],
-  ['nzlist_5fw_5fnew_4',['nzlist_w_new',['../util__io_8c.html#a71492a584cb37778cd6cc77b84a44f4f',1,'util_io.c']]],
-  ['nzlist_5fwrite_5',['nzlist_write',['../util__io_8c.html#ad58cad2a5548c79a52c08f733345a20b',1,'nzlist_write(const char fnam[], const char comment[], params_t *p):&#160;util_io.c'],['../util__io_8h.html#ad58cad2a5548c79a52c08f733345a20b',1,'nzlist_write(const char fnam[], const char comment[], params_t *p):&#160;util_io.c']]]
+  ['load_5fdistance_5fcache_0',['load_distance_cache',['../namespacedist__m4ri.html#ac3a455381820347aa7a0d7eaa875f8ee',1,'dist_m4ri']]],
+  ['localized_5fwindow_5fperm_1',['localized_window_perm',['../util__m4ri_8c.html#ac58bf7b6075f8f723f2ff55d433a0caa',1,'localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode, const csr_t *spaH, const csr_t *mHT, int *visited_cols, int *visited_checks, int *col_queue, int *visit_marker, uint64_t *rng_state):&#160;util_m4ri.c'],['../util__m4ri_8h.html#ac58bf7b6075f8f723f2ff55d433a0caa',1,'localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode, const csr_t *spaH, const csr_t *mHT, int *visited_cols, int *visited_checks, int *col_queue, int *visit_marker, uint64_t *rng_state):&#160;util_m4ri.c']]],
+  ['lx_5ffor_5fcss_5fcode_2',['lx_for_css_code',['../util__m4ri_8c.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c']]]
 ];

@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -84,6 +84,8 @@ $(function() {
   <div class="summary">
 <a href="#nested-classes">Classes</a> &#124;
 <a href="#define-members">Macros</a> &#124;
+<a href="#typedef-members">Typedefs</a> &#124;
+<a href="#enum-members">Enumerations</a> &#124;
 <a href="#func-members">Functions</a>  </div>
   <div class="headertitle"><div class="title">dist_m4ri.c File Reference</div></div>
 </div><!--header-->
@@ -100,6 +102,7 @@ $(function() {
 <code>#include &lt;time.h&gt;</code><br />
 <code>#include &lt;unistd.h&gt;</code><br />
 <code>#include &lt;pthread.h&gt;</code><br />
+<code>#include &lt;sched.h&gt;</code><br />
 <code>#include &lt;math.h&gt;</code><br />
 <code>#include &lt;limits.h&gt;</code><br />
 <code>#include &lt;m4ri/m4ri.h&gt;</code><br />
@@ -115,76 +118,84 @@ Include dependency graph for dist_m4ri.c:</div>
 <div class="dyncontent">
 <div class="center"><img src="dist__m4ri_8c__incl.png" border="0" usemap="#asrc_2dist__m4ri_8c" alt=""/></div>
 <map name="asrc_2dist__m4ri_8c" id="asrc_2dist__m4ri_8c">
-<area shape="rect" title="Multithreaded distance calculation and bracketing (dist_m4ri)" alt="" coords="925,5,1043,31"/>
-<area shape="rect" title=" " alt="" coords="539,299,626,324"/>
-<area shape="poly" title=" " alt="" coords="925,21,834,23,717,31,588,49,523,63,461,81,388,104,361,122,337,153,328,181,335,206,353,228,381,247,415,263,453,277,526,297,525,302,451,282,413,268,378,251,350,232,330,208,323,181,332,151,357,118,385,100,459,76,522,58,587,44,716,25,834,17,925,15"/>
-<area shape="rect" title=" " alt="" coords="385,299,463,324"/>
-<area shape="poly" title=" " alt="" coords="925,22,796,24,636,32,484,50,423,64,379,81,349,100,329,121,320,146,324,177,339,209,360,240,403,288,399,291,355,243,334,212,319,178,314,145,324,118,346,96,376,76,421,59,483,45,636,27,796,19,925,17"/>
-<area shape="rect" title=" " alt="" coords="583,372,654,397"/>
-<area shape="poly" title=" " alt="" coords="925,24,692,37,386,64,241,83,120,106,73,119,37,133,15,148,8,164,8,239,12,259,26,277,46,293,74,307,146,332,233,350,327,363,420,372,570,380,569,385,420,377,327,368,232,355,145,337,72,312,43,297,22,280,8,261,3,240,3,163,11,145,35,128,71,114,119,101,240,77,386,58,692,32,925,19"/>
-<area shape="rect" title=" " alt="" coords="1097,299,1164,324"/>
-<area shape="poly" title=" " alt="" coords="1001,29,1024,50,1046,77,1076,132,1100,190,1128,284,1123,286,1095,192,1071,135,1042,80,1020,54,997,33"/>
+<area shape="rect" title="Multithreaded distance calculation and bracketing (dist_m4ri)" alt="" coords="951,5,1068,31"/>
+<area shape="rect" title=" " alt="" coords="114,299,201,324"/>
+<area shape="poly" title=" " alt="" coords="950,24,823,29,665,39,514,56,452,68,406,81,347,110,304,140,267,178,221,227,195,258,174,288,169,285,191,255,217,224,263,174,301,136,344,105,404,76,451,62,513,51,665,34,823,24,950,18"/>
+<area shape="rect" title=" " alt="" coords="346,299,425,324"/>
+<area shape="poly" title=" " alt="" coords="951,25,714,44,591,60,541,70,504,81,471,95,447,108,426,126,405,153,390,186,383,221,382,256,384,285,379,285,376,256,377,221,384,184,400,151,422,122,444,104,469,90,502,76,540,65,590,55,713,39,950,20"/>
+<area shape="rect" title=" " alt="" coords="199,445,270,471"/>
+<area shape="poly" title=" " alt="" coords="951,24,713,37,398,62,248,81,123,104,75,118,38,132,16,148,8,164,8,312,13,341,26,366,46,387,72,404,130,430,186,446,185,451,128,435,69,409,43,391,22,369,8,343,3,313,3,163,12,144,36,128,73,113,122,99,247,76,397,57,712,31,951,19"/>
+<area shape="rect" title=" " alt="" coords="684,445,751,471"/>
+<area shape="poly" title=" " alt="" coords="1032,29,1064,49,1099,80,1127,118,1136,140,1139,163,1139,313,1135,328,1126,342,1095,367,1048,389,992,408,869,436,765,453,764,448,868,431,990,403,1046,384,1092,363,1123,339,1131,326,1133,312,1133,164,1130,141,1122,120,1095,83,1061,54,1029,33"/>
 <area shape="rect" title=" " alt="" coords="1173,79,1256,104"/>
-<area shape="poly" title=" " alt="" coords="1022,28,1165,72,1164,77,1020,33"/>
+<area shape="poly" title=" " alt="" coords="1043,28,1169,72,1168,77,1041,33"/>
 <area shape="rect" title=" " alt="" coords="1280,79,1379,104"/>
-<area shape="poly" title=" " alt="" coords="1040,28,1267,74,1266,80,1039,33"/>
-<area shape="rect" title=" " alt="" coords="651,299,715,324"/>
-<area shape="poly" title=" " alt="" coords="972,33,919,81,706,290,702,287,916,77,969,29"/>
+<area shape="poly" title=" " alt="" coords="1061,28,1267,74,1266,79,1060,33"/>
+<area shape="rect" title=" " alt="" coords="939,299,1003,324"/>
+<area shape="poly" title=" " alt="" coords="1013,31,1019,123,1016,187,1005,251,989,288,984,286,1000,250,1011,186,1014,123,1008,31"/>
 <area shape="rect" title=" " alt="" coords="1403,79,1477,104"/>
-<area shape="poly" title=" " alt="" coords="1043,24,1196,44,1389,76,1388,81,1195,50,1042,29"/>
+<area shape="poly" title=" " alt="" coords="1069,25,1211,45,1390,76,1389,81,1210,51,1068,30"/>
 <area shape="rect" title=" " alt="" coords="1502,79,1586,104"/>
-<area shape="poly" title=" " alt="" coords="1043,22,1237,42,1489,76,1488,81,1236,47,1043,27"/>
-<area shape="rect" title=" " alt="" coords="1610,79,1678,104"/>
-<area shape="poly" title=" " alt="" coords="1043,19,1282,37,1437,53,1597,76,1596,81,1436,58,1281,42,1043,25"/>
-<area shape="rect" title=" " alt="" coords="1002,299,1073,324"/>
-<area shape="poly" title=" " alt="" coords="996,30,1012,51,1025,78,1039,135,1044,192,1042,285,1037,285,1039,193,1033,136,1020,80,1007,54,992,33"/>
-<area shape="rect" title=" " alt="" coords="260,299,359,324"/>
-<area shape="poly" title=" " alt="" coords="925,24,776,30,591,41,426,58,369,69,337,81,319,101,306,126,298,153,295,182,297,239,305,285,300,286,292,239,289,182,293,152,301,124,314,98,335,76,367,63,426,52,591,35,776,24,925,18"/>
-<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="739,299,811,324"/>
-<area shape="poly" title=" " alt="" coords="978,32,793,289,789,286,974,29"/>
-<area shape="rect" href="uthash_8h.html" title=" " alt="" coords="899,299,978,324"/>
-<area shape="poly" title=" " alt="" coords="991,30,1005,78,1011,128,1005,178,983,239,956,289,951,286,978,237,1000,177,1006,128,1000,79,986,32"/>
-<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="347,152,440,177"/>
-<area shape="poly" title=" " alt="" coords="925,26,704,45,591,61,545,71,510,81,484,94,458,111,417,144,413,140,455,106,481,90,508,76,543,66,590,56,704,40,925,20"/>
-<area shape="rect" href="util__io_8h.html" title=" " alt="" coords="516,225,591,251"/>
-<area shape="poly" title=" " alt="" coords="925,24,842,29,746,39,660,56,627,67,604,81,581,110,567,145,559,181,556,211,551,211,554,180,562,143,577,107,601,77,625,62,659,50,746,33,841,23,925,18"/>
-<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="127,299,219,324"/>
-<area shape="poly" title=" " alt="" coords="925,24,579,43,406,59,345,70,311,81,284,101,261,126,223,183,198,240,182,286,177,284,193,238,219,180,257,123,281,97,308,76,344,65,405,54,578,37,925,19"/>
-<area shape="rect" href="dist__m4ri_8h.html" title=" " alt="" coords="1702,79,1797,104"/>
-<area shape="poly" title=" " alt="" coords="1043,19,1318,37,1500,54,1688,76,1687,81,1500,59,1317,43,1043,25"/>
-<area shape="rect" href="dist__cc_8h.html" title=" " alt="" coords="615,79,694,104"/>
-<area shape="poly" title=" " alt="" coords="932,33,708,81,707,76,931,28"/>
-<area shape="poly" title=" " alt="" coords="899,324,668,375,667,370,898,319"/>
-<area shape="rect" title=" " alt="" coords="806,372,877,397"/>
-<area shape="poly" title=" " alt="" coords="925,326,870,366,867,361,921,322"/>
-<area shape="rect" title=" " alt="" coords="901,372,976,397"/>
-<area shape="poly" title=" " alt="" coords="941,324,941,358,936,358,936,324"/>
-<area shape="rect" title=" " alt="" coords="1001,372,1071,397"/>
-<area shape="poly" title=" " alt="" coords="956,322,1010,361,1007,366,953,326"/>
-<area shape="poly" title=" " alt="" coords="413,175,509,218,507,222,411,180"/>
-<area shape="poly" title=" " alt="" coords="377,180,204,293,201,289,374,175"/>
-<area shape="poly" title=" " alt="" coords="561,250,575,285,570,287,556,252"/>
-<area shape="poly" title=" " alt="" coords="534,253,459,294,456,289,531,248"/>
-<area shape="poly" title=" " alt="" coords="547,252,528,285,525,305,529,323,549,346,575,364,572,368,546,350,524,325,519,305,523,284,542,250"/>
-<area shape="poly" title=" " alt="" coords="591,239,798,257,938,274,1084,296,1083,301,937,279,797,262,591,244"/>
-<area shape="poly" title=" " alt="" coords="575,248,650,289,648,294,573,253"/>
-<area shape="poly" title=" " alt="" coords="591,240,760,260,989,296,988,301,759,266,591,246"/>
-<area shape="poly" title=" " alt="" coords="516,253,362,297,361,292,515,248"/>
-<area shape="poly" title=" " alt="" coords="590,248,727,292,725,297,588,253"/>
-<area shape="poly" title=" " alt="" coords="591,244,886,298,885,303,591,249"/>
-<area shape="poly" title=" " alt="" coords="533,228,437,185,439,180,535,223"/>
-<area shape="poly" title=" " alt="" coords="516,249,234,302,233,296,515,244"/>
-<area shape="poly" title=" " alt="" coords="653,105,605,252,593,287,588,285,600,250,648,103"/>
-<area shape="poly" title=" " alt="" coords="642,106,582,158,506,227,446,290,442,286,502,223,578,154,639,102"/>
-<area shape="poly" title=" " alt="" coords="676,102,732,139,765,164,795,194,821,225,837,258,839,292,834,309,825,326,799,344,759,358,668,379,667,373,758,353,797,339,821,322,830,307,834,292,831,260,816,228,791,197,761,169,729,143,673,106"/>
-<area shape="poly" title=" " alt="" coords="695,100,767,120,849,150,923,184,993,223,1103,289,1100,293,991,227,920,189,847,154,766,125,693,105"/>
-<area shape="poly" title=" " alt="" coords="659,104,682,285,677,285,654,105"/>
-<area shape="poly" title=" " alt="" coords="615,97,544,102,461,113,385,130,356,141,337,154,317,184,308,219,306,255,308,285,303,285,301,255,303,218,312,182,333,150,353,136,383,124,460,108,544,97,615,92"/>
-<area shape="poly" title=" " alt="" coords="663,103,764,285,759,288,659,106"/>
-<area shape="poly" title=" " alt="" coords="695,101,743,118,799,143,855,178,881,200,903,224,922,254,934,285,929,287,917,257,899,227,877,203,852,182,797,148,741,123,693,106"/>
-<area shape="poly" title=" " alt="" coords="616,106,450,151,448,146,614,101"/>
-<area shape="poly" title=" " alt="" coords="648,106,613,154,571,215,566,212,608,150,644,103"/>
-<area shape="poly" title=" " alt="" coords="615,99,454,119,372,135,315,154,274,184,238,220,210,257,189,288,185,285,205,254,234,216,270,180,312,150,370,130,454,114,615,94"/>
+<area shape="poly" title=" " alt="" coords="1069,22,1252,43,1489,76,1488,81,1251,48,1068,28"/>
+<area shape="rect" title=" " alt="" coords="1611,79,1683,104"/>
+<area shape="poly" title=" " alt="" coords="1068,20,1297,38,1445,54,1598,76,1597,81,1444,60,1296,43,1068,25"/>
+<area shape="rect" title=" " alt="" coords="1707,79,1775,104"/>
+<area shape="poly" title=" " alt="" coords="1069,19,1336,35,1512,52,1694,76,1694,82,1512,57,1335,40,1068,24"/>
+<area shape="rect" title=" " alt="" coords="1027,299,1098,324"/>
+<area shape="poly" title=" " alt="" coords="1018,30,1036,78,1048,135,1056,193,1064,284,1059,285,1051,193,1043,136,1031,79,1013,32"/>
+<area shape="rect" title=" " alt="" coords="667,299,765,324"/>
+<area shape="poly" title=" " alt="" coords="1000,33,739,291,735,287,996,29"/>
+<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="843,299,915,324"/>
+<area shape="poly" title=" " alt="" coords="1007,32,892,287,887,285,1002,30"/>
+<area shape="rect" href="uthash_8h.html" title=" " alt="" coords="243,299,322,324"/>
+<area shape="poly" title=" " alt="" coords="951,23,830,26,682,35,542,53,486,65,445,81,416,101,389,125,345,183,313,240,294,287,289,285,309,238,341,180,385,122,412,97,443,76,485,60,541,47,682,30,830,21,950,17"/>
+<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="448,152,541,177"/>
+<area shape="poly" title=" " alt="" coords="951,22,845,24,720,33,658,40,604,50,558,64,527,81,516,93,508,108,499,139,494,138,503,106,511,90,524,77,556,59,602,45,658,35,719,27,845,19,950,16"/>
+<area shape="rect" href="util__io_8h.html" title=" " alt="" coords="541,225,616,251"/>
+<area shape="poly" title=" " alt="" coords="951,22,897,27,836,36,773,54,713,81,674,111,640,147,613,184,594,215,589,212,609,181,636,144,670,107,711,76,771,49,835,31,897,21,950,17"/>
+<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="449,299,541,324"/>
+<area shape="poly" title=" " alt="" coords="993,33,814,144,629,253,537,296,534,291,627,248,812,139,990,29"/>
+<area shape="rect" href="dist__m4ri_8h.html" title=" " alt="" coords="1799,79,1894,104"/>
+<area shape="poly" title=" " alt="" coords="1068,19,1372,36,1575,52,1786,76,1785,81,1575,58,1371,41,1068,24"/>
+<area shape="rect" href="dist__cc_8h.html" title=" " alt="" coords="538,79,617,104"/>
+<area shape="poly" title=" " alt="" coords="951,32,631,84,630,79,950,26"/>
+<area shape="poly" title=" " alt="" coords="281,325,245,433,240,431,276,324"/>
+<area shape="rect" title=" " alt="" coords="349,445,419,471"/>
+<area shape="poly" title=" " alt="" coords="287,324,295,358,313,396,332,418,354,435,351,440,329,421,308,399,290,360,282,325"/>
+<area shape="rect" title=" " alt="" coords="323,372,397,397"/>
+<area shape="poly" title=" " alt="" coords="297,322,339,361,335,364,293,326"/>
+<area shape="rect" title=" " alt="" coords="485,445,555,471"/>
+<area shape="poly" title=" " alt="" coords="323,319,548,370,556,386,555,404,540,435,535,433,549,402,550,387,545,374,322,324"/>
+<area shape="poly" title=" " alt="" coords="503,176,549,215,546,219,500,180"/>
+<area shape="poly" title=" " alt="" coords="497,178,497,285,492,285,492,178"/>
+<area shape="poly" title=" " alt="" coords="542,248,215,303,214,298,541,243"/>
+<area shape="poly" title=" " alt="" coords="549,253,430,296,429,291,547,248"/>
+<area shape="poly" title=" " alt="" coords="580,252,574,287,566,307,554,326,483,364,410,400,345,425,284,445,282,440,343,420,408,395,480,360,550,322,561,305,568,285,575,251"/>
+<area shape="poly" title=" " alt="" coords="588,250,705,432,700,435,584,252"/>
+<area shape="poly" title=" " alt="" coords="617,242,750,263,926,296,925,301,749,268,616,247"/>
+<area shape="poly" title=" " alt="" coords="617,241,785,261,1014,296,1013,301,784,266,616,246"/>
+<area shape="poly" title=" " alt="" coords="602,248,683,290,680,295,600,253"/>
+<area shape="poly" title=" " alt="" coords="617,246,830,296,828,301,615,251"/>
+<area shape="poly" title=" " alt="" coords="542,251,336,300,335,295,541,246"/>
+<area shape="poly" title=" " alt="" coords="570,227,524,188,528,183,574,223"/>
+<area shape="poly" title=" " alt="" coords="567,253,521,292,517,287,563,249"/>
+<area shape="rect" href="sort_8h.html" title=" " alt="" coords="476,372,535,397"/>
+<area shape="poly" title=" " alt="" coords="499,324,504,358,499,359,494,325"/>
+<area shape="poly" title=" " alt="" coords="477,396,284,447,283,441,475,391"/>
+<area shape="poly" title=" " alt="" coords="536,393,672,439,670,444,534,398"/>
+<area shape="poly" title=" " alt="" coords="487,400,417,441,414,436,484,395"/>
+<area shape="poly" title=" " alt="" coords="510,397,517,431,512,432,505,398"/>
+<area shape="poly" title=" " alt="" coords="538,102,459,121,414,136,371,154,314,187,261,224,181,291,177,287,258,220,311,182,368,150,412,131,457,116,537,97"/>
+<area shape="poly" title=" " alt="" coords="539,100,479,117,450,132,425,154,405,185,394,220,388,255,387,285,382,285,383,255,389,219,400,183,421,150,447,128,477,112,537,95"/>
+<area shape="poly" title=" " alt="" coords="538,97,441,109,380,122,316,141,253,167,194,201,143,245,122,271,104,300,97,320,99,340,108,360,122,378,160,411,200,436,198,441,157,415,118,382,104,362,94,342,92,320,99,298,117,268,139,242,191,197,251,162,314,136,379,117,440,104,537,92"/>
+<area shape="poly" title=" " alt="" coords="598,102,639,131,691,175,742,231,763,263,780,298,785,317,785,336,775,374,758,409,738,436,734,433,753,406,770,373,780,336,779,318,775,300,759,266,738,234,687,179,635,135,594,106"/>
+<area shape="poly" title=" " alt="" coords="617,94,759,113,830,129,858,139,879,150,911,180,936,217,954,254,966,285,961,287,949,256,931,220,907,184,876,154,856,144,828,135,758,119,617,99"/>
+<area shape="poly" title=" " alt="" coords="587,103,703,285,699,288,583,106"/>
+<area shape="poly" title=" " alt="" coords="617,93,678,100,748,111,811,128,836,138,853,150,873,182,883,219,886,255,885,285,879,285,881,255,878,220,868,184,849,154,833,143,809,133,747,117,677,105,617,99"/>
+<area shape="poly" title=" " alt="" coords="539,102,472,120,437,135,404,154,369,185,339,222,297,288,292,285,334,219,365,182,401,150,435,130,471,115,537,97"/>
+<area shape="poly" title=" " alt="" coords="566,106,520,145,517,141,562,102"/>
+<area shape="poly" title=" " alt="" coords="580,104,581,212,576,212,575,104"/>
+<area shape="poly" title=" " alt="" coords="538,100,511,106,484,117,458,132,438,153,431,170,429,187,437,224,455,258,477,286,472,290,451,261,432,225,423,187,426,168,434,151,455,128,481,112,510,101,537,95"/>
 </map>
 </div>
 </div>
@@ -194,13 +205,63 @@ Include dependency graph for dist_m4ri.c:</div>
 Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structdistfork__ctx__t.html">distfork_ctx_t</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structworker__arg__t.html">worker_arg_t</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structworker__arg.html">worker_arg</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="define-members" name="define-members"></a>
 Macros</h2></td></tr>
 <tr class="memitem:a369266c24eacffb87046522897a570d5" id="r_a369266c24eacffb87046522897a570d5"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a369266c24eacffb87046522897a570d5">_GNU_SOURCE</a></td></tr>
 <tr class="separator:a369266c24eacffb87046522897a570d5"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac49b957449801b3c5ddbe04c165c3055" id="r_ac49b957449801b3c5ddbe04c165c3055"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#ac49b957449801b3c5ddbe04c165c3055">CC_SPLIT_MAX_LEVELS</a>&#160;&#160;&#160;3 /* CC work units: at most 3 fixed levels, B^3 units per start index (cc_round_levels()) */</td></tr>
+<tr class="separator:ac49b957449801b3c5ddbe04c165c3055"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae280448ee171534f6253479a02fed597" id="r_ae280448ee171534f6253479a02fed597"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#ae280448ee171534f6253479a02fed597">CC_IDX_BITS</a>&#160;&#160;&#160;32</td></tr>
+<tr class="separator:ae280448ee171534f6253479a02fed597"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7ab29d34b0aeb575a7a336fbb7c1d743" id="r_a7ab29d34b0aeb575a7a336fbb7c1d743"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a7ab29d34b0aeb575a7a336fbb7c1d743">CC_LEV_SHIFT</a>&#160;&#160;&#160;48</td></tr>
+<tr class="separator:a7ab29d34b0aeb575a7a336fbb7c1d743"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a121004e9c676c5aa016db64a478c437c" id="r_a121004e9c676c5aa016db64a478c437c"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a121004e9c676c5aa016db64a478c437c">CC_SPLIT_UNITS_PER_THREAD</a>&#160;&#160;&#160;4.0 /* aim at &gt;= 4 work units of the size of the largest one per CC thread */</td></tr>
+<tr class="separator:a121004e9c676c5aa016db64a478c437c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a88c000e44713080fb726d71a30e99ee1" id="r_a88c000e44713080fb726d71a30e99ee1"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a88c000e44713080fb726d71a30e99ee1">CC_SPLIT_MIN_WORK</a>&#160;&#160;&#160;1e-3        /* rounds predicted to take &lt; 1 ms on all threads: whole start indices */</td></tr>
+<tr class="separator:a88c000e44713080fb726d71a30e99ee1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a732e2e13c9b039ca66c469bd5586a2de" id="r_a732e2e13c9b039ca66c469bd5586a2de"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a732e2e13c9b039ca66c469bd5586a2de">CC_SPLIT_CLAIMS_PER_WORK</a>&#160;&#160;&#160;1e4  /* at most 10^4 work units per thread-second of predicted work */</td></tr>
+<tr class="separator:a732e2e13c9b039ca66c469bd5586a2de"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2367e3d40a11c16e53d1185a4ca334e4" id="r_a2367e3d40a11c16e53d1185a4ca334e4"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a2367e3d40a11c16e53d1185a4ca334e4">CC_SPLIT_CLAIMS_UNKNOWN</a>&#160;&#160;&#160;65536 /* at most this many work units if the work of the round is not known */</td></tr>
+<tr class="separator:a2367e3d40a11c16e53d1185a4ca334e4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a63d15176aed9db657e932ca0b1c3c616" id="r_a63d15176aed9db657e932ca0b1c3c616"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a63d15176aed9db657e932ca0b1c3c616">CC_SPAWN_INITIAL</a>&#160;&#160;&#160;4</td></tr>
+<tr class="separator:a63d15176aed9db657e932ca0b1c3c616"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:afc9ce672060d746abb98e6e4bd0ca8e1" id="r_afc9ce672060d746abb98e6e4bd0ca8e1"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#afc9ce672060d746abb98e6e4bd0ca8e1">CC_SPAWN_WORK</a>&#160;&#160;&#160;2e-3</td></tr>
+<tr class="separator:afc9ce672060d746abb98e6e4bd0ca8e1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1433a8b8b2c121812b58d9b7f777ada2" id="r_a1433a8b8b2c121812b58d9b7f777ada2"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a1433a8b8b2c121812b58d9b7f777ada2">CC_SPAWN_TIME</a>&#160;&#160;&#160;5e-3</td></tr>
+<tr class="separator:a1433a8b8b2c121812b58d9b7f777ada2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0195faf7bc3086f176fc4b5aa0f3f2f6" id="r_a0195faf7bc3086f176fc4b5aa0f3f2f6"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a0195faf7bc3086f176fc4b5aa0f3f2f6">M3_DEADLINE_FRACTION</a>&#160;&#160;&#160;0.75 /* with a timeout, a round gets enough CC threads to finish in 3/4 of the time left */</td></tr>
+<tr class="separator:a0195faf7bc3086f176fc4b5aa0f3f2f6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3494052853c0d468d4b4874e1495ab1d" id="r_a3494052853c0d468d4b4874e1495ab1d"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a3494052853c0d468d4b4874e1495ab1d">M3_OVERRUN_FACTOR</a>&#160;&#160;&#160;1.5     /* a round taking 1.5 times (+20 ms) longer than predicted gets all threads */</td></tr>
+<tr class="separator:a3494052853c0d468d4b4874e1495ab1d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:a5dc8166b6e60640b0577d53c0afe3627" id="r_a5dc8166b6e60640b0577d53c0afe3627"><td class="memItemLeft" align="right" valign="top">typedef struct <a class="el" href="structworker__arg.html">worker_arg</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a5dc8166b6e60640b0577d53c0afe3627">worker_arg_t</a></td></tr>
+<tr class="separator:a5dc8166b6e60640b0577d53c0afe3627"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="enum-members" name="enum-members"></a>
+Enumerations</h2></td></tr>
+<tr class="memitem:a06fc87d81c62e9abb8790b6e5713c55b" id="r_a06fc87d81c62e9abb8790b6e5713c55b"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom">{ <br />
+&#160;&#160;<a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55ba5341abc04ab3ee4c53b9818758bb9839">STOP_NONE</a> = 0
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55baa9f60fffb6d8212951b1454e5178a350">STOP_BOUNDS</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55ba44f6458c50077e9745de9425702f56ef">STOP_CC_FOUND</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55ba732bac59171600666a6a5ae7a44b4beb">STOP_RW_CONVERGED</a>
+, <br />
+&#160;&#160;<a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55baa6403c3f90f4699843f7a2f2cc66eeb3">STOP_RW_STEPS</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55ba157ba4a99e839f00da48556fde3c3eff">STOP_TIMEOUT</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55ba6befcbac31a59f2ca1a05fbfe01cde58">STOP_CC_DONE</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55baa80e39856bd463904b812149ef42920a">STOP_CC_SLOW</a>
+, <br />
+&#160;&#160;<a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55ba6f4148698e4af967afb00307c5293b15">STOP_WMIN</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55baf43f8d8a85801eb56180a5b820f9e316">STOP_MAXC</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55baec3ad629ba46e22d37a654f5c4592364">STOP_COLLECTED</a>
+, <a class="el" href="dist__m4ri_8c.html#a06fc87d81c62e9abb8790b6e5713c55ba4905fa2bba1edec4a71b54d2f49d6be7">STOP_DSTOP</a>
+<br />
+ }</td></tr>
+<tr class="separator:a06fc87d81c62e9abb8790b6e5713c55b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
@@ -215,8 +276,17 @@ Functions</h2></td></tr>
 <li>method=2: Multithreaded Connected Cluster (CC) algorithm (lower bound / exact)</li>
 <li>method=3: Bracketing mode (artillery fork / вилка) dynamically balancing CC and RW threads based on distance estimate (dexp/dest), current bounds [dmin, dmax], RW step count, timeout, and scaling characteristics.</li>
 </ul>
-<p>Output to stdout: "dmin dmax rw_steps" where dmin-1 is the maximum cluster size analyzed without success by CC, dmin=dmax if CC actually found a min-weight codeword of this size, dmax is the smallest-weight codeword found by RW, and rw_steps is the number of completed RW steps (0 if CC found a min-weight codeword or if RW did not run in method=2). NOTE: This 3-number output format is incompatible with legacy single-threaded dist_m4ri_old.</p>
-<p>All debugging messages and confinement profile are sent to stderr.</p>
+<p>Output to stdout: "dmin dmax rw_steps" where dmin-1 is the maximum cluster size analyzed without success by CC, dmin=dmax if CC actually found a min-weight codeword of this size, dmax is the smallest weight of a codeword found (by RW or CC, or read with finC), or the supplied dmax if smaller, and rw_steps is the number of completed RW steps (0 if CC found a min-weight codeword or if RW did not run in method=2). NOTE: This 3-number output format is incompatible with legacy single-threaded dist_m4ri_old.</p>
+<p>Stop target dstop (method=2, 3): the run ends once CC has certified dmin &gt;= dstop, i.e., that there is no codeword of weight &lt; dstop (with outC, after the rounds w = dstop..dstop+dW which collect codewords), unless a lighter codeword has been found (then the search goes on as usual). Unlike dmax, dstop is not an upper bound and is never reported as dmax. E.g., for d = min(dX, dZ) of a CSS code with d &lt;= U known, the sector runs need dstop=U only.</p>
+<p>Expert CC options (see <code>--morehelp</code>) restrict the CC search:</p><ul>
+<li>noscan=1 (method=2): a single CC round at w=wmax. Unless the supplied dmin equals wmax, lower weights are not scanned, so a codeword found only sets dmax and dmin is not raised.</li>
+<li>start=a,b,c: clusters are grown only from the listed columns (without the usual restriction to larger column indices); dmin is valid only under a code symmetry which maps every minimum-weight codeword to one containing a listed column.</li>
+<li>cbeg/cend: split runs; dmin only covers codewords whose smallest column is in [cbeg,cend]. A CC codeword gives dmin=dmax only if found in a round where all lower weights have been analyzed (flag <code>cc_exact</code>).</li>
+</ul>
+<p>Threads (default: all logical CPUs available to the process): every worker can run CC rounds, while RW runs only on workers 0..rw_threads-1. Thread throttling (unless nothrottle=1) limits the RW workers by the memory of their dense matrices and by the step count; in method=3 this limits only the RW share, and CC rounds can use all workers. A worker without RW work (RW steps all claimed, RW stopped by min_hits) joins the current CC round. A CC round hands out work units: start columns, or pieces of them if there are few start columns per thread (see <code>cc_pack()</code>). Method 2 starts only a few workers, and the others once a CC round takes longer (see CC_SPAWN_INITIAL).</p>
+<p>Codewords (see <a class="el" href="util__io_8c.html#a9b85379c13cfa22372bf6752dce0ee51" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>): RW and CC add the codewords found to a hash with hit counts, holding the collection window (weight up to min_w + dW with outC or maxC; exported with outC) and a representative set of cov_cws lowest-weight codewords for the QDistRnd-style <code>min_hits</code> stopping criterion. With outC or maxC, RW does not end the run when the bounds coincide (or on wmin); in method=3 with outC, the CC rounds w = d..d+dW then enumerate all codewords to export. At the end (debug&amp;1), non-uniform hit counts are reported (<a class="el" href="util__io_8c.html#aca79e5ee9d56e635eef0ed2584be190a" title="Check the uniformity of the hit counts within each weight class of the representative set.">codeword_hit_check()</a>).</p>
+<p>Timing model (method=2, 3): the CC work of a round is measured as the total CC thread time, and the work of the next round is extrapolated with the growth factor of the last two rounds. With a timeout, a CC round predicted not to finish in time on all threads is not started in method=3 while RW runs (once RW has ended, the run ends); in method=2 (and method=3 with steps=0), it is started anyway, as it can still find a codeword of weight w = dmin. In method=3, the RW step time is measured continuously; the round w = dmax-1 (which certifies dmin = dmax) gets all threads, and while RW has not found any codeword, CC rounds w &gt; dexp run only on the threads which cannot run RW. The coordinator never ends CC while RW still runs.</p>
+<p>All debugging messages and confinement profile are sent to stderr (see the DBG_* bits in <a class="el" href="util__io_8h.html">util_io.h</a>): e.g., the reason why the run ended (DBG_SUMMARY, see ctx_stop()), and a periodic status line (DBG_STATUS, see ctx_status()).</p>
 <p>author: Leonid Pryadko <a href="#" onclick="location.href='mai'+'lto:'+'leo'+'ni'+'d.p'+'ry'+'adk'+'o@'+'ucr'+'.e'+'du'; return false;">leoni<span class="obfuscator">.nosp@m.</span>d.pr<span class="obfuscator">.nosp@m.</span>yadko<span class="obfuscator">.nosp@m.</span>@ucr<span class="obfuscator">.nosp@m.</span>.edu</a> </p>
 
 <p class="definition">Definition in file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
@@ -233,7 +303,245 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00026">26</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00063">63</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="ae280448ee171534f6253479a02fed597" name="ae280448ee171534f6253479a02fed597"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae280448ee171534f6253479a02fed597">&#9670;&#160;</a></span>CC_IDX_BITS</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_IDX_BITS&#160;&#160;&#160;32</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00281">281</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a7ab29d34b0aeb575a7a336fbb7c1d743" name="a7ab29d34b0aeb575a7a336fbb7c1d743"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7ab29d34b0aeb575a7a336fbb7c1d743">&#9670;&#160;</a></span>CC_LEV_SHIFT</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_LEV_SHIFT&#160;&#160;&#160;48</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00282">282</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a63d15176aed9db657e932ca0b1c3c616" name="a63d15176aed9db657e932ca0b1c3c616"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a63d15176aed9db657e932ca0b1c3c616">&#9670;&#160;</a></span>CC_SPAWN_INITIAL</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPAWN_INITIAL&#160;&#160;&#160;4</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01192">1192</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a1433a8b8b2c121812b58d9b7f777ada2" name="a1433a8b8b2c121812b58d9b7f777ada2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1433a8b8b2c121812b58d9b7f777ada2">&#9670;&#160;</a></span>CC_SPAWN_TIME</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPAWN_TIME&#160;&#160;&#160;5e-3</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01194">1194</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="afc9ce672060d746abb98e6e4bd0ca8e1" name="afc9ce672060d746abb98e6e4bd0ca8e1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afc9ce672060d746abb98e6e4bd0ca8e1">&#9670;&#160;</a></span>CC_SPAWN_WORK</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPAWN_WORK&#160;&#160;&#160;2e-3</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01193">1193</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a732e2e13c9b039ca66c469bd5586a2de" name="a732e2e13c9b039ca66c469bd5586a2de"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a732e2e13c9b039ca66c469bd5586a2de">&#9670;&#160;</a></span>CC_SPLIT_CLAIMS_PER_WORK</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPLIT_CLAIMS_PER_WORK&#160;&#160;&#160;1e4  /* at most 10^4 work units per thread-second of predicted work */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00310">310</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a2367e3d40a11c16e53d1185a4ca334e4" name="a2367e3d40a11c16e53d1185a4ca334e4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2367e3d40a11c16e53d1185a4ca334e4">&#9670;&#160;</a></span>CC_SPLIT_CLAIMS_UNKNOWN</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPLIT_CLAIMS_UNKNOWN&#160;&#160;&#160;65536 /* at most this many work units if the work of the round is not known */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00311">311</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="ac49b957449801b3c5ddbe04c165c3055" name="ac49b957449801b3c5ddbe04c165c3055"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac49b957449801b3c5ddbe04c165c3055">&#9670;&#160;</a></span>CC_SPLIT_MAX_LEVELS</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPLIT_MAX_LEVELS&#160;&#160;&#160;3 /* CC work units: at most 3 fixed levels, B^3 units per start index (cc_round_levels()) */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00157">157</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a88c000e44713080fb726d71a30e99ee1" name="a88c000e44713080fb726d71a30e99ee1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a88c000e44713080fb726d71a30e99ee1">&#9670;&#160;</a></span>CC_SPLIT_MIN_WORK</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPLIT_MIN_WORK&#160;&#160;&#160;1e-3        /* rounds predicted to take &lt; 1 ms on all threads: whole start indices */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00309">309</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a121004e9c676c5aa016db64a478c437c" name="a121004e9c676c5aa016db64a478c437c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a121004e9c676c5aa016db64a478c437c">&#9670;&#160;</a></span>CC_SPLIT_UNITS_PER_THREAD</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CC_SPLIT_UNITS_PER_THREAD&#160;&#160;&#160;4.0 /* aim at &gt;= 4 work units of the size of the largest one per CC thread */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00308">308</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a0195faf7bc3086f176fc4b5aa0f3f2f6" name="a0195faf7bc3086f176fc4b5aa0f3f2f6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0195faf7bc3086f176fc4b5aa0f3f2f6">&#9670;&#160;</a></span>M3_DEADLINE_FRACTION</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define M3_DEADLINE_FRACTION&#160;&#160;&#160;0.75 /* with a timeout, a round gets enough CC threads to finish in 3/4 of the time left */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01491">1491</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a3494052853c0d468d4b4874e1495ab1d" name="a3494052853c0d468d4b4874e1495ab1d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3494052853c0d468d4b4874e1495ab1d">&#9670;&#160;</a></span>M3_OVERRUN_FACTOR</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define M3_OVERRUN_FACTOR&#160;&#160;&#160;1.5     /* a round taking 1.5 times (+20 ms) longer than predicted gets all threads */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01492">1492</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<h2 class="groupheader">Typedef Documentation</h2>
+<a id="a5dc8166b6e60640b0577d53c0afe3627" name="a5dc8166b6e60640b0577d53c0afe3627"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5dc8166b6e60640b0577d53c0afe3627">&#9670;&#160;</a></span>worker_arg_t</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef struct <a class="el" href="structworker__arg.html">worker_arg</a> <a class="el" href="dist__m4ri_8c.html#a5dc8166b6e60640b0577d53c0afe3627">worker_arg_t</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<h2 class="groupheader">Enumeration Type Documentation</h2>
+<a id="a06fc87d81c62e9abb8790b6e5713c55b" name="a06fc87d81c62e9abb8790b6e5713c55b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a06fc87d81c62e9abb8790b6e5713c55b">&#9670;&#160;</a></span>anonymous enum</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">anonymous enum</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<table class="fieldtable">
+<tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba5341abc04ab3ee4c53b9818758bb9839" name="a06fc87d81c62e9abb8790b6e5713c55ba5341abc04ab3ee4c53b9818758bb9839"></a>STOP_NONE&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55baa9f60fffb6d8212951b1454e5178a350" name="a06fc87d81c62e9abb8790b6e5713c55baa9f60fffb6d8212951b1454e5178a350"></a>STOP_BOUNDS&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba44f6458c50077e9745de9425702f56ef" name="a06fc87d81c62e9abb8790b6e5713c55ba44f6458c50077e9745de9425702f56ef"></a>STOP_CC_FOUND&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba732bac59171600666a6a5ae7a44b4beb" name="a06fc87d81c62e9abb8790b6e5713c55ba732bac59171600666a6a5ae7a44b4beb"></a>STOP_RW_CONVERGED&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55baa6403c3f90f4699843f7a2f2cc66eeb3" name="a06fc87d81c62e9abb8790b6e5713c55baa6403c3f90f4699843f7a2f2cc66eeb3"></a>STOP_RW_STEPS&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba157ba4a99e839f00da48556fde3c3eff" name="a06fc87d81c62e9abb8790b6e5713c55ba157ba4a99e839f00da48556fde3c3eff"></a>STOP_TIMEOUT&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba6befcbac31a59f2ca1a05fbfe01cde58" name="a06fc87d81c62e9abb8790b6e5713c55ba6befcbac31a59f2ca1a05fbfe01cde58"></a>STOP_CC_DONE&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55baa80e39856bd463904b812149ef42920a" name="a06fc87d81c62e9abb8790b6e5713c55baa80e39856bd463904b812149ef42920a"></a>STOP_CC_SLOW&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba6f4148698e4af967afb00307c5293b15" name="a06fc87d81c62e9abb8790b6e5713c55ba6f4148698e4af967afb00307c5293b15"></a>STOP_WMIN&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55baf43f8d8a85801eb56180a5b820f9e316" name="a06fc87d81c62e9abb8790b6e5713c55baf43f8d8a85801eb56180a5b820f9e316"></a>STOP_MAXC&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55baec3ad629ba46e22d37a654f5c4592364" name="a06fc87d81c62e9abb8790b6e5713c55baec3ad629ba46e22d37a654f5c4592364"></a>STOP_COLLECTED&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba4905fa2bba1edec4a71b54d2f49d6be7" name="a06fc87d81c62e9abb8790b6e5713c55ba4905fa2bba1edec4a71b54d2f49d6be7"></a>STOP_DSTOP&#160;</td><td class="fielddoc"></td></tr>
+</table>
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00235">235</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -264,9 +572,9 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00918">918</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l02009">2009</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="dist__m4ri_8c_source.html#l00140">distfork_ctx_t::cc_active_workers</a>, <a class="el" href="dist__m4ri_8c_source.html#l00135">distfork_ctx_t::cc_col_next</a>, <a class="el" href="dist__m4ri_8c_source.html#l00125">distfork_ctx_t::cc_found_weight</a>, <a class="el" href="dist__m4ri_8c_source.html#l00142">distfork_ctx_t::cc_round_active</a>, <a class="el" href="dist__m4ri_8c_source.html#l00141">distfork_ctx_t::cc_target_workers</a>, <a class="el" href="dist__m4ri_8c_source.html#l00134">distfork_ctx_t::cc_weight</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__io_8h_source.html#l00068">params_t::codewords</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00115">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00156">worker_arg_t::ctx</a>, <a class="el" href="dist__m4ri_8c_source.html#l00145">distfork_ctx_t::cw_mutex</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::debug</a>, <a class="el" href="dist__m4ri_8c_source.html#l00120">distfork_ctx_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00081">params_t::dexp</a>, <a class="el" href="dist__m4ri_8c_source.html#l00124">distfork_ctx_t::dmax</a>, <a class="el" href="util__io_8h_source.html#l00043">params_t::dmax</a>, <a class="el" href="dist__m4ri_8c_source.html#l00123">distfork_ctx_t::dmin</a>, <a class="el" href="util__io_8h_source.html#l00042">params_t::dmin</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00066">params_t::finC</a>, <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="dist__m4ri_8c_source.html#l00139">distfork_ctx_t::max_col_W</a>, <a class="el" href="util__io_8h_source.html#l00028">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00035">params_t::method</a>, <a class="el" href="dist__m4ri_8c_source.html#l00138">distfork_ctx_t::mHT_cc</a>, <a class="el" href="dist__m4ri_8c_source.html#l00158">worker_arg_t::min_swei</a>, <a class="el" href="util__io_8h_source.html#l00070">params_t::min_w</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8h_source.html#l00083">params_t::nothrottle</a>, <a class="el" href="dist__m4ri_8c_source.html#l00117">distfork_ctx_t::num_threads</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l00884">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l00937">nzlist_write()</a>, <a class="el" href="util__io_8h_source.html#l00067">params_t::outC</a>, <a class="el" href="dist__m4ri_8c_source.html#l00116">distfork_ctx_t::p</a>, <a class="el" href="util__io_8c_source.html#l00054">p</a>, <a class="el" href="util__io_8c_source.html#l00007">prm</a>, <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>, <a class="el" href="dist__m4ri_8c_source.html#l00131">distfork_ctx_t::rw_steps_completed</a>, <a class="el" href="dist__m4ri_8c_source.html#l00130">distfork_ctx_t::rw_steps_started</a>, <a class="el" href="util__io_8h_source.html#l00037">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00077">params_t::spaH</a>, <a class="el" href="dist__m4ri_8c_source.html#l00119">distfork_ctx_t::start_time</a>, <a class="el" href="util__io_8h_source.html#l00036">params_t::steps</a>, <a class="el" href="dist__m4ri_8c_source.html#l00126">distfork_ctx_t::stop_flag</a>, <a class="el" href="dist__m4ri_8c_source.html#l00152">distfork_ctx_t::threads</a>, <a class="el" href="util__io_8h_source.html#l00080">params_t::threads</a>, <a class="el" href="dist__m4ri_8c_source.html#l00157">worker_arg_t::tid</a>, <a class="el" href="dist__m4ri_8c_source.html#l00118">distfork_ctx_t::timeout</a>, <a class="el" href="util__io_8h_source.html#l00082">params_t::timeout</a>, <a class="el" href="dist__m4ri_8c_source.html#l00129">distfork_ctx_t::total_rw_steps</a>, <a class="el" href="util__io_8c_source.html#l00060">var_init()</a>, <a class="el" href="util__io_8c_source.html#l00517">var_kill()</a>, <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>, <a class="el" href="util__io_8h_source.html#l00041">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00044">params_t::wmin</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="dist__m4ri_8c_source.html#l01192">CC_SPAWN_INITIAL</a>, <a class="el" href="dist__m4ri_8c_source.html#l00157">CC_SPLIT_MAX_LEVELS</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__io_8c_source.html#l01167">codeword_feed_limit()</a>, <a class="el" href="util__io_8c_source.html#l01429">codeword_hit_check()</a>, <a class="el" href="util__io_8h_source.html#l00089">params_t::codewords</a>, <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00115">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00266">worker_arg::ctx</a>, <a class="el" href="util__io_8h_source.html#l00039">DBG_CWDUMP</a>, <a class="el" href="util__io_8h_source.html#l00032">DBG_PROGRESS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__io_8h_source.html#l00034">DBG_TIMING</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::debug</a>, <a class="el" href="dist__m4ri_8c_source.html#l00165">distfork_ctx_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00107">params_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::dmax</a>, <a class="el" href="util__io_8h_source.html#l00061">params_t::dmin</a>, <a class="el" href="util__io_8h_source.html#l00108">params_t::dstop</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00087">params_t::finC</a>, <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="util__io_8h_source.html#l00113">params_t::ksub</a>, <a class="el" href="util__io_8h_source.html#l00047">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00085">params_t::maxC</a>, <a class="el" href="util__io_8h_source.html#l00054">params_t::method</a>, <a class="el" href="dist__m4ri_8c_source.html#l00268">worker_arg::min_swei</a>, <a class="el" href="util__io_8h_source.html#l00092">params_t::min_w</a>, <a class="el" href="util__m4ri_8c_source.html#l00911">mzd_nullspace()</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8h_source.html#l00111">params_t::nothrottle</a>, <a class="el" href="util__io_8h_source.html#l00091">params_t::num_cws</a>, <a class="el" href="dist__m4ri_8c_source.html#l00161">distfork_ctx_t::num_threads</a>, <a class="el" href="util__io_8h_source.html#l00083">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l01533">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l01616">nzlist_write()</a>, <a class="el" href="util__io_8h_source.html#l00088">params_t::outC</a>, <a class="el" href="dist__m4ri_8c_source.html#l00160">distfork_ctx_t::p</a>, <a class="el" href="util__io_8c_source.html#l00067">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, <a class="el" href="util__io_8c_source.html#l01343">print_codeword_stats()</a>, <a class="el" href="util__io_8c_source.html#l01496">print_rw_infoset_estimate()</a>, <a class="el" href="util__io_8c_source.html#l00008">prm</a>, <a class="el" href="util__io_8h_source.html#l00118">params_t::refresh</a>, <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>, <a class="el" href="dist__m4ri_8c_source.html#l00162">distfork_ctx_t::rw_threads</a>, <a class="el" href="util__io_8h_source.html#l00056">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00102">params_t::spaH</a>, <a class="el" href="dist__m4ri_8c_source.html#l00164">distfork_ctx_t::start_time</a>, <a class="el" href="util__io_8h_source.html#l00055">params_t::steps</a>, <a class="el" href="dist__m4ri_8c_source.html#l00247">STOP_DSTOP</a>, <a class="el" href="dist__m4ri_8c_source.html#l00236">STOP_NONE</a>, <a class="el" href="util__io_8h_source.html#l00106">params_t::threads</a>, <a class="el" href="dist__m4ri_8c_source.html#l00267">worker_arg::tid</a>, <a class="el" href="dist__m4ri_8c_source.html#l00163">distfork_ctx_t::timeout</a>, <a class="el" href="util__io_8h_source.html#l00110">params_t::timeout</a>, <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>, <a class="el" href="util__io_8c_source.html#l00801">var_kill()</a>, <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>, <a class="el" href="util__io_8h_source.html#l00060">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00064">params_t::wmin</a>.</p>
 
 </div>
 </div>

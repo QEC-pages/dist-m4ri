@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -80,31 +80,32 @@ $(function() {
   <div class="headertitle"><div class="title">dist-m4ri - Distance of a Classical or Quantum CSS Code</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md10"></a> </p>
-<h1><a class="anchor" id="autotoc_md11"></a>
+<div class="textblock"><p><a class="anchor" id="autotoc_md33"></a> </p>
+<h1><a class="anchor" id="autotoc_md34"></a>
 Overview</h1>
 <p><code>dist-m4ri</code> is a high-performance multithreaded C program and Python library for computing and bracketing the minimum distance of binary classical linear codes, quantum CSS codes, and Stim Detector Error Models (DEMs).</p>
-<p>The program implements three main methods:</p>
+<p>The program implements three main methods (with <code>method=3</code> as the default):</p>
 <ul>
 <li>**Method 1 (<code>method=1</code>) - Random Window (RW) Algorithm**: Multithreaded random information set search to find low-weight non-trivial codewords and establish an <b>upper distance bound</b> $d_{\max}$.</li>
 <li>**Method 2 (<code>method=2</code>) - Connected Cluster (CC) Algorithm**: Multithreaded exhaustive depth-first cluster enumeration to compute <b>exact distance</b> or establish a certified <b>lower distance bound</b> $d_{\min}$.</li>
-<li>**Method 3 (<code>method=3</code>) - Bracketing Mode (Artillery Fork / Вилка)**: Concurrently runs CC and RW on multiple threads, dynamically balancing CPU cores between CC and RW based on current bounds $[d_{\min}, d_{\max}]$, distance estimate (<code>dexp</code>/<code>dest</code>), remaining RW steps, timeout, and the measured scaling characteristics of CC.</li>
+<li>**Method 3 (<code>method=3</code>, default) - Bracketing Mode (Artillery Fork / Вилка)**: Concurrently runs CC and RW on multiple threads, dynamically balancing CPU cores between CC and RW based on current bounds $[d_{\min}, d_{\max}]$, distance estimate (<code>dexp</code>/<code>dest</code>), remaining RW steps and their measured time, timeout, and the measured scaling characteristics of CC.</li>
 </ul>
 <p>For a classical binary linear code, only the parity-check matrix $H$ is needed.</p>
 <p>For a quantum CSS code, matrix $H_X$ and either $H_Z$ (as <code>finG</code>) or logical operators $L_X$ (as <code>finL</code>) are needed.</p>
 <p>Alternatively, a detector error model file from <code>stim</code> can be specified using <code>fdem=[str]</code>.</p>
-<p>All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthogonality conditions: $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$</p>
+<p>All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthogonality conditions: $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$ The last condition is not required: it is sufficient that $L_X$, $L_Z$, and $L_X L_Z^T$ have the same full row rank $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits (printed with <code>debug=16</code>).</p>
 <hr  />
-<h1><a class="anchor" id="autotoc_md13"></a>
+<h1><a class="anchor" id="autotoc_md36"></a>
 Output Format &amp; Stream Separation</h1>
 <p><code>dist-m4ri</code> strictly separates machine-parseable results from informational progress logs:</p>
 <ul>
 <li>**<code>stdout</code>**: Outputs three space-separated integers: <div class="fragment"><div class="line">dmin dmax rw_steps</div>
 </div><!-- fragment --><ul>
 <li><code>dmin - 1</code> is the maximum cluster size analyzed without success by CC (<code>dmin = dmax</code> if CC found a minimum-weight codeword).</li>
-<li><code>dmax</code> is the weight of the smallest non-trivial codeword found by RW (<code>0</code> if none found).</li>
+<li><code>dmax</code> is the weight of the smallest non-trivial codeword found (by RW or CC, or read with <code>finC</code>), or the supplied upper bound <code>dmax=[int]</code> if smaller (<code>0</code> if none).</li>
 <li><code>rw_steps</code> is the number of completed RW steps across all threads (<code>0</code> if CC found a minimum-weight codeword, or if RW did not run in <code>method=2</code>).</li>
 <li>When <code>dmin = dmax = d</code>, the exact code distance is confirmed.</li>
+<li>With a stop target <code>dstop=U</code> (<code>method=2</code> or <code>3</code>), the run ends once CC has certified <code>dmin &gt;= U</code>, unless a codeword of weight <code>&lt; U</code> is found; <code>dmax</code> is then the weight of the lightest codeword found (<code>0</code> if none), never <code>U</code>, since <code>dstop</code> is not an upper bound (see Bracketing Mode).</li>
 </ul>
 </li>
 </ul>
@@ -112,82 +113,148 @@ Output Format &amp; Stream Separation</h1>
 <p>&zwj;<b>Note on Compatibility</b>: This 3-number output format (<code>dmin dmax rw_steps</code>) is specific to the multithreaded <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> and is incompatible with the legacy single-threaded <code>dist_m4ri_old</code> (which returned a single integer <code>d</code> or <code>-w</code>). </p>
 </blockquote>
 <ul>
-<li>**<code>stderr</code>**: Receives all status banners, thread balancing reports, CC round timings, RW discovery logs, warnings, and confinement profiles.</li>
+<li>**<code>stderr</code>**: Receives all status banners, thread balancing reports, CC round timings, RW discovery logs, warnings, and confinement profiles, as selected by the <code>debug</code> bitmap (see Debug Output).</li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md15"></a>
+<h1><a class="anchor" id="autotoc_md38"></a>
 How the Methods Work</h1>
-<h2><a class="anchor" id="autotoc_md16"></a>
+<h2><a class="anchor" id="autotoc_md39"></a>
 1. Multithreaded RW Algorithm (&lt;tt&gt;method=1&lt;/tt&gt;)</h2>
-<p>Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$. Threads independently generate random column permutations, compute Gaussian elimination to find information sets, and extract candidate dual-row codewords. When a lighter codeword is discovered, all worker threads atomically update the global upper bound $d_{\max}$ and prune heavier entries.</p>
+<p>Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$. Threads independently generate random column permutations, compute Gaussian elimination to find information sets, and extract candidate dual-row codewords. Only the candidates lighter than the current weight limit are formed (the weight of each candidate is counted first), and they are checked for $Lc \neq 0$ with bit masks of the columns of $L$, in $O(|c|)$ operations: for DEMs, most such candidates are trivial. When a lighter codeword is discovered, all worker threads atomically update the global upper bound $d_{\max}$. The found codewords are kept in a hash table with their hit counts (the number of times RW found each codeword): the collection window for <code>outC</code> (weight up to $w_{\min} + \text{dW}$, where $w_{\min}$ is the minimum weight found) and, for <code>min_hits</code>, a representative set of <code>cov_cws</code> lowest-weight codewords, where heavier codewords are gradually replaced as lighter ones are found.</p>
 <p>Relevant parameters:</p><ul>
-<li><code>steps=[int]</code>: Total number of information sets / RW rounds across all threads (default: 1).</li>
-<li><code>wmin=[int]</code>: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found).</li>
-<li><code>threads=[int]</code>: Maximum number of POSIX worker threads to run (default: number of CPU cores; subject to automatic throttling unless <code>nothrottle=1</code> is specified).</li>
+<li><code>steps=[int]</code>: Total number of information sets / RW rounds across all threads (default: 100000).</li>
+<li><code>min_hits=[int]</code>: QDistRnd-style automatic convergence stopping criterion (default: 5; set 0 to disable). Stops RW when the average number of hits per codeword $\langle n\rangle$ reaches <code>min_hits</code>, both for the codewords of the minimum weight found and for the representative set of <code>cov_cws</code> lowest-weight codewords (heavier codewords make the estimate more conservative). A single codeword suffices (e.g., a classical code with $k=1$). A lighter codeword is then missed with probability about $e^{-\langle n\rangle}$; see RW Convergence for this empirical estimate, its test (a warning at the end with <code>debug&amp;1</code>), and the information-set estimate.</li>
+<li><code>cov_cws=[int]</code>: Size of the representative set of lowest-weight codewords for <code>min_hits</code> (default: 100; 0 for the minimum-weight codewords only). Without <code>outC</code> and <code>maxC</code>, at most <code>cov_cws</code> minimum-weight codewords are tracked (all with <code>cov_cws=0</code>). For codes with fewer than <code>cov_cws</code> minimum-weight codewords, a smaller <code>cov_cws</code> may stop RW earlier.</li>
+<li><code>kwin=[int]</code> (alias: <code>win=[int]</code>): Localized column permutation window size $W$: the random column order starts with $W$ columns near a random column, which are thus preferred as pivots (default: 0; for $n \ge 500$, every other RW step then uses $W = \min(512, 3n/4)$ consecutive columns, as with <code>win_mode=1</code>, and the other steps use uniform random permutations).</li>
+<li><code>win_mode=[0|1]</code>: Window construction mode when <code>kwin &gt; 0</code>: <code>0</code> for Tanner graph BFS neighborhood, <code>1</code> for contiguous column index window (default: 0).</li>
+<li><code>ksub=[int]</code>: <b>Experimental, should not be used</b> (a warning is printed whenever <code>ksub&gt;0</code> is given for RW, with or without <code>min_hits</code>). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for full-matrix RW; automatically falls back to <code>ksub=0</code> with a warning when $m &lt; \nu = \dim\ker(H)$, e.g., for DEMs and most quantum codes). Each step reduces the span of <code>ksub</code> distinct rows of a fixed basis of $\ker(H)$, so that a few codewords are found much more often than others: then $e^{-\langle n\rangle}$ is optimistic, and <code>min_hits</code> may end RW early.</li>
+<li><code>refresh=[int]</code>: RW step interval for adaptive $\ker(H)$ basis refresh via low-weight codeword exchange and re-echelonization, only with the experimental <code>ksub&gt;0</code> (default: 5000 when <code>ksub &gt; 0</code>, 0 to disable).</li>
+<li><code>wmin=[int]</code>: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found; not when collecting codewords with <code>outC</code> or <code>maxC</code>).</li>
+<li><code>threads=[int]</code>: Maximum number of POSIX worker threads to run (default: all logical CPUs available to the process, i.e., its CPU affinity mask, e.g., with <code>taskset</code>; subject to automatic throttling unless <code>nothrottle=1</code> is specified).</li>
 <li><code>timeout=[sec]</code>: Maximum execution time in seconds (default: 60.0).</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md17"></a>
+<h2><a class="anchor" id="autotoc_md40"></a>
 2. Multithreaded CC Algorithm (&lt;tt&gt;method=2&lt;/tt&gt;)</h2>
-<p>Recursively explores connected clusters starting from each column $i \in [0, n-1]$. Columns are distributed dynamically among worker threads via lock-free atomic queues. If <code>noscan=0</code> (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When <code>outC</code> is specified, CC exhausts all columns for weight $w$ to collect all unique minimum-weight codewords.</p>
+<p>Recursively explores connected clusters starting from each column $i \in [0, n-1]$; a cluster started at column $i$ is grown using only columns $j &gt; i$, so that every codeword is found starting from its smallest column. Start columns are distributed dynamically among worker threads via a lock-free atomic counter. If there are few start columns per thread (e.g., for $n / w$ small compared to the number of threads), the start columns are split into work units which also fix the first one to three cluster extensions, for a balanced load (see Multithreading). If <code>noscan=0</code> (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When <code>outC</code> is specified, CC exhausts all columns for weight $w$ to collect all unique minimum-weight codewords. The scan ends with the round $w = d$ in which CC finds a codeword (with <code>outC</code> and <code>dW&gt;0</code>, after the extra rounds up to $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from <code>dmax=[int]</code> or from codewords in <code>finC</code>) ends the scan as soon as $d_{\min} = d_{\max}$, unless codewords are collected (<code>outC</code> or <code>maxC</code>). A stop target <code>dstop=U</code> ends the scan once $d_{\min} \ge U$ (with <code>outC</code>, after the rounds $w = U, \dots, U + \text{dW}$), and $d_{\max}$ remains the weight of the lightest codeword found (<code>0</code> if none). With a <code>timeout</code>, each round is started even if it is predicted not to finish in time (its CC work, the total CC thread time, is extrapolated from the last two rounds with their growth factor, clamped to $[2, 10]$; a note is printed): a round which cannot be completed may still find a codeword of weight $w = d_{\min}$, i.e., the exact distance.</p>
 <p>Relevant parameters:</p><ul>
-<li><code>wmax=[int]</code>: Maximum cluster weight to search (optional if <code>timeout&gt;0</code> or <code>dmax&gt;0</code> is specified; otherwise required for CC).</li>
-<li><code>noscan=[int]</code>: If set to 1, start CC directly at $w_{\max}$ without scanning smaller weights.</li>
-<li><code>cbeg=[int]</code>, <code>cend=[int]</code>: Column range $[c_{\text{beg}}, c_{\text{end}}]$ to limit the CC search space.</li>
-<li><code>start=[int]</code>: Set $c_{\text{beg}} = c_{\text{end}} = \text{start}$ (useful for cyclic or symmetric codes).</li>
-<li><code>smax=[int]</code>: Maximum syndrome weight to track for confinement profile (default: 5; set 0 to disable).</li>
+<li><code>wmax=[int]</code>: Maximum cluster weight to search (optional with <code>timeout&gt;0</code>, the default, with <code>dmax&gt;0</code>, where the rounds end once $d_{\min} = d_{\max}$, or with <code>dstop&gt;0</code>, where they end once $d_{\min} \ge$ <code>dstop</code>; otherwise required for <code>method=2</code>).</li>
+<li><code>smax=[int]</code>: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning; set e.g. <code>smax=5</code> to compute confinement).</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md18"></a>
-3. Bracketing Mode (&lt;tt&gt;method=3&lt;/tt&gt;)</h2>
+<p>Expert parameters (each prints a <code># WARNING:</code> to <code>stderr</code>; see Restricting the CC Search below):</p><ul>
+<li><code>noscan=[0|1]</code>: If set to 1 (<code>method=2</code> only), run CC only at weight $w = w_{\max}$, without scanning smaller weights. The result is <b>not</b> a lower bound unless <code>dmin=wmax</code> is also supplied.</li>
+<li><code>start=[list]</code>: Comma-separated list of CC start columns (0-based), e.g. <code>start=0,48,96</code>. Clusters grown from a listed column are <b>not</b> limited to larger column indices (for quasi-cyclic or otherwise symmetric codes).</li>
+<li><code>cbeg=[int]</code>, <code>cend=[int]</code>: Range $[c_{\text{beg}}, c_{\text{end}}]$ of CC start columns, for splitting one CC calculation into several runs which together cover all columns $0, \dots, n-1$.</li>
+</ul>
+<h3><a class="anchor" id="autotoc_md41"></a>
+Restricting the CC Search (Expert Options)</h3>
+<p>By default, CC grows clusters from every column $i$ using only columns $j &gt; i$. The expert options <code>start</code> and <code>cbeg</code>/<code>cend</code> (with <code>method=2</code> or <code>method=3</code>) and <code>noscan</code> (<code>method=2</code> only) restrict this search. Each of them prints a <code># WARNING:</code> to <code>stderr</code>, since the reported $d_{\min}$ is then not necessarily a lower bound on the distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is always a valid upper bound.</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadNone">Option   </th><th class="markdownTableHeadNone">CC start columns   </th><th class="markdownTableHeadNone">Cluster growth   </th><th class="markdownTableHeadNone">Reported $d_{\min}$ valid    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">(default)   </td><td class="markdownTableBodyNone">all, $0 \le i \le n-1$   </td><td class="markdownTableBodyNone">columns $j &gt; i$   </td><td class="markdownTableBodyNone">always    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone"><code>start=a,b,c</code>   </td><td class="markdownTableBodyNone">listed columns only   </td><td class="markdownTableBodyNone">unlimited   </td><td class="markdownTableBodyNone">under a code symmetry only    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone"><code>cbeg</code>, <code>cend</code>   </td><td class="markdownTableBodyNone">$c_{\text{beg}} \le i \le c_{\text{end}}$   </td><td class="markdownTableBodyNone">columns $j &gt; i$   </td><td class="markdownTableBodyNone">after combining split runs    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone"><code>noscan=1</code>   </td><td class="markdownTableBodyNone">all, $0 \le i \le n-1$   </td><td class="markdownTableBodyNone">columns $j &gt; i$   </td><td class="markdownTableBodyNone">only if <code>dmin=wmax</code> is given   </td></tr>
+</table>
+<ul>
+<li>**<code>start=a,b,c</code>** (e.g., quasi-cyclic codes): CC clusters are grown only from the listed (0-based) columns, but they are <b>not</b> limited to larger column indices, so that every codeword whose support contains a listed column is found. <code>start=N</code> is a one-element list, and <code>start=-1</code> (default) means all columns; the list is sorted, and duplicates are removed. The reported $d_{\min}$ (and an exact result $d_{\min} = d_{\max}$) is valid only if a code symmetry maps every minimum-weight codeword to a codeword containing a listed column. E.g., for a quasi-cyclic code with circulant blocks of size $\ell$ (columns ordered block by block), simultaneous cyclic shifts of all blocks are a symmetry, and it is sufficient to list one column per block, e.g., <code>start=0,48,96</code> for three blocks with $\ell = 48$. Cannot be combined with <code>cbeg</code>/<code>cend</code>.</li>
+<li>**<code>cbeg=[int]</code>, <code>cend=[int]</code>** (split runs): CC starts only from columns $c_{\text{beg}} \le i \le c_{\text{end}}$ (default <code>-1</code>: column $0$, respectively, column $n-1$), still growing clusters using only columns $j &gt; i$. Thus the $d_{\min}$ of a single run only covers codewords whose smallest column is in $[c_{\text{beg}}, c_{\text{end}}]$. To split a calculation, e.g., among several machines, run <code>cbeg=0 cend=99</code>, <code>cbeg=100 cend=199</code>, ..., so that every column $0, \dots, n-1$ is eventually listed in one of the runs, and take the minimum of $d_{\min}$ (and of the positive $d_{\max}$) over all runs.</li>
+<li>**<code>noscan=1</code>** (<code>method=2</code> only): a single CC round at $w = w_{\max}$, skipping weights $w &lt; w_{\max}$. A codeword found only gives an upper bound $d_{\max}$, and $d_{\min}$ is not raised above the supplied <code>dmin</code>. The result is certified only if <code>dmin=wmax</code> is supplied, i.e., if all smaller weights are already known to be absent.</li>
+<li><b>Before version 0.10.0</b>, <code>start=N</code> was equivalent to <code>cbeg=N cend=N</code> (clusters started from column $N$ using only larger columns; use <code>cbeg=N cend=N</code> to reproduce it), and <code>noscan=1</code> results were reported as certified even though smaller weights were not checked.</li>
+<li><b>Python interface</b> (<code><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></code>): <code>start</code> takes a list of columns (<code>start=[0, 48]</code>, <code>start="0,48"</code>, or <code>start=0,48</code> in the CLI), while <code>noscan</code>, <code>cbeg</code>, and <code>cend</code> are disabled: they are accepted for backward compatibility, but ignored with a warning to <code>stderr</code> (run the <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> binary directly to use them). With the persistent cache, start-list results are stored under the separate key <code>&lt;key&gt;:start=a,b,c</code>; such a run is seeded with the bounds of the main record, and only the always valid $d_{\max}$ and codewords are merged into the main record. The expert option <code>trust_start</code> (CLI: <code>--trust-start</code> or <code>trust_start=1</code>) accepts the start-list results as valid: $d_{\min}$ and <code>rw_steps</code> are merged as well, and an existing exact start-list record is copied to the main record (and the cache file is saved) even if no calculation is needed. For DEM input, the start columns index the error mechanisms in their order in the flattened DEM (after the <code>pmin</code> cutoff). For CSS codes, the same list is used in both sectors.</li>
+<li><b>Possible optimization</b> (not implemented): clusters grown from a listed column could skip the columns listed before it, since all codewords containing those columns have already been enumerated.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md42"></a>
+3. Bracketing Mode (&lt;tt&gt;method=3&lt;/tt&gt;, default)</h2>
 <p>Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to determine the exact code distance as quickly as possible.</p>
-<h3><a class="anchor" id="autotoc_md19"></a>
+<h3><a class="anchor" id="autotoc_md43"></a>
 Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:</h3>
 <ol type="1">
 <li><b>Target Search Depth</b>:<ul>
-<li>Before RW discovers a candidate codeword, $d_{\max}$ is unknown. Providing <code>dexp=D</code> (alias: <code>dest=D</code>) tells the coordinator to plan CC verification up to target weight $D - 1$ (or $D$).</li>
+<li>Once a codeword has been found, CC rounds continue up to $w = d_{\max} - 1$: the round $w = d_{\max} - 1$ certifies $d_{\min} = d_{\max}$ (with <code>outC</code>, CC continues with the rounds $w = d_{\max}, \dots, d_{\max} + \text{dW}$, which enumerate all codewords to export). Before that, CC is limited only by <code>wmax</code> and the <code>timeout</code>.</li>
+<li><code>dexp=D</code> (alias: <code>dest=D</code>) is a hint: as long as RW has not found any codeword, CC rounds $w &gt; D$ run only on the threads which cannot run RW (see Multithreading, Throttling &amp; Batch Sizing), i.e., CC pauses if RW can use all threads. CC resumes as soon as RW finds a codeword, or when RW ends.</li>
+<li>A stop target <code>dstop=U</code> (not an upper bound) takes the place of $d_{\max}$ as long as no codeword of weight $&lt; U$ is known: the run ends once the round $w = U - 1$ certifies $d_{\min} \ge U$ (with <code>outC</code>, after the rounds $w = U, \dots, U + \text{dW}$), without waiting for RW, and $d_{\max}$ is the weight of the lightest codeword found (<code>0</code> if none). E.g., <code>dstop=U wmin=U-1</code> decides whether $d \ge U$, and for a CSS code with $d = \min(d_X, d_Z) \le U$ known (e.g., from the other sector), <code>dstop=U</code> is all that is needed.</li>
 </ul>
 </li>
 <li><b>Predictive Workload Modeling</b>:<ul>
-<li>The coordinator measures empirical single-thread speed for RW steps ($t_{\text{RW}}$) and fits exponential growth to completed CC rounds to estimate time $T_{\text{CC}}$ required to reach $\min(d_{\max}, d_{\exp})$.</li>
-<li>It computes the remaining work ratio: $$\text{ratio} = \frac{T_{\text{CC}}}{T_{\text{CC}} + T_{\text{RW}}}$$ and dynamically splits threads at each round: $$N_{\text{CC}} = \text{round}(N_{\text{threads}} \times \text{ratio}),$$ $$N_{\text{RW}} = N_{\text{threads}} - N_{\text{CC}}$$</li>
-<li><b>Small $d_{\exp}$</b>: CC requires little work, so only 1–2 threads run CC while the majority maximize RW sampling speed.</li>
-<li><b>Heavier rounds</b>: As $w$ grows toward $d_{\exp}$, $T_{\text{CC}}$ increases and additional threads are shifted to CC to ensure both algorithms converge on the exact distance simultaneously.</li>
+<li>The RW threads measure the RW step time $t_{\text{RW}}$ (thread time per step) continuously. The CC work of each round is measured as the total CC thread time, and the work of the next round is extrapolated with the growth factor of the last two rounds (clamped to $[2, 10]$).</li>
+<li>For each round, the coordinator compares the remaining work in thread-seconds: $T_{\text{CC}}$ of the rounds $w, w+1, w+2$ (up to $d_{\max} - 1$, or up to $d_{\exp}$ before a codeword is found), and $T_{\text{RW}} = t_{\text{RW}} \times$ (remaining RW steps, at most 2000 once $d_{\max}$ is known), but no more than the RW threads can do before the <code>timeout</code>. It splits the threads as $$\text{ratio} = \frac{T_{\text{CC}}}{T_{\text{CC}} + T_{\text{RW}}},$$ $$N_{\text{CC}} = \text{round}(N_{\text{threads}} \times \text{ratio}),$$ $$N_{\text{RW}} = N_{\text{threads}} - N_{\text{CC}}$$ with $1 \le N_{\text{CC}} \le N_{\text{threads}} - 1$, where $N_{\text{RW}}$ cannot exceed the number of threads allowed to run RW (see Multithreading, Throttling &amp; Batch Sizing).</li>
+<li><b>Small rounds</b> (estimated CC work below 5 ms): only 1–2 threads run CC while the majority maximize RW sampling speed.</li>
+<li><b>Heavier rounds</b>: as the CC work grows, additional threads are shifted to CC, so that both algorithms converge on the exact distance simultaneously.</li>
+<li><b>The certifying round</b> $w = d_{\max} - 1$ (and any later codeword collection round) runs on all threads, since RW can no longer improve the result.</li>
+<li><b>The first round at a supplied <code>dmin</code></b> (no measured round yet) runs on half of the threads.</li>
+<li><b>During a round</b>, CC threads are added when RW finds a new $d_{\max}$ (e.g., if the round now certifies $d_{\min} = d_{\max}$), and all threads join a round which takes more than 1.5 times its predicted time. A busy RW thread joins a CC round when its current RW batch is done.</li>
 </ul>
 </li>
-<li><b>Adaptive Early Cutoff</b>:<ul>
-<li>If CC reaches $w &gt; d_{\exp}$ before a codeword is found, CC halts and yields 100% of threads to RW.</li>
-<li>If a projected CC round is estimated to exceed the remaining <code>timeout</code>, the coordinator terminates CC early and devotes remaining time entirely to RW.</li>
+<li><b>Timeout, Early Cutoff &amp; RW Convergence</b>:<ul>
+<li>With a <code>timeout</code>, a CC round gets enough CC threads to finish within 3/4 of the remaining time. A round predicted not to finish in time on all threads is not started while RW runs; once RW has ended, the run ends instead. With <code>steps=0</code> (no RW), as in <code>method=2</code>, such a round is started anyway, since it may still find a codeword of weight $w = d_{\min}$.</li>
+<li>The coordinator never ends CC while RW runs. Whenever no CC round can be started (CC done up to <code>wmax</code>, a round predicted to exceed the <code>timeout</code>, or CC paused by <code>dexp</code>), it waits for RW and re-plans when RW finds a new $d_{\max}$ or ends. The run ends once RW has ended and no CC round can be started.</li>
+<li>When RW satisfies the <code>min_hits</code> convergence criterion, RW workers stop early and yield 100% of threads to CC to finish certifying $d_{\min}$.</li>
+<li>Likewise, once all RW <code>steps</code> have been claimed, RW threads join the current CC round instead of waiting for it to finish.</li>
 </ul>
 </li>
 </ol>
 <p>Relevant parameters:</p><ul>
-<li><code>dexp=[int]</code> (alias: <code>dest=[int]</code>): Expected code distance to guide target search depth and thread allocation.</li>
-<li><code>threads=[int]</code>: Maximum number of worker threads (default: hardware concurrency; subject to throttling unless <code>nothrottle=1</code> is specified).</li>
+<li><code>dexp=[int]</code> (alias: <code>dest=[int]</code>): Expected code distance, a hint for the thread allocation before RW finds a codeword (see above).</li>
+<li><code>dstop=[int]</code>: Stop target for the lower bound (default: 0, off; see above, also for <code>method=2</code>). Unlike <code>dmax</code>, it is not an upper bound, and it is never reported as <code>dmax</code>. A supplied <code>dmin &gt;= dstop</code> ends the run without a search (unless codewords are collected with <code>outC</code> or <code>maxC</code>); otherwise, <code>dstop</code> has no effect with <code>method=1</code>.</li>
+<li><code>threads=[int]</code>: Maximum number of worker threads (default: all logical CPUs available to the process; subject to throttling unless <code>nothrottle=1</code> is specified).</li>
 <li><code>nothrottle=[int]</code>: Disable automatic thread throttling (default: 0; CLI flag: <code>--no-throttle</code>).</li>
-<li><code>chunk_size=[int]</code> (alias: <code>batch=[int]</code>): RW step batch chunk size (default: 0 for automatic adaptive sizing). When <code>chunk_size=0</code> (default in Python and binary), chunk size is chosen adaptively based on $n$ and step budget:<ul>
+<li><p class="startli"><code>chunk_size=[int]</code> (alias: <code>batch=[int]</code>): Maximum RW step batch claimed at once by a thread (default: 0 for automatic adaptive sizing). When <code>chunk_size=0</code> (default in Python and binary), chunk size is chosen adaptively based on $n$ and step budget:</p><ul>
 <li>Small codes ($n &lt; 500$): 50 steps/chunk (250 for $\ge 10^3$ steps; 500 for $\ge 5 \times 10^4$ steps).</li>
 <li>Medium codes ($500 \le n &lt; 5000$): 50 steps/chunk (100 for $\ge 10^4$ steps).</li>
-<li>Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps; bounds timeout overshoot to $\le 2\text{&ndash;}3$s).</li>
+<li>Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps).</li>
 </ul>
+<p class="startli">In either case, a batch takes at most $\lceil r / (4 N_{\text{RW}}) \rceil$ of the $r$ remaining steps, where $N_{\text{RW}}$ is the number of RW threads (guided scheduling, see below).</p>
 </li>
-<li><code>timeout=[sec]</code>: Maximum execution time in seconds (default: 60.0; set to <code>0</code> for infinite / no timeout).</li>
-<li><code>steps=[int]</code>: Maximum total RW steps (default: 1000; set to <code>0</code> to run pure CC via bracketing coordinator).</li>
+<li><code>timeout=[sec]</code>: Maximum execution time in seconds (default: 60.0; set to <code>0</code> for infinite / no timeout). RW threads check the timeout (and the other stop conditions) between RW steps, and also within a step (every 16 columns of the Gaussian elimination), so that even on huge matrices, where a single RW step may take many seconds, the run ends shortly after the timeout.</li>
+<li><code>steps=[int]</code>: Maximum total RW steps (default: 100000; set to <code>0</code> to run pure CC via bracketing coordinator).</li>
+<li><code>min_hits=[int]</code>: Average number of hits per lowest-weight codeword for early RW termination (default: 5; 0 to disable; see method=1).</li>
 <li><code>dW=[int]</code>: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md20"></a>
+<h2><a class="anchor" id="autotoc_md44"></a>
 4. Multithreading, Throttling &amp; Batch Sizing</h2>
-<p>The parameter <code>threads=[int]</code> specifies the <b>maximum</b> number of worker threads to allocate. By default (<code>nothrottle=0</code>), automatic heuristics clamp thread usage to avoid overhead and resource thrashing:</p><ul>
-<li><b>Small-Code Throttling</b>: When $n &lt; 100$ or $r \cdot n &lt; 100,000$, threads are automatically clamped to $\le 4$ (and $\le 16$ for $n &lt; 300$), eliminating thread creation and lock contention overhead.</li>
-<li><b>Large-Matrix Memory Throttling</b>: For massive matrices (e.g. circuit DEMs with $n &gt; 20,000, r &gt; 5,000$), threads are automatically throttled so total dense working memory stays under ~1.5 GB, avoiding DRAM bus and CPU cache thrashing.</li>
+<p>The parameter <code>threads=[int]</code> specifies the <b>maximum</b> number of worker threads to allocate (default: all logical CPUs available to the process, i.e., its CPU affinity mask, so that <code>taskset -c 0-15 <a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> ...</code> runs 16 threads; with SMT, the sibling hyperthreads typically add 10-50% to the throughput of a fully loaded CPU, more for RW than for CC). By default (<code>nothrottle=0</code>), automatic heuristics clamp thread usage to avoid overhead and resource thrashing:</p><ul>
+<li><b>Small-Code Throttling</b> (<code>method=1</code> and <code>method=3</code>, all threads), to avoid the thread creation and lock contention overhead on tiny workloads; with $m$ the number of rows of $H$ and $W_{\text{RW}} = m \cdot n \cdot \text{steps}$ the RW workload: at most 4 threads for $n &lt; 60$, or for $m \cdot n &lt; 2 \cdot 10^4$ with $W_{\text{RW}} &lt; 5 \cdot 10^7$; otherwise at most 16 threads for $n &lt; 150$ or $m \cdot n &lt; 10^5$, if $W_{\text{RW}} &lt; 2 \cdot 10^8$.</li>
+<li><b>Lazy Thread Start</b> (<code>method=2</code>): the CC work is not known in advance (it grows rapidly with the weight), so <code>method=2</code> starts only 4 threads, and the others for the first CC round predicted to take more than 2 ms on the threads started (or once a round has run for 5 ms): tiny runs avoid the start-up of many threads, longer runs use all of them.</li>
+<li><b>Large-Matrix Memory Throttling (RW threads only)</b>: For massive matrices (e.g. circuit DEMs with $n &gt; 20,000, m &gt; 5,000$), the number of RW threads is automatically limited so that their total dense working memory (copies of $H$ and $H^T$ per RW thread, or the <code>ksub</code> $\times n$ subspace matrix with <code>ksub&gt;0</code>) stays under ~1.5 GB, avoiding DRAM bus and CPU cache thrashing: above 15 MB per RW thread (about $m \cdot n &gt; 6 \cdot 10^7$ for full-matrix RW), at most 1.5 GB divided by the memory per thread, but at least 2 and at most 32 threads run RW. CC needs no dense matrices: <code>method=2</code> is not limited, and in <code>method=3</code> only the RW share is limited, while CC rounds can use all threads.</li>
+<li><b>Small Step Counts (RW threads only)</b>: At most $\lceil \text{steps} / 10 \rceil$ threads run RW (all threads in <code>method=1</code>, the RW share in <code>method=3</code>, where CC rounds can still use all threads; <code>steps=0</code> in <code>method=3</code> runs pure CC without RW threads).</li>
 <li><b>Adaptive RW Chunk Sizing</b>: Setting <code>chunk_size=0</code> (or omitting it) enables adaptive batching, reducing atomic CAS contention by up to 10x during extended searches ($10^4$ or $10^5$ steps).</li>
-<li><b>Thread Starvation Prevention</b>: If <code>chunk_size</code> exceeds $\lceil \text{steps} / N_{\text{threads}} \rceil$, the chunk is automatically clamped so that a single thread cannot monopolize all steps, ensuring all cores run concurrently.</li>
-<li><b>CSS Codeword Suffixing</b>: In CSS mode, specifying <code>outC="cws.nz"</code> automatically saves $X$-codewords to <code>cws_X.nz</code> and $Z$-codewords to <code>cws_Z.nz</code> (preventing mixed sectors in a single file). Specifying <code>finC="cws.nz"</code> automatically resolves <code>cws_X.nz</code> and <code>cws_Z.nz</code> (or separates mixed files in-flight).</li>
-<li><b>Manual Override</b>: Pass <code>nothrottle=1</code> (or <code>--no-throttle</code> in Python) to force <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> to use the exact number of requested threads without throttling, and specify <code>chunk_size=N</code> to override batch sizing.</li>
+<li><b>Guided RW Scheduling</b>: A thread claims at most $\lceil r / (4 N_{\text{RW}}) \rceil$ of the $r$ remaining RW steps at once, where $N_{\text{RW}}$ is the number of RW threads (also with a given <code>chunk_size</code>): no thread can monopolize the steps, and the batches shrink towards the end, so that the RW threads finish together.</li>
+<li><b>CC Work Units</b>: A CC round at weight $w$ hands out its start columns $i$ one at a time. The clusters from the first start columns, which can grow to all larger columns, are the largest share of a round (about $w/n$ for the first one), which limits the speedup to about $n/w$ threads: e.g., 16 threads for the $[[288,12,18]]$ code at $w=15$. Rounds predicted to take more than 1 ms on all threads, with fewer than about 4 such shares per thread, are therefore split into $B^L$ work units per start column ($L = 1, 2$, or $3$ levels, $L \le w-3$, $B$ the maximum row weight of $H$): a unit fixes the column added at each of the first $L$ cluster extensions (empty units, where a row has fewer columns, are skipped). The number of units is limited by the predicted work of the round (at most $10^4$ per thread-second) to keep the claims cheap. With <code>debug&amp;8</code>, the binary reports the work units of each CC round.</li>
+<li><b>Manual Override</b>: Pass <code>nothrottle=1</code> (or <code>--no-throttle</code> in Python) to force <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> to use the exact number of requested threads without throttling (all threads are started at once, also in <code>method=2</code>), and specify <code>chunk_size=N</code> to override batch sizing.</li>
 </ul>
+<p>With <code>debug&amp;8</code>, the binary reports the throttling and the thread allocation of every CC round, and with <code>debug&amp;4</code> a periodic status line shows the progress of the current CC round. A CC round in <code>method=3</code> may have to wait until the RW threads assigned to it finish their current RW batch.</p>
+<h2><a class="anchor" id="autotoc_md45"></a>
+5. RW Convergence: Empirical Test and Probability to Find a Codeword</h2>
+<p>The RW upper bound $d_{\max}$ is not certified unless CC confirms it. Two estimates of the probability $P_{\text{fail}}$ that RW missed a lighter codeword are available.</p>
+<p><b>Empirical estimate and test</b>, as in the <a href="https://qec-pages.github.io/QDistRnd/doc/chap3.html#X7DA7BD6F7A61E553">QDistRnd manual, Sec. 3.3</a>. The probability that a RW step finds a given codeword is expected to depend only on its weight, and to decrease with the weight. If, after $N$ steps, the $m$ distinct codewords of the minimum weight $w$ have been found $n_1, \dots, n_m$ times, the probability per step is estimated as $\lambda_w = \sum_i n_i / (N m)$, and a codeword of a smaller weight is missed with probability</p>
+<p>$$ P_{\text{fail}} &lt; (1 - \lambda_w)^N &lt; e^{-N\lambda_w} = e^{-\langle n\rangle}, \qquad \langle n\rangle = \frac{1}{m} \sum_{i=1}^m n_i . $$</p>
+<p>RW stops once $\langle n\rangle$ reaches <code>min_hits</code>: $e^{-5} \approx 0.7%$ for the default <code>min_hits=5</code>, and $e^{-10} \approx 4.5 \cdot 10^{-5}$ for <code>min_hits=10</code>. Here $\langle n\rangle$ is the smaller of the averages over the minimum-weight codewords and over the representative set of <code>cov_cws</code> lowest-weight codewords (heavier codewords only make the estimate more conservative). The assumption of equal probabilities for the codewords of the same weight can be tested: QDistRnd uses Pearson's statistic $X^2 = (m / n_{\text{tot}}) \sum_i n_i^2 - n_{\text{tot}}$, where $n_{\text{tot}} = \sum_i n_i$, which is distributed as $\chi^2_{m-1}$ for large $\langle n\rangle$. This is the index-of-dispersion test of the hit counts against the Poisson distribution. <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> applies it to each weight class of the representative set, using the zero-truncated Poisson distribution (codewords never found are not known), and with <code>debug&amp;1</code> warns at the end if the hit counts are strongly non-uniform: a p-value below $10^{-3}$, a relative spread of the hit rates of at least 1, and, for gamma-distributed hit rates with this spread, a probability to miss a lighter codeword at least 3 times larger than with equal hit rates. Then $e^{-\langle n\rangle}$ is optimistic, and a larger <code>min_hits</code> is advisable; this happens, e.g., for the surface-code circuit <code>examples/surf_d5_H.mmx</code>.</p>
+<p><b>Probability to find a given codeword</b> (information sets; compare the QDistRnd manual, Sec. 3.2). A RW step reduces $H$ (rank $r$) with a random column order; a codeword of weight $w$ is found if exactly one of its positions is among the $s = n - r$ non-pivot columns ($s = \dim\ker H$). For uniformly random information sets, this happens with the probability</p>
+<p>$$ P_1(w) = \frac{w \binom{n-w}{s-1}}{\binom{n}{s}} $$</p>
+<p>per step ($P_1 = 0$ for $w &gt; r + 1$), and the codeword is missed in $S$ steps with probability $(1 - P_1)^S \approx e^{-S P_1}$. Among the weights $d_{\min} \le w &lt; d_{\max}$, the weight with the smallest $P_1$ is used, and the number of RW steps for a 1% miss probability is reported. Only the steps with uniform random column permutations are counted (not those with localized windows; with <code>ksub&gt;0</code>, the estimate is not available), which makes the estimate conservative (for circuit DEMs, often very much so); on the other hand, as the QDistRnd manual points out, the information sets of a sparse matrix need not be equally likely.</p>
+<p>With <code>debug&amp;1</code>, the binary prints $\langle n\rangle$ (<code># codewords accumulated: ...</code>), the data for the information-set estimate (<code># RW information sets: n=..., rank(H)=..., steps=...</code>), and the estimate itself together with the non-uniform hit count warning. The Python wrapper (<code>--verbose</code>) prints both estimates for a RW upper bound which is not certified, with the RW steps and time needed for a 1% miss probability, and a model check which compares the observed average hits of the codewords of weight $d_{\max}$ with $S \, P_1(d_{\max})$.</p>
+<p>Example (<code>examples/surf_d5_H.mmx</code>, a circuit-level matrix of the distance-5 surface code; one thread for a reproducible result):</p>
+<div class="fragment"><div class="line">$ ./src/dist_m4ri method=1 finH=examples/surf_d5_H.mmx finL=examples/surf_d5_L.mmx steps=10000 seed=1 threads=1 debug=1</div>
+<div class="line">...</div>
+<div class="line"># codewords accumulated: total=100, min_w=5: cws=100, total_hits=208, hits min=1, max=33, avg=2.08, ...</div>
+<div class="line"># RW information sets: n=1958, rank(H)=120, steps=10000 (uniform permutations: 5000), ksub=0, ...</div>
+<div class="line"># Warning: non-uniform RW hit counts of the 100 codewords of weight 5: hits min=1, max=33, avg=2.08, ...</div>
+<div class="line">#   some codewords are found much more often than others of the same weight (relative spread of hit rates 1.89):</div>
+<div class="line">#   a lighter codeword may be missed with probability ~0.58 rather than exp(-1.70)=0.18; consider a larger min_hits</div>
+<div class="line">#   information-set estimate (uniform random information sets, n=1958, rank(H)=120): a codeword of weight 4</div>
+<div class="line">#   is found with probability 0.000845 per RW step, missed in 5000 uniform steps with probability 0.015 (1% ...</div>
+<div class="line">1 5 10000</div>
+</div><!-- fragment --><p>Here, 10000 steps are not enough for <code>min_hits=5</code> ($\langle n\rangle = 2.08$). The hit counts of the 100 logical operators of weight 5 range from 1 to 33, far from the Poisson distribution ($p = 4.3 \cdot 10^{-116}$), and the probability to miss a lighter codeword is estimated as 0.58 instead of $e^{-\mu} = 0.18$, where $\mu = 1.70$ is the Poisson mean fitted to the zero-truncated hit counts. The information-set estimate for the weight $w = 4$, the hardest to find, gives the miss probability 0.015, and 1% after 10890 RW steps in total (half of them uniform, since $n \ge 500$). In fact, the distance is 5: <code>method=2</code> with <code>wmax=4</code> finds no codeword in 0.1 s.</p>
 <hr  />
-<h1><a class="anchor" id="autotoc_md22"></a>
+<h1><a class="anchor" id="autotoc_md47"></a>
 Confinement Profile</h1>
-<p>With <code>smax &gt; 0</code> (default: <code>smax=5</code>), the CC algorithm tracks the minimum non-zero syndrome weight observed for each cluster weight $w$:</p>
-<div class="fragment"><div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 debug=0 threads=4</div>
+<p>By default, <code>smax=0</code> (confinement tracking disabled for maximum CC speed; in <code>.mtx</code> mode with <code>debug&amp;1</code>, a notice is logged to <code>stderr</code>). When <code>smax &gt; 0</code> (e.g. <code>smax=5</code>), the CC algorithm tracks the minimum non-zero syndrome weight observed for each cluster weight $w$:</p>
+<div class="fragment"><div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 smax=5 debug=0 threads=4</div>
 <div class="line"># confinement: 1,1,1,1</div>
 <div class="line">5 0 0</div>
 </div><!-- fragment --><p>With <code>debug=1</code>, detailed per-weight lines are printed to <code>stderr</code>: </p><div class="fragment"><div class="line"># w=1 min non-zero syndrome weight 1</div>
@@ -195,19 +262,19 @@ Confinement Profile</h1>
 <div class="line"># w=3 min non-zero syndrome weight 1</div>
 <div class="line"># w=4 min non-zero syndrome weight 1</div>
 </div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md24"></a>
+<h1><a class="anchor" id="autotoc_md49"></a>
 Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)</h1>
 <ul>
-<li>**<code>outC=[file.nz]</code>**: Saves all unique discovered codewords in standard <b>NZLIST</b> format: <div class="fragment"><div class="line">%% NZLIST</div>
+<li>**<code>outC=[file.nz]</code>**: Saves the discovered codewords of weight up to $w_{\min} + \text{dW}$ ($w_{\min}$: the minimum weight found) in standard <b>NZLIST</b> format (heavier codewords kept only for the <code>min_hits</code> statistic are not exported). With <code>method=2</code> or <code>3</code>, once the distance $d$ is known, the CC rounds $w = d, \dots, d + \text{dW}$ enumerate all such codewords (unless the <code>timeout</code> is hit; with a stop target <code>dstop=U</code> below $d$, only the rounds up to $w = U + \text{dW}$ run); with <code>method=1</code>, only the codewords found by RW are exported: <div class="fragment"><div class="line">%% NZLIST</div>
 <div class="line">% generated by dist_m4ri</div>
 <div class="line">&lt;weight&gt; &lt;col_1&gt; &lt;col_2&gt; ... &lt;col_weight&gt;</div>
 </div><!-- fragment --> *(Indices are 1-based).*</li>
 <li>**<code>finC=[file.nz]</code>**: Reads initial codewords from a file to initialize $d_{\max}$ and the codeword hash table.</li>
 <li>**<code>dW=[int]</code>**: When set (e.g. <code>dW=1</code>), preserves and exports codewords of weight up to $w \le d_{\min} + \text{dW}$.</li>
-<li>**<code>maxC=[int]</code>**: Limits collection to at most <code>maxC</code> unique codewords.</li>
+<li>**<code>maxC=[int]</code>**: Limits collection to at most <code>maxC</code> unique codewords (of weight up to $w_{\min} + \text{dW}$).</li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md26"></a>
+<h1><a class="anchor" id="autotoc_md51"></a>
 Command-Line Usage and Help System</h1>
 <p><code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> provides a three-tier help system:</p>
 <ol type="1">
@@ -215,16 +282,17 @@ Command-Line Usage and Help System</h1>
 <li><b>Standard <code>--help</code> (fits 80 rows)</b>: Displays the most commonly used parameters with clear descriptions, bunches extra available parameters at the bottom, and points to <code>--morehelp</code>.</li>
 <li><b>Full <code>--morehelp</code></b>: Displays complete, detailed descriptions of all command-line parameters, debug bitmask flags, and output formats.</li>
 </ol>
-<h2><a class="anchor" id="autotoc_md27"></a>
+<p><code>--help</code>, <code>--morehelp</code>, and <code>--version</code> print to <code>stdout</code>. Conflicting inputs: <code>fdem</code> together with matrix files (<code>finH</code>, <code>finG</code>, <code>finL</code>, <code>fin</code>), and <code>pmin</code> without <code>fdem</code>, are errors; <code>fin</code> followed by <code>finH</code>, <code>finG</code>, or <code>finL</code> is replaced by them (with a warning on <code>stderr</code>), while <code>fin</code> after them is an error.</p>
+<h2><a class="anchor" id="autotoc_md52"></a>
 Standard Help (&lt;tt&gt;dist_m4ri --help&lt;/tt&gt;)</h2>
 <div class="fragment"><div class="line">$ ./src/dist_m4ri --help</div>
-<div class="line">./src/dist_m4ri (version 0.9.0): calculate distance of a classical or quantum CSS code</div>
-<div class="line">Usage: ./src/dist_m4ri method=[1|2|3] [parameter=value ...]</div>
+<div class="line">./src/dist_m4ri (version 0.12.2): calculate distance of a classical or quantum CSS code</div>
+<div class="line">Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]</div>
 <div class="line"> </div>
-<div class="line">Required parameter:</div>
+<div class="line">Calculation method:</div>
 <div class="line">  method=[int]       1: Random Window (RW) algorithm (upper bound)</div>
 <div class="line">                     2: Connected Cluster (CC) algorithm (lower bound / exact)</div>
-<div class="line">                     3: Bracketing mode (concurrent RW and CC)</div>
+<div class="line">                     3: Bracketing mode (concurrent RW and CC) (default: 3)</div>
 <div class="line"> </div>
 <div class="line">Input matrices (Matrix Market .mmx/.mtx format or Stim DEM):</div>
 <div class="line">  finH=[file]        Parity check matrix H (classical) or Hx (CSS quantum)</div>
@@ -238,71 +306,112 @@ Standard Help (&lt;tt&gt;dist_m4ri --help&lt;/tt&gt;)</h2>
 <div class="line"> </div>
 <div class="line">Distance bounds and guidance:</div>
 <div class="line">  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)</div>
-<div class="line">  dmax=[int]         Known upper bound on distance (RW ignores cw wt &gt;= dmax) (0)</div>
+<div class="line">  dmax=[int]         Known upper bound on distance (CC up to w=dmax-1 only) (0)</div>
+<div class="line">  dstop=[int]        Stop once CC certifies dmin&gt;=dstop (not an upper bound) (0)</div>
 <div class="line">  dexp=[int]         Expected distance for method=3 thread allocation (alias: dest) (0)</div>
 <div class="line"> </div>
 <div class="line">Search limits and stopping criteria:</div>
-<div class="line">  steps=[int]        Maximum RW decoding steps / information sets (1000)</div>
+<div class="line">  steps=[int]        Maximum RW decoding steps / information sets (100000)</div>
 <div class="line">  wmax=[int]         Maximum cluster weight to search in CC (0=until bound/timeout)</div>
 <div class="line">  wmin=[int]         Stop immediately if cw with weight &lt;= wmin is found (1)</div>
+<div class="line">  min_hits=[int]     Stop RW when lowest-wt cws are hit min_hits times on average (5)</div>
 <div class="line">  timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)</div>
 <div class="line"> </div>
-<div class="line">Multithreading:</div>
-<div class="line">  threads=[int]      Max worker threads to use (0: auto CPU count) (0)</div>
-<div class="line">                     (subject to throttling unless nothrottle=1)</div>
+<div class="line">Multithreading and RW optimization:</div>
+<div class="line">  threads=[int]      Max worker threads to use (0: all logical CPUs) (0)</div>
+<div class="line">  ksub=[int]         EXPERIMENTAL, do not use: subspace dimension sampled from ker(H) for RW (0)</div>
+<div class="line">  kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)</div>
 <div class="line"> </div>
 <div class="line">Codeword collection:</div>
-<div class="line">  outC=[file]        Export found minimum-weight codewords to file (.nz format)</div>
+<div class="line">  outC=[file]        Export found min-weight codewords (up to +dW) to file (.nz format)</div>
 <div class="line">  finC=[file]        Import initial codewords from file (.nz format)</div>
 <div class="line">  maxC=[int]         Maximum number of codewords to collect (0 for unlimited) (0)</div>
-<div class="line">  dW=[int]           Collect codewords up to weight dmin + dW (default: 0)</div>
+<div class="line">  dW=[int]           Collect codewords up to the minimum weight found + dW (0)</div>
 <div class="line"> </div>
 <div class="line">Extra parameters (see --morehelp for details):</div>
-<div class="line">  smax=[int] (5)         Max syndrome weight for confinement profile (0 to disable)</div>
-<div class="line">  noscan=[0|1] (0)       CC method 2: start directly at wmax, skip scanning w&lt;wmax</div>
-<div class="line">  start/cbeg/cend=[int]  Limit CC search to specific column(s) (-1: all)</div>
+<div class="line">  smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)</div>
+<div class="line">  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)</div>
+<div class="line">  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48</div>
+<div class="line">  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs</div>
 <div class="line">  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)</div>
 <div class="line">  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)</div>
+<div class="line">  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity</div>
+<div class="line">  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic</div>
+<div class="line">  refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub&gt;0)</div>
 <div class="line">  seed=[int] (0)         RNG seed [0 for time(NULL)]</div>
-<div class="line">  debug=[int] (3)        Debug bitmask (0: silent, 1: general, 2: verbose, ...)</div>
-<div class="line">  css=[int] (1)          Reserved for future use</div>
+<div class="line">  debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)</div>
 <div class="line"> </div>
 <div class="line">Help options:</div>
 <div class="line">  -h, --help         Display this help message (commonly used parameters)</div>
 <div class="line">  --morehelp         Display full help with all parameter descriptions</div>
 <div class="line">  --version          Display program version</div>
-</div><!-- fragment --><h2><a class="anchor" id="autotoc_md28"></a>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md53"></a>
 Full Parameter Listing (&lt;tt&gt;dist_m4ri --morehelp&lt;/tt&gt;)</h2>
-<p>Use <code>./src/dist_m4ri --morehelp</code> to view exhaustive parameter explanations, including all <code>debug</code> bitmask flags (e.g., <code>debug=0</code> for silent mode, <code>debug=1</code> for general info, <code>debug=2</code> for thread timing, <code>debug=16</code> for new codewords, <code>debug=32</code> for matrix dumps).</p>
-<h2><a class="anchor" id="autotoc_md29"></a>
+<p>Use <code>./src/dist_m4ri --morehelp</code> to view exhaustive parameter explanations, including all <code>debug</code> bitmask flags (see Debug Output below).</p>
+<h2><a class="anchor" id="autotoc_md54"></a>
+Debug Output (&lt;tt&gt;debug=[int]&lt;/tt&gt;)</h2>
+<p>All diagnostic output goes to <code>stderr</code>; <code>stdout</code> only has the result line <code>dmin dmax rw_steps</code>. The <code>debug</code> bitmap selects the diagnostic output, where lower bits are more informative. The value is a decimal or hexadecimal (<code>0x...</code>) integer. Multiple <code>debug</code> arguments are OR-combined, where the first one replaces the default <code>debug=3</code>: e.g., <code>debug=0</code> alone is silent, while <code>debug=4</code> and <code>debug=0 debug=4</code> both give only the periodic status.</p>
+<ul>
+<li><code>0</code>: silent, except for errors, warnings on the validity of the result (expert options, the experimental <code>ksub</code>, invalid <code>finC</code> codewords), and the confinement profile with <code>smax&gt;0</code>.</li>
+<li><code>1</code> (default) <b>summary</b>: input matrices (sizes, numbers of nonzeros, maximum row and column weights), warnings, the reason why the run ended (<code># stopped after ...s: ...</code>, e.g., <code>bounds coincide: dmin = dmax = 5</code>, <code>timeout=60s reached during CC round w=9 (37.5% of start columns claimed)</code>, or <code>RW convergence reached</code>), codeword and hit statistics, RW information sets, codeword export.</li>
+<li><code>2</code> (default) <b>progress</b>: the run plan (method, threads, RW steps, CC weights, timeout, rng seed), finished CC rounds, new upper bounds, RW convergence.</li>
+<li><code>4</code> <b>periodic status</b> after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate, $\langle n\rangle$, and the progress of the current CC round (or why no CC round runs).</li>
+<li><code>8</code> <b>thread allocation and timing</b>: throttling, the planning and re-planning of CC rounds, waits for RW, and the predicted vs measured CC work of each round.</li>
+<li><code>16</code> <b>code parameters</b>: $\mathrm{rank}\,H$, $\mathrm{rank}\,L$ (or $\mathrm{rank}\,G$), and $k$, by dense elimination at startup (slow for large matrices).</li>
+<li><code>32</code> <b>codewords</b>: the support (1-based columns) of each new lightest codeword (RW, CC, <code>finC</code>).</li>
+<li><code>64</code> <b>arguments</b>: the command-line arguments, the rng seed, and the files read.</li>
+<li><code>128</code> <b>matrices</b> $H$, $G$, $L$ (for $n &lt; 150$, unless bit <code>2048</code> is set).</li>
+<li><code>256</code> <b>codeword dump</b>: all codewords in the hash table with their hit counts (at the end).</li>
+<li><code>2048</code>: no size cutoff for matrices, codeword supports, and per-weight codeword statistics.</li>
+<li><code>4096</code>: <code>dist_m4ri_old</code> only, CC recursion and confinement hash traces.</li>
+</ul>
+<p>Bits <code>512</code>, <code>1024</code>, and <code>8192</code> to <code>32768</code> are reserved; bits <code>65536</code> and above are reserved for the Python wrapper (ignored by the binary). E.g., <code>debug=7</code> adds the periodic status to the default output, and <code>debug=11</code> the thread allocation and timing.</p>
+<p><b>Before version 0.11.0</b>, a different numbering was used: the old default bits <code>1</code> and <code>2</code> are now split into <code>1</code>, <code>2</code>, and <code>8</code> (<code>debug=11</code> gives similar output); the old <code>4</code> (arguments) is now <code>64</code>; the old <code>8</code> (<code>dist_m4ri_old</code>: a line every 1000 RW steps) is now <code>4</code>; the old <code>16</code> (new codewords) is now <code>32</code> (the upper bound messages: <code>2</code>); the old <code>32</code> (matrices and codeword list) is now <code>128</code> and <code>256</code>; the old <code>64</code> and <code>128</code> (hash traces) are now <code>4096</code>. Repeated <code>debug</code> arguments with different values were rejected.</p>
+<h2><a class="anchor" id="autotoc_md55"></a>
 CLI Examples</h2>
-<div class="fragment"><div class="line"># 1. Classical linear code using 8 threads in bracketing mode</div>
-<div class="line">$ ./src/dist_m4ri method=3 finH=./examples/c204H.mmx dest=10 steps=100000 threads=8 debug=0</div>
-<div class="line">8 8 2340</div>
+<div class="fragment"><div class="line"># 1. Classical linear code using 8 threads in bracketing mode (method=3 is default); the number of RW steps varies</div>
+<div class="line">$ ./src/dist_m4ri finH=./examples/c204H.mmx dest=10 steps=100000 threads=8 debug=0</div>
+<div class="line">8 8 6154</div>
 <div class="line"> </div>
-<div class="line"># 2. Stim Detector Error Model (DEM) with timeout and codeword export</div>
-<div class="line">$ ./src/dist_m4ri method=3 fdem=./examples/surf_d3.dem dexp=3 outC=cws.nz threads=4 debug=0</div>
-<div class="line">3 3 1000</div>
+<div class="line"># 2. Stim Detector Error Model (DEM) with timeout and codeword export (rw_steps=0: CC found a codeword of weight dmin)</div>
+<div class="line">$ ./src/dist_m4ri fdem=./examples/surf_d3.dem dexp=3 timeout=10 outC=cws.nz threads=4 debug=0</div>
+<div class="line">3 3 0</div>
 <div class="line"> </div>
-<div class="line"># 3. Quantum CSS code (Hx and Lx) using pure CC search up to wmax=5</div>
-<div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=5 debug=0 threads=4</div>
+<div class="line"># 3. Quantum CSS code (Hx and Lx) using pure CC search up to wmax=5 with confinement</div>
+<div class="line">$ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=5 smax=5 debug=0 threads=4</div>
 <div class="line"># confinement: 1,1,1,1,1</div>
 <div class="line">5 5 0</div>
 </div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md31"></a>
+<h1><a class="anchor" id="autotoc_md57"></a>
 Python Wrapper (&lt;tt&gt;dist_m4ri.py&lt;/tt&gt;)</h1>
 <p>A Python module <a href="dist_m4ri.py"><code>dist_m4ri.py</code></a> is included for high-level scripting, NumPy/SciPy integration, and Stim interoperability without manual threading overhead.</p>
-<h2><a class="anchor" id="autotoc_md32"></a>
+<h2><a class="anchor" id="autotoc_md58"></a>
 Key Python Functions</h2>
 <ul>
 <li><code>compute_classical_distance(H, ...)</code>: Minimum distance of a classical linear code (from NumPy 2D array, SciPy sparse matrix, or <code>.mtx</code> file).</li>
-<li><code>compute_css_distance(Hx, Hz, Lx=None, Lz=None, ...)</code>: Distance $d = \min(d_X, d_Z)$ of a CSS quantum code.</li>
-<li><code>compute_dem_distance(dem=None, circuit=None, ...)</code>: Minimum distance directly from a <code>stim.DetectorErrorModel</code>, <code>stim.Circuit</code>, or <code>.dem</code> file.</li>
-<li><code>read_sparse_vectors(filepath)</code>: Parses NZLIST files into lists of 0-based integer support indices.</li>
-<li>Distance caching: <code>enable_distance_cache()</code>, <code>disable_distance_cache()</code>, <code>clear_distance_cache()</code>.</li>
-<li>Optional solver backend: <code>solver="codedistance"</code> (uses the <code>codedistance</code> library if installed).</li>
+<li><code>compute_quantum_distance(H, G=None, L=None, ...)</code>: Distance of one sector of a quantum CSS code, i.e., the minimum weight of a codeword $c$ with $Hc = 0$ and $Lc \neq 0$ (with $L$ constructed from $H$ and $G$ if not given).</li>
+<li><code>compute_css_distance(Hx, Hz, Lx=None, Lz=None, ...)</code>: Distance $d = \min(d_X, d_Z)$ of a CSS quantum code (two runs of the binary, one for each sector); both <code>Hx</code> and <code>Hz</code> are required (otherwise <code>ValueError</code>; use <code>compute_quantum_distance()</code> for one sector). With <code>outC="cws.nz"</code>, the $X$- and $Z$-codewords are saved to <code>cws_X.nz</code> and <code>cws_Z.nz</code>; with <code>finC="cws.nz"</code>, the files <code>cws_X.nz</code> and <code>cws_Z.nz</code> are read if they exist, and otherwise the same file is given to both runs (codewords which are not valid in a sector are skipped). A known upper bound <code>dmax</code> on $d$ is not an upper bound of either sector: it is passed to both sector runs as the stop target <code>dstop</code> (and it is not stored in the cache), and the returned $d$ is at most <code>dmax</code>. The two sectors are cached as the quantum codes <code>(H=Hx, G=Hz)</code> ($d_Z$) and <code>(H=Hz, G=Hx)</code> ($d_X$), with <code>L=Lx</code> / <code>L=Lz</code> if given, i.e., with the same cache records as <code>compute_quantum_distance()</code>.</li>
+<li><code>compute_dem_distance(dem=None, circuit=None, simple=None, full=False, basis=None, rounds=None, out_dir=None,</code>: <code>out_dem=None, out_stim=None, p_noise=0.001, ...)</code>: Minimum distance directly from a <code>stim.DetectorErrorModel</code>, <code>stim.Circuit</code>, <code>.dem</code> file, or <code>.stim</code> circuit file (noise of strength <code>p_noise</code> is added to a noiseless circuit, see <code>add_noise()</code> below):<ul>
+<li>Always performs <b>ancilla and data basis tracking</b> (<code>classify_qubits_thorough</code>) across virtual SWAP permutations and Clifford gates to identify data qubits, $X$-sector and $Z$-sector ancillas, routing qubits, and local data basis rotations (automatically recognizing both standard CSS codes and locally basis-rotated CSS codes such as <b>XZZX</b>).</li>
+<li>**<code>--simple</code> vs <code>--full</code>**: For CSS and locally rotated CSS <code>.stim</code> circuits, <code>--simple</code> (<code>simple=True</code>) is enabled by default, stripping minority-basis detectors (<code>strip_minority_detectors</code>) to keep only primary-basis detectors and produce a smaller, simpler DEM. Pass <code>--full</code> (<code>full=True</code>) to retain all detectors.</li>
+<li>**<code>--rounds [N]</code>**: Constructs the DEM with <code>N</code> repetitions in the circuit's <code>REPEAT</code> block (<code>rounds=2</code> by default when <code>--rounds</code> is passed without a number). If the <code>.stim</code> circuit does not contain a <code>REPEAT</code> block, issues a warning to <code>stderr</code> and continues with the original circuit.</li>
+<li>**<code>--out-dir DIR</code>, <code>--out-dem [FILE]</code>, <code>--out-stim [FILE]</code>**: Optionally saves the constructed DEM and/or the processed (noisy, round-adjusted, detector-filtered) <code>.stim</code> circuit. When <code>--out-dem</code> or <code>--out-stim</code> is passed without a filename (or <code>out_dem=True</code> / <code>out_stim=True</code>), filenames default to <code>&lt;basename&gt;_simp.dem</code> / <code>&lt;basename&gt;_full.dem</code> and <code>&lt;basename&gt;_simp.stim</code> / <code>&lt;basename&gt;_full.stim</code>. By default, <code>--out-dir</code> defaults to the directory of the input file.</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md33"></a>
+</li>
+<li><code>classify_qubits_thorough(circuit, ...)</code> / <code>strip_minority_detectors(circuit, basis, ...)</code> / <code>set_circuit_rounds(circuit, rounds)</code>: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping, and <code>REPEAT</code> block round adjustment.</li>
+<li><code>has_noise(circuit)</code> / <code>add_noise(circuit, p=0.001)</code>: Inspects a <code>stim.Circuit</code> for noise instructions, and adds uniform circuit-level noise to a noiseless circuit: <code>DEPOLARIZE2(p)</code> after two-qubit gates (except classically controlled ones, e.g., <code>CX rec[-1] 5</code>), <code>DEPOLARIZE1(p/10)</code> after single-qubit gates and on idle qubits in each <code>TICK</code>, and bit or phase flips with probability <code>p</code> after resets and before measurements (<code>compute_dem_distance()</code> does this for a noiseless circuit; for the distance, only which errors are possible matters, as long as <code>pmin=0</code>).</li>
+<li><code>read_sparse_vectors(filepath)</code>: Parses NZLIST files into lists of 0-based integer support indices.</li>
+<li>Distance caching: <code>enable_distance_cache()</code>, <code>disable_distance_cache()</code>, <code>clear_distance_cache()</code>, <code>get_cached_distance(..., start=None)</code>, and the <code>cache_file</code> argument of the <code>compute_*_distance()</code> functions (a persistent JSON file with the version <code>"__version__"</code>; the CLI uses <code>tmp_dist_cache.json</code> in the working directory unless <code>--no-cache</code> or <code>cache=FILE</code> is given). For a Stim circuit, <code>get_cached_distance(circuit=...)</code> processes it as <code>compute_dem_distance()</code> does (with the same <code>simple</code>, <code>full</code>, <code>basis</code>, <code>rounds</code>, and <code>p_noise</code>), so that the same DEM gives the cache key. A cache file written by a newer version is ignored (with a warning) and is not overwritten. The CSS records written before version 0.12.0 (keys <code>css:...</code>) are converted into the two sector records: the lower bounds are kept, but an upper bound only if a stored codeword confirms it, or if it is smaller than that of the other sector (earlier versions could store a <code>dmax</code> given to <code>compute_css_distance()</code> as the upper bound of both sectors). Earlier versions ignore a cache file written by a later version (with a warning), and they may overwrite it with their own results: use separate cache files for different versions.</li>
+<li>Codewords (<code>do_cws=True</code> or <code>outC=FILE</code>): the codewords of a run are merged with the cached ones (also in the cache record), and they are written to <code>outC</code> (for CSS codes, to the sector files); with <code>finC</code> identical to <code>outC</code>, the codewords already in the file are kept.</li>
+<li>Stop target <code>dstop</code> of all <code>compute_*_distance()</code> functions (CLI: <code>dstop=U</code>): the search ends once CC has certified <code>dmin &gt;= dstop</code>, unless a lighter codeword is found (see Bracketing Mode); the bounds are then <code>[dmin, w, rw_steps]</code> with <code>dmin &gt;= dstop</code> and the weight <code>w</code> of the lightest codeword found (<code>0</code> if none). A cached lower bound <code>dmin &gt;= dstop</code> answers the request without a calculation.</li>
+<li>Expert CC options of all <code>compute_*_distance()</code> functions: <code>start</code> (list of CC start columns, e.g. <code>start=[0, 48]</code>; separate cache record <code>&lt;key&gt;:start=a,b,c</code>) and <code>trust_start=True</code> (CLI: <code>--trust-start</code>; accept the start-list results as valid and copy them to the main cache record). The binary options <code>noscan</code>, <code>cbeg</code>, and <code>cend</code> are disabled in Python (ignored with a warning to <code>stderr</code>); see Restricting the CC Search.</li>
+<li>The experimental RW option <code>ksub</code> of the <code>compute_*_distance()</code> functions and the CLI should not be used: with <code>ksub&gt;0</code> (and <code>method=1</code> or <code>3</code>), the same warning as from the binary is written to <code>stderr</code>.</li>
+<li>An unknown keyword argument of the <code>compute_*_distance()</code> functions (e.g., a misspelled option, or <code>steps=</code> for <code>num_steps=</code>) raises <code>TypeError</code>, with the closest parameter name as a hint (<code>win=</code> is accepted for <code>kwin=</code>).</li>
+<li>CLI (<code>python3 <a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></code>): <code>--version</code> also shows the version of the <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> binary; inputs which are ignored give a warning on <code>stderr</code> (the input is selected in the order <code>fdem</code>, <code>Hx</code>/<code>Hz</code>, <code>finH</code>/<code>finG</code>/<code>finL</code>/<code>fin</code>; e.g., matrices with <code>fdem</code>, <code>pmin</code> without <code>fdem</code>, <code>fin</code> with <code>finH</code>, <code>classical=1</code> with <code>finG</code>), where the binary rejects some of these combinations with an error.</li>
+<li>Optional solver backend: <code>solver="codedistance"</code> (uses the <code>codedistance</code> library if installed).</li>
+<li>Debug output: <code>debug=N</code> (default: 0) is a bitmap, where the bits <code>1</code> to <code>32768</code> are passed to the binary (see Debug Output; its <code>stderr</code> is then printed), and the higher bits are used by the wrapper: <code>PY_DBG_COMMANDS</code> (<code>65536</code>: the <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> command lines and run times), <code>PY_DBG_CACHE</code> (<code>131072</code>: cache messages), <code>PY_DBG_CIRCUITS</code> (<code>262144</code>: Stim circuit to DEM conversion details), and <code>PY_DBG_KEEP_FILES</code> (<code>524288</code>: keep and list the temporary files). In the CLI, the value may be hexadecimal (e.g., <code>debug=0x10003</code>), multiple <code>debug</code> arguments are OR-combined, and <code>--verbose</code> implies the bits <code>1</code>, <code>2</code>, <code>65536</code>, and <code>131072</code>.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md59"></a>
 Python Example</h2>
 <div class="fragment"><div class="line"><span class="keyword">import</span> numpy <span class="keyword">as</span> np</div>
 <div class="line"><span class="keyword">import</span> stim</div>
@@ -314,7 +423,7 @@ Python Example</h2>
 <div class="line">    [0, 1, 0, 1, 0, 1, 1],</div>
 <div class="line">    [0, 0, 1, 0, 1, 1, 1]</div>
 <div class="line">], dtype=np.int8)</div>
-<div class="line">d = <a class="code hl_function" href="namespacedist__m4ri.html#add7169ad474a909a7133116ad0355d2a">dist_m4ri.compute_classical_distance</a>(H, threads=4)</div>
+<div class="line">d = <a class="code hl_function" href="namespacedist__m4ri.html#ab92a19a32c0ae89339a5b2512ff04e88">dist_m4ri.compute_classical_distance</a>(H, threads=4)</div>
 <div class="line">print(f<span class="stringliteral">&quot;Hamming code distance: {d}&quot;</span>)  <span class="comment"># 3</span></div>
 <div class="line"> </div>
 <div class="line"><span class="comment"># 2. Stim DEM / Circuit Distance with Codewords</span></div>
@@ -324,26 +433,23 @@ Python Example</h2>
 <div class="line">    distance=3,</div>
 <div class="line">    after_clifford_depolarization=0.001</div>
 <div class="line">)</div>
-<div class="line">dist, dist_list, cws = <a class="code hl_function" href="namespacedist__m4ri.html#a03b5b3f170bd2aa581b2881b4991bd03">dist_m4ri.compute_dem_distance</a>(circuit=circuit, do_cws=<span class="keyword">True</span>, threads=4)</div>
+<div class="line">dist, dist_list, cws = <a class="code hl_function" href="namespacedist__m4ri.html#a41d4411d5df28a2edda1e52f8c16610d">dist_m4ri.compute_dem_distance</a>(circuit=circuit, do_cws=<span class="keyword">True</span>, threads=4)</div>
 <div class="line">print(f<span class="stringliteral">&quot;Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms&quot;</span>)</div>
 <div class="line"> </div>
-<div class="line"><span class="comment"># 3. CSS Quantum Code</span></div>
-<div class="line">dist, d_x, d_z = <a class="code hl_function" href="namespacedist__m4ri.html#a558e59ef7702c7d5ce3d09d17bfebb0a">dist_m4ri.compute_css_distance</a>(</div>
-<div class="line">    Hx=<span class="stringliteral">&quot;examples/surf_d5_H.mmx&quot;</span>,</div>
-<div class="line">    Hz=<span class="stringliteral">&quot;examples/surf_d5_H.mmx&quot;</span>,</div>
-<div class="line">    Lz=<span class="stringliteral">&quot;examples/surf_d5_L.mmx&quot;</span>,</div>
-<div class="line">    Lx=<span class="stringliteral">&quot;examples/surf_d5_L.mmx&quot;</span>,</div>
-<div class="line">    d_exp=5,</div>
+<div class="line"><span class="comment"># 3. CSS Quantum Code ([[150, 32, 6]]): d = min(dX, dZ), with the bounds [dmin, dmax, rw_steps] of each sector</span></div>
+<div class="line">dist, d_x, d_z = <a class="code hl_function" href="namespacedist__m4ri.html#aa04756f4c8fef1526e0cfa636939f8cf">dist_m4ri.compute_css_distance</a>(</div>
+<div class="line">    Hx=<span class="stringliteral">&quot;examples/QX150.mtx&quot;</span>,</div>
+<div class="line">    Hz=<span class="stringliteral">&quot;examples/QZ150.mtx&quot;</span>,</div>
 <div class="line">    threads=4</div>
 <div class="line">)</div>
-<div class="line">print(f<span class="stringliteral">&quot;CSS distance: {dist}&quot;</span>)  <span class="comment"># 5</span></div>
-<div class="ttc" id="anamespacedist__m4ri_html_a03b5b3f170bd2aa581b2881b4991bd03"><div class="ttname"><a href="namespacedist__m4ri.html#a03b5b3f170bd2aa581b2881b4991bd03">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l01777">dist_m4ri.py:1813</a></div></div>
-<div class="ttc" id="anamespacedist__m4ri_html_a558e59ef7702c7d5ce3d09d17bfebb0a"><div class="ttname"><a href="namespacedist__m4ri.html#a558e59ef7702c7d5ce3d09d17bfebb0a">dist_m4ri.compute_css_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_css_distance(Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l01333">dist_m4ri.py:1370</a></div></div>
-<div class="ttc" id="anamespacedist__m4ri_html_add7169ad474a909a7133116ad0355d2a"><div class="ttname"><a href="namespacedist__m4ri.html#add7169ad474a909a7133116ad0355d2a">dist_m4ri.compute_classical_distance</a></div><div class="ttdeci">Any compute_classical_distance(Any H, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[int] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l00759">dist_m4ri.py:794</a></div></div>
+<div class="line">print(f<span class="stringliteral">&quot;CSS distance: {dist}, dX: {d_x}, dZ: {d_z}&quot;</span>)  <span class="comment"># 6, [6, 6, 0], [6, 6, 0]</span></div>
+<div class="ttc" id="anamespacedist__m4ri_html_a41d4411d5df28a2edda1e52f8c16610d"><div class="ttname"><a href="namespacedist__m4ri.html#a41d4411d5df28a2edda1e52f8c16610d">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, Optional[bool] simple=None, bool full=False, Optional[str] basis=None, Optional[int] rounds=None, Optional[Union[str, Path]] out_dir=None, Optional[Union[bool, str, Path]] out_dem=None, Optional[Union[bool, str, Path]] out_stim=None, float p_noise=0.001, bool trust_start=False, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l04038">dist_m4ri.py:4090</a></div></div>
+<div class="ttc" id="anamespacedist__m4ri_html_aa04756f4c8fef1526e0cfa636939f8cf"><div class="ttname"><a href="namespacedist__m4ri.html#aa04756f4c8fef1526e0cfa636939f8cf">dist_m4ri.compute_css_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_css_distance(Any Hx, Any Hz, Optional[Any] Lx=None, Optional[Any] Lz=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, bool trust_start=False, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l03626">dist_m4ri.py:3671</a></div></div>
+<div class="ttc" id="anamespacedist__m4ri_html_ab92a19a32c0ae89339a5b2512ff04e88"><div class="ttname"><a href="namespacedist__m4ri.html#ab92a19a32c0ae89339a5b2512ff04e88">dist_m4ri.compute_classical_distance</a></div><div class="ttdeci">Any compute_classical_distance(Any H, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, bool return_info=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;QDistEvol&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, bool trust_start=False, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l03288">dist_m4ri.py:3331</a></div></div>
 </div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md35"></a>
+<h1><a class="anchor" id="autotoc_md61"></a>
 Compilation &amp; Testing</h1>
-<h2><a class="anchor" id="autotoc_md36"></a>
+<h2><a class="anchor" id="autotoc_md62"></a>
 Prerequisites</h2>
 <ul>
 <li>Recent <code>gcc</code> with POSIX threads support (<code>-pthread</code>).</li>
@@ -351,20 +457,23 @@ Prerequisites</h2>
 <div class="line">sudo apt-get install -y libm4ri-dev</div>
 </div><!-- fragment --></li>
 </ul>
-<h2><a class="anchor" id="autotoc_md37"></a>
+<h2><a class="anchor" id="autotoc_md63"></a>
 Build Targets</h2>
 <div class="fragment"><div class="line">cd src</div>
 <div class="line"> </div>
 <div class="line"># Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old</div>
 <div class="line">make all</div>
 <div class="line"> </div>
-<div class="line"># Run full C test suite (46 tests)</div>
+<div class="line"># Run full C test suite (96 tests)</div>
 <div class="line">make test</div>
-</div><!-- fragment --><h2><a class="anchor" id="autotoc_md38"></a>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md64"></a>
 Python Unit Tests</h2>
 <div class="fragment"><div class="line">pytest tests/test_dist_m4ri.py -v</div>
-</div><!-- fragment --><hr  />
-<h1><a class="anchor" id="autotoc_md40"></a>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md65"></a>
+Benchmark Suite (&lt;tt&gt;benchmark/&lt;/tt&gt;)</h2>
+<p>The <a class="el" href="md_benchmark_2BENCHMARK.html">`benchmark/`</a> directory provides quantum CSS codes ($d \in [6, 36]$) and Stim circuits (Gross code, Mitten codes, honeycomb/color codes, bivariate bicycle codes) along with instructions for generating full and stripped DEMs via <code><a class="el" href="namespacedist__m4ri.html#ae80e8ff8942093d705adb7a89d875386">dist_m4ri.add_noise</a></code>.</p>
+<hr  />
+<h1><a class="anchor" id="autotoc_md67"></a>
 References</h1>
 <p>If you use this program, please cite:</p>
 <ul>

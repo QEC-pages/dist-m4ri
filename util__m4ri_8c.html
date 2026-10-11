@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -82,6 +82,7 @@ $(function() {
 </div><!-- top -->
 <div class="header">
   <div class="summary">
+<a href="#define-members">Macros</a> &#124;
 <a href="#func-members">Functions</a>  </div>
   <div class="headertitle"><div class="title">util_m4ri.c File Reference</div></div>
 </div><!--header-->
@@ -92,29 +93,51 @@ $(function() {
 <code>#include &lt;ctype.h&gt;</code><br />
 <code>#include &quot;<a class="el" href="mmio_8h_source.html">mmio.h</a>&quot;</code><br />
 <code>#include &quot;<a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="sort_8h_source.html">sort.h</a>&quot;</code><br />
 </div><div class="textblock"><div class="dynheader">
 Include dependency graph for util_m4ri.c:</div>
 <div class="dyncontent">
 <div class="center"><img src="util__m4ri_8c__incl.png" border="0" usemap="#asrc_2util__m4ri_8c" alt=""/></div>
 <map name="asrc_2util__m4ri_8c" id="asrc_2util__m4ri_8c">
-<area shape="rect" title=" " alt="" coords="271,5,385,31"/>
+<area shape="rect" title=" " alt="" coords="277,5,392,31"/>
 <area shape="rect" title=" " alt="" coords="5,79,104,104"/>
-<area shape="poly" title=" " alt="" coords="285,33,113,78,111,73,283,28"/>
+<area shape="poly" title=" " alt="" coords="290,33,114,78,113,73,289,28"/>
 <area shape="rect" title=" " alt="" coords="128,79,224,104"/>
-<area shape="poly" title=" " alt="" coords="305,33,214,75,212,70,302,28"/>
-<area shape="rect" title=" " alt="" coords="248,79,315,104"/>
-<area shape="poly" title=" " alt="" coords="323,32,299,69,294,66,318,30"/>
-<area shape="rect" title=" " alt="" coords="339,79,410,104"/>
-<area shape="poly" title=" " alt="" coords="338,30,362,66,357,69,333,32"/>
-<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="435,79,507,104"/>
-<area shape="poly" title=" " alt="" coords="352,28,436,70,434,75,350,33"/>
-<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="531,79,623,104"/>
-<area shape="poly" title=" " alt="" coords="369,28,524,72,523,77,367,33"/>
+<area shape="poly" title=" " alt="" coords="310,33,215,75,213,71,308,28"/>
+<area shape="rect" title=" " alt="" coords="272,225,339,251"/>
+<area shape="poly" title=" " alt="" coords="323,33,304,53,289,80,282,114,284,150,299,212,293,213,279,151,277,114,284,78,300,50,319,29"/>
+<area shape="rect" title=" " alt="" coords="299,79,370,104"/>
+<area shape="poly" title=" " alt="" coords="337,31,337,65,332,65,332,31"/>
+<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="395,79,467,104"/>
+<area shape="poly" title=" " alt="" coords="352,29,405,68,402,72,349,33"/>
+<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="491,79,583,104"/>
+<area shape="poly" title=" " alt="" coords="368,28,493,72,491,77,366,33"/>
+<area shape="rect" href="sort_8h.html" title=" " alt="" coords="508,152,567,177"/>
+<area shape="poly" title=" " alt="" coords="393,22,450,29,511,40,564,55,584,65,598,77,604,95,598,114,585,131,568,145,565,141,581,127,594,111,599,95,594,80,581,70,562,60,510,45,450,34,392,27"/>
+<area shape="poly" title=" " alt="" coords="540,104,540,138,535,138,535,104"/>
+<area shape="poly" title=" " alt="" coords="509,178,353,225,351,220,507,172"/>
+<area shape="rect" title=" " alt="" coords="407,225,478,251"/>
+<area shape="poly" title=" " alt="" coords="524,179,471,219,468,215,521,175"/>
+<area shape="rect" title=" " alt="" coords="502,225,573,251"/>
+<area shape="poly" title=" " alt="" coords="540,178,540,212,535,212,535,178"/>
+<area shape="rect" title=" " alt="" coords="597,225,667,251"/>
+<area shape="poly" title=" " alt="" coords="554,175,607,215,604,219,551,179"/>
 </map>
 </div>
 </div>
 <p><a href="util__m4ri_8c_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="define-members" name="define-members"></a>
+Macros</h2></td></tr>
+<tr class="memitem:ab462f08b4e7c84cb134f388d6aeb6ca9" id="r_ab462f08b4e7c84cb134f388d6aeb6ca9"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#ab462f08b4e7c84cb134f388d6aeb6ca9">SORT_NAME</a>&#160;&#160;&#160;<a class="el" href="structint__pair.html">int_pair</a></td></tr>
+<tr class="separator:ab462f08b4e7c84cb134f388d6aeb6ca9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3ea926a2b105916d5f0b2a32cdb611cc" id="r_a3ea926a2b105916d5f0b2a32cdb611cc"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#a3ea926a2b105916d5f0b2a32cdb611cc">SORT_TYPE</a>&#160;&#160;&#160;<a class="el" href="structint__pair.html">int_pair</a></td></tr>
+<tr class="separator:a3ea926a2b105916d5f0b2a32cdb611cc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab3df36f762755d9d6c6d8744f5aa515d" id="r_ab3df36f762755d9d6c6d8744f5aa515d"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#ab3df36f762755d9d6c6d8744f5aa515d">SORT_CMP</a>(x,  y)&#160;&#160;&#160;(((x).a != (y).a) ? ((x).a - (y).a) : ((x).b - (y).b))</td></tr>
+<tr class="separator:ab3df36f762755d9d6c6d8744f5aa515d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a14d526d27bdc1e79abb1ad73fee4baa5" id="r_a14d526d27bdc1e79abb1ad73fee4baa5"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#a14d526d27bdc1e79abb1ad73fee4baa5">SORT_DEF</a>&#160;&#160;&#160;static inline</td></tr>
+<tr class="separator:a14d526d27bdc1e79abb1ad73fee4baa5"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
 <tr class="memitem:add5e1cc2337470d296404503a1d3613d" id="r_add5e1cc2337470d296404503a1d3613d"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#add5e1cc2337470d296404503a1d3613d">mzd_weight_naive</a> (const mzd_t *A)</td></tr>
@@ -209,7 +232,101 @@ Functions</h2></td></tr>
 <tr class="memitem:a81ab8de6973b5d23a36f35251cd1d97f" id="r_a81ab8de6973b5d23a36f35251cd1d97f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#a81ab8de6973b5d23a36f35251cd1d97f">Lx_for_CSS_code</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const Hx, const <a class="el" href="structcsr__t.html">csr_t</a> *const Hz)</td></tr>
 <tr class="memdesc:a81ab8de6973b5d23a36f35251cd1d97f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute logical generator matrix Lx for a CSS code.  <br /></td></tr>
 <tr class="separator:a81ab8de6973b5d23a36f35251cd1d97f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0448c6957d1a9dc935e41b4cd88fe5c3" id="r_a0448c6957d1a9dc935e41b4cd88fe5c3"><td class="memItemLeft" align="right" valign="top">mzd_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#a0448c6957d1a9dc935e41b4cd88fe5c3">mzd_nullspace</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const H)</td></tr>
+<tr class="memdesc:a0448c6957d1a9dc935e41b4cd88fe5c3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the null space basis N = ker(H) of dimension nu x n.  <br /></td></tr>
+<tr class="separator:a0448c6957d1a9dc935e41b4cd88fe5c3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aca53d0f84a03c2cdd3d2ce6dc1de89be" id="r_aca53d0f84a03c2cdd3d2ce6dc1de89be"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcolmask__t.html">colmask_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#aca53d0f84a03c2cdd3d2ce6dc1de89be">colmask_from_csr</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const A)</td></tr>
+<tr class="memdesc:aca53d0f84a03c2cdd3d2ce6dc1de89be"><td class="mdescLeft">&#160;</td><td class="mdescRight">Construct the column bit masks of a sparse binary matrix (see <a class="el" href="structcolmask__t.html">colmask_t</a>).  <br /></td></tr>
+<tr class="separator:aca53d0f84a03c2cdd3d2ce6dc1de89be"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1e46daec792c3013a846ab5e99c8976a" id="r_a1e46daec792c3013a846ab5e99c8976a"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcolmask__t.html">colmask_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#a1e46daec792c3013a846ab5e99c8976a">colmask_free</a> (<a class="el" href="structcolmask__t.html">colmask_t</a> *cm)</td></tr>
+<tr class="memdesc:a1e46daec792c3013a846ab5e99c8976a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Free the column masks allocated by <a class="el" href="util__m4ri_8h.html#aca53d0f84a03c2cdd3d2ce6dc1de89be" title="Construct the column bit masks of a sparse binary matrix (see colmask_t).">colmask_from_csr()</a>.  <br /></td></tr>
+<tr class="separator:a1e46daec792c3013a846ab5e99c8976a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac58bf7b6075f8f723f2ff55d433a0caa" id="r_ac58bf7b6075f8f723f2ff55d433a0caa"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#ac58bf7b6075f8f723f2ff55d433a0caa">localized_window_perm</a> (mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode, const <a class="el" href="structcsr__t.html">csr_t</a> *spaH, const <a class="el" href="structcsr__t.html">csr_t</a> *mHT, int *visited_cols, int *visited_checks, int *col_queue, int *visit_marker, uint64_t *rng_state)</td></tr>
+<tr class="memdesc:ac58bf7b6075f8f723f2ff55d433a0caa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Construct a column permutation with a localized window at the front.  <br /></td></tr>
+<tr class="separator:ac58bf7b6075f8f723f2ff55d433a0caa"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac95f652a56351d295f1f3e46639e6273" id="r_ac95f652a56351d295f1f3e46639e6273"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="util__m4ri_8c.html#ac95f652a56351d295f1f3e46639e6273">refresh_nullspace_basis</a> (mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *rng_state)</td></tr>
+<tr class="memdesc:ac95f652a56351d295f1f3e46639e6273"><td class="mdescLeft">&#160;</td><td class="mdescRight">Refresh the null space basis N under a random column permutation and optionally inject a low-weight codeword via Steinitz exchange.  <br /></td></tr>
+<tr class="separator:ac95f652a56351d295f1f3e46639e6273"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
+<h2 class="groupheader">Macro Definition Documentation</h2>
+<a id="ab3df36f762755d9d6c6d8744f5aa515d" name="ab3df36f762755d9d6c6d8744f5aa515d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab3df36f762755d9d6c6d8744f5aa515d">&#9670;&#160;</a></span>SORT_CMP</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define SORT_CMP</td>
+          <td>(</td>
+          <td class="paramtype">&#160;</td>
+          <td class="paramname">x, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">&#160;</td>
+          <td class="paramname">y&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td>&#160;&#160;&#160;(((x).a != (y).a) ? ((x).a - (y).a) : ((x).b - (y).b))</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00504">504</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a14d526d27bdc1e79abb1ad73fee4baa5" name="a14d526d27bdc1e79abb1ad73fee4baa5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a14d526d27bdc1e79abb1ad73fee4baa5">&#9670;&#160;</a></span>SORT_DEF</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define SORT_DEF&#160;&#160;&#160;static inline</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00505">505</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="ab462f08b4e7c84cb134f388d6aeb6ca9" name="ab462f08b4e7c84cb134f388d6aeb6ca9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab462f08b4e7c84cb134f388d6aeb6ca9">&#9670;&#160;</a></span>SORT_NAME</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define SORT_NAME&#160;&#160;&#160;<a class="el" href="structint__pair.html">int_pair</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00502">502</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a3ea926a2b105916d5f0b2a32cdb611cc" name="a3ea926a2b105916d5f0b2a32cdb611cc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3ea926a2b105916d5f0b2a32cdb611cc">&#9670;&#160;</a></span>SORT_TYPE</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define SORT_TYPE&#160;&#160;&#160;<a class="el" href="structint__pair.html">int_pair</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00503">503</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+</div>
+</div>
 <h2 class="groupheader">Function Documentation</h2>
 <a id="adb3cc9c7e188ca69220eefc3ef217ae8" name="adb3cc9c7e188ca69220eefc3ef217ae8"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#adb3cc9c7e188ca69220eefc3ef217ae8">&#9670;&#160;</a></span>addto()</h2>
@@ -250,6 +367,73 @@ Functions</h2></td></tr>
 
 </div>
 </div>
+<a id="a1e46daec792c3013a846ab5e99c8976a" name="a1e46daec792c3013a846ab5e99c8976a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1e46daec792c3013a846ab5e99c8976a">&#9670;&#160;</a></span>colmask_free()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcolmask__t.html">colmask_t</a> * colmask_free </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcolmask__t.html">colmask_t</a> *&#160;</td>
+          <td class="paramname"><em>cm</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Free the column masks allocated by <a class="el" href="util__m4ri_8h.html#aca53d0f84a03c2cdd3d2ce6dc1de89be" title="Construct the column bit masks of a sparse binary matrix (see colmask_t).">colmask_from_csr()</a>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">cm</td><td>Column masks (may be NULL). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Always returns NULL. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00940">940</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00132">colmask_t::mask</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00801">var_kill()</a>.</p>
+
+</div>
+</div>
+<a id="aca53d0f84a03c2cdd3d2ce6dc1de89be" name="aca53d0f84a03c2cdd3d2ce6dc1de89be"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aca53d0f84a03c2cdd3d2ce6dc1de89be">&#9670;&#160;</a></span>colmask_from_csr()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcolmask__t.html">colmask_t</a> * colmask_from_csr </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structcsr__t.html">csr_t</a> *const&#160;</td>
+          <td class="paramname"><em>A</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Construct the column bit masks of a sparse binary matrix (see <a class="el" href="structcolmask__t.html">colmask_t</a>). </p>
+<p>Duplicate entries of A cancel (mod 2), as in sparse_syndrome_non_zero().</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">A</td><td>Sparse matrix in CSR form. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Newly allocated column masks (free with <a class="el" href="util__m4ri_8h.html#a1e46daec792c3013a846ab5e99c8976a" title="Free the column masks allocated by colmask_from_csr().">colmask_free()</a>). </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00922">922</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00130">colmask_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00131">colmask_t::kw</a>, <a class="el" href="util__m4ri_8h_source.html#l00132">colmask_t::mask</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>, and <a class="el" href="util__m4ri_8h_source.html#l00129">colmask_t::rows</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>.</p>
+
+</div>
+</div>
 <a id="af12e9bf80c70823f805f2fdd5f8b1301" name="af12e9bf80c70823f805f2fdd5f8b1301"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#af12e9bf80c70823f805f2fdd5f8b1301">&#9670;&#160;</a></span>csr_apply_perm()</h2>
 
@@ -285,11 +469,11 @@ Functions</h2></td></tr>
 <p>Permute columns of a CSR sparse matrix. </p>
 <p>Permute columns of a CSR matrix with permutation perm. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00736">736</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00735">735</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00511">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -313,11 +497,11 @@ Functions</h2></td></tr>
 <p>compress a CSR matrix <br  />
  </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00512">512</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00511">511</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00120">int_pair::a</a>, <a class="el" href="util__m4ri_8h_source.html#l00120">int_pair::b</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00736">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00593">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00735">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00592">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
 
 </div>
 </div>
@@ -361,7 +545,7 @@ Functions</h2></td></tr>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00060">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>.</p>
 
 </div>
 </div>
@@ -386,9 +570,9 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00459">459</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00054">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00067">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00159">do_CC_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00918">main()</a>, <a class="el" href="util__io_8c_source.html#l00060">var_init()</a>, and <a class="el" href="util__io_8c_source.html#l00517">var_kill()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>, <a class="el" href="dist__m4ri_8c_source.html#l02009">main()</a>, <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>, and <a class="el" href="util__io_8c_source.html#l00801">var_kill()</a>.</p>
 
 </div>
 </div>
@@ -430,11 +614,11 @@ Functions</h2></td></tr>
 <p>will reallocate if needed</p>
 <p>optimized version</p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00837">837</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00836">836</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8c_source.html#l00044">mzd_weight()</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -495,11 +679,11 @@ Functions</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Pointer to the constructed CSR matrix. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00535">535</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00534">534</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00120">int_pair::b</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, and <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00707">read_dem_file()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01004">read_dem_file()</a>.</p>
 
 </div>
 </div>
@@ -547,9 +731,9 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00476">476</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="sort_8h_source.html#l00054">MAX</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00736">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00837">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8c_source.html#l00535">csr_from_pairs()</a>, <a class="el" href="util__m4ri_8c_source.html#l00593">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00735">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00836">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8c_source.html#l00534">csr_from_pairs()</a>, <a class="el" href="util__m4ri_8c_source.html#l00592">csr_mm_read()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00133">csr_transpose()</a>.</p>
 
 </div>
 </div>
@@ -574,9 +758,9 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00115">115</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00054">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00067">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00159">do_CC_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l00918">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l02009">main()</a>.</p>
 
 </div>
 </div>
@@ -615,11 +799,11 @@ Functions</h2></td></tr>
 <p>Read a sparse matrix from a Matrix Market (.mtx) file into CSR format. </p>
 <p>read sparse matrix into a (binary) CSR (all entries default to 1) (re)allocate mat if needed use transpose=1 to transpose. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00593">593</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00592">592</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="mmio_8h_source.html#l00093">mm_is_coordinate</a>, <a class="el" href="mmio_8h_source.html#l00103">mm_is_general</a>, <a class="el" href="mmio_8h_source.html#l00100">mm_is_integer</a>, <a class="el" href="mmio_8h_source.html#l00090">mm_is_matrix</a>, <a class="el" href="mmio_8h_source.html#l00099">mm_is_pattern</a>, <a class="el" href="mmio_8h_source.html#l00102">mm_is_symmetric</a>, <a class="el" href="mmio_8c_source.html#l00105">mm_read_banner()</a>, <a class="el" href="mmio_8c_source.html#l00229">mm_read_mtx_array_size()</a>, <a class="el" href="mmio_8c_source.html#l00198">mm_read_mtx_crd_size()</a>, <a class="el" href="mmio_8c_source.html#l00464">mm_typecode_to_str()</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, and <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00511">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="mmio_8h_source.html#l00093">mm_is_coordinate</a>, <a class="el" href="mmio_8h_source.html#l00103">mm_is_general</a>, <a class="el" href="mmio_8h_source.html#l00100">mm_is_integer</a>, <a class="el" href="mmio_8h_source.html#l00090">mm_is_matrix</a>, <a class="el" href="mmio_8h_source.html#l00099">mm_is_pattern</a>, <a class="el" href="mmio_8h_source.html#l00102">mm_is_symmetric</a>, <a class="el" href="mmio_8c_source.html#l00105">mm_read_banner()</a>, <a class="el" href="mmio_8c_source.html#l00229">mm_read_mtx_array_size()</a>, <a class="el" href="mmio_8c_source.html#l00198">mm_read_mtx_crd_size()</a>, <a class="el" href="mmio_8c_source.html#l00464">mm_typecode_to_str()</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, and <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00060">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>.</p>
 
 </div>
 </div>
@@ -690,7 +874,7 @@ Functions</h2></td></tr>
 <p>output a CSR matrix <br  />
  </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00554">554</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00553">553</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
@@ -731,11 +915,9 @@ Functions</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00576">576</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00575">575</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>.</p>
-
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00159">do_CC_dist()</a>, and <a class="el" href="util__io_8c_source.html#l00060">var_init()</a>.</p>
 
 </div>
 </div>
@@ -770,9 +952,9 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00133">133</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00512">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__io_8c_source.html#l00054">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00511">csr_compress()</a>, <a class="el" href="util__m4ri_8c_source.html#l00476">csr_init()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="sort_8h_source.html#l00054">MAX</a>, <a class="el" href="util__m4ri_8h_source.html#l00113">csr_t::nz</a>, <a class="el" href="util__m4ri_8h_source.html#l00114">csr_t::nzmax</a>, <a class="el" href="util__io_8c_source.html#l00067">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00159">do_CC_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l00918">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l02009">main()</a>.</p>
 
 </div>
 </div>
@@ -811,7 +993,104 @@ Functions</h2></td></tr>
 <p>Reduce a row vector against a matrix in standard form. </p>
 <p>Check if row is linearly dependent with the rows of matG0 which is assumed to be in standard form. rankG0 is the number of non-zero rows in rankG0. return: -1 if empty line after simplification otherwise position of the first non-zero bit in the simplified vector </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00770">770</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00769">769</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="ac58bf7b6075f8f723f2ff55d433a0caa" name="ac58bf7b6075f8f723f2ff55d433a0caa"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac58bf7b6075f8f723f2ff55d433a0caa">&#9670;&#160;</a></span>localized_window_perm()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void localized_window_perm </td>
+          <td>(</td>
+          <td class="paramtype">mzp_t *&#160;</td>
+          <td class="paramname"><em>perm</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>nvar</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>seed_col</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>kwin</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>win_mode</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const <a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td>
+          <td class="paramname"><em>spaH</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const <a class="el" href="structcsr__t.html">csr_t</a> *&#160;</td>
+          <td class="paramname"><em>mHT</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int *&#160;</td>
+          <td class="paramname"><em>visited_cols</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int *&#160;</td>
+          <td class="paramname"><em>visited_checks</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int *&#160;</td>
+          <td class="paramname"><em>col_queue</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int *&#160;</td>
+          <td class="paramname"><em>visit_marker</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint64_t *&#160;</td>
+          <td class="paramname"><em>rng_state</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Construct a column permutation with a localized window at the front. </p>
+<p>Places kwin columns around seed_col (via Tanner BFS if win_mode == 0, or contiguous index proximity if win_mode == 1) in perm-&gt;values[0 .. kwin-1], internally shuffled, followed by the shuffled remaining columns. </p>
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00960">960</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00116">csr_t::i</a>, <a class="el" href="util__m4ri_8h_source.html#l00115">csr_t::p</a>, <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>.</p>
 
 </div>
 </div>
@@ -847,11 +1126,11 @@ Functions</h2></td></tr>
 <p>permute columns to make std form [ I C ]</p>
 <p><code>verify</code> orthogonality</p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00872">872</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00871">871</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00736">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00837">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00424">perm_p()</a>, <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>, <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00735">csr_apply_perm()</a>, <a class="el" href="util__m4ri_8c_source.html#l00459">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00836">csr_from_mzd()</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00424">perm_p()</a>, <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>, <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00111">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00060">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>.</p>
 
 </div>
 </div>
@@ -890,9 +1169,9 @@ Functions</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00808">808</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00807">807</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00054">p</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00067">p</a>.</p>
 
 </div>
 </div>
@@ -927,9 +1206,9 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00156">156</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00054">p</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__io_8c_source.html#l00067">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00576">csr_print()</a>, <a class="el" href="dist__rw_8c_source.html#l00037">do_RW_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00160">csr_dump()</a>, <a class="el" href="util__m4ri_8c_source.html#l00575">csr_print()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>, <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00911">mzd_nullspace()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
 
 </div>
 </div>
@@ -970,7 +1249,7 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00074">74</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>.</p>
 
 </div>
 </div>
@@ -1006,9 +1285,43 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00183">183</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__io_8h_source.html#l00032">params_t::debug</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00412">mzp_out()</a>, and <a class="el" href="util__io_8c_source.html#l00007">prm</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00112">csr_t::cols</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::debug</a>, <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00074">mzd_gauss_naive()</a>, <a class="el" href="util__m4ri_8c_source.html#l00412">mzp_out()</a>, and <a class="el" href="util__io_8c_source.html#l00008">prm</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>.</p>
+
+</div>
+</div>
+<a id="a0448c6957d1a9dc935e41b4cd88fe5c3" name="a0448c6957d1a9dc935e41b4cd88fe5c3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0448c6957d1a9dc935e41b4cd88fe5c3">&#9670;&#160;</a></span>mzd_nullspace()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">mzd_t * mzd_nullspace </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structcsr__t.html">csr_t</a> *const&#160;</td>
+          <td class="paramname"><em>H</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compute the null space basis N = ker(H) of dimension nu x n. </p>
+<p>Uses M4RI's mzd_kernel_left_pluq to find X such that H * X = 0, and returns N = X^T of size (n - rank(H)) x n.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">H</td><td>Sparse parity check matrix in CSR form. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Newly allocated dense matrix N, or NULL if kernel is trivial. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00911">911</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l02009">main()</a>.</p>
 
 </div>
 </div>
@@ -1039,7 +1352,7 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00044">44</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00837">csr_from_mzd()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00836">csr_from_mzd()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00356">product_weight_csr_mzd()</a>.</p>
 
 </div>
 </div>
@@ -1110,6 +1423,8 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00025">25</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l01049">refresh_nullspace_basis()</a>.</p>
+
 </div>
 </div>
 <a id="add165948f4d560a27c955a216e6bf504" name="add165948f4d560a27c955a216e6bf504"></a>
@@ -1133,7 +1448,7 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00412">412</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00054">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00067">p</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00183">mzd_generator_from_csr()</a>.</p>
 
@@ -1211,9 +1526,9 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00424">424</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00054">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00067">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -1254,9 +1569,9 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00442">442</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00054">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8c_source.html#l00067">p</a>, and <a class="el" href="util__m4ri_8h_source.html#l00011">SWAPINT</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00037">do_RW_dist()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>, and <a class="el" href="util__m4ri_8c_source.html#l01049">refresh_nullspace_basis()</a>.</p>
 
 </div>
 </div>
@@ -1299,7 +1614,7 @@ Functions</h2></td></tr>
 
 <p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00156">mzd_from_csr()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00044">mzd_weight()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00872">Lx_for_CSS_code()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00871">Lx_for_CSS_code()</a>.</p>
 
 </div>
 </div>
@@ -1324,7 +1639,55 @@ Functions</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l00376">376</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00396">mzp_rand_len()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00396">mzp_rand_len()</a>.</p>
+
+</div>
+</div>
+<a id="ac95f652a56351d295f1f3e46639e6273" name="ac95f652a56351d295f1f3e46639e6273"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac95f652a56351d295f1f3e46639e6273">&#9670;&#160;</a></span>refresh_nullspace_basis()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void refresh_nullspace_basis </td>
+          <td>(</td>
+          <td class="paramtype">mzd_t *&#160;</td>
+          <td class="paramname"><em>N</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int *&#160;</td>
+          <td class="paramname"><em>cw_arr</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>cw_wt</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint64_t *&#160;</td>
+          <td class="paramname"><em>rng_state</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Refresh the null space basis N under a random column permutation and optionally inject a low-weight codeword via Steinitz exchange. </p>
+
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8c_source.html#l01049">1049</a> of file <a class="el" href="util__m4ri_8c_source.html">util_m4ri.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00025">mzd_weight_row()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00442">perm_p_trans()</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>.</p>
 
 </div>
 </div>

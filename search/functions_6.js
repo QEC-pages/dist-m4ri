@@ -1,6 +1,6 @@
 var searchData=
 [
-  ['get_5fcached_5fdistance_0',['get_cached_distance',['../namespacedist__m4ri.html#a9c38d054a76b6886309dc5d0dc6e1214',1,'dist_m4ri']]],
-  ['get_5fdistance_5fcache_1',['get_distance_cache',['../namespacedist__m4ri.html#a26ea9d289efa34ad636aab5bf9fc89b6',1,'dist_m4ri']]],
-  ['get_5fsparse_5farray_5fstate_2',['get_sparse_array_state',['../namespacedist__m4ri.html#a9beceb39f5357d0dd249f15263c556ba',1,'dist_m4ri']]]
+  ['find_5fdist_5fm4ri_5fbinary_0',['find_dist_m4ri_binary',['../namespacedist__m4ri.html#a09fdbac5261d1261a975d8ec7e9a95d0',1,'dist_m4ri']]],
+  ['format_5fbounds_5flist_1',['format_bounds_list',['../namespacedist__m4ri.html#a119162910a3b61bf61ae1326972f6ee3',1,'dist_m4ri']]],
+  ['format_5fbounds_5fstr_2',['format_bounds_str',['../namespacedist__m4ri.html#a0f48db667d0b97b5f158b2fd3defe56a',1,'dist_m4ri']]]
 ];

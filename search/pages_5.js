@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['notes_20for_20tt_20dist_5fm4ri_20tt_20program_0',['todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program',['../md_todo.html',1,'']]]
+  ['guidelines_20for_20dist_20m4ri_0',['Agent Guidelines for dist-m4ri',['../md_AGENTS.html',1,'']]]
 ];

@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['firstbit_0',['FIRSTBIT',['../util__m4ri_8h.html#a4aec4c59fc492a10f6b76e26c847439b',1,'util_m4ri.h']]]
+  ['elmt_5ffrom_5fhh_0',['ELMT_FROM_HH',['../uthash_8h.html#a568e95048979b8b3e4ea1567fd91c186',1,'uthash.h']]],
+  ['error_1',['ERROR',['../util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa',1,'util_m4ri.h']]]
 ];

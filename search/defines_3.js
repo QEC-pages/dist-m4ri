@@ -1,5 +1,20 @@
 var searchData=
 [
-  ['elmt_5ffrom_5fhh_0',['ELMT_FROM_HH',['../uthash_8h.html#a568e95048979b8b3e4ea1567fd91c186',1,'uthash.h']]],
-  ['error_1',['ERROR',['../util__m4ri_8h.html#a15378cd15bafb3a79061424b452497aa',1,'util_m4ri.h']]]
+  ['dbg_5fargs_0',['DBG_ARGS',['../util__io_8h.html#a3fae2e3371d7277e2d4ae12c6e6934d2',1,'util_io.h']]],
+  ['dbg_5fcodewords_1',['DBG_CODEWORDS',['../util__io_8h.html#a7b6b2b72bff9a5b37cdeeffe10692ebc',1,'util_io.h']]],
+  ['dbg_5fcw_5fmax_2',['DBG_CW_MAX',['../util__io_8h.html#a70e645ad2ed5f08e4b8394dd6111e045',1,'util_io.h']]],
+  ['dbg_5fcwdump_3',['DBG_CWDUMP',['../util__io_8h.html#ace92dec98833d186070d5f01e19fd81a',1,'util_io.h']]],
+  ['dbg_5fdefault_4',['DBG_DEFAULT',['../util__io_8h.html#af34c3c30400c83a97dd0deadaead479c',1,'util_io.h']]],
+  ['dbg_5flarge_5',['DBG_LARGE',['../util__io_8h.html#a8f6bff6ea971f3624b1bd447ee774ee4',1,'util_io.h']]],
+  ['dbg_5flegacy_6',['DBG_LEGACY',['../util__io_8h.html#a2d72554d422aefaaebd330dc5615849e',1,'util_io.h']]],
+  ['dbg_5fmatrices_7',['DBG_MATRICES',['../util__io_8h.html#aae828585f33718ea56bacb86453d3d71',1,'util_io.h']]],
+  ['dbg_5fparams_8',['DBG_PARAMS',['../util__io_8h.html#ac03b51de025be0e0b3703e1992d9a6c9',1,'util_io.h']]],
+  ['dbg_5fprogress_9',['DBG_PROGRESS',['../util__io_8h.html#a434d33350a7d7626f74ad405657f2306',1,'util_io.h']]],
+  ['dbg_5fstatus_10',['DBG_STATUS',['../util__io_8h.html#acb573e98f30b8884f1e019addbcc0d7e',1,'util_io.h']]],
+  ['dbg_5fsummary_11',['DBG_SUMMARY',['../util__io_8h.html#a5ac66a32a67ae20e9f05e5b07349a0e9',1,'util_io.h']]],
+  ['dbg_5ftiming_12',['DBG_TIMING',['../util__io_8h.html#a47df94fb2db2929768aa07a5edf4cdc2',1,'util_io.h']]],
+  ['decltype_13',['DECLTYPE',['../uthash_8h.html#a716ba290563c2d955cb0c90d85874073',1,'uthash.h']]],
+  ['decltype_5fassign_14',['DECLTYPE_ASSIGN',['../uthash_8h.html#a3c736f2f2dd643f2987b2bc323e269ba',1,'uthash.h']]],
+  ['dist_5fm4ri_15',['DIST_M4RI',['../dist__m4ri_8h.html#a2bd3e4aa1534d1a1020391b9d58f3f35',1,'dist_m4ri.h']]],
+  ['dist_5fm4ri_5fversion_16',['DIST_M4RI_VERSION',['../util__io_8h.html#a3f3d8600177e9da2e2b6f9ec1099b90a',1,'util_io.h']]]
 ];

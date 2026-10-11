@@ -1,15 +1,15 @@
 var searchData=
 [
-  ['of_20a_20classical_20or_20quantum_20css_20code_0',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
-  ['of_20tt_20dexp_20tt_20_3a_1',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md19',1,'']]],
-  ['on_20the_20distance_2',['operation mode: find upper bound on the distance.',['../md_todo.html#autotoc_md43',1,'']]],
-  ['one_5fvec_5fprint_3',['one_vec_print',['../dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c'],['../util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c']]],
-  ['one_5fvec_5ft_4',['one_vec_t',['../structONE__VEC__T.html',1,'ONE_VEC_T'],['../util__hash_8h.html#a6fec6ff254fd408f8f9cd7288562927e',1,'one_vec_t:&#160;util_hash.h']]],
-  ['operation_20mode_3a_20distance_20verification_5',['operation mode: distance verification.',['../md_todo.html#autotoc_md42',1,'']]],
-  ['operation_20mode_3a_20find_20upper_20bound_20on_20the_20distance_6',['operation mode: find upper bound on the distance.',['../md_todo.html#autotoc_md43',1,'']]],
-  ['or_20quantum_20css_20code_7',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
-  ['outc_8',['outC',['../structparams__t.html#a3c694ec3b7732cb8729753162401ce94',1,'params_t']]],
-  ['outc_20tt_20tt_20finc_20tt_9',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md24',1,'']]],
-  ['output_20format_20stream_20separation_10',['Output Format &amp; Stream Separation',['../md_README.html#autotoc_md13',1,'']]],
-  ['overview_11',['overview',['../index.html#autotoc_md3',1,'Overview'],['../md_README.html#autotoc_md11',1,'Overview']]]
+  ['length_0',['length',['../structTIM__SORT__RUN__T.html#a842c7337494872c93c6e2cf93c68c16f',1,'TIM_SORT_RUN_T']]],
+  ['level_20distances_1',['2.4 Circuit-Level Distances',['../md_benchmark_2BENCHMARK.html#autotoc_md15',1,'']]],
+  ['line_20usage_20and_20help_20system_2',['Command-Line Usage and Help System',['../md_README.html#autotoc_md51',1,'']]],
+  ['lines_3',['lines',['../structdem__program__t.html#a39447ed75d56ceb303db66435691d33f',1,'dem_program_t']]],
+  ['listing_20tt_20dist_5fm4ri_20morehelp_20tt_4',['Full Parameter Listing (&lt;tt&gt;dist_m4ri --morehelp&lt;/tt&gt;)',['../md_README.html#autotoc_md53',1,'']]],
+  ['load_5fdistance_5fcache_5',['load_distance_cache',['../namespacedist__m4ri.html#ac3a455381820347aa7a0d7eaa875f8ee',1,'dist_m4ri']]],
+  ['local_20torus_20bb_20circuits_20tt_20benchmark_20stim_5ftorus_20tt_6',['2.3 2D Local Torus BB Circuits (&lt;tt&gt;benchmark/stim_torus/&lt;/tt&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md14',1,'']]],
+  ['localized_20windowed_20column_20permutations_20for_20dems_7',['Task 2: Localized &amp; Windowed Column Permutations for DEMs',['../md_todo.html#autotoc_md74',1,'']]],
+  ['localized_5fwindow_5fperm_8',['localized_window_perm',['../util__m4ri_8c.html#ac58bf7b6075f8f723f2ff55d433a0caa',1,'localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode, const csr_t *spaH, const csr_t *mHT, int *visited_cols, int *visited_checks, int *col_queue, int *visit_marker, uint64_t *rng_state):&#160;util_m4ri.c'],['../util__m4ri_8h.html#ac58bf7b6075f8f723f2ff55d433a0caa',1,'localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode, const csr_t *spaH, const csr_t *mHT, int *visited_cols, int *visited_checks, int *col_queue, int *visit_marker, uint64_t *rng_state):&#160;util_m4ri.c']]],
+  ['log2_5fnum_5fbuckets_9',['log2_num_buckets',['../structUT__hash__table.html#ae376a7f3fac525f3a9d03b6beec8d12f',1,'UT_hash_table']]],
+  ['logical_20matrices_20tt_20benchmark_20css_20tt_10',['1. CSS Parity-Check and Logical Matrices (&lt;tt&gt;benchmark/css/&lt;/tt&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md9',1,'']]],
+  ['lx_5ffor_5fcss_5fcode_11',['lx_for_css_code',['../util__m4ri_8c.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c'],['../util__m4ri_8h.html#a81ab8de6973b5d23a36f35251cd1d97f',1,'Lx_for_CSS_code(const csr_t *const Hx, const csr_t *const Hz):&#160;util_m4ri.c']]]
 ];

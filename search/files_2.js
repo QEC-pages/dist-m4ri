@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['gen_5fsegfault_5fmatrix_2epy_0',['gen_segfault_matrix.py',['../gen__segfault__matrix_8py.html',1,'']]]
+  ['contributing_2emd_0',['CONTRIBUTING.md',['../CONTRIBUTING_8md.html',1,'']]]
 ];

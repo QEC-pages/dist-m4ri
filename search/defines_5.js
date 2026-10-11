@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['get16bits_0',['get16bits',['../uthash_8h.html#abc7d71657be8975a51684e41029b7964',1,'uthash.h']]]
+  ['firstbit_0',['FIRSTBIT',['../util__m4ri_8h.html#a4aec4c59fc492a10f6b76e26c847439b',1,'util_m4ri.h']]]
 ];

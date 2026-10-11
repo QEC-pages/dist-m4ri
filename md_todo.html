@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=11"/>
 <meta name="generator" content="Doxygen 1.9.8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Dist m4ri: todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program</title>
+<title>Dist m4ri: Todo Notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; Program</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -77,34 +77,228 @@ $(function() {
 
 </div><!-- top -->
 <div><div class="header">
-  <div class="headertitle"><div class="title">todo notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; program</div></div>
+  <div class="headertitle"><div class="title">Todo Notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; Program</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md41"></a></p><ul>
-<li>[x] Enable <code>wmax</code> for <code>method=1</code> to speed things up:<ul>
-<li>For quantum codes, only check for degeneracy the codewords of weight smaller than <code>wmax</code> (suppose we already have a codeword of weight <code>wmax</code>).</li>
-<li>Second, when recording indices, stop at <code>wmax</code> (as it currently done with <code>minW</code>).</li>
+<div class="textblock"><p><a class="anchor" id="autotoc_md68"></a> </p>
+<h1><a class="anchor" id="autotoc_md69"></a>
+1. High-Priority Roadmap: High-Performance RW Overhaul</h1>
+<p>This work optimizes the Random Information-Set Decoding (RW, <code>method=1</code>) algorithm to achieve linear multicore scaling (32–128 cores), minimal per-core memory footprint, and enhanced hit rates for quantum CSS codes and Detector Error Models (DEMs).</p>
+<p>Inspired by <code>sqetch</code> (arXiv:2607.28795, Appendix H) and the empirical convergence criteria in <code>QDistRnd</code> (<a href="http://github.com/QEC-pages/QDistRnd">http://github.com/QEC-pages/QDistRnd</a>).</p>
+<h2><a class="anchor" id="autotoc_md70"></a>
+Implementation Strategy</h2>
+<ul>
+<li><b>Stage 1 (Immediate / Functional Baseline)</b>:<ul>
+<li>Implement Tasks 1–4 using <code>libm4ri</code> matrix primitives (<code>mzd_kernel_left_pluq</code>, <code>mzd_copy_row</code>, <code>mzd_echelonize</code>).</li>
+<li>Validate mathematical correctness, hit-rate scaling, and backward compatibility (<code>ksub=0</code> retains original RW).</li>
 </ul>
 </li>
-<li>[x] Maintain the count of valid min-weight codewords encountered (???) &mdash; will it be compatible with <code>minW</code>?</li>
-<li>[ ] Maintain the count of trivial codewords of different weights (below <code>wmax</code>) encountered (???)</li>
-<li>[ ] Make sure any debugging information is sent to <code>stderr</code>, while only the distance is printed to <code>stdout</code> (positive or negative), with perhaps additional data in the same line after a space.</li>
-<li>[ ] Use a faster sorting routine.</li>
-<li>[x] Use a hash to record constructed codewords and the number of times they have been encountered. Perhaps, bound the hash size by a relatively small limit, like it is done in <code>QDistRnd</code>, to be able to set up an alternative stopping condition.</li>
-<li>[x] To calculate the <code>confinement</code> correctly, we need to set up a hash of syndrome vectors and corresponding min-weight errors. <b>Do we also need to separate by logical sectors?</b> <strike>Right now the degeneracy is not taken into account, i.e., zero syndrome weight is calculated for a trivial error of weight 4 (since it is equivalent to a zero-weight error this should not be counted).</strike></li>
-<li>[ ] make sure <code>debug</code> and <code>method</code> are read first (as a separate items)</li>
-<li>[ ] given <code>method</code>, check parameters for relevancy</li>
-<li>[ ] see if parameters need disambiguation when <code>method=3</code> (both)</li>
-<li>[x] see what can be done regarding early recursion termination &ndash; <b>currently it is removed</b>. Perhaps, separate <code>confinement</code> to a different method, so that full enumeration can be done.</li>
-<li>[ ] see if the constructed hash can be used to find minimum code distance better (using half-weight vectors).</li>
-<li>[ ] see if a sparse-matrix Gauss elimination would work faster (using rows? &ndash; or try the 2D matrix structure?) </li>
+<li><b>Stage 2 (Hardware-Optimized SIMD Engine)</b>:<ul>
+<li>For worker thread hot loops ($k_{\text{sub}} \le 64$), replace <code>libm4ri</code> with a zero-allocation, thread-safe, header-only AVX2 / AVX-512 bit-matrix kernel.</li>
+<li>Utilize bit-sliced column representations (<code>uint64_t cols[n]</code>) to eliminate column transposition passes and completely remove the global <code>m4ri_mem_mutex</code>.</li>
 </ul>
-<h1><a class="anchor" id="autotoc_md42"></a>
-operation mode: distance verification.</h1>
-<p>We believe we know the distance (in reality, an upper bound), and we just would like to verify this to be the case. Say, we believe the distance is <code>d=10</code>, and we are not interested in codes with smaller distances. Run with <code>method=1 wmax=10 wmin=9</code>; the program will not bother to verify any codewords of weight 10 and above, and will terminate immediately after finding a valid (non-degenerate in the case of a quantum code) codeword of weight <code>9</code> or below. For example, if a codeword of weight <code>9</code> has been found, it will print out the result as <code>-9</code>. If no codewords have been found below <code>wmax</code>, the program would output <code>0</code>.</p>
-<h1><a class="anchor" id="autotoc_md43"></a>
-operation mode: find upper bound on the distance.</h1>
-<p>Use hash to count the codewords found in the range <code>wmin &lt; w &lt; wmax</code> (do we also need <code>dw</code>?) </p>
+</li>
+</ul>
+<hr  />
+<h2><a class="anchor" id="autotoc_md72"></a>
+Task 1: Subspace Sketching (&lt;tt&gt;ksub&lt;/tt&gt;, experimental) for In-Cache Multicore Scaling</h2>
+<ul>
+<li>[x] Add CLI parameter <code>ksub=[int]</code> (default <code>0</code> retains original full-matrix RW).</li>
+<li>[x] <b>Main Thread Precomputation</b>:<ul>
+<li>Compute a basis of the null space $N = \ker(H)$ (dimension $\nu \times n$, where $\nu = n - \mathrm{rank}(H)$) once using <code>mzd_kernel_left_pluq</code>.</li>
+<li>Store $N$ as a global read-only matrix shared across worker threads.</li>
+</ul>
+</li>
+<li>[x] <b>Worker Thread In-Cache Working Set</b>:<ul>
+<li>For $k_{\text{sub}} &gt; 0$, allocate a compact $k_{\text{sub}} \times n$ matrix instead of the full $m \times n$ check matrix.</li>
+<li>For $k_{\text{sub}} = 64$ and $n = 5000$, working memory per thread is $\approx 40\text{&ndash;}80 \text{ KB}$, fitting entirely within private L1/L2 cache and eliminating L3 cache and DRAM bandwidth contention.</li>
+</ul>
+</li>
+<li>[x] <b>Per-Trial Hot Loop</b>:<ol type="1">
+<li>Sample $k_{\text{sub}}$ distinct rows of $N$ (partial Fisher–Yates shuffle of the row indices; rows drawn with replacement would repeat and reduce the rank) into the thread-local working matrix <code>M_sub</code>.</li>
+<li>Perform in-place RREF via <code>gauss_one(M_sub, perm-&gt;values[i], rank)</code> in permuted column order (stopping as soon as <code>rank == ksub</code>, avoiding matrix transpositions and non-thread-safe <code>m4ri_mmc</code> allocations).</li>
+<li>Directly extract candidate codewords from the reduced non-zero rows (already in sorted original column coordinates; no dual transposition, coordinate unpermutation, or <code>qsort</code> needed).</li>
+<li>Test logical non-triviality against $L$ (column masks of $L$, see <b>Faster Logical Check</b>), and atomically update <code>dmax</code>.</li>
+</ol>
+</li>
+<li>Findings (Oct 2026, <code>ksub</code> forced also for $m &lt; \nu$, 8 threads): <code>ksub</code> explores only the span of $k_{\text{sub}}$ rows of the fixed basis $N$ in each step, so a codeword is found only if all basis rows in its expansion are sampled. The hit counts are then concentrated on a few codewords, and <code>min_hits</code> stops RW early: e.g., for <code>bb72_si1000_X.dem</code>, after $\sim 2500$ steps with only 4–7 distinct codewords of weight 6 (full RW: 100 distinct codewords after $\sim 40000$ steps); for <code>torus60_d14_X.dem</code>, a codeword of weight 6 took 3–14 s instead of 3–15 ms. For <code>c1920H.mmx</code> (where <code>ksub</code> is allowed), the lightest codewords found in 20 s were similar to full RW. The fallback rule $m &lt; \nu \Rightarrow$ <code>ksub=0</code> thus stays (it disables <code>ksub</code> for DEMs and most quantum codes).</li>
+<li>[x] <code>ksub</code> is kept for now, but marked experimental (should not be used) in the documentation, <code>--help</code>, and <code>--morehelp</code>; a warning is printed whenever <code>ksub&gt;0</code> is given for RW (with or without <code>min_hits</code>, regardless of <code>debug</code>; in Python, once per <code>compute_*_distance()</code> call), as a reminder that the option does not do what it is supposed to.</li>
+<li>[ ] Find a subspace sampling for which the hit counts are uniform (or drop <code>ksub</code>).</li>
+</ul>
+<hr  />
+<h2><a class="anchor" id="autotoc_md74"></a>
+Task 2: Localized &amp; Windowed Column Permutations for DEMs</h2>
+<ul>
+<li>[x] Add parameters <code>kwin=[int]</code> (window size $W$, default <code>0</code> = uniform random permutation; alias <code>win=[int]</code>) and <code>win_mode=[0|1]</code> (default <code>0</code>).</li>
+<li>[x] <b>Window Construction</b>:<ul>
+<li>Pick a seed column $j_0 \in [0, n-1]$ uniformly at random per trial.</li>
+<li><b>Mode 0 (Tanner Graph BFS Neighbors)</b>: Perform BFS on the bipartite graph between columns and check rows starting from $j_0$ to gather $W$ geometrically/physically connected error mechanisms. Use a monotonic visit marker to avoid clearing arrays across trials.</li>
+<li><b>Mode 1 (Spacetime / Index Proximity)</b>: Define a contiguous coordinate window $[j_0, j_0 + W) \pmod n$ around $j_0$.</li>
+</ul>
+</li>
+<li>[x] <b>Permutation Layout</b>:<ul>
+<li>Place the internally shuffled $W$ window columns in the first $W$ positions ($0 \dots W-1$).</li>
+<li>Place the remaining $n - W$ columns at the tail ($W \dots n-1$).</li>
+</ul>
+</li>
+<li>[x] <b>Support Overlap Filter &amp; Windowed Echelonization</b>:<ul>
+<li>Optionally restrict row sampling to basis vectors of $N$ whose support intersects window $W$.</li>
+<li>Exploit left-to-right echelonization: Gaussian elimination pivots first on the window columns, producing localized candidate codewords with support concentrated around the seed column $j_0$.</li>
+</ul>
+</li>
+</ul>
+<hr  />
+<h2><a class="anchor" id="autotoc_md76"></a>
+Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$</h2>
+<ul>
+<li>[x] <b>Density Degradation Prevention</b>:<ul>
+<li>Avoid unconstrained random row mixing ($N_i \leftarrow N_i \oplus N_j$), which quickly drives basis row weights to $\approx n/2$ and degrades ISD hit rates.</li>
+</ul>
+</li>
+<li>[x] <b>Steinitz Exchange with Discovered Codewords</b>:<ul>
+<li>Maintain an atomic pool of the lowest-weight non-trivial logical codewords found by worker threads.</li>
+<li>Periodically substitute these lighter codewords into the basis $N$ using Gaussian elimination to maintain linear independence while systematically reducing the average row weight of the basis.</li>
+</ul>
+</li>
+<li>[x] **Periodic Re-Echelonization (<code>refresh=[int]</code>)**:<ul>
+<li>Every <code>refresh</code> trials, generate a fresh canonical basis of $\ker(H)$ by re-echelonizing under a new global column permutation $\Pi$ (protected by a per-batch <code>pthread_rwlock_t</code>). This breaks sampling blind spots without accumulating row density.</li>
+</ul>
+</li>
+<li>[ ] <b>Lock-Free Double Buffering (RCU Pattern)</b>:<ul>
+<li>Maintain <code>_Atomic(mzd_t *) N_active</code> and background buffer <code>N_staging</code>.</li>
+<li>Worker threads acquire a local snapshot of <code>N_active</code> per batch without locking.</li>
+<li>The coordinator prepares <code>N_staging</code> and atomically swaps <code>N_active</code> with release semantics.</li>
+</ul>
+</li>
+</ul>
+<hr  />
+<h2><a class="anchor" id="autotoc_md78"></a>
+Task 4: Hit-Count Stopping Criterion (&lt;tt&gt;QDistRnd&lt;/tt&gt; Convergence Style)</h2>
+<ul>
+<li>[x] Add parameters <code>min_hits=[int]</code> (default <code>5</code>, <code>0</code> = disabled) and <code>cov_cws=[int]</code> (size of the representative set of lowest-weight codewords, default <code>100</code>).</li>
+<li>[x] <b>Codeword Multiplicity Tracking</b>:<ul>
+<li>Leverage the existing <code>cw_vec_t-&gt;cnt</code> field in <code>p-&gt;codewords</code> (which increments every time a duplicate codeword is found), with per-weight histograms of the numbers of codewords and of hits (<code>cw_cnt_w</code>, <code>cw_hits_w</code>).</li>
+</ul>
+</li>
+<li>[x] <b>Representative Set</b>: keep up to <code>cov_cws</code> lowest-weight codewords (whole weight classes); heavier codewords are gradually replaced as lighter ones are found, regardless of <code>dW</code>; a new minimum weight is always recorded.</li>
+<li>[x] <b>Empirical Convergence Condition</b>:<ul>
+<li>In RW (<code>method=1</code> or <code>method=3</code>), stop when the average number of hits per codeword $\langle n\rangle$ reaches <code>min_hits</code>, both for the minimum-weight codewords and for the representative set (a single codeword suffices, e.g., for a classical code with $k=1$). As in QDistRnd, a lighter codeword is missed with probability $\approx e^{-\langle n\rangle}$, assuming that lighter codewords are found at least as often.</li>
+</ul>
+</li>
+<li>[x] <b>Hit Uniformity Check</b>: at the end (<code>debug&amp;1</code>, result not certified), a dispersion test of the hit counts in each weight class of the representative set (zero-truncated Poisson); a warning if they are strongly non-uniform.</li>
+<li>[x] <b>Information-Set Estimate</b> (Python <code>--verbose</code>, and in the binary with the hit uniformity warning): with uniform random information sets, a codeword of weight $w$ is found per RW step with probability $P_1(w) = w\binom{n-w}{s-1}/\binom{n}{s}$, $s = n - \mathrm{rank}\,H$; also the RW steps / time for a 1% miss probability (and the extrapolation of $e^{-\langle n\rangle}$ to 1%).</li>
+<li>[ ] <b>Proper estimate for matrices with many small-weight dual vectors</b>: see Task 6.</li>
+</ul>
+<hr  />
+<h2><a class="anchor" id="autotoc_md80"></a>
+Task 5: Native SIMD Bit-Matrix Engine (Stage 2)</h2>
+<ul>
+<li>[ ] Implement a header-only, self-contained SIMD kernel (<code>src/simd_matrix.h</code>) for $k_{\text{sub}} \le 64$:<ul>
+<li>Flat bit-sliced column layout: <code>uint64_t cols[n]</code>.</li>
+<li>Contiguous row layout: <code>uint64_t rows[64][(n + 63) / 64]</code>.</li>
+<li>Permutation via single-instruction array indexing: <code>cols_perm[j] = cols[perm[j]]</code>.</li>
+<li>Gaussian elimination via AVX2 (<code>_mm256_xor_si256</code>) and AVX-512 (<code>_mm512_xor_si512</code>) vector XOR loops.</li>
+<li>Zero dynamic heap allocation per trial (<code>malloc</code>/<code>free</code> free inner loop).</li>
+<li>100% thread-safe; completely eliminate <code>m4ri_mem_mutex</code> contention in worker threads.</li>
+</ul>
+</li>
+</ul>
+<hr  />
+<h2><a class="anchor" id="autotoc_md82"></a>
+Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors</h2>
+<ul>
+<li>[ ] Find a proper estimate of the probability that RW misses a lighter codeword when the check matrix has many small-weight dual vectors (small-weight trivial vectors in $\ker H$). This is particularly bad for circuit DEMs, whose matrices have a huge number of column triplets summing to zero, as a consequence of the circuit structure: a weight-one error after a CX gate may give a weight-two error, and the net action of the three single-qubit errors is trivial. Both current estimates (Task 4) stay in place until then.</li>
+<li>Observations (Oct 2026, <code>method=1</code>, <code>min_hits=5</code>, <code>cov_cws=100</code>):<ul>
+<li>The uniform information-set estimate is accurate for some codes (c204: 166 expected vs 173 observed hits of the weight-8 codeword), but extremely pessimistic for DEMs: for <code>gross_uniform_X.dem</code> ($n=8784$, $\mathrm{rank}\,H = 930$), $P_1 \approx 1.5\cdot 10^{-8}$ per step for $w=10$, i.e., $\sim 6\cdot 10^{8}$ steps for 1%, while the hit-based extrapolation needs $\sim 5\cdot 10^{3}$ steps. Steps with localized windows, which find local codewords much more often, are not counted in the uniform model.</li>
+<li>The hit-based estimate with the representative set is conservative for codes with few minimum-weight codewords (c204: RW stops after $\sim 6000$ steps; the information-set estimate gives 1% after $\sim 90$ steps).</li>
+<li>Hit counts can be strongly non-uniform within a weight class (<code>surf_d5</code>: some weight-5 logicals are hit 50–70 times, others once), so that $e^{-\langle n\rangle}$ is optimistic there.</li>
+</ul>
+</li>
+<li>Possible directions:<ul>
+<li>Separate hit statistics for the uniform and the windowed RW steps.</li>
+<li>Empirical per-weight hit rates from the representative set, extrapolated to weights below the minimum found.</li>
+<li>Account for the small-weight trivial vectors explicitly (see <b>Trivial Codeword Statistics</b> below).</li>
+<li>To check: the <code>ksub</code> basis refresh (Task 3) puts found low-weight codewords into the basis $N$, which may inflate their hit counts and $\langle n\rangle$.</li>
+</ul>
+</li>
+</ul>
+<hr  />
+<h1><a class="anchor" id="autotoc_md84"></a>
+2. Additional Algorithmic Explorations &amp; Enhancements</h1>
+<ul>
+<li>[ ] <b>Half-Weight Vector Meet-in-the-Middle</b>:<ul>
+<li>Investigate using the syndrome hash table or codeword hash to identify pairs of half-weight vectors whose sum forms a low-weight logical operator.</li>
+</ul>
+</li>
+<li>[ ] <b>Trivial Codeword Statistics</b>:<ul>
+<li>Maintain counters of trivial codewords (stabilizers in quantum codes) of weights below $w_{\max}$ to monitor code degeneracy profile and ISD efficiency.</li>
+</ul>
+</li>
+<li>[x] <b>Sorting Optimization</b>:<ul>
+<li>The codeword supports <code>ee</code> are sorted with the type-specific <code>rci_quick_sort</code> from <code><a class="el" href="sort_8h.html">sort.h</a></code> (bitonic sort for up to 16 elements) instead of the generic <code>qsort</code>; with <code>ksub &gt; 0</code>, the supports are extracted already sorted.</li>
+</ul>
+</li>
+<li>[ ] <b>Sparse Gaussian Elimination</b>:<ul>
+<li>Evaluate whether sparse elimination (e.g. CSR row combining) can outperform dense bit-matrices for very large, highly sparse DEMs where $k_{\text{sub}}$ is small.</li>
+</ul>
+</li>
+<li>[x] <b>Faster Logical Check</b>:<ul>
+<li><code>sparse_syndrome_non_zero(L, ...)</code> cost $O(\mathrm{nnz}(L))$ per candidate, and it was the largest part of a RW step for DEMs, where most candidates below the weight limit are trivial (e.g., 248 candidates per step for <code>bb72_si1000_X.dem</code>, 1.5 ms of a 1.9 ms step), and also of CC rounds on DEMs (trivial zero-syndrome clusters).</li>
+<li>Now the column bit masks of $L$ (<code><a class="el" href="structcolmask__t.html">colmask_t</a></code>, <code>p-&gt;maskL</code>, $\lceil k/64\rceil$ words per column) give the check in $O(w)$ operations, for RW (also before sorting the support), <code>ksub</code> RW, and CC. Same results, one thread, the same RW steps (times include reading the input): <code>bb72_si1000_X.dem</code> RW 3.6 s $\to$ 0.63 s, CC (<code>wmax=6</code>) 2.4 s $\to$ 1.1 s, <code>method=3</code> 3.2 s $\to$ 1.2 s; <code>gross_uniform_X.dem</code> 3.3 s $\to$ 1.5 s; <code>QX900</code> 0.68 s $\to$ 0.23 s; <code>surf_d5</code> 0.77 s $\to$ 0.51 s.</li>
+</ul>
+</li>
+<li>[x] <b>RW Step Profile</b> (Oct 2026, one thread, after the faster logical check): the Gaussian elimination takes 70–95% of a RW step for DEMs (<code>bb72_si1000_X.dem</code>: 215 of $\sim$310 µs; <code>gross_uniform_X.dem</code>: 6.8 of 7.8 ms), the transposition 7–15%, the extraction of the candidates the rest. Faster elimination (Task 5, or M4RI on a column-permuted copy, which needs thread-safe allocations) is the next step.<ul>
+<li>The weight of each candidate is now counted first (word-wise popcount, ending at the weight limit), and only the candidates below the limit are formed: <code>surf_d5</code> $-11%$, <code>c1920H.mmx</code> $-9%$ of the RW time.</li>
+<li>With redundant rows of $H$, the RW matrices keep only the $\mathrm{rank}\,H$ non-zero rows after the first step, so that the transposition skips the zero rows.</li>
+<li>Contention on <code>cw_mutex</code> is negligible: only the candidates below the weight limit and with $Lc \neq 0$ are recorded, and with <code>min_hits</code> about <code>min_hits</code> $\times$ <code>cov_cws</code> hits are recorded until convergence (e.g., 1.4 µs of lock wait per step of $\sim$260 µs for <code>surf_d5</code> with 32 threads); it only shows in runs of a few milliseconds.</li>
+</ul>
+</li>
+<li>[ ] <b>Distance Benchmark Update</b>:<ul>
+<li>Run the longer benchmark to certify or tighten the provisional distances in <code><a class="el" href="BENCHMARK_8md.html">benchmark/BENCHMARK.md</a></code> (plan in <code>tmp/benchmark_distance_plan.md</code>).</li>
+</ul>
+</li>
+</ul>
+<hr  />
+<h1><a class="anchor" id="autotoc_md86"></a>
+3. Operational Modes Reference</h1>
+<h2><a class="anchor" id="autotoc_md87"></a>
+Mode: Distance Verification</h2>
+<ul>
+<li>Given a suspected distance $d$ (e.g., $d = 10$), run <code>method=1 dmax=10 wmin=9 min_hits=0</code>.</li>
+<li>RW ignores codewords of weight $\ge 10$ and ends as soon as it finds a non-trivial codeword of weight $w \le 9$ (output <code>1 w S</code>; with <code>debug&amp;1</code>, the stop line <code>found a codeword of weight w &lt;= wmin=9</code>).</li>
+<li>If no lighter codeword is found in the <code>steps</code> RW steps, the output is <code>1 10 S</code> (the supplied upper bound). (The legacy <code>dist_m4ri_old method=1 wmax=10 wmin=9</code> outputs <code>-w</code> or <code>0</code>.)</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md88"></a>
+Mode: Upper Bound Search with Hit-Count Saturation</h2>
+<ul>
+<li>Run RW with <code>method=1 steps=N min_hits=M cov_cws=K</code>.</li>
+<li>Collects the lowest-weight codewords into the hash table, terminating when the average number of hits per codeword reaches $M$, both for the minimum-weight codewords and for the representative set of $K$ lowest-weight codewords.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md89"></a>
+More debug bits</h2>
+<ul>
+<li>[x] Debug bits reorganized by usability (see README "Debug Output" and <code>--morehelp</code>): 1 summary (input summary, stop reason), 2 progress (run plan with the seed), 4 periodic status (1, 2, 4, ... s, then every 60 s), 8 thread allocation and timing, 16 code parameters, 32 codeword supports, 64 arguments, 128 matrices, 256 codeword dump, 2048 no size cutoff, 4096 legacy traces; bits from 65536 for the Python wrapper (command lines, cache, circuits, keep temporary files). Repeated <code>debug=</code> arguments are OR-combined (hexadecimal values accepted).</li>
+<li>[x] Detailed timing information (measured / predicted values, reasons for termination): debug bits 8 and 1.</li>
+<li>[x] ranks of the matrices and their sizes and code dimensions (to avoid doing rank in python)<ul>
+<li>[x] After RW, with <code>debug&amp;1</code>, the binary prints <code># RW information sets: n=..., rank(H)=..., steps=... (uniform permutations: ...), ksub=..., ... s/step per thread, ... RW threads</code> (parsed by Python).</li>
+<li>[x] With <code>debug&amp;16</code>, the binary prints rank(H), rank(L) or rank(G), and k (dense elimination at startup); sizes, numbers of nonzeros, and maximum row and column weights are in the input summary (<code>debug&amp;1</code>).</li>
+<li>[ ] Python could parse the <code># code parameters:</code> line instead of computing ranks itself.</li>
+</ul>
+</li>
+<li>[x] in addition, print estimated prob to find (miss) a single codeword of given weight based on the number of information sets and the n and distance found with RW.<ul>
+<li>Done: Python <code>--verbose</code>, and the binary with the hit uniformity warning (Task 4); a proper estimate for DEMs is still open (Task 6).</li>
+</ul>
+</li>
+<li>[ ] The periodic status shows that in <code>method=3</code> a CC round can wait for a whole RW batch before any CC thread starts (e.g., <code>c1920H.mmx</code>: 100 RW steps of 6.6 ms per batch, i.e., 0.66 s): smaller RW batches while CC rounds are short, or an RW batch interruption when a CC round starts.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md90"></a>
+More improvements</h2>
+<ul>
+<li>[ ] try verifying (using cluster decomposition from vecdec (?)) if the constructed / imported non-trivial CW can be decomposed into disconnected components. Keep only non-trivial part (does it ever happen? how expensive is this?)</li>
+<li>[ ] See that matrices constructed when generating L from H (e.g.) are reused when codeword searching.</li>
+<li>[ ] For a very large circuit, when RW is very slow, should we try constructing codewords from the underlying code (can this even be done from a DEM &mdash; or should it be done in python?)</li>
+<li>[ ] </li>
+</ul>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
 <!-- start footer part -->

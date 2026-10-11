@@ -1,7 +1,4 @@
 var searchData=
 [
-  ['classical_20or_20quantum_20css_20code_0',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
-  ['code_1',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
-  ['contributing_2',['Contributing',['../md_CONTRIBUTING.html',1,'']]],
-  ['css_20code_3',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]]
+  ['benchmark_20suite_20for_20tt_20dist_20m4ri_20tt_0',['Benchmark Suite for &lt;tt&gt;dist-m4ri&lt;/tt&gt;',['../md_benchmark_2BENCHMARK.html',1,'']]]
 ];

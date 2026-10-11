@@ -1,7 +1,4 @@
 var searchData=
 [
-  ['setbt_0',['SETBT',['../util__m4ri_8h.html#aa6a01367c9a384408d19ccba06a29e6d',1,'util_m4ri.h']]],
-  ['setwd_1',['SETWD',['../util__m4ri_8h.html#aae2dc2d100864b9e1554289ee860a906',1,'util_m4ri.h']]],
-  ['short_5fhelp_2',['SHORT_HELP',['../util__io_8h.html#a2f7fcedd9dd4e25fceb137e859db806f',1,'util_io.h']]],
-  ['swapint_3',['SWAPINT',['../util__m4ri_8h.html#aa39556c77c5f5f70caf97f41b2b442b2',1,'util_m4ri.h']]]
+  ['new_0',['NEW',['../dist__rw_8c.html#ab6bca16ed021b1e211fde8669758f199',1,'dist_rw.c']]]
 ];

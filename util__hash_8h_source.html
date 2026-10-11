@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -203,7 +203,7 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00168" name="l00168"></a><span class="lineno">  168</span>    <span class="keyword">const</span> <span class="keywordtype">size_t</span> keylen = syn-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a> * <span class="keyword">sizeof</span>(int);</div>
 <div class="line"><a id="l00169" name="l00169"></a><span class="lineno">  169</span>    <span class="keywordflow">if</span>(p_swei[err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>] &gt; syn-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>){</div>
 <div class="line"><a id="l00170" name="l00170"></a><span class="lineno">  170</span>      <span class="comment">//#ifndef NDEBUG</span></div>
-<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span>      <span class="keywordflow">if</span>(debug&amp;64){</div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span>      <span class="keywordflow">if</span>(debug &amp; 4096){ <span class="comment">/* DBG_LEGACY in util_io.h */</span></div>
 <div class="line"><a id="l00172" name="l00172"></a><span class="lineno">  172</span>    printf(<span class="stringliteral">&quot;# swei[%d]=%d -&gt; %d change\n# err: &quot;</span>,</div>
 <div class="line"><a id="l00173" name="l00173"></a><span class="lineno">  173</span>           err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>,p_swei[err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>],syn-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>);</div>
 <div class="line"><a id="l00174" name="l00174"></a><span class="lineno">  174</span>    <a class="code hl_function" href="util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(err);</div>
@@ -215,7 +215,7 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00180" name="l00180"></a><span class="lineno">  180</span>    }</div>
 <div class="line"><a id="l00181" name="l00181"></a><span class="lineno">  181</span><span class="preprocessor">#ifndef NDEBUG      </span></div>
 <div class="line"><a id="l00182" name="l00182"></a><span class="lineno">  182</span>    <span class="keywordflow">else</span>{   </div>
-<div class="line"><a id="l00183" name="l00183"></a><span class="lineno">  183</span>      <span class="keywordflow">if</span>(debug&amp;64){</div>
+<div class="line"><a id="l00183" name="l00183"></a><span class="lineno">  183</span>      <span class="keywordflow">if</span>(debug &amp; 4096){ <span class="comment">/* DBG_LEGACY in util_io.h */</span></div>
 <div class="line"><a id="l00184" name="l00184"></a><span class="lineno">  184</span>    printf(<span class="stringliteral">&quot;p_swei[%d]=%d swei=%d not small enough\n&quot;</span>,err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>,p_swei[err-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>],syn-&gt;<a class="code hl_variable" href="structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5">wei</a>);</div>
 <div class="line"><a id="l00185" name="l00185"></a><span class="lineno">  185</span>    <a class="code hl_function" href="util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(err);</div>
 <div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span>    <a class="code hl_function" href="util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(syn);</div>
@@ -230,7 +230,7 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00195" name="l00195"></a><span class="lineno">  195</span>    }</div>
 <div class="line"><a id="l00196" name="l00196"></a><span class="lineno">  196</span>    <span class="keywordflow">else</span>{  </div>
 <div class="line"><a id="l00198" name="l00198"></a><span class="lineno">  198</span><span class="preprocessor">#ifndef NDEBUG  </span></div>
-<div class="line"><a id="l00199" name="l00199"></a><span class="lineno">  199</span>      <span class="keywordflow">if</span>(debug&amp;128){</div>
+<div class="line"><a id="l00199" name="l00199"></a><span class="lineno">  199</span>      <span class="keywordflow">if</span>(debug &amp; 4096){ <span class="comment">/* DBG_LEGACY in util_io.h */</span></div>
 <div class="line"><a id="l00200" name="l00200"></a><span class="lineno">  200</span>    printf(<span class="stringliteral">&quot;err: &quot;</span>);</div>
 <div class="line"><a id="l00201" name="l00201"></a><span class="lineno">  201</span>    <a class="code hl_function" href="util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e">one_vec_print</a>(err);</div>
 <div class="line"><a id="l00202" name="l00202"></a><span class="lineno">  202</span>    printf(<span class="stringliteral">&quot;syn: &quot;</span>);</div>
