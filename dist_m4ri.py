@@ -29,7 +29,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.12.1"
+__version__ = "0.12.2"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -3336,7 +3336,7 @@ def compute_classical_distance(
         H: Parity check matrix (numpy array, scipy sparse matrix, or file path).
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
-        threads: Number of worker threads.
+        threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
@@ -3484,7 +3484,7 @@ def compute_quantum_distance(
         L: Logical operator matrix (numpy array, scipy sparse matrix, or file path).
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
-        threads: Number of worker threads.
+        threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
@@ -3679,7 +3679,7 @@ def compute_css_distance(
         Lz: Optional Z-logical operator matrix (alternative to Hx as finG).
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
-        threads: Number of worker threads.
+        threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
@@ -4096,7 +4096,7 @@ def compute_dem_distance(
         circuit: stim.Circuit object or path to .stim file (converted to DEM).
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
-        threads: Number of worker threads.
+        threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds.
         num_steps: Maximum RW steps.
         d_exp: Expected distance estimate.
@@ -4663,7 +4663,7 @@ Search limits and stopping criteria:
   timeout=SEC           Execution timeout in seconds, 0 for infinite (default: 60.0)
 
 Multithreading & execution:
-  threads=N             Max worker threads to use (default: CPU cores; subject to
+  threads=N             Max worker threads to use (default: all logical CPUs; subject to
                         automatic throttling unless nothrottle=1)
   solver=NAME           Distance solver backend: 'dist_m4ri' (default) or 'codedistance'
 
@@ -4681,7 +4681,7 @@ Extra parameters (see --morehelp for details):
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
   noscan, cbeg, cend    Disabled in Python (ignored with a warning); use the dist_m4ri binary
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
-  chunk_size=N (0)      RW batch chunk size (default: 0 for adaptive 25-500, alias: batch)
+  chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500, alias: batch)
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
   kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
@@ -4789,19 +4789,25 @@ Search limits and stopping criteria:
                         steps=0, it is started anyway: it may still find a codeword of weight dmin).
 
 Multithreading & throttling:
-  threads=N             Maximum number of worker threads to allocate (default: min(CPU cores, 64)).
+  threads=N             Maximum number of worker threads to allocate (default: all logical CPUs
+                        available to the process, i.e., its CPU affinity mask, e.g., with taskset).
                         Subject to automatic thread throttling unless nothrottle=1 is specified:
-                        - Small codes (<= 4 threads for n < 60, or for m*n < 2e4 with a small RW
-                          workload m*n*steps < 5e7; otherwise <= 16 threads for n < 150 or
-                          m*n < 1e5, if m*n*steps < 2e8; m: number of rows of H).
+                        - Small codes, methods 1 and 3 (<= 4 threads for n < 60, or for m*n < 2e4
+                          with a small RW workload m*n*steps < 5e7; otherwise <= 16 threads for
+                          n < 150 or m*n < 1e5, if m*n*steps < 2e8; m: number of rows of H).
+                          Method 2 starts 4 threads, and the others once a CC round takes longer
+                          (predicted > 2 ms on the threads started, or running for 5 ms).
                         - Large memory matrices (dense RW working memory capped at ~1.5 GB).
                         - Small RW step counts (RW threads clamped to <= (steps + 9) / 10).
                         The last two limits apply to RW threads only: CC (method=2) is not
                         limited, and in method=3 CC rounds can use all threads.
+                        CC rounds with few start columns per thread are split into work units
+                        which also fix the first 1-3 cluster extensions (balanced load).
   nothrottle=1          Disable automatic thread throttling (also --no-throttle).
                         Forces allocation of the exact number of threads requested.
-  chunk_size=N          RW batch chunk size per thread (default: 0 = adaptive 25-500).
-                        Alias: batch=N.
+  chunk_size=N          Maximum RW batch claimed at once by a thread (default: 0 = adaptive
+                        25-500). Near the end of the steps, batches shrink to at most
+                        ceil(remaining / (4 * RW threads)) steps. Alias: batch=N.
   ksub=N                EXPERIMENTAL, should not be used (a warning is printed): subspace sketch
                         dimension for RW (default: 0 = full matrix).
                         Precomputes N = ker(H) once; each thread echelonizes a compact

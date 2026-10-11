@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.1" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.2" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.12.1" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.12.2" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -755,6 +755,39 @@ assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem finH=$EXAMPLES_
 debug=0" 255 "" "Cannot specify matrix files \(fin, finH, finG, finL\) along with fdem"
 assert_output "$BIN_FORK method=2 $S5 pmin=0.01 wmax=5 threads=2 debug=0" 255 "" \
     "pmin can only be used when fdem is specified"
+
+# Test 97: CC work units: with few start columns per thread, the start columns of a CC round are split into work units
+# which also fix the first cluster extensions (here: the round at a supplied dmin, of unknown work).  The units find
+# all codewords of weight 6 of the [[150,32,6]] code once each (500 codewords, 500 hits), as whole start columns do;
+# also with the expert start list (59 codewords; one of them contains two listed columns: 60 hits) and in method=3
+QX97="finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx"
+CWS97=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 outC=$CWS97 threads=8 nothrottle=1 debug=8" 0 "^6 6 0$" \
+    "^# searching w=6 with 8 CC threads, columns \[0, 144\], [0-9]+ work units per start column$"
+for thr in "threads=1" "threads=8 nothrottle=1"; do
+    assert_output "$BIN_FORK method=2 $QX97 dmin=6 outC=$CWS97 $thr debug=1" 0 "^6 6 0$" \
+        "^# codewords accumulated: total=500, min_w=6: cws=500, total_hits=500,"
+    assert_output "$BIN_FORK method=2 $QX97 dmin=6 start=0,7,77 outC=$CWS97 $thr debug=1" 0 "^6 6 0$" \
+        "^# codewords accumulated: total=59, min_w=6: cws=59, total_hits=60,"
+done
+assert_output "$BIN_FORK method=3 $QX97 dmin=6 steps=0 outC=$CWS97 threads=8 nothrottle=1 debug=8" 0 "^6 6 0$" \
+    "^# CC round w=6 started: 8 CC threads, .*, [0-9]+ work units per start column\)$"
+assert_output "$BIN_FORK method=3 $QX97 dmin=6 steps=0 outC=$CWS97 threads=8 nothrottle=1 debug=1" 0 "^6 6 0$" \
+    "^# codewords accumulated: total=500, min_w=6: cws=500, total_hits=500,"
+rm -f "$CWS97"
+
+# Test 98: thread allocation: method=2 starts 4 threads, and the others for a CC round predicted to take longer (all at
+# once with nothrottle=1); the default number of threads is the number of CPUs available (CPU affinity mask)
+assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=2" 0 "^5 5 0$" \
+    "^# run plan: method=2 \(CC\), 8 threads \(4 at first\), CC from w=1 to wmax=5,"
+assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=8" 0 "^5 5 0$" \
+    "^# CC round w=[34]: started 4 more threads, 8 in total \("
+assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 nothrottle=1 debug=2" 0 "^5 5 0$" \
+    "^# run plan: method=2 \(CC\), 8 threads, CC from w=1 to wmax=5,"
+if command -v taskset > /dev/null && [ "$(nproc --all)" -ge 2 ]; then
+    assert_output "taskset -c 0,1 $BIN_FORK method=1 $S5 steps=100 debug=2" 0 "^1 [0-9]+ [0-9]+$" \
+        "^# run plan: method=1 \(RW\), 2 threads, steps=100,"
+fi
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

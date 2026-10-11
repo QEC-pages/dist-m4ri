@@ -389,7 +389,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.12.1"
+#define DIST_M4RI_VERSION "0.12.2"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -439,7 +439,7 @@ void print_short_help(const char *prog);
   "  min_hits=[int]     Stop RW when lowest-wt cws are hit min_hits times on average (5)\n" \
   "  timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)\n\n" \
   "Multithreading and RW optimization:\n" \
-  "  threads=[int]      Max worker threads to use (0: auto CPU count) (0)\n" \
+  "  threads=[int]      Max worker threads to use (0: all logical CPUs) (0)\n" \
   "  ksub=[int]         EXPERIMENTAL, do not use: subspace dimension sampled from ker(H) for RW (0)\n" \
   "  kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)\n\n" \
   "Codeword collection:\n" \
@@ -578,9 +578,10 @@ void print_short_help(const char *prog);
   "  dW=[int]           Extra weight window above minimum distance (default: 0).\n" \
   "                     Collects codewords with weight up to min_w + dW.\n\n" \
   "Execution, multithreading, and timing:\n" \
-  "  threads=[int]      Maximum number of worker threads to use (default: 0 =\n" \
-  "                     hardware concurrency, capped at 64). Subject to throttling\n" \
-  "                     for small codes or large matrices unless nothrottle=1 is set.\n" \
+  "  threads=[int]      Maximum number of worker threads to use (default: 0 = all\n" \
+  "                     logical CPUs available, i.e., the CPU affinity mask, e.g.,\n" \
+  "                     with taskset). Subject to throttling for small codes or\n" \
+  "                     large matrices unless nothrottle=1 is set.\n" \
   "  timeout=[sec]      Execution timeout in seconds (default: 60.0, 0 = infinite).\n" \
   "                     In method=3, it guides the CC vs RW thread balance, and a\n" \
   "                     CC round predicted not to finish in time is not started\n" \
@@ -590,11 +591,16 @@ void print_short_help(const char *prog);
   "                     Aliases: --no-throttle, -no-throttle, nothrottle.\n" \
   "                     By default, threads are throttled for very small codes or\n" \
   "                     large matrices to avoid cache and memory bus thrashing.\n" \
-  "                     The limits for large matrices (dense RW memory) and for\n" \
-  "                     small step counts (ceil(steps/10)) apply to RW threads only;\n" \
-  "                     in method=3, CC rounds can use all threads.\n" \
-  "  chunk_size=[int]   RW batch chunk size per worker (default: 0 = adaptive).\n" \
-  "                     Alias: batch=[int].\n" \
+  "                     The limits for small codes (by the RW work) apply in methods\n" \
+  "                     1 and 3; method=2 starts 4 threads, and the others once a CC\n" \
+  "                     round takes longer (> 2 ms). The limits for large matrices\n" \
+  "                     (dense RW memory) and for small step counts (ceil(steps/10))\n" \
+  "                     apply to RW threads only; in method=3, CC rounds can use all\n" \
+  "                     threads.\n" \
+  "  chunk_size=[int]   Maximum RW batch per claim of a worker (default: 0 = adaptive,\n" \
+  "                     25 to 500 steps by n and steps). Near the end of the steps,\n" \
+  "                     batches shrink to ceil(remaining/(4*RW threads)) steps, so\n" \
+  "                     that the RW threads finish together. Alias: batch=[int].\n" \
   "  ksub=[int]         EXPERIMENTAL, should not be used (a warning is printed):\n" \
   "                     subspace dimension sampled from ker(H) in RW (default: 0 =\n" \
   "                     original full-matrix RW). E.g. ksub=32 or 64 keeps working\n" \

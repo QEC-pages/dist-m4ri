@@ -99,14 +99,18 @@ Relevant parameters:
   re-echelonization, only with the experimental `ksub>0` (default: 5000 when `ksub > 0`, 0 to disable).
 - `wmin=[int]`: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found;
   not when collecting codewords with `outC` or `maxC`).
-- `threads=[int]`: Maximum number of POSIX worker threads to run (default: number of CPU cores; subject to automatic
-  throttling unless `nothrottle=1` is specified).
+- `threads=[int]`: Maximum number of POSIX worker threads to run (default: all logical CPUs available to the process,
+  i.e., its CPU affinity mask, e.g., with `taskset`; subject to automatic throttling unless `nothrottle=1` is
+  specified).
 - `timeout=[sec]`: Maximum execution time in seconds (default: 60.0).
 
 ### 2. Multithreaded CC Algorithm (`method=2`)
 Recursively explores connected clusters starting from each column $i \in [0, n-1]$; a cluster started at column $i$
-is grown using only columns $j > i$, so that every codeword is found starting from its smallest column. Columns are
-distributed dynamically among worker threads via lock-free atomic queues.
+is grown using only columns $j > i$, so that every codeword is found starting from its smallest column. Start columns
+are distributed dynamically among worker threads via a lock-free atomic counter. If there are few start columns per
+thread (e.g., for $n / w$ small compared to the number of threads), the start columns are split into work units which
+also fix the first one to three cluster extensions, for a balanced load (see
+[Multithreading](#4-multithreading-throttling--batch-sizing)).
 If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `outC` is specified, CC exhausts all
 columns for weight $w$ to collect all unique minimum-weight codewords.
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
@@ -242,14 +246,18 @@ Relevant parameters:
 - `dstop=[int]`: Stop target for the lower bound (default: 0, off; see above, also for `method=2`). Unlike `dmax`, it is
   not an upper bound, and it is never reported as `dmax`. A supplied `dmin >= dstop` ends the run without a search
   (unless codewords are collected with `outC` or `maxC`); otherwise, `dstop` has no effect with `method=1`.
-- `threads=[int]`: Maximum number of worker threads (default: hardware concurrency; subject to throttling unless
-  `nothrottle=1` is specified).
+- `threads=[int]`: Maximum number of worker threads (default: all logical CPUs available to the process; subject to
+  throttling unless `nothrottle=1` is specified).
 - `nothrottle=[int]`: Disable automatic thread throttling (default: 0; CLI flag: `--no-throttle`).
-- `chunk_size=[int]` (alias: `batch=[int]`): RW step batch chunk size (default: 0 for automatic adaptive sizing).
-  When `chunk_size=0` (default in Python and binary), chunk size is chosen adaptively based on $n$ and step budget:
+- `chunk_size=[int]` (alias: `batch=[int]`): Maximum RW step batch claimed at once by a thread (default: 0 for automatic
+  adaptive sizing). When `chunk_size=0` (default in Python and binary), chunk size is chosen adaptively based on $n$ and
+  step budget:
   - Small codes ($n < 500$): 50 steps/chunk (250 for $\ge 10^3$ steps; 500 for $\ge 5 \times 10^4$ steps).
   - Medium codes ($500 \le n < 5000$): 50 steps/chunk (100 for $\ge 10^4$ steps).
   - Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps).
+
+  In either case, a batch takes at most $\lceil r / (4 N_{\text{RW}}) \rceil$ of the $r$ remaining steps, where
+  $N_{\text{RW}}$ is the number of RW threads (guided scheduling, see below).
 - `timeout=[sec]`: Maximum execution time in seconds (default: 60.0; set to `0` for infinite / no timeout). RW threads
   check the timeout (and the other stop conditions) between RW steps, and also within a step (every 16 columns of the
   Gaussian elimination), so that even on huge matrices, where a single RW step may take many seconds, the run ends
@@ -260,13 +268,18 @@ Relevant parameters:
 - `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
 
 ### 4. Multithreading, Throttling & Batch Sizing
-The parameter `threads=[int]` specifies the **maximum** number of worker threads to allocate.
+The parameter `threads=[int]` specifies the **maximum** number of worker threads to allocate (default: all logical CPUs
+available to the process, i.e., its CPU affinity mask, so that `taskset -c 0-15 dist_m4ri ...` runs 16 threads; with
+SMT, the sibling hyperthreads typically add 10-35% to the throughput of a fully loaded CPU).
 By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid overhead and resource thrashing:
-- **Small-Code Throttling** (all threads), to avoid the thread creation and lock contention overhead on tiny
-  workloads; with $m$ the number of rows of $H$ and $W_{\text{RW}} = m \cdot n \cdot \text{steps}$ the RW workload
-  ($W_{\text{RW}} = 0$ in `method=2`): at most 4 threads for $n < 60$, or for $m \cdot n < 2 \cdot 10^4$ with
-  $W_{\text{RW}} < 5 \cdot 10^7$; otherwise at most 16 threads for $n < 150$ or $m \cdot n < 10^5$, if
-  $W_{\text{RW}} < 2 \cdot 10^8$.
+- **Small-Code Throttling** (`method=1` and `method=3`, all threads), to avoid the thread creation and lock contention
+  overhead on tiny workloads; with $m$ the number of rows of $H$ and $W_{\text{RW}} = m \cdot n \cdot \text{steps}$ the
+  RW workload: at most 4 threads for $n < 60$, or for $m \cdot n < 2 \cdot 10^4$ with $W_{\text{RW}} < 5 \cdot 10^7$;
+  otherwise at most 16 threads for $n < 150$ or $m \cdot n < 10^5$, if $W_{\text{RW}} < 2 \cdot 10^8$.
+- **Lazy Thread Start** (`method=2`): the CC work is not known in advance (it grows rapidly with the weight), so
+  `method=2` starts only 4 threads, and the others for the first CC round predicted to take more than 2 ms on the
+  threads started (or once a round has run for 5 ms): tiny runs avoid the start-up of many threads, longer runs use
+  all of them.
 - **Large-Matrix Memory Throttling (RW threads only)**: For massive matrices (e.g. circuit DEMs with
   $n > 20,000, m > 5,000$), the number of RW threads is automatically limited so that their total dense working memory
   (copies of $H$ and $H^T$ per RW thread, or the `ksub` $\times n$ subspace matrix with `ksub>0`) stays under ~1.5 GB,
@@ -279,11 +292,20 @@ By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid ov
   CC without RW threads).
 - **Adaptive RW Chunk Sizing**: Setting `chunk_size=0` (or omitting it) enables adaptive batching, reducing atomic CAS
   contention by up to 10x during extended searches ($10^4$ or $10^5$ steps).
-- **Thread Starvation Prevention**: If `chunk_size` exceeds $\lceil \text{steps} / N_{\text{RW}} \rceil$, where
-  $N_{\text{RW}}$ is the number of RW threads, the chunk is automatically clamped so that a single thread cannot
-  monopolize all steps, ensuring all cores run concurrently.
+- **Guided RW Scheduling**: A thread claims at most $\lceil r / (4 N_{\text{RW}}) \rceil$ of the $r$ remaining RW steps
+  at once, where $N_{\text{RW}}$ is the number of RW threads (also with a given `chunk_size`): no thread can monopolize
+  the steps, and the batches shrink towards the end, so that the RW threads finish together.
+- **CC Work Units**: A CC round at weight $w$ hands out its start columns $i$ one at a time. The clusters from the
+  first start columns, which can grow to all larger columns, are the largest share of a round (about $w/n$ for the
+  first one), which limits the speedup to about $n/w$ threads: e.g., 16 threads for the $[[288,12,18]]$ code at
+  $w=15$. Rounds predicted to take more than 1 ms on all threads, with fewer than about 4 such shares per thread, are
+  therefore split into $B^L$ work units per start column ($L = 1, 2$, or $3$ levels, $L \le w-3$, $B$ the maximum row
+  weight of $H$): a unit fixes the column added at each of the first $L$ cluster extensions (empty units, where a row
+  has fewer columns, are skipped). The number of units is limited by the predicted work of the round (at most $10^4$
+  per thread-second) to keep the claims cheap. With `debug&8`, the binary reports the work units of each CC round.
 - **Manual Override**: Pass `nothrottle=1` (or `--no-throttle` in Python) to force `dist_m4ri` to use the exact number
-  of requested threads without throttling, and specify `chunk_size=N` to override batch sizing.
+  of requested threads without throttling (all threads are started at once, also in `method=2`), and specify
+  `chunk_size=N` to override batch sizing.
 
 With `debug&8`, the binary reports the throttling and the thread allocation of every CC round, and with `debug&4` a
 periodic status line shows the progress of the current CC round. A CC round in `method=3` may have to wait until the RW
@@ -426,7 +448,7 @@ replaced by them (with a warning on `stderr`), while `fin` after them is an erro
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.12.1): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.12.2): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -458,7 +480,7 @@ Search limits and stopping criteria:
   timeout=[sec]      Execution timeout in seconds, 0 for infinite (60.0)
 
 Multithreading and RW optimization:
-  threads=[int]      Max worker threads to use (0: auto CPU count) (0)
+  threads=[int]      Max worker threads to use (0: all logical CPUs) (0)
   ksub=[int]         EXPERIMENTAL, do not use: subspace dimension sampled from ker(H) for RW (0)
   kwin=[int]         Localized column permutation window size W (0: auto/hybrid) (0)
 

@@ -58,9 +58,10 @@ found, or when the hit-count criterion `min_hits` is met (see Convergence below)
 
 The connected-cluster algorithm grows clusters of columns. A cluster starts at a column `i` and only uses columns
 `j > i`; at each level, a column is added from the support of the first check that is not satisfied by the cluster.
-Round `w` enumerates all such clusters of weight `w` (the start columns are distributed among the threads). A round
-without codewords raises the lower bound to `dmin = w + 1`, and a codeword found in a round gives the exact distance.
-This search finds every minimum-weight codeword, starting from its smallest column: a proper subset of a
+Round `w` enumerates all such clusters of weight `w` (the start columns are distributed among the threads; with few
+start columns per thread, a start column is split into work units which also fix the first one to three columns added).
+A round without codewords raises the lower bound to `dmin = w + 1`, and a codeword found in a round gives the exact
+distance. This search finds every minimum-weight codeword, starting from its smallest column: a proper subset of a
 minimum-weight codeword has a non-zero syndrome (otherwise, the subset or the rest of the codeword would be a lighter
 codeword), and the support of its first unsatisfied check contains another position of the codeword [DKP17]. The work
 of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`.
