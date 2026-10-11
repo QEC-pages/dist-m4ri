@@ -20,7 +20,9 @@ For a classical binary linear code, only the parity-check matrix $H$ is needed.
 
 For a quantum CSS code, matrix $H_X$ and either $H_Z$ (as `finG`) or logical operators $L_X$ (as `finL`) are needed.
 
-Alternatively, a detector error model file from `stim` can be specified using `fdem=[str]`.
+Alternatively, a detector error model file from `stim` can be specified using `fdem=[str]`. The `repeat` blocks and
+`shift_detectors` instructions of a DEM are unrolled, the detector coordinates are ignored, and the components of a
+decomposed error (separated by `^`) are summed mod 2: a detector or observable listed twice in one `error` line cancels.
 
 All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthogonality conditions:
 $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
@@ -460,7 +462,7 @@ replaced by them (with a warning on `stderr`), while `fin` after them is an erro
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.12.3): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.12.4): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:

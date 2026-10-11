@@ -881,6 +881,30 @@ static void free_dem_program(dem_program_t *prog) {
   free(prog);
 }
 
+/* The `cnt` entries (row, column) of one DEM error line, all in the same column: sort them by row (insertion sort, few
+ * entries), remove the pairs of equal rows (the sum mod 2), and return the number of entries left.  The components of
+ * a decomposed error (separated by `^`) are summed: a detector or an observable listed twice in the line cancels. */
+static int dem_line_mod2(int_pair * const e, const int cnt) {
+  for (int i = 1; i < cnt; i++) {
+    const int_pair x = e[i];
+    int j = i - 1;
+    while (j >= 0 && e[j].a > x.a) {
+      e[j + 1] = e[j];
+      j--;
+    }
+    e[j + 1] = x;
+  }
+  int out = 0;
+  for (int i = 0; i < cnt;) {
+    if (i + 1 < cnt && e[i].a == e[i + 1].a) {
+      i += 2; /* a repeated entry cancels */
+    } else {
+      e[out++] = e[i++];
+    }
+  }
+  return out;
+}
+
 static void parse_instructions(dem_program_t *prog, int *p_line_idx, 
                         int *p_iD, int_pair **p_inH, int *p_maxH, int *p_r,
                         int *p_iL, int_pair **p_inL, int *p_maxL, int *p_k,
@@ -948,6 +972,7 @@ static void parse_instructions(dem_program_t *prog, int *p_line_idx,
             if (prob < pmin) {
                 continue;
             }
+            const int iD0 = *p_iD, iL0 = *p_iL; /* the first entries of this error line */
             
             while (1) {
                 while (isspace(c[0])) c++;
@@ -985,6 +1010,9 @@ static void parse_instructions(dem_program_t *prog, int *p_line_idx,
                     ERROR("unrecognized entry %s in error line %d: '%s'\n", c, *p_line_idx, line);
                 }
             }
+            /* the components separated by `^` are summed mod 2 */
+            *p_iD = iD0 + dem_line_mod2(*p_inH + iD0, *p_iD - iD0);
+            *p_iL = iL0 + dem_line_mod2(*p_inL + iL0, *p_iL - iL0);
             (*p_n)++;
             continue;
         }

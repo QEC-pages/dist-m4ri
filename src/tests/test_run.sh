@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.3" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.4" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.12.3" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.12.4" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -814,6 +814,17 @@ done
 assert_output "$BIN_FORK method=2 $S5 wmax=3 threads=2 debug=8" 0 "^4 0 0$" \
     "^# CC: bitset syndromes, hash of 1958 nonzero columns \(1679 distinct\) for the last two levels"
 rm -f "$CWS100"
+
+# Test 101: the components of a decomposed DEM error (separated by `^`) are summed mod 2: a detector (here D1) or an
+# observable (L0) listed twice in one error line cancels (before 0.12.4, D1 was kept: no codeword of weight 2 here)
+DEM101=$(mktemp --suffix=.dem)
+printf 'error(0.1) D0 D1 ^ D1 D2\nerror(0.1) D0 D2 L0\n' > "$DEM101"
+assert_output "$BIN_FORK method=2 fdem=$DEM101 wmax=2 threads=1 debug=1" 0 "^2 2 0$" \
+    "^#   H: 3 x 2 \(detectors\), 4 nonzeros, max row weight 2, max column weight 2$"
+printf 'error(0.1) D0 L0 ^ D1 L0\nerror(0.1) D0 D1 L0\n' > "$DEM101"
+assert_output "$BIN_FORK method=2 fdem=$DEM101 wmax=2 threads=1 debug=1" 0 "^2 2 0$" \
+    "^#   L: 1 x 2 \(observables\), 1 nonzeros, max row weight 1, max column weight 1$"
+rm -f "$DEM101"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

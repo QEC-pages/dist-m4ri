@@ -572,7 +572,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.12.3" in captured.out
+    assert "0.12.4" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -583,7 +583,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.12.3" in captured.out
+    assert "0.12.4" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -602,7 +602,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.12.3" in older_warn
+    assert "expected >= 0.12.4" in older_warn
 
 
 def test_cache_versioning(tmp_path):
