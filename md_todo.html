@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -80,12 +80,12 @@ $(function() {
   <div class="headertitle"><div class="title">Todo Notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; Program</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md68"></a> </p>
-<h1><a class="anchor" id="autotoc_md69"></a>
+<div class="textblock"><p><a class="anchor" id="autotoc_md69"></a> </p>
+<h1><a class="anchor" id="autotoc_md70"></a>
 1. High-Priority Roadmap: High-Performance RW Overhaul</h1>
 <p>This work optimizes the Random Information-Set Decoding (RW, <code>method=1</code>) algorithm to achieve linear multicore scaling (32–128 cores), minimal per-core memory footprint, and enhanced hit rates for quantum CSS codes and Detector Error Models (DEMs).</p>
 <p>Inspired by <code>sqetch</code> (arXiv:2607.28795, Appendix H) and the empirical convergence criteria in <code>QDistRnd</code> (<a href="http://github.com/QEC-pages/QDistRnd">http://github.com/QEC-pages/QDistRnd</a>).</p>
-<h2><a class="anchor" id="autotoc_md70"></a>
+<h2><a class="anchor" id="autotoc_md71"></a>
 Implementation Strategy</h2>
 <ul>
 <li><b>Stage 1 (Immediate / Functional Baseline)</b>:<ul>
@@ -100,7 +100,7 @@ Implementation Strategy</h2>
 </li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md72"></a>
+<h2><a class="anchor" id="autotoc_md73"></a>
 Task 1: Subspace Sketching (&lt;tt&gt;ksub&lt;/tt&gt;, experimental) for In-Cache Multicore Scaling</h2>
 <ul>
 <li>[x] Add CLI parameter <code>ksub=[int]</code> (default <code>0</code> retains original full-matrix RW).</li>
@@ -126,7 +126,7 @@ Task 1: Subspace Sketching (&lt;tt&gt;ksub&lt;/tt&gt;, experimental) for In-Cach
 <li>[ ] Find a subspace sampling for which the hit counts are uniform (or drop <code>ksub</code>).</li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md74"></a>
+<h2><a class="anchor" id="autotoc_md75"></a>
 Task 2: Localized &amp; Windowed Column Permutations for DEMs</h2>
 <ul>
 <li>[x] Add parameters <code>kwin=[int]</code> (window size $W$, default <code>0</code> = uniform random permutation; alias <code>win=[int]</code>) and <code>win_mode=[0|1]</code> (default <code>0</code>).</li>
@@ -148,7 +148,7 @@ Task 2: Localized &amp; Windowed Column Permutations for DEMs</h2>
 </li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md76"></a>
+<h2><a class="anchor" id="autotoc_md77"></a>
 Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$</h2>
 <ul>
 <li>[x] <b>Density Degradation Prevention</b>:<ul>
@@ -160,21 +160,23 @@ Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$</h2>
 <li>Periodically substitute these lighter codewords into the basis $N$ using Gaussian elimination to maintain linear independence while systematically reducing the average row weight of the basis.</li>
 </ul>
 </li>
-<li>[x] **Periodic Re-Echelonization (<code>refresh=[int]</code>)**:<ul>
+<li>[x] <b>Periodic Re-Echelonization (<code>refresh=[int]</code>)**:<ul>
 <li>Every <code>refresh</code> trials, generate a fresh canonical basis of $\ker(H)$ by re-echelonizing under a new global column permutation $\Pi$ (protected by a per-batch <code>pthread_rwlock_t</code>). This breaks sampling blind spots without accumulating row density.</li>
 </ul>
-</li>
-<li>[ ] <b>Lock-Free Double Buffering (RCU Pattern)</b>:<ul>
+</b></li>
+<li><b>[ ] <b>Lock-Free Double Buffering (RCU Pattern)</b>:<ul>
 <li>Maintain <code>_Atomic(mzd_t *) N_active</code> and background buffer <code>N_staging</code>.</li>
 <li>Worker threads acquire a local snapshot of <code>N_active</code> per batch without locking.</li>
 <li>The coordinator prepares <code>N_staging</code> and atomically swaps <code>N_active</code> with release semantics.</li>
 </ul>
-</li>
+</b></li>
 </ul>
-<hr  />
-<h2><a class="anchor" id="autotoc_md78"></a>
+<p><b></p><hr  />
+<p></b></p>
+<p><b></b></p>
+<h2><a class="anchor" id="autotoc_md79"></a>
 Task 4: Hit-Count Stopping Criterion (&lt;tt&gt;QDistRnd&lt;/tt&gt; Convergence Style)</h2>
-<ul>
+<p><b></p><ul>
 <li>[x] Add parameters <code>min_hits=[int]</code> (default <code>5</code>, <code>0</code> = disabled) and <code>cov_cws=[int]</code> (size of the representative set of lowest-weight codewords, default <code>100</code>).</li>
 <li>[x] <b>Codeword Multiplicity Tracking</b>:<ul>
 <li>Leverage the existing <code>cw_vec_t-&gt;cnt</code> field in <code>p-&gt;codewords</code> (which increments every time a duplicate codeword is found), with per-weight histograms of the numbers of codewords and of hits (<code>cw_cnt_w</code>, <code>cw_hits_w</code>).</li>
@@ -189,10 +191,13 @@ Task 4: Hit-Count Stopping Criterion (&lt;tt&gt;QDistRnd&lt;/tt&gt; Convergence 
 <li>[x] <b>Information-Set Estimate</b> (Python <code>--verbose</code>, and in the binary with the hit uniformity warning): with uniform random information sets, a codeword of weight $w$ is found per RW step with probability $P_1(w) = w\binom{n-w}{s-1}/\binom{n}{s}$, $s = n - \mathrm{rank}\,H$; also the RW steps / time for a 1% miss probability (and the extrapolation of $e^{-\langle n\rangle}$ to 1%).</li>
 <li>[ ] <b>Proper estimate for matrices with many small-weight dual vectors</b>: see Task 6.</li>
 </ul>
-<hr  />
-<h2><a class="anchor" id="autotoc_md80"></a>
+<p></b></p>
+<p><b></p><hr  />
+<p></b></p>
+<p><b></b></p>
+<h2><a class="anchor" id="autotoc_md81"></a>
 Task 5: Native SIMD Bit-Matrix Engine (Stage 2)</h2>
-<ul>
+<p><b></p><ul>
 <li>[ ] Implement a header-only, self-contained SIMD kernel (<code>src/simd_matrix.h</code>) for $k_{\text{sub}} \le 64$:<ul>
 <li>Flat bit-sliced column layout: <code>uint64_t cols[n]</code>.</li>
 <li>Contiguous row layout: <code>uint64_t rows[64][(n + 63) / 64]</code>.</li>
@@ -203,10 +208,13 @@ Task 5: Native SIMD Bit-Matrix Engine (Stage 2)</h2>
 </ul>
 </li>
 </ul>
-<hr  />
-<h2><a class="anchor" id="autotoc_md82"></a>
+<p></b></p>
+<p><b></p><hr  />
+<p></b></p>
+<p><b></b></p>
+<h2><a class="anchor" id="autotoc_md83"></a>
 Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors</h2>
-<ul>
+<p><b></p><ul>
 <li>[ ] Find a proper estimate of the probability that RW misses a lighter codeword when the check matrix has many small-weight dual vectors (small-weight trivial vectors in $\ker H$). This is particularly bad for circuit DEMs, whose matrices have a huge number of column triplets summing to zero, as a consequence of the circuit structure: a weight-one error after a CX gate may give a weight-two error, and the net action of the three single-qubit errors is trivial. Both current estimates (Task 4) stay in place until then.</li>
 <li>Observations (Oct 2026, <code>method=1</code>, <code>min_hits=5</code>, <code>cov_cws=100</code>):<ul>
 <li>The uniform information-set estimate is accurate for some codes (c204: 166 expected vs 173 observed hits of the weight-8 codeword), but extremely pessimistic for DEMs: for <code>gross_uniform_X.dem</code> ($n=8784$, $\mathrm{rank}\,H = 930$), $P_1 \approx 1.5\cdot 10^{-8}$ per step for $w=10$, i.e., $\sim 6\cdot 10^{8}$ steps for 1%, while the hit-based extrapolation needs $\sim 5\cdot 10^{3}$ steps. Steps with localized windows, which find local codewords much more often, are not counted in the uniform model.</li>
@@ -222,10 +230,14 @@ Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vecto
 </ul>
 </li>
 </ul>
-<hr  />
-<h1><a class="anchor" id="autotoc_md84"></a>
+<p></b></p>
+<p><b></p><hr  />
+<p></b></p>
+<p><b></b></p>
+<h1><a class="anchor" id="autotoc_md85"></a>
 2. Additional Algorithmic Explorations &amp; Enhancements</h1>
-<ul>
+<p><b></b></p>
+<p><b></p><ul>
 <li>[ ] <b>Half-Weight Vector Meet-in-the-Middle</b>:<ul>
 <li>Investigate using the syndrome hash table or codeword hash to identify pairs of half-weight vectors whose sum forms a low-weight logical operator.</li>
 </ul>
@@ -258,25 +270,34 @@ Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vecto
 </ul>
 </li>
 </ul>
-<hr  />
-<h1><a class="anchor" id="autotoc_md86"></a>
+<p></b></p>
+<p><b></p><hr  />
+<p></b></p>
+<p><b></b></p>
+<h1><a class="anchor" id="autotoc_md87"></a>
 3. Operational Modes Reference</h1>
-<h2><a class="anchor" id="autotoc_md87"></a>
+<p><b></b></p>
+<p><b></b></p>
+<h2><a class="anchor" id="autotoc_md88"></a>
 Mode: Distance Verification</h2>
-<ul>
+<p><b></p><ul>
 <li>Given a suspected distance $d$ (e.g., $d = 10$), run <code>method=1 dmax=10 wmin=9 min_hits=0</code>.</li>
 <li>RW ignores codewords of weight $\ge 10$ and ends as soon as it finds a non-trivial codeword of weight $w \le 9$ (output <code>1 w S</code>; with <code>debug&amp;1</code>, the stop line <code>found a codeword of weight w &lt;= wmin=9</code>).</li>
 <li>If no lighter codeword is found in the <code>steps</code> RW steps, the output is <code>1 10 S</code> (the supplied upper bound). (The legacy <code>dist_m4ri_old method=1 wmax=10 wmin=9</code> outputs <code>-w</code> or <code>0</code>.)</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md88"></a>
+<p></b></p>
+<p><b></b></p>
+<h2><a class="anchor" id="autotoc_md89"></a>
 Mode: Upper Bound Search with Hit-Count Saturation</h2>
-<ul>
+<p><b></p><ul>
 <li>Run RW with <code>method=1 steps=N min_hits=M cov_cws=K</code>.</li>
 <li>Collects the lowest-weight codewords into the hash table, terminating when the average number of hits per codeword reaches $M$, both for the minimum-weight codewords and for the representative set of $K$ lowest-weight codewords.</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md89"></a>
+<p></b></p>
+<p><b></b></p>
+<h2><a class="anchor" id="autotoc_md90"></a>
 More debug bits</h2>
-<ul>
+<p><b></p><ul>
 <li>[x] Debug bits reorganized by usability (see README "Debug Output" and <code>--morehelp</code>): 1 summary (input summary, stop reason), 2 progress (run plan with the seed), 4 periodic status (1, 2, 4, ... s, then every 60 s), 8 thread allocation and timing, 16 code parameters, 32 codeword supports, 64 arguments, 128 matrices, 256 codeword dump, 2048 no size cutoff, 4096 legacy traces; bits from 65536 for the Python wrapper (command lines, cache, circuits, keep temporary files). Repeated <code>debug=</code> arguments are OR-combined (hexadecimal values accepted).</li>
 <li>[x] Detailed timing information (measured / predicted values, reasons for termination): debug bits 8 and 1.</li>
 <li>[x] ranks of the matrices and their sizes and code dimensions (to avoid doing rank in python)<ul>
@@ -291,14 +312,60 @@ More debug bits</h2>
 </li>
 <li>[ ] The periodic status shows that in <code>method=3</code> a CC round can wait for a whole RW batch before any CC thread starts (e.g., <code>c1920H.mmx</code>: 100 RW steps of 6.6 ms per batch, i.e., 0.66 s): smaller RW batches while CC rounds are short, or an RW batch interruption when a CC round starts.</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md90"></a>
+<p></b></p>
+<p><b></b></p>
+<h2><a class="anchor" id="autotoc_md91"></a>
 More improvements</h2>
-<ul>
-<li>[ ] try verifying (using cluster decomposition from vecdec (?)) if the constructed / imported non-trivial CW can be decomposed into disconnected components. Keep only non-trivial part (does it ever happen? how expensive is this?)</li>
-<li>[ ] See that matrices constructed when generating L from H (e.g.) are reused when codeword searching.</li>
-<li>[ ] For a very large circuit, when RW is very slow, should we try constructing codewords from the underlying code (can this even be done from a DEM &mdash; or should it be done in python?)</li>
-<li>[ ] </li>
+<p><b></p><ul>
+<li>[x] try verifying (using cluster decomposition from vecdec (?)) if the constructed / imported non-trivial CW can be decomposed into disconnected components. Keep only non-trivial part (does it ever happen? how expensive is this?)<ul>
+<li>Answer (Oct 2026): it never happens for RW. A RW candidate is the fundamental circuit of a non-pivot column (the unique kernel vector on the pivots plus that column), i.e., a minimal codeword, and a disconnected codeword is never minimal (each component is itself in $\ker H$). Instrumented test: 0 disconnected among $\sim 7\cdot 10^6$ kernel vectors (surf_d5, bb72 and dgross DEMs, mitten_90 and mitten_270 full DEMs, dgross CSS, c1920, a random LDPC code). Only the experimental <code>ksub</code> rows are not circuits; CC clusters are connected by construction.</li>
 </ul>
+</li>
+<li>[ ] See that matrices constructed when generating L from H (e.g.) are reused when codeword searching.</li>
+<li>[ ] For a very large circuit, when RW is very slow, should we try constructing codewords from the underlying code (can this even be done from a DEM &mdash; or should it be done in python?)<ul>
+<li>See <b>Full DEM from the simplified DEM</b> below (done by hand for mitten_270 in Oct 2026).</li>
+</ul>
+</li>
+<li>[ ]</li>
+</ul>
+<p></b></p>
+<p><b></p><hr  />
+<p></b></p>
+<p><b></b></p>
+<h1><a class="anchor" id="autotoc_md93"></a>
+4. Large DEMs, Simplified DEMs, and Symmetry (discussion, Oct 2026)</h1>
+<p><b></b></p>
+<p><b></p><ul>
+<li>[ ] <b>No equal columns in DEMs</b>: stim's DEM of a circuit with a REPEAT block has duplicate error mechanisms even after flattening the DEM (loop folding), e.g., mitten_90 custom: 23394 errors, 22170 distinct (the DEM of the flattened circuit has none); about 16% of the columns of the BB DEMs. CC treats each duplicate separately: merging them gave 1.6–1.7x for CC (dem150 and dgross DEMs, <code>wmax=6</code>, 128 threads), and RW eliminates fewer columns.<ul>
+<li>Python: merge equal columns (XOR-reduced detector and observable sets, combined probability $p_1 + p_2 - 2p_1p_2$) when writing the DEM (or flatten the circuit before generating the DEM; this loses stim's loop folding for very long circuits).</li>
+<li>C: optionally also merge on reading any DEM (with a map back to the original columns for <code>outC</code>).</li>
+</ul>
+</li>
+<li>[ ] **Full DEM from the simplified DEM (<code>--full</code> mode of CSS circuits): the simplified DEM is the full DEM with the minority-basis detector rows deleted (equal columns merged, empty columns dropped; they never flip an observable), so $d_{\rm simp} \le d_{\rm full}$, and $d_{\rm full} = d_{\rm simp}$ iff some minimum-weight simplified codeword lifts (one full error per column, with the deleted detectors cancelling too). Sufficient and checked column by column: every simplified error has a "clean" preimage (no deleted detector), which holds for CSS circuits with depolarizing noise. Checked for mitten_90 and mitten_270 (custom, hef): all simplified errors have clean preimages (6.4–6.7 preimages each); RW on the simplified DEMs found weight-7 (hef) and weight-9 (custom) codewords in about 2 s, which lift to the full DEMs, so mitten_270 full: hef $d = 7$, custom $d = 9$ (RW on the full DEMs had not found them in 2.8 h: the per-step probability scales like $(\mathrm{rank}/n)^{w-1}$).<ul>
+<li>Python: build both DEMs with a detector map (<code>strip_minority_detectors</code> returning the kept detector indices), check the clean preimages, run (or take from the cache) the simplified result, lift its codewords to the full DEM (<code>finC</code>, upper bound), and use $d_{\rm simp}$ as <code>dmin</code> for the full run; run the full binary only if a gap remains.</li>
+<li>Default on for <code>--full</code>, but only for circuits verified as CSS: the circuit classification, plus the DEM-level checks (no full error projects to an observable-only column; every simplified error used has a clean preimage), and every lifted codeword re-verified in the full DEM (<code>finC</code> validation). The lower bound $d_{\rm simp} \le d_{\rm full}$ alone holds for any set of deleted detectors. An option disables it (for tests).</li>
+</ul>
+</li>
+<li>[ ] <b>Extended CSS distance as a seed</b> (<code>tmp/distance.py</code>, code-capacity matrices with one column per hook error): not guaranteed to relate to the DEM distances for every CSS circuit. Its lower-bound direction ($d_{\rm ext} \le d_{\rm simp}$, via the telescoping sum of the detectors of each check) needs every single fault's net data effect to be a data qubit, an included hook, or nothing, and its codewords lift only if the hook errors fit the timing of the other checks. Observed: custom $d_{\rm ext} = 4, 8 &lt; d = 5, 9$ (mitten_90, mitten_270; the extended codewords cannot lift); hef $d_{\rm ext} = 6, 10 &gt; d = 4, 7$ (the hook extraction finds no X-check ancillas in the hef circuits, <code>Hx</code> with 0 rows, so no hooks are added). A rigorous variant: build the model from the DEM itself (net data effect of each fault, e.g., with one extra observable per final data measurement), and check rank($[H_K; H_z N]$) = rank($H_K$) and $L = L_z N$; its distance is then a certified lower bound on $d_{\rm simp}$, and it is code-sized (and keeps the symmetry of a symmetric schedule).</li>
+<li>[ ] <b>Row reductions of a DEM, with lifting and verification in C</b> (generalizes the two items above): replacing $H$ by $RH$ with rows in the row space of $H$ (deleting or summing detector rows), with the observables $L$ unchanged, can only lower the distance, $d_R \le d_{\rm full}$; deleting or merging observables could raise it. Columns equal on $(RH, L)$ merge into classes, and $d_R = d_{\rm full}$ iff some minimum-weight reduced codeword lifts (one full column per class, with $Hx = 0$).<ul>
+<li>Exact reductions ("clean twins"): a detector set $M$ can be deleted together with all columns touching it if each such column has a twin with the same pattern on the other detectors and on $L$ that does not touch $M$ (columns with no other detector and no observable are dropped). The reduced DEM is a submatrix of the full one with the same distance, and its codewords are full codewords (no lifting). The simplified DEM is the CSS case ($M$ = the minority detectors). The condition must hold for $M$ as a whole (single minority detectors usually fail it), so candidate sets (sectors, coordinate classes) are tested as groups.</li>
+<li>Lossy reductions: summing the detectors of each check over blocks of rounds (over all rounds: the code-sized model of the net data effects, see above) gives cheap certified lower bounds, tight or not depending on the schedule. Lifting: one member per class with the deleted or summed rows cancelling (meet-in-the-middle over the members, within a time window), else a repair with extra columns (a heavier upper bound); refinement: split the summed rows of the checks where a lift failed back into per-round detectors and solve again (row generation), until a lift matches the lower bound. Merge the equal columns first: summed rows otherwise get huge row weights for CC.</li>
+<li>In C: the full DEM and a reduction spec (a delete list or an aggregation map from Python, or rules on detector coordinates); build $RH$, merge equal columns (map from each class to its full columns), run RW or CC on the reduced matrix, lift and verify each candidate ($Hx = 0$, $Lx \ne 0$ for the full DEM), and write the full codewords to <code>outC</code>. Report $d_R$ (certified once CC is done) as <code>dmin</code> and the verified lifts as <code>dmax</code> for the full DEM; <code>min_hits</code> then refers to $d_R$, so exactness only when the bounds meet.</li>
+<li>Order: clean-twin deletion together with equal-column merging (replaces the Python simplified/full detector map, verified automatically); then the code-sized model as a lower bound for large distances; adaptive lifting and refinement as research.</li>
+</ul>
+</li>
+<li>[ ] <b>Symmetry in code mode</b> (not for DEMs: their observables break the symmetry, |Aut| = 1 for the BB DEMs once duplicates are merged). Automorphism groups with BLISS (python-igraph) take milliseconds (gross, double gross, a generalized bicycle code with $n = 3000$, QX900) to 0.26 s (the affine-plane incidence code AG(2,64), $n = 4096$, $|\mathrm{Aut}| = 4\cdot 10^{11}$), so they could be computed by default.<ul>
+<li>Use: one start column per column orbit (<code>start</code> list, unlimited clusters), when the orbit size is large compared with $w$ (gain about orbit size / $w$; measured 7.2x for double gross with <code>start=0,144</code>, one column per orbit of the translations; the full group, $|\mathrm{Aut}| = 864$, has a single column orbit). Orbit exclusion: the k-th start column only needs clusters avoiding the orbits of the previous ones (about 2x more for two orbits).</li>
+<li>Correctness: the graph must contain all defining matrices ((Hx, Hz) or (H, G): an automorphism then preserves both row spaces); with <code>finL</code>, verify each generator by rank checks of $[H; L]$. Certify <code>dmin</code> without <code>trust_start</code> (e.g., the binary verifies the given generators and computes the orbits).</li>
+<li>Codeword lists (<code>outC</code>, <code>maxC</code>, the Python cache): by default the shorter list of canonical orbit representatives (e.g., the lexicographically smallest image; the group recorded with the list, so that full lists from runs without symmetry can be canonicalized when merged); the expanded list only on request (it can be huge: e.g., $|\mathrm{Aut}| = 4\cdot 10^{11}$ for AG(2,64)).</li>
+<li>Dependency: python-igraph is optional (networkx is too slow for large graphs); or nauty/Traces in C.</li>
+</ul>
+</li>
+<li>[ ] <b>Orbit-canonical RW hit counts</b> (with a known group): with uniform permutations, all codewords of an orbit have the same hit rate, and a lighter orbit $O'$ is missed with probability $\approx e^{-|O'| p N}$, with $|O'| \ge |G|/w$ for a group acting freely on the columns. Count hits per orbit (uniform steps only), canonical form: cheap for translation groups (QC, BB, GB codes), group enumeration for $|G| \lesssim 10^5$, canonical labeling otherwise.</li>
+<li>[ ] <b>Time-translation classes of DEM codewords</b> (many rounds): group the translates of a codeword (detector coordinates or the round of each detector, kept when unrolling) for <code>outC</code> and the reported hit counts. Not for the miss probability: the symmetry is approximate, and a lighter codeword may sit at a time boundary (no translates).</li>
+<li>[ ] <b>RW window steps restricted to the window</b>: the circuits of the non-pivot window columns are those of the window submatrix (all rows touched by the window), at a fraction of the cost of the full elimination; window shapes: time slabs (space-like logicals), tubes of a few stabilizers over all rounds (time-like logicals), Tanner-graph balls, and the full matrix (uniform steps, which keep every codeword reachable). Separate hit statistics for the window steps. </li>
+</ul>
+<p></b></p>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
 <!-- start footer part -->

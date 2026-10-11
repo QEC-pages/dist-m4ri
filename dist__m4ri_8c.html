@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -203,9 +203,19 @@ Include dependency graph for dist_m4ri.c:</div>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="nested-classes" name="nested-classes"></a>
 Classes</h2></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcc__hash__slot__t.html">cc_hash_slot_t</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcc__hash__t.html">cc_hash_t</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structdistfork__ctx__t.html">distfork_ctx_t</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structworker__arg.html">worker_arg</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcc__walk__t.html">cc_walk_t</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structrw__elim__t.html">rw_elim_t</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcc__hash__col__t.html">cc_hash_col_t</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="define-members" name="define-members"></a>
@@ -226,6 +236,12 @@ Macros</h2></td></tr>
 <tr class="separator:a732e2e13c9b039ca66c469bd5586a2de"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a2367e3d40a11c16e53d1185a4ca334e4" id="r_a2367e3d40a11c16e53d1185a4ca334e4"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a2367e3d40a11c16e53d1185a4ca334e4">CC_SPLIT_CLAIMS_UNKNOWN</a>&#160;&#160;&#160;65536 /* at most this many work units if the work of the round is not known */</td></tr>
 <tr class="separator:a2367e3d40a11c16e53d1185a4ca334e4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7a77d312312f61b365fd21bc8b8f89f9" id="r_a7a77d312312f61b365fd21bc8b8f89f9"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a7a77d312312f61b365fd21bc8b8f89f9">RW_K_MAX</a>&#160;&#160;&#160;8   /* at most 2^8 rows per table of rw_eliminate() */</td></tr>
+<tr class="separator:a7a77d312312f61b365fd21bc8b8f89f9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a69b5979eae4e183cf1bb94d514db54ae" id="r_a69b5979eae4e183cf1bb94d514db54ae"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a69b5979eae4e183cf1bb94d514db54ae">RW_NT_MAX</a>&#160;&#160;&#160;8  /* at most 8 tables, i.e., 64 pivots per pass over the rows */</td></tr>
+<tr class="separator:a69b5979eae4e183cf1bb94d514db54ae"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a177f56363cc15833fc2272e5fa9e3048" id="r_a177f56363cc15833fc2272e5fa9e3048"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a177f56363cc15833fc2272e5fa9e3048">RW_TUNE_STEPS</a>&#160;&#160;&#160;4</td></tr>
+<tr class="separator:a177f56363cc15833fc2272e5fa9e3048"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a63d15176aed9db657e932ca0b1c3c616" id="r_a63d15176aed9db657e932ca0b1c3c616"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#a63d15176aed9db657e932ca0b1c3c616">CC_SPAWN_INITIAL</a>&#160;&#160;&#160;4</td></tr>
 <tr class="separator:a63d15176aed9db657e932ca0b1c3c616"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afc9ce672060d746abb98e6e4bd0ca8e1" id="r_afc9ce672060d746abb98e6e4bd0ca8e1"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dist__m4ri_8c.html#afc9ce672060d746abb98e6e4bd0ca8e1">CC_SPAWN_WORK</a>&#160;&#160;&#160;2e-3</td></tr>
@@ -319,7 +335,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00281">281</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00306">306</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -335,7 +351,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00282">282</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00307">307</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -351,7 +367,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01192">1192</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01634">1634</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -367,7 +383,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01194">1194</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01636">1636</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -383,7 +399,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01193">1193</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01635">1635</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -399,7 +415,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00310">310</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00335">335</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -415,7 +431,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00311">311</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00336">336</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -447,7 +463,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00309">309</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00334">334</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -463,7 +479,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00308">308</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00333">333</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -479,7 +495,7 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01491">1491</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01933">1933</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -495,7 +511,55 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01492">1492</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l01934">1934</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a7a77d312312f61b365fd21bc8b8f89f9" name="a7a77d312312f61b365fd21bc8b8f89f9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7a77d312312f61b365fd21bc8b8f89f9">&#9670;&#160;</a></span>RW_K_MAX</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_K_MAX&#160;&#160;&#160;8   /* at most 2^8 rows per table of rw_eliminate() */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00855">855</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a69b5979eae4e183cf1bb94d514db54ae" name="a69b5979eae4e183cf1bb94d514db54ae"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a69b5979eae4e183cf1bb94d514db54ae">&#9670;&#160;</a></span>RW_NT_MAX</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_NT_MAX&#160;&#160;&#160;8  /* at most 8 tables, i.e., 64 pivots per pass over the rows */</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00856">856</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+
+</div>
+</div>
+<a id="a177f56363cc15833fc2272e5fa9e3048" name="a177f56363cc15833fc2272e5fa9e3048"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a177f56363cc15833fc2272e5fa9e3048">&#9670;&#160;</a></span>RW_TUNE_STEPS</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_TUNE_STEPS&#160;&#160;&#160;4</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00879">879</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -541,7 +605,7 @@ Functions</h2></td></tr>
 <tr><td class="fieldname"><a id="a06fc87d81c62e9abb8790b6e5713c55ba4905fa2bba1edec4a71b54d2f49d6be7" name="a06fc87d81c62e9abb8790b6e5713c55ba4905fa2bba1edec4a71b54d2f49d6be7"></a>STOP_DSTOP&#160;</td><td class="fielddoc"></td></tr>
 </table>
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00235">235</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l00260">260</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
 </div>
 </div>
@@ -572,9 +636,9 @@ Functions</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l02009">2009</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="dist__m4ri_8c_source.html#l02533">2533</a> of file <a class="el" href="dist__m4ri_8c_source.html">dist_m4ri.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="dist__m4ri_8c_source.html#l01192">CC_SPAWN_INITIAL</a>, <a class="el" href="dist__m4ri_8c_source.html#l00157">CC_SPLIT_MAX_LEVELS</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__io_8c_source.html#l01167">codeword_feed_limit()</a>, <a class="el" href="util__io_8c_source.html#l01429">codeword_hit_check()</a>, <a class="el" href="util__io_8h_source.html#l00089">params_t::codewords</a>, <a class="el" href="util__m4ri_8h_source.html#l00122">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00487">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00143">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00161">csr_transpose()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00266">worker_arg::ctx</a>, <a class="el" href="util__io_8h_source.html#l00039">DBG_CWDUMP</a>, <a class="el" href="util__io_8h_source.html#l00032">DBG_PROGRESS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__io_8h_source.html#l00034">DBG_TIMING</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::debug</a>, <a class="el" href="dist__m4ri_8c_source.html#l00165">distfork_ctx_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00107">params_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::dmax</a>, <a class="el" href="util__io_8h_source.html#l00061">params_t::dmin</a>, <a class="el" href="util__io_8h_source.html#l00108">params_t::dstop</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00087">params_t::finC</a>, <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="util__io_8h_source.html#l00113">params_t::ksub</a>, <a class="el" href="util__io_8h_source.html#l00047">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00085">params_t::maxC</a>, <a class="el" href="util__io_8h_source.html#l00054">params_t::method</a>, <a class="el" href="dist__m4ri_8c_source.html#l00268">worker_arg::min_swei</a>, <a class="el" href="util__io_8h_source.html#l00092">params_t::min_w</a>, <a class="el" href="util__m4ri_8c_source.html#l00939">mzd_nullspace()</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8h_source.html#l00111">params_t::nothrottle</a>, <a class="el" href="util__io_8h_source.html#l00091">params_t::num_cws</a>, <a class="el" href="dist__m4ri_8c_source.html#l00161">distfork_ctx_t::num_threads</a>, <a class="el" href="util__io_8h_source.html#l00083">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l01533">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l01616">nzlist_write()</a>, <a class="el" href="util__io_8h_source.html#l00088">params_t::outC</a>, <a class="el" href="dist__m4ri_8c_source.html#l00160">distfork_ctx_t::p</a>, <a class="el" href="util__io_8c_source.html#l00067">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00125">csr_t::p</a>, <a class="el" href="util__io_8c_source.html#l01343">print_codeword_stats()</a>, <a class="el" href="util__io_8c_source.html#l01496">print_rw_infoset_estimate()</a>, <a class="el" href="util__io_8c_source.html#l00008">prm</a>, <a class="el" href="util__io_8h_source.html#l00118">params_t::refresh</a>, <a class="el" href="util__m4ri_8h_source.html#l00121">csr_t::rows</a>, <a class="el" href="dist__m4ri_8c_source.html#l00162">distfork_ctx_t::rw_threads</a>, <a class="el" href="util__io_8h_source.html#l00056">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00102">params_t::spaH</a>, <a class="el" href="dist__m4ri_8c_source.html#l00164">distfork_ctx_t::start_time</a>, <a class="el" href="util__io_8h_source.html#l00055">params_t::steps</a>, <a class="el" href="dist__m4ri_8c_source.html#l00247">STOP_DSTOP</a>, <a class="el" href="dist__m4ri_8c_source.html#l00236">STOP_NONE</a>, <a class="el" href="util__io_8h_source.html#l00106">params_t::threads</a>, <a class="el" href="dist__m4ri_8c_source.html#l00267">worker_arg::tid</a>, <a class="el" href="dist__m4ri_8c_source.html#l00163">distfork_ctx_t::timeout</a>, <a class="el" href="util__io_8h_source.html#l00110">params_t::timeout</a>, <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>, <a class="el" href="util__io_8c_source.html#l00801">var_kill()</a>, <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>, <a class="el" href="util__io_8h_source.html#l00060">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00064">params_t::wmin</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::arr</a>, <a class="el" href="dist__m4ri_8c_source.html#l00185">distfork_ctx_t::cc_hash</a>, <a class="el" href="dist__m4ri_8c_source.html#l01634">CC_SPAWN_INITIAL</a>, <a class="el" href="dist__m4ri_8c_source.html#l00157">CC_SPLIT_MAX_LEVELS</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__io_8c_source.html#l01195">codeword_feed_limit()</a>, <a class="el" href="util__io_8c_source.html#l01457">codeword_hit_check()</a>, <a class="el" href="util__io_8h_source.html#l00089">params_t::codewords</a>, <a class="el" href="util__m4ri_8h_source.html#l00122">csr_t::cols</a>, <a class="el" href="util__m4ri_8c_source.html#l00487">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00143">csr_max_row_wght()</a>, <a class="el" href="util__m4ri_8c_source.html#l00161">csr_transpose()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00291">worker_arg::ctx</a>, <a class="el" href="util__io_8h_source.html#l00039">DBG_CWDUMP</a>, <a class="el" href="util__io_8h_source.html#l00032">DBG_PROGRESS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__io_8h_source.html#l00034">DBG_TIMING</a>, <a class="el" href="util__io_8h_source.html#l00051">params_t::debug</a>, <a class="el" href="dist__m4ri_8c_source.html#l00190">distfork_ctx_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00107">params_t::dexp</a>, <a class="el" href="util__io_8h_source.html#l00062">params_t::dmax</a>, <a class="el" href="util__io_8h_source.html#l00061">params_t::dmin</a>, <a class="el" href="util__io_8h_source.html#l00108">params_t::dstop</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__io_8h_source.html#l00087">params_t::finC</a>, <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="util__io_8h_source.html#l00113">params_t::ksub</a>, <a class="el" href="util__io_8h_source.html#l00047">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00085">params_t::maxC</a>, <a class="el" href="util__io_8h_source.html#l00054">params_t::method</a>, <a class="el" href="dist__m4ri_8c_source.html#l00293">worker_arg::min_swei</a>, <a class="el" href="util__io_8h_source.html#l00092">params_t::min_w</a>, <a class="el" href="util__m4ri_8c_source.html#l00939">mzd_nullspace()</a>, <a class="el" href="dist__m4ri_8c_source.html#l00179">cc_hash_t::ncols</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="dist__m4ri_8c_source.html#l00180">cc_hash_t::nkeys</a>, <a class="el" href="util__io_8h_source.html#l00111">params_t::nothrottle</a>, <a class="el" href="util__io_8h_source.html#l00091">params_t::num_cws</a>, <a class="el" href="dist__m4ri_8c_source.html#l00186">distfork_ctx_t::num_threads</a>, <a class="el" href="util__io_8h_source.html#l00083">params_t::nvar</a>, <a class="el" href="util__io_8c_source.html#l01561">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l01644">nzlist_write()</a>, <a class="el" href="util__io_8h_source.html#l00088">params_t::outC</a>, <a class="el" href="dist__m4ri_8c_source.html#l00184">distfork_ctx_t::p</a>, <a class="el" href="util__io_8c_source.html#l00067">p</a>, <a class="el" href="util__m4ri_8h_source.html#l00125">csr_t::p</a>, <a class="el" href="util__io_8c_source.html#l01371">print_codeword_stats()</a>, <a class="el" href="util__io_8c_source.html#l01524">print_rw_infoset_estimate()</a>, <a class="el" href="util__io_8c_source.html#l00008">prm</a>, <a class="el" href="util__io_8h_source.html#l00118">params_t::refresh</a>, <a class="el" href="util__m4ri_8h_source.html#l00121">csr_t::rows</a>, <a class="el" href="dist__m4ri_8c_source.html#l00187">distfork_ctx_t::rw_threads</a>, <a class="el" href="util__io_8h_source.html#l00056">params_t::smax</a>, <a class="el" href="util__io_8h_source.html#l00102">params_t::spaH</a>, <a class="el" href="dist__m4ri_8c_source.html#l00189">distfork_ctx_t::start_time</a>, <a class="el" href="util__io_8h_source.html#l00055">params_t::steps</a>, <a class="el" href="dist__m4ri_8c_source.html#l00272">STOP_DSTOP</a>, <a class="el" href="dist__m4ri_8c_source.html#l00261">STOP_NONE</a>, <a class="el" href="util__io_8h_source.html#l00106">params_t::threads</a>, <a class="el" href="dist__m4ri_8c_source.html#l00292">worker_arg::tid</a>, <a class="el" href="dist__m4ri_8c_source.html#l00188">distfork_ctx_t::timeout</a>, <a class="el" href="util__io_8h_source.html#l00110">params_t::timeout</a>, <a class="el" href="dist__m4ri_8c_source.html#l00177">cc_hash_t::tmask</a>, <a class="el" href="util__io_8c_source.html#l00252">var_init()</a>, <a class="el" href="util__io_8c_source.html#l00801">var_kill()</a>, <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>, <a class="el" href="util__io_8h_source.html#l00060">params_t::wmax</a>, and <a class="el" href="util__io_8h_source.html#l00064">params_t::wmin</a>.</p>
 
 </div>
 </div>

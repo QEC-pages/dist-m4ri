@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -80,11 +80,11 @@ $(function() {
   <div class="headertitle"><div class="title">Benchmark Suite for &lt;tt&gt;dist-m4ri&lt;/tt&gt;</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md4"></a> This directory contains quantum LDPC CSS parity-check matrices (<code>.mtx</code>) and Stim circuit-level fault-tolerance files (<code>.stim</code>) spanning code distances $d = 4$ to $d \le 34$. Detector Error Models (<code>.dem</code>)—both full <code>DEPOLARIZE2</code> DEMs and simplified DEMs with minority-basis detectors stripped—can be generated on the fly from the <code>.stim</code> circuits using <code>add_noise</code> in <code><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></code> (or <code>distance.py</code>).</p>
+<div class="textblock"><p><a class="anchor" id="autotoc_md5"></a> This directory contains quantum LDPC CSS parity-check matrices (<code>.mtx</code>) and Stim circuit-level fault-tolerance files (<code>.stim</code>) spanning code distances $d = 4$ to $d \le 34$. Detector Error Models (<code>.dem</code>)—both full <code>DEPOLARIZE2</code> DEMs and simplified DEMs with minority-basis detectors stripped—can be generated on the fly from the <code>.stim</code> circuits using <code>add_noise</code> in <code><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></code> (or <code>distance.py</code>).</p>
 <blockquote class="doxtable">
 <p>&zwj;[!NOTE] The distances in the file names (and in the source patterns below) are the nominal values of the sources, and they are not always correct; the file names are kept unchanged. The distances computed with <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> are listed in the tables below: an exact value is certified (by CC), and $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the timeout. The values of the Mitten codes and circuits are from a longer benchmark (<code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> 0.12.1, 128 threads, up to 2.8 h per run); the other values are from <code>method=3</code> runs on 16 threads (30–60 s per run), and they are provisional. </p>
 </blockquote>
-<h1><a class="anchor" id="autotoc_md5"></a>
+<h1><a class="anchor" id="autotoc_md6"></a>
 Directory Structure</h1>
 <ul>
 <li><code>css/</code>: MatrixMarket (<code>.mtx</code>) CSS parity-check matrices (<code>_Hx.mtx</code>, <code>_Hz.mtx</code>) and canonical logical operators (<code>_Lx.mtx</code>, <code>_Lz.mtx</code> for Mitten codes).</li>
@@ -94,7 +94,7 @@ Directory Structure</h1>
 <li><code>figures/</code>: scaling of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> with the number of threads on some of these codes and circuits (Section 4).</li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md7"></a>
+<h1><a class="anchor" id="autotoc_md8"></a>
 Origins and References</h1>
 <ol type="1">
 <li>**Bivariate Bicycle (BB), Gross (<code>[[144, 12, 12]]</code>), and Double-Gross (<code>[[288, 12, 18]]</code>) Codes**<ul>
@@ -119,7 +119,7 @@ Origins and References</h1>
 </li>
 </ol>
 <hr  />
-<h1><a class="anchor" id="autotoc_md9"></a>
+<h1><a class="anchor" id="autotoc_md10"></a>
 1. CSS Parity-Check and Logical Matrices (&lt;tt&gt;benchmark/css/&lt;/tt&gt;)</h1>
 <table class="markdownTable">
 <tr class="markdownTableHead">
@@ -178,10 +178,10 @@ Origins and References</h1>
 <li>For <code>bb_360</code> and <code>bb_756</code>, the published distances are upper bounds (the codewords found by <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> have the same weights), and the lower bounds are from 60 s runs.</li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md11"></a>
+<h1><a class="anchor" id="autotoc_md12"></a>
 2. Stim Circuits (&lt;tt&gt;stim_bb/&lt;/tt&gt;, &lt;tt&gt;stim_mitten/&lt;/tt&gt;, &lt;tt&gt;stim_torus/&lt;/tt&gt;)</h1>
 <p>The circuit-level distances are listed in Section 2.4.</p>
-<h2><a class="anchor" id="autotoc_md12"></a>
+<h2><a class="anchor" id="autotoc_md13"></a>
 2.1 Bivariate Bicycle, Gross, and Double-Gross (&lt;tt&gt;benchmark/stim_bb/&lt;/tt&gt;)</h2>
 <table class="markdownTable">
 <tr class="markdownTableHead">
@@ -221,7 +221,7 @@ Origins and References</h1>
 <tr class="markdownTableRowOdd">
 <td class="markdownTableBodyLeft"><code>double_gross_288_12_18_uniform_r18_X.stim</code>   </td><td class="markdownTableBodyLeft"><code>relay</code>   </td><td class="markdownTableBodyLeft"><code>uniform</code>   </td><td class="markdownTableBodyLeft"><code>1e-3</code>   </td><td class="markdownTableBodyLeft">18   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft"><code>..._288_12_18_memory_X</code>   </td></tr>
 </table>
-<h2><a class="anchor" id="autotoc_md13"></a>
+<h2><a class="anchor" id="autotoc_md14"></a>
 2.2 Mitten Codes (&lt;tt&gt;benchmark/stim_mitten/&lt;/tt&gt;)</h2>
 <table class="markdownTable">
 <tr class="markdownTableHead">
@@ -248,7 +248,7 @@ Origins and References</h1>
 <td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4_Z.stim</code>   </td><td class="markdownTableBodyLeft"><code>quits</code>   </td><td class="markdownTableBodyLeft"><code>hook_error_free</code>   </td><td class="markdownTableBodyLeft">24   </td><td class="markdownTableBodyLeft"><code>1e-3</code>   </td><td class="markdownTableBodyLeft">4   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td></tr>
 </table>
 <p>The Mitten circuits are $Z$-basis memory experiments, whose logical observables are flipped by $X$-type errors; their circuit-level distance cannot exceed the code's $d_X$, which is 6 for <code>mitten_210</code> and 4 for <code>mitten_330</code> (Section 1).</p>
-<h2><a class="anchor" id="autotoc_md14"></a>
+<h2><a class="anchor" id="autotoc_md15"></a>
 2.3 2D Local Torus BB Circuits (&lt;tt&gt;benchmark/stim_torus/&lt;/tt&gt;)</h2>
 <table class="markdownTable">
 <tr class="markdownTableHead">
@@ -271,7 +271,7 @@ Origins and References</h1>
 <td class="markdownTableBodyLeft"><code>ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_Z.stim</code>   </td><td class="markdownTableBodyLeft">$[[200, 8, 17]]$   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">Noiseless (<code>tmp/</code>)   </td></tr>
 </table>
 <p>The nominal code parameters are taken from the file names; the code distances of the torus codes have not been verified yet (no check matrices are included).</p>
-<h2><a class="anchor" id="autotoc_md15"></a>
+<h2><a class="anchor" id="autotoc_md16"></a>
 2.4 Circuit-Level Distances</h2>
 <p>The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable logical error.</p><ul>
 <li>It is computed for the stripped DEM (minority-basis detectors removed), which is the default of <code><a class="el" href="namespacedist__m4ri.html#a41d4411d5df28a2edda1e52f8c16610d">dist_m4ri.compute_dem_distance</a>(circuit=...)</code>, with 30 s <code>method=3</code> runs on 16 threads (Mitten circuits: up to 2.1 h on 128 threads).</li>
@@ -333,7 +333,7 @@ Origins and References</h1>
 </table>
 <p>The circuit-level distances are often below the code distances in the file names. For example, the gross-code circuit has distance at most 10, consistent with the circuit-level distance $\le 10$ reported for the IBM syndrome-extraction circuit. For the Mitten codes, the "hook-error-free" schedule has a lower circuit-level distance than the <code>custom</code> schedule (4 vs 5, 5 vs 7, 5 vs 6, and 7 vs 9 for <code>mitten_90</code>, <code>mitten_150</code>, <code>mitten_210</code>, and <code>mitten_270</code>; 4 with both schedules for <code>mitten_330</code>). The <code>custom</code> schedule reaches the code's $d_X$ for <code>mitten_210</code> (6) and <code>mitten_330</code> (4), and $d_X - 1$ for <code>mitten_90</code>, <code>mitten_150</code>, and <code>mitten_270</code> (unless the full DEM of <code>mitten_270</code> has distance 10).</p>
 <hr  />
-<h1><a class="anchor" id="autotoc_md17"></a>
+<h1><a class="anchor" id="autotoc_md18"></a>
 3. Generating Full vs. Minority-Detector-Stripped DEMs on the Fly</h1>
 <p>In circuit-level noise models using <code>DEPOLARIZE2(p)</code>, cross-term two-qubit Pauli errors (such as $X \otimes Z$, $Y \otimes X$, $Y \otimes Z$, $Y \otimes Y$) occur with probability $p/15 = O(p)$, the same order as single-type errors ($X \otimes X$ or $Z \otimes Z$). Consequently, the full DEM (<code>circuit.detector_error_model(decompose_errors=False)</code>) couples $X$-detectors and $Z$-detectors into a single large parity-check matrix with up to $\sim 7\times$ more unique error columns than a single-basis projection.</p>
 <p>To avoid storing 41 MB of pre-generated <code>.dem</code> files in the repository, DEMs can be generated on the fly from the <code>.stim</code> files using <code><a class="el" href="namespacedist__m4ri.html#ae80e8ff8942093d705adb7a89d875386">dist_m4ri.add_noise</a></code> (for noiseless circuits) and <code>strip_minority_detectors</code> (in <code>distance.py</code>): </p><div class="fragment"><div class="line"><span class="keyword">import</span> stim</div>
@@ -408,7 +408,7 @@ Origins and References</h1>
 <td class="markdownTableBodyLeft"><code>ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$400 \times 14,800$   </td><td class="markdownTableBodyLeft">$300 \times 4,800$   </td><td class="markdownTableBodyLeft">8   </td></tr>
 </table>
 <hr  />
-<h1><a class="anchor" id="autotoc_md19"></a>
+<h1><a class="anchor" id="autotoc_md20"></a>
 4. Scaling with the Number of Threads (&lt;tt&gt;benchmark/figures/&lt;/tt&gt;)</h1>
 <p>Wall time and speedup $T(1)/T(p)$ of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> for $p = 1, \dots, 128$ threads on a two-socket AMD EPYC 7B13 server (2 x 32 cores, 128 logical CPUs with SMT), with <code>nothrottle=1</code>, <code>threads=p</code>, and <code>taskset</code> to the logical CPUs $0..p-1$ (socket 0 first, then socket 1, then the SMT siblings for $p &gt; 64$; the gray line marks $p = 64$, one thread per physical core). Each run does a fixed amount of work: <code>method=1</code> a fixed number of RW <code>steps</code> with <code>min_hits=0</code>, <code>method=2</code> all CC rounds up to <code>wmax</code>, and <code>method=3</code> both (or, with the default parameters, the search for the exact distance). Versions: 0.12.2 (<code>method=1</code> only for $p = 16, 64, 128$: its RW kernel is that of 0.12.1), 0.12.1, the master branch (0.9.0), and the legacy single-threaded <code>dist_m4ri_old</code> (one thread). The times include reading the input (median of repeated runs for the fast cases).</p>
 <p><img src="figures/scaling_gross_css.png" alt="Scaling for the gross code" class="inline"/></p>

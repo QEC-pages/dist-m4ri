@@ -1,9 +1,9 @@
 var searchData=
 [
-  ['unit_20tests_0',['Python Unit Tests',['../md_README.html#autotoc_md64',1,'']]],
-  ['upper_20bound_20search_20with_20hit_20count_20saturation_1',['Mode: Upper Bound Search with Hit-Count Saturation',['../md_todo.html#autotoc_md88',1,'']]],
+  ['unit_20tests_0',['Python Unit Tests',['../md_README.html#autotoc_md65',1,'']]],
+  ['upper_20bound_20search_20with_20hit_20count_20saturation_1',['Mode: Upper Bound Search with Hit-Count Saturation',['../md_todo.html#autotoc_md89',1,'']]],
   ['usage_2',['USAGE',['../util__io_8h.html#a56fe9bff0a1be75aae2da3e593053e2c',1,'util_io.h']]],
-  ['usage_20and_20help_20system_3',['Command-Line Usage and Help System',['../md_README.html#autotoc_md51',1,'']]],
+  ['usage_20and_20help_20system_3',['Command-Line Usage and Help System',['../md_README.html#autotoc_md52',1,'']]],
   ['ut_5fhash_5fbucket_4',['ut_hash_bucket',['../structUT__hash__bucket.html',1,'UT_hash_bucket'],['../uthash_8h.html#a3775136bedd7fc8db3ad7c1ad6a7218e',1,'UT_hash_bucket:&#160;uthash.h']]],
   ['ut_5fhash_5fhandle_5',['ut_hash_handle',['../structUT__hash__handle.html',1,'UT_hash_handle'],['../uthash_8h.html#a817624f072ea116d638b237d518d6f6a',1,'UT_hash_handle:&#160;uthash.h']]],
   ['ut_5fhash_5ftable_6',['ut_hash_table',['../structUT__hash__table.html',1,'UT_hash_table'],['../uthash_8h.html#ade349c45717e328f0337b6fe5a0658bf',1,'UT_hash_table:&#160;uthash.h']]],

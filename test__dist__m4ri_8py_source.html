@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.2</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -718,7 +718,7 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00572" name="l00572"></a><span class="lineno">  572</span>    ret = <a class="code hl_function" href="namespacedist__m4ri.html#a0d1fdb06267b8f4441cfa763ecd24658">dist_m4ri.main</a>([<span class="stringliteral">&quot;--version&quot;</span>])</div>
 <div class="line"><a id="l00573" name="l00573"></a><span class="lineno">  573</span>    <span class="keyword">assert</span> ret == 0</div>
 <div class="line"><a id="l00574" name="l00574"></a><span class="lineno">  574</span>    captured = capsys.readouterr()</div>
-<div class="line"><a id="l00575" name="l00575"></a><span class="lineno">  575</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;0.12.2&quot;</span> <span class="keywordflow">in</span> captured.out</div>
+<div class="line"><a id="l00575" name="l00575"></a><span class="lineno">  575</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;0.12.4&quot;</span> <span class="keywordflow">in</span> captured.out</div>
 <div class="line"><a id="l00576" name="l00576"></a><span class="lineno">  576</span>    <span class="comment"># also the version of the binary</span></div>
 <div class="line"><a id="l00577" name="l00577"></a><span class="lineno">  577</span>    <span class="keyword">assert</span> re.search(<span class="stringliteral">r&quot;^dist_m4ri version \S+ \&zwj;(binary &#39;.*dist_m4ri&#39;\&zwj;)$&quot;</span>, captured.out, re.M)</div>
 <div class="line"><a id="l00578" name="l00578"></a><span class="lineno">  578</span> </div>
@@ -731,7 +731,7 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00583" name="l00583"></a><span class="lineno">  583</span>    captured = capsys.readouterr()</div>
 <div class="line"><a id="l00584" name="l00584"></a><span class="lineno">  584</span>    <span class="comment"># When binary is found and up to date, stderr should be silent (no warnings)</span></div>
 <div class="line"><a id="l00585" name="l00585"></a><span class="lineno">  585</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;Warning:&quot;</span> <span class="keywordflow">not</span> <span class="keywordflow">in</span> captured.err</div>
-<div class="line"><a id="l00586" name="l00586"></a><span class="lineno">  586</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;0.12.2&quot;</span> <span class="keywordflow">in</span> captured.out</div>
+<div class="line"><a id="l00586" name="l00586"></a><span class="lineno">  586</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;0.12.4&quot;</span> <span class="keywordflow">in</span> captured.out</div>
 <div class="line"><a id="l00587" name="l00587"></a><span class="lineno">  587</span> </div>
 <div class="line"><a id="l00588" name="l00588"></a><span class="lineno">  588</span> </div>
 </div>
@@ -752,7 +752,7 @@ $(document).ready(function() { init_codefold(0); });
 <div class="line"><a id="l00602" name="l00602"></a><span class="lineno">  602</span>    older_warn = <a class="code hl_function" href="namespacedist__m4ri.html#aa950c453079b6d0a0d491165f2139201">dist_m4ri.check_binary_compatibility</a>(str(fake_bin))</div>
 <div class="line"><a id="l00603" name="l00603"></a><span class="lineno">  603</span>    <span class="keyword">assert</span> older_warn <span class="keywordflow">is</span> <span class="keywordflow">not</span> <span class="keywordtype">None</span></div>
 <div class="line"><a id="l00604" name="l00604"></a><span class="lineno">  604</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;version 0.5.0&quot;</span> <span class="keywordflow">in</span> older_warn</div>
-<div class="line"><a id="l00605" name="l00605"></a><span class="lineno">  605</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;expected &gt;= 0.12.2&quot;</span> <span class="keywordflow">in</span> older_warn</div>
+<div class="line"><a id="l00605" name="l00605"></a><span class="lineno">  605</span>    <span class="keyword">assert</span> <span class="stringliteral">&quot;expected &gt;= 0.12.4&quot;</span> <span class="keywordflow">in</span> older_warn</div>
 <div class="line"><a id="l00606" name="l00606"></a><span class="lineno">  606</span> </div>
 <div class="line"><a id="l00607" name="l00607"></a><span class="lineno">  607</span> </div>
 </div>
