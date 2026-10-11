@@ -15,6 +15,11 @@
 - **Documentation Integrity**: Maintain documentation integrity. Keep comments,
   docstrings, and help messages up-to-date and consistent between the C binary
   and the Python library.
+  
+## Temporary files
+- **Reports, scripts, and intermediate results** should all be created in the
+  `scratch/` directory within the repository.  You can also remove or update
+  those files when needed.
 
 ## Version Management
 - **Synchronized Versioning**: When the version is incremented, ensure it is
