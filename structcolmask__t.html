@@ -100,7 +100,7 @@ Public Attributes</h2></td></tr>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>Column bit masks of a sparse binary matrix A (e.g., the logical operators L), see <a class="el" href="util__m4ri_8c.html#aca53d0f84a03c2cdd3d2ce6dc1de89be" title="Construct the column bit masks of a sparse binary matrix (see colmask_t).">colmask_from_csr()</a>: column j is the set of rows i with A[i][j]=1, stored in <code>kw</code> words. The syndrome A e of a sparse vector e is then the XOR of the masks of its columns (colmask_syndrome_non_zero()), which takes O(|e| kw) operations instead of O(nnz(A)) for sparse_syndrome_non_zero(). </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00128">128</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00138">138</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
 </div><h2 class="groupheader">Member Data Documentation</h2>
 <a id="aa6717b1b2000b6187c5c2eaf9b881dd7" name="aa6717b1b2000b6187c5c2eaf9b881dd7"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#aa6717b1b2000b6187c5c2eaf9b881dd7">&#9670;&#160;</a></span>cols</h2>
@@ -115,9 +115,9 @@ Public Attributes</h2></td></tr>
 </div><div class="memdoc">
 <p>number of columns of A </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00130">130</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00140">140</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00922">colmask_from_csr()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00950">colmask_from_csr()</a>.</p>
 
 </div>
 </div>
@@ -134,9 +134,9 @@ Public Attributes</h2></td></tr>
 </div><div class="memdoc">
 <p>number of words per column, ceil(rows/64) </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00131">131</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00141">141</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00922">colmask_from_csr()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00950">colmask_from_csr()</a>.</p>
 
 </div>
 </div>
@@ -153,9 +153,9 @@ Public Attributes</h2></td></tr>
 </div><div class="memdoc">
 <p>cols * kw words: the mask of column j starts at mask[j * kw] </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00132">132</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00142">142</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00940">colmask_free()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00922">colmask_from_csr()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00968">colmask_free()</a>, and <a class="el" href="util__m4ri_8c_source.html#l00950">colmask_from_csr()</a>.</p>
 
 </div>
 </div>
@@ -172,9 +172,9 @@ Public Attributes</h2></td></tr>
 </div><div class="memdoc">
 <p>number of rows of A </p>
 
-<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00129">129</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__m4ri_8h_source.html#l00139">139</a> of file <a class="el" href="util__m4ri_8h_source.html">util_m4ri.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00922">colmask_from_csr()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__m4ri_8c_source.html#l00950">colmask_from_csr()</a>.</p>
 
 </div>
 </div>

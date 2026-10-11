@@ -64,5 +64,6 @@ var searchData=
   ['mm_5fsparse_5fstr_61',['MM_SPARSE_STR',['../mmio_8h.html#a720ba16714f07ad6ae39055683aa3cb3',1,'mmio.h']]],
   ['mm_5fsymm_5fstr_62',['MM_SYMM_STR',['../mmio_8h.html#ac004e8f7880b764acaa4b02a6ac80d43',1,'mmio.h']]],
   ['mm_5funsupported_5ftype_63',['MM_UNSUPPORTED_TYPE',['../mmio_8h.html#a7c4977adc296451d59e66972fd4e58db',1,'mmio.h']]],
-  ['more_5fhelp_64',['MORE_HELP',['../util__io_8h.html#a4bb660c2e956c3b7425d345b4adb9a0b',1,'util_io.h']]]
+  ['more_5fhelp_64',['MORE_HELP',['../util__io_8h.html#a4bb660c2e956c3b7425d345b4adb9a0b',1,'util_io.h']]],
+  ['mzd_5ffirst_5frow_65',['MZD_FIRST_ROW',['../util__m4ri_8h.html#aed0bb4e5099433c0c3e4b8f458890735',1,'util_m4ri.h']]]
 ];
