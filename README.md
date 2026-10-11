@@ -270,7 +270,7 @@ Relevant parameters:
 ### 4. Multithreading, Throttling & Batch Sizing
 The parameter `threads=[int]` specifies the **maximum** number of worker threads to allocate (default: all logical CPUs
 available to the process, i.e., its CPU affinity mask, so that `taskset -c 0-15 dist_m4ri ...` runs 16 threads; with
-SMT, the sibling hyperthreads typically add 10-35% to the throughput of a fully loaded CPU).
+SMT, the sibling hyperthreads typically add 10-50% to the throughput of a fully loaded CPU, more for RW than for CC).
 By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid overhead and resource thrashing:
 - **Small-Code Throttling** (`method=1` and `method=3`, all threads), to avoid the thread creation and lock contention
   overhead on tiny workloads; with $m$ the number of rows of $H$ and $W_{\text{RW}} = m \cdot n \cdot \text{steps}$ the
