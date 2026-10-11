@@ -232,12 +232,110 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   are short, or an RW batch interruption when a CC round starts.
 
 ### More improvements 
-- [ ] try verifying (using cluster decomposition from vecdec (?)) if the
+- [x] try verifying (using cluster decomposition from vecdec (?)) if the
       constructed / imported non-trivial CW can be decomposed into disconnected
       components.  Keep only non-trivial part (does it ever happen? how
       expensive is this?)
+  - Answer (Oct 2026): it never happens for RW. A RW candidate is the fundamental circuit of a non-pivot column (the
+    unique kernel vector on the pivots plus that column), i.e., a minimal codeword, and a disconnected codeword is never
+    minimal (each component is itself in $\ker H$). Instrumented test: 0 disconnected among $\sim 7\cdot 10^6$ kernel
+    vectors (surf_d5, bb72 and dgross DEMs, mitten_90 and mitten_270 full DEMs, dgross CSS, c1920, a random LDPC code).
+    Only the experimental `ksub` rows are not circuits; CC clusters are connected by construction.
 - [ ] See that matrices constructed when generating L from H (e.g.) are reused when codeword searching.
 - [ ] For a very large circuit, when RW is very slow, should we try constructing
       codewords from the underlying code (can this even be done from a DEM ---
       or should it be done in python?)
+  - See **Full DEM from the simplified DEM** below (done by hand for mitten_270 in Oct 2026).
 - [ ] 
+
+---
+
+## 4. Large DEMs, Simplified DEMs, and Symmetry (discussion, Oct 2026)
+
+- [ ] **No equal columns in DEMs**: stim's DEM of a circuit with a REPEAT block has duplicate error mechanisms even
+  after flattening the DEM (loop folding), e.g., mitten_90 custom: 23394 errors, 22170 distinct (the DEM of the
+  flattened circuit has none); about 16% of the columns of the BB DEMs. CC treats each duplicate separately: merging
+  them gave 1.6–1.7x for CC (dem150 and dgross DEMs, `wmax=6`, 128 threads), and RW eliminates fewer columns.
+  - Python: merge equal columns (XOR-reduced detector and observable sets, combined probability $p_1 + p_2 - 2p_1p_2$)
+    when writing the DEM (or flatten the circuit before generating the DEM; this loses stim's loop folding for very
+    long circuits).
+  - C: optionally also merge on reading any DEM (with a map back to the original columns for `outC`).
+- [ ] **Full DEM from the simplified DEM** (`--full` mode of CSS circuits): the simplified DEM is the full DEM with the
+  minority-basis detector rows deleted (equal columns merged, empty columns dropped; they never flip an observable), so
+  $d_{\rm simp} \le d_{\rm full}$, and $d_{\rm full} = d_{\rm simp}$ iff some minimum-weight simplified codeword lifts
+  (one full error per column, with the deleted detectors cancelling too). Sufficient and checked column by column:
+  every simplified error has a "clean" preimage (no deleted detector), which holds for CSS circuits with depolarizing
+  noise. Checked for mitten_90 and mitten_270 (custom, hef): all simplified errors have clean preimages (6.4–6.7
+  preimages each); RW on the simplified DEMs found weight-7 (hef) and weight-9 (custom) codewords in about 2 s, which
+  lift to the full DEMs, so mitten_270 full: hef $d = 7$, custom $d = 9$ (RW on the full DEMs had not found them in
+  2.8 h: the per-step probability scales like $(\mathrm{rank}/n)^{w-1}$).
+  - Python: build both DEMs with a detector map (`strip_minority_detectors` returning the kept detector indices),
+    check the clean preimages, run (or take from the cache) the simplified result, lift its codewords to the full DEM
+    (`finC`, upper bound), and use $d_{\rm simp}$ as `dmin` for the full run; run the full binary only if a gap remains.
+  - Default on for `--full`, but only for circuits verified as CSS: the circuit classification, plus the DEM-level
+    checks (no full error projects to an observable-only column; every simplified error used has a clean preimage),
+    and every lifted codeword re-verified in the full DEM (`finC` validation). The lower bound
+    $d_{\rm simp} \le d_{\rm full}$ alone holds for any set of deleted detectors. An option disables it (for tests).
+- [ ] **Extended CSS distance as a seed** (`tmp/distance.py`, code-capacity matrices with one column per hook error):
+  not guaranteed to relate to the DEM distances for every CSS circuit. Its lower-bound direction
+  ($d_{\rm ext} \le d_{\rm simp}$, via the telescoping sum of the detectors of each check) needs every single fault's
+  net data effect to be a data qubit, an included hook, or nothing, and its codewords lift only if the hook errors fit
+  the timing of the other checks. Observed: custom $d_{\rm ext} = 4, 8 < d = 5, 9$ (mitten_90, mitten_270; the
+  extended codewords cannot lift); hef $d_{\rm ext} = 6, 10 > d = 4, 7$ (the hook extraction finds no X-check
+  ancillas in the hef circuits, `Hx` with 0 rows, so no hooks are added). A rigorous variant: build the model from
+  the DEM itself (net data effect of each fault, e.g., with one extra observable per final data measurement), and
+  check rank($[H_K; H_z N]$) = rank($H_K$) and $L = L_z N$; its distance is then a certified lower bound on
+  $d_{\rm simp}$, and it is code-sized (and keeps the symmetry of a symmetric schedule).
+- [ ] **Row reductions of a DEM, with lifting and verification in C** (generalizes the two items above): replacing $H$
+  by $RH$ with rows in the row space of $H$ (deleting or summing detector rows), with the observables $L$ unchanged,
+  can only lower the distance, $d_R \le d_{\rm full}$; deleting or merging observables could raise it. Columns equal
+  on $(RH, L)$ merge into classes, and $d_R = d_{\rm full}$ iff some minimum-weight reduced codeword lifts (one full
+  column per class, with $Hx = 0$).
+  - Exact reductions ("clean twins"): a detector set $M$ can be deleted together with all columns touching it if each
+    such column has a twin with the same pattern on the other detectors and on $L$ that does not touch $M$ (columns
+    with no other detector and no observable are dropped). The reduced DEM is a submatrix of the full one with the
+    same distance, and its codewords are full codewords (no lifting). The simplified DEM is the CSS case ($M$ = the
+    minority detectors). The condition must hold for $M$ as a whole (single minority detectors usually fail it), so
+    candidate sets (sectors, coordinate classes) are tested as groups.
+  - Lossy reductions: summing the detectors of each check over blocks of rounds (over all rounds: the code-sized model
+    of the net data effects, see above) gives cheap certified lower bounds, tight or not depending on the schedule.
+    Lifting: one member per class with the deleted or summed rows cancelling (meet-in-the-middle over the members,
+    within a time window), else a repair with extra columns (a heavier upper bound); refinement: split the summed rows
+    of the checks where a lift failed back into per-round detectors and solve again (row generation), until a lift
+    matches the lower bound. Merge the equal columns first: summed rows otherwise get huge row weights for CC.
+  - In C: the full DEM and a reduction spec (a delete list or an aggregation map from Python, or rules on detector
+    coordinates); build $RH$, merge equal columns (map from each class to its full columns), run RW or CC on the
+    reduced matrix, lift and verify each candidate ($Hx = 0$, $Lx \ne 0$ for the full DEM), and write the full
+    codewords to `outC`. Report $d_R$ (certified once CC is done) as `dmin` and the verified lifts as `dmax` for the
+    full DEM; `min_hits` then refers to $d_R$, so exactness only when the bounds meet.
+  - Order: clean-twin deletion together with equal-column merging (replaces the Python simplified/full detector map,
+    verified automatically); then the code-sized model as a lower bound for large distances; adaptive lifting and
+    refinement as research.
+- [ ] **Symmetry in code mode** (not for DEMs: their observables break the symmetry, |Aut| = 1 for the BB DEMs once
+  duplicates are merged). Automorphism groups with BLISS (python-igraph) take milliseconds (gross, double gross, a
+  generalized bicycle code with $n = 3000$, QX900) to 0.26 s (the affine-plane incidence code AG(2,64), $n = 4096$,
+  $|\mathrm{Aut}| = 4\cdot 10^{11}$), so they could be computed by default.
+  - Use: one start column per column orbit (`start` list, unlimited clusters), when the orbit size is large compared
+    with $w$ (gain about orbit size / $w$; measured 7.2x for double gross with `start=0,144`, one column per orbit of
+    the translations; the full group, $|\mathrm{Aut}| = 864$, has a single column orbit). Orbit exclusion: the k-th
+    start column only needs clusters avoiding the orbits of the previous ones (about 2x more for two orbits).
+  - Correctness: the graph must contain all defining matrices ((Hx, Hz) or (H, G): an automorphism then preserves both
+    row spaces); with `finL`, verify each generator by rank checks of $[H; L]$. Certify `dmin` without `trust_start`
+    (e.g., the binary verifies the given generators and computes the orbits).
+  - Codeword lists (`outC`, `maxC`, the Python cache): by default the shorter list of canonical orbit representatives
+    (e.g., the lexicographically smallest image; the group recorded with the list, so that full lists from runs
+    without symmetry can be canonicalized when merged); the expanded list only on request (it can be huge: e.g.,
+    $|\mathrm{Aut}| = 4\cdot 10^{11}$ for AG(2,64)).
+  - Dependency: python-igraph is optional (networkx is too slow for large graphs); or nauty/Traces in C.
+- [ ] **Orbit-canonical RW hit counts** (with a known group): with uniform permutations, all codewords of an orbit have
+  the same hit rate, and a lighter orbit $O'$ is missed with probability $\approx e^{-|O'| p N}$, with $|O'| \ge |G|/w$
+  for a group acting freely on the columns. Count hits per orbit (uniform steps only), canonical form: cheap for
+  translation groups (QC, BB, GB codes), group enumeration for $|G| \lesssim 10^5$, canonical labeling otherwise.
+- [ ] **Time-translation classes of DEM codewords** (many rounds): group the translates of a codeword (detector
+  coordinates or the round of each detector, kept when unrolling) for `outC` and the reported hit counts. Not for the
+  miss probability: the symmetry is approximate, and a lighter codeword may sit at a time boundary (no translates).
+- [ ] **RW window steps restricted to the window**: the circuits of the non-pivot window columns are those of the window
+  submatrix (all rows touched by the window), at a fraction of the cost of the full elimination; window shapes: time
+  slabs (space-like logicals), tubes of a few stabilizers over all rounds (time-like logicals), Tanner-graph balls, and
+  the full matrix (uniform steps, which keep every codeword reachable). Separate hit statistics for the window steps.
+

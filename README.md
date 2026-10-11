@@ -20,7 +20,9 @@ For a classical binary linear code, only the parity-check matrix $H$ is needed.
 
 For a quantum CSS code, matrix $H_X$ and either $H_Z$ (as `finG`) or logical operators $L_X$ (as `finL`) are needed.
 
-Alternatively, a detector error model file from `stim` can be specified using `fdem=[str]`.
+Alternatively, a detector error model file from `stim` can be specified using `fdem=[str]`. The `repeat` blocks and
+`shift_detectors` instructions of a DEM are unrolled, the detector coordinates are ignored, and the components of a
+decomposed error (separated by `^`) are summed mod 2: a detector or observable listed twice in one `error` line cancels.
 
 All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthogonality conditions:
 $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
@@ -62,7 +64,15 @@ $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits 
 ### 1. Multithreaded RW Algorithm (`method=1`)
 Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$.
 Threads independently generate random column permutations, compute Gaussian elimination to find information sets,
-and extract candidate dual-row codewords. Only the candidates lighter than the current weight limit are formed (the
+and extract candidate dual-row codewords. For matrices with at least 128 rows, the elimination uses the "Method of the
+Four Russians" (as M4RI does, but for the scattered columns of a random permutation): 24 pivots (20 below 512 rows)
+are found at a time, and every other row is then reduced in one pass with precomputed combinations of the pivot rows,
+from 4 small tables kept in the cache, instead of one pass per pivot. It finds the same information sets and candidates
+as the column-by-column elimination, faster for large matrices: e.g., 1.4x for $378 \times 756$, 1.5-2.0x for the
+Mitten circuit DEMs ($420$ to $792$ rows), 2.3x for a $1500 \times 3000$ LDPC code and a $2736 \times 31392$ circuit
+DEM, and 2-2.9x for the latter on 32 to 128 threads. Between 128 and 512 rows, where the gain depends on the sparsity
+of the matrix (0.75-1.4x), each thread times both eliminations in its first steps and uses the faster one (`debug&8`
+reports the choice of thread 0). Only the candidates lighter than the current weight limit are formed (the
 weight of each candidate is counted first), and they are checked for $Lc \neq 0$ with bit masks of the columns of $L$,
 in $O(|c|)$ operations: for DEMs, most such candidates are trivial. When a lighter codeword is discovered, all worker
 threads atomically update the global upper bound $d_{\max}$. The found codewords are kept in a hash table with their
@@ -113,6 +123,10 @@ also fix the first one to three cluster extensions, for a balanced load (see
 [Multithreading](#4-multithreading-throttling--batch-sizing)).
 If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `outC` is specified, CC exhausts all
 columns for weight $w$ to collect all unique minimum-weight codewords.
+With `smax=0` (default), the syndrome of a cluster is kept as a bitset (a column is added by flipping its rows), and
+the last column of a cluster is found by a hash lookup: the syndrome left after the next-to-last column must equal a
+column of $H$ (instead of a scan of the candidate columns). The clusters and the codewords found (with their hit
+counts) are the same as with `smax>0`, only faster (about 3-5 times for CSS codes, and 5-20 times for circuit DEMs).
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
 $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
 soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`). A stop target `dstop=U` ends the scan
@@ -127,8 +141,8 @@ Relevant parameters:
 - `wmax=[int]`: Maximum cluster weight to search (optional with `timeout>0`, the default, with `dmax>0`, where the
   rounds end once $d_{\min} = d_{\max}$, or with `dstop>0`, where they end once $d_{\min} \ge$ `dstop`; otherwise
   required for `method=2`).
-- `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning;
-  set e.g. `smax=5` to compute confinement).
+- `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning
+  and the bitset syndromes with hash lookups above; set e.g. `smax=5` to compute confinement).
 
 Expert parameters (each prints a `# WARNING:` to `stderr`; see
 [Restricting the CC Search](#restricting-the-cc-search-expert-options) below):
@@ -448,7 +462,7 @@ replaced by them (with a warning on `stderr`), while `fin` after them is an erro
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.12.2): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.12.4): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:

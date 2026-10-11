@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.2" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.4" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.12.2" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.12.4" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -781,13 +781,50 @@ rm -f "$CWS97"
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=2" 0 "^5 5 0$" \
     "^# run plan: method=2 \(CC\), 8 threads \(4 at first\), CC from w=1 to wmax=5,"
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=8" 0 "^5 5 0$" \
-    "^# CC round w=[34]: started 4 more threads, 8 in total \("
+    "^# CC round w=[345]: started 4 more threads, 8 in total \("
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 nothrottle=1 debug=2" 0 "^5 5 0$" \
     "^# run plan: method=2 \(CC\), 8 threads, CC from w=1 to wmax=5,"
 if command -v taskset > /dev/null && [ "$(nproc --all)" -ge 2 ]; then
     assert_output "taskset -c 0,1 $BIN_FORK method=1 $S5 steps=100 debug=2" 0 "^1 [0-9]+ [0-9]+$" \
         "^# run plan: method=1 \(RW\), 2 threads, steps=100,"
 fi
+
+# Test 99: RW elimination: the blocked elimination (Four Russians, from 128 rows; c1920H: 1280 rows), and the choice
+# of each thread between it and the column-by-column elimination (128 to 512 rows; surf_d7: 336 rows) find the same
+# information sets as the column-by-column elimination: the same codewords and hit counts with a fixed seed and one
+# thread (reference values of the column-by-column elimination)
+RW99="steps=60 seed=5 threads=1 min_hits=1000000 cov_cws=5000"
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx $RW99 debug=1" 0 "^1 344 60$" \
+    "^# codewords accumulated: total=5151, min_w=344: cws=1, total_hits=1,"
+S7="finH=$EXAMPLES_DIR/surf_d7_H.mmx finL=$EXAMPLES_DIR/surf_d7_L.mmx"
+RW99="steps=400 seed=6 threads=1 min_hits=1000000 cov_cws=5000"
+assert_output "$BIN_FORK method=1 $S7 $RW99 debug=1" 0 "^1 7 400$" \
+    "^# codewords accumulated: total=5835, min_w=7: cws=70, total_hits=71,"
+assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
+    "^# \[thread 0\] RW elimination: (blocked|column by column) \(blocked: [0-9.]+x the time of column by column\)$"
+
+# Test 100: CC with bitset syndromes and a hash lookup for the last column of a cluster (smax=0, the default) finds the
+# same codewords with the same hit counts as the recursion on sorted syndrome lists (smax>0), also with duplicate
+# columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a codeword of weight 5 is found up to 5 times)
+CWS100=$(mktemp --suffix=.nz)
+for sm in 0 3; do
+    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 debug=1" 0 "^5 5 0$" \
+        "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
+done
+assert_output "$BIN_FORK method=2 $S5 wmax=3 threads=2 debug=8" 0 "^4 0 0$" \
+    "^# CC: bitset syndromes, hash of 1958 nonzero columns \(1679 distinct\) for the last two levels"
+rm -f "$CWS100"
+
+# Test 101: the components of a decomposed DEM error (separated by `^`) are summed mod 2: a detector (here D1) or an
+# observable (L0) listed twice in one error line cancels (before 0.12.4, D1 was kept: no codeword of weight 2 here)
+DEM101=$(mktemp --suffix=.dem)
+printf 'error(0.1) D0 D1 ^ D1 D2\nerror(0.1) D0 D2 L0\n' > "$DEM101"
+assert_output "$BIN_FORK method=2 fdem=$DEM101 wmax=2 threads=1 debug=1" 0 "^2 2 0$" \
+    "^#   H: 3 x 2 \(detectors\), 4 nonzeros, max row weight 2, max column weight 2$"
+printf 'error(0.1) D0 L0 ^ D1 L0\nerror(0.1) D0 D1 L0\n' > "$DEM101"
+assert_output "$BIN_FORK method=2 fdem=$DEM101 wmax=2 threads=1 debug=1" 0 "^2 2 0$" \
+    "^#   L: 1 x 2 \(observables\), 1 nonzeros, max row weight 1, max column weight 1$"
+rm -f "$DEM101"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

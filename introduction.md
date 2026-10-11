@@ -44,7 +44,10 @@ information set, the `n - rank(H)` non-pivot columns. Each non-pivot column `j` 
 `rank(H) + 1` non-zero entries and tend to have small weights, which qualitatively explains why the algorithm works.
 A codeword `c` is found in a step if exactly one of its positions is a non-pivot column, and every codeword of the
 minimum weight is found with some column order (see the QDistRnd manual, Sec. 3.1). The candidates with `L c != 0`
-are kept in a hash table, together with the number of times each of them has been found (hit counts).
+are kept in a hash table, together with the number of times each of them has been found (hit counts). For matrices
+with at least 128 rows, the elimination processes 20 or 24 pivots per pass over the rows ("Method of the Four
+Russians", with tables of combinations of the pivot rows), which gives the same result about twice as fast for large
+matrices.
 
 Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default).
 With `ksub > 0` (**experimental, should not be used**; a warning is printed), each step reduces the span of `ksub`
@@ -64,7 +67,9 @@ A round without codewords raises the lower bound to `dmin = w + 1`, and a codewo
 distance. This search finds every minimum-weight codeword, starting from its smallest column: a proper subset of a
 minimum-weight codeword has a non-zero syndrome (otherwise, the subset or the rest of the codeword would be a lighter
 codeword), and the support of its first unsatisfied check contains another position of the codeword [DKP17]. The work
-of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`.
+of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`. With `smax=0` (default),
+the syndrome of a cluster is kept as a bitset, and the last column of a cluster is found by a hash lookup: the syndrome
+left after the next-to-last column must be that of a single column of `H`.
 
 The expert options `start`, `cbeg`/`cend`, and `noscan` restrict the search; each of them prints a warning, since the
 reported `dmin` is then not necessarily a lower bound (`dmax` is always valid). With `smax > 0`, CC also computes the
