@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.2" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.3" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.12.2" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.12.3" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -788,6 +788,20 @@ if command -v taskset > /dev/null && [ "$(nproc --all)" -ge 2 ]; then
     assert_output "taskset -c 0,1 $BIN_FORK method=1 $S5 steps=100 debug=2" 0 "^1 [0-9]+ [0-9]+$" \
         "^# run plan: method=1 \(RW\), 2 threads, steps=100,"
 fi
+
+# Test 99: RW elimination: the blocked elimination (Four Russians, from 128 rows; c1920H: 1280 rows), and the choice
+# of each thread between it and the column-by-column elimination (128 to 512 rows; surf_d7: 336 rows) find the same
+# information sets as the column-by-column elimination: the same codewords and hit counts with a fixed seed and one
+# thread (reference values of the column-by-column elimination)
+RW99="steps=60 seed=5 threads=1 min_hits=1000000 cov_cws=5000"
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx $RW99 debug=1" 0 "^1 344 60$" \
+    "^# codewords accumulated: total=5151, min_w=344: cws=1, total_hits=1,"
+S7="finH=$EXAMPLES_DIR/surf_d7_H.mmx finL=$EXAMPLES_DIR/surf_d7_L.mmx"
+RW99="steps=400 seed=6 threads=1 min_hits=1000000 cov_cws=5000"
+assert_output "$BIN_FORK method=1 $S7 $RW99 debug=1" 0 "^1 7 400$" \
+    "^# codewords accumulated: total=5835, min_w=7: cws=70, total_hits=71,"
+assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
+    "^# \[thread 0\] RW elimination: (blocked|column by column) \(blocked: [0-9.]+x the time of column by column\)$"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

@@ -62,7 +62,15 @@ $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits 
 ### 1. Multithreaded RW Algorithm (`method=1`)
 Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$.
 Threads independently generate random column permutations, compute Gaussian elimination to find information sets,
-and extract candidate dual-row codewords. Only the candidates lighter than the current weight limit are formed (the
+and extract candidate dual-row codewords. For matrices with at least 128 rows, the elimination uses the "Method of the
+Four Russians" (as M4RI does, but for the scattered columns of a random permutation): 24 pivots (20 below 512 rows)
+are found at a time, and every other row is then reduced in one pass with precomputed combinations of the pivot rows,
+from 4 small tables kept in the cache, instead of one pass per pivot. It finds the same information sets and candidates
+as the column-by-column elimination, faster for large matrices: e.g., 1.4x for $378 \times 756$, 1.5-2.0x for the
+Mitten circuit DEMs ($420$ to $792$ rows), 2.3x for a $1500 \times 3000$ LDPC code and a $2736 \times 31392$ circuit
+DEM, and 2-2.9x for the latter on 32 to 128 threads. Between 128 and 512 rows, where the gain depends on the sparsity
+of the matrix (0.75-1.4x), each thread times both eliminations in its first steps and uses the faster one (`debug&8`
+reports the choice of thread 0). Only the candidates lighter than the current weight limit are formed (the
 weight of each candidate is counted first), and they are checked for $Lc \neq 0$ with bit masks of the columns of $L$,
 in $O(|c|)$ operations: for DEMs, most such candidates are trivial. When a lighter codeword is discovered, all worker
 threads atomically update the global upper bound $d_{\max}$. The found codewords are kept in a hash table with their
@@ -448,7 +456,7 @@ replaced by them (with a warning on `stderr`), while `fin` after them is an erro
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.12.2): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.12.3): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:

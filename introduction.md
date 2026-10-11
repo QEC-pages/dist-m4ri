@@ -44,7 +44,10 @@ information set, the `n - rank(H)` non-pivot columns. Each non-pivot column `j` 
 `rank(H) + 1` non-zero entries and tend to have small weights, which qualitatively explains why the algorithm works.
 A codeword `c` is found in a step if exactly one of its positions is a non-pivot column, and every codeword of the
 minimum weight is found with some column order (see the QDistRnd manual, Sec. 3.1). The candidates with `L c != 0`
-are kept in a hash table, together with the number of times each of them has been found (hit counts).
+are kept in a hash table, together with the number of times each of them has been found (hit counts). For matrices
+with at least 128 rows, the elimination processes 20 or 24 pivots per pass over the rows ("Method of the Four
+Russians", with tables of combinations of the pivot rows), which gives the same result about twice as fast for large
+matrices.
 
 Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default).
 With `ksub > 0` (**experimental, should not be used**; a warning is printed), each step reduces the span of `ksub`

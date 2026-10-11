@@ -597,10 +597,155 @@ static void rw_record_codeword(distfork_ctx_t * const ctx, const rci_t * const e
   pthread_mutex_unlock(&ctx->cw_mutex);
 }
 
-/* Run RW batch of the global steps step0 .. step0+n_steps-1; returns the number of completed steps */
+/* dst ^= src, and dst = a ^ b, for rows of `width` words */
+static inline void rw_row_xor(word * __restrict dst, const word * __restrict src, const wi_t width) {
+  for (wi_t w = 0; w < width; w++) dst[w] ^= src[w];
+}
+static inline void rw_row_xor3(word * __restrict dst, const word * __restrict a, const word * __restrict b,
+                               const wi_t width) {
+  for (wi_t w = 0; w < width; w++) dst[w] = a[w] ^ b[w];
+}
+
+#define RW_K_MAX 8   /* at most 2^8 rows per table of rw_eliminate() */
+#define RW_NT_MAX 8  /* at most 8 tables, i.e., 64 pivots per pass over the rows */
+
+/* Parameters of rw_eliminate() for a matrix of `rows` x `width` words: the number of tables `*nt` and of pivots per
+ * table `*k` (column by column: *nt = 0, below 128 rows).  For wide rows, the tables are kept at about 2 MB or less
+ * (cache): fewer rows per table, more tables.  Measured (single thread): K = 6 with 4 tables is 1.7x to 2.2x faster
+ * than column by column for 648 to 2736 rows (circuit DEMs, a 1500 x 3000 LDPC code), also with 16 threads; between
+ * 128 and 512 rows, K = 5 with 4 tables is 0.75x to 1.4x as fast, depending on the matrix (see rw_elim_t). */
+static void rw_block_params(const int rows, const wi_t width, int * const k, int * const nt) {
+  *k = 0;
+  *nt = 0;
+  if (rows < 128) return;
+  *k = (rows < 512) ? 5 : 6;
+  *nt = 4;
+  while (*k > 3 && ((size_t)*nt << *k) * (size_t)width * sizeof(word) > ((size_t)2 << 20)) {
+    (*k)--;
+    if (*nt + 2 <= RW_NT_MAX) *nt += 2;
+  }
+}
+
+/* RW elimination of a thread: the tables and parameters of rw_eliminate(), and the choice between it and the column-by-
+ * column elimination for 128 to 512 rows, where the blocked one is not always faster: the steps 1..2*RW_TUNE_STEPS
+ * (after the first one, from the sparse H) alternate between the two eliminations, which give the same results, and
+ * the faster one (in total) is used for the following steps */
+#define RW_TUNE_STEPS 4
+typedef struct {
+  word *table;    /* the tables of rw_eliminate(): nt << k rows of tstride words, row 0 of each table zero */
+  size_t tstride;
+  int k, nt;      /* pivots per table, number of tables (0: column by column), see rw_block_params() */
+  int steps;      /* RW steps completed while tuning */
+  double t[2];    /* time of the timed eliminations: column by column (0), blocked (1) */
+  int choice;     /* -1: tuning, 0: column by column, 1: blocked */
+} rw_elim_t;
+
+/* RW elimination with the "Method of the Four Russians" (as in M4RI's echelonization, but for the scattered columns
+ * of a random permutation): Gauss-Jordan elimination of the columns order[0], order[1], ... in the rows
+ * 0..nrows_eff-1 of M, until nrows_eff pivots are found, in blocks of up to nt*K pivots.
+ * 1. The pivots of a block, in the order of the columns: a column is a pivot if a row r >= rank, reduced with the
+ *    previous pivots, has a 1 in it.  The block's pivot rows are kept reduced with each other, so that the reduced bit
+ *    of a row is its bit plus the parity of its bits in the pivot columns of the block's pivot rows with a 1 in the
+ *    column: the rows are searched without row operations, and only the new pivot row is reduced.
+ * 2. Tables of the 2^K combinations of K pivot rows each (built with one row XOR each, in Gray-code order; row 0 of
+ *    each table is zero; table t at T + (t << K) * tstride, see rw_elim_t).
+ * 3. Every other row is reduced in one pass: for each table, the combination given by the row's bits in its pivot
+ *    columns (the row stays in the L1 cache, while it is read and written only once from memory).
+ * The pivots, their rows, and the reduced matrix are the same as with gauss_one_rows() column by column, with about
+ * 1/(nt*K) of the passes over the rows of M.  The pivot columns are stored in pivs[0..rank-1] and set in piv_mask.
+ * Returns the rank, or -1 if interrupted by a stop flag (checked every 16 columns, as before).  (Not inlined, so that
+ * the column-by-column elimination in run_rw_steps() stays as compact as before for small matrices.) */
+__attribute__((noinline))
+static int rw_eliminate(distfork_ctx_t * const ctx, mzd_t * const M, const int nrows_eff, const int nvar,
+                        const rci_t * const order, rci_t * const pivs, word * const piv_mask,
+                        const rw_elim_t * const el) {
+  word * const T = el->table;
+  const size_t tstride = el->tstride;
+  const int K = el->k, nt = el->nt;
+  const wi_t width = M->width;
+  const int P = K * nt; /* pivots per block */
+  int bw[RW_K_MAX * RW_NT_MAX], bs[RW_K_MAX * RW_NT_MAX]; /* word and bit of the pivot columns of the block */
+  int rank = 0;
+  int i = 0;
+  while (i < nvar && rank < nrows_eff) {
+    const int r0 = rank; /* the first pivot row of the block */
+    int kk = 0;
+    /* 1. up to P pivots */
+    while (kk < P && i < nvar && rank < nrows_eff) {
+      if ((i & 15) == 15 && (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+                             atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed))) {
+        return -1;
+      }
+      const int col = order[i++];
+      const int cw = col >> 6, cb = col & 63;
+      uint64_t mask = 0; /* the block's pivot rows with a 1 in the column */
+      for (int l = 0; l < kk; l++) mask |= (uint64_t)((mzd_row(M, r0 + l)[cw] >> cb) & 1) << l;
+      int found = -1;
+      for (int r = rank; r < nrows_eff; r++) {
+        const word * const row = mzd_row(M, r);
+        word b = (row[cw] >> cb) & 1;
+        for (uint64_t m2 = mask; m2; m2 &= m2 - 1) {
+          const int l = __builtin_ctzll(m2);
+          b ^= (row[bw[l]] >> bs[l]) & 1;
+        }
+        if (b) {
+          found = r;
+          break;
+        }
+      }
+      if (found < 0) continue; /* not a pivot: the column depends on the previous ones */
+      if (found != rank) mzd_row_swap(M, rank, found);
+      word * const prow = mzd_row(M, rank);
+      for (int l = 0; l < kk; l++) { /* reduce the new pivot row with the block's pivot rows */
+        if ((prow[bw[l]] >> bs[l]) & 1) rw_row_xor(prow, mzd_row(M, r0 + l), width);
+      }
+      for (uint64_t m2 = mask; m2; m2 &= m2 - 1) /* and clear the column in them */
+        rw_row_xor(mzd_row(M, r0 + __builtin_ctzll(m2)), prow, width);
+      bw[kk] = cw;
+      bs[kk] = cb;
+      kk++;
+      pivs[rank] = col;
+      piv_mask[cw] |= (word)1 << cb;
+      rank++;
+    }
+    if (kk == 0) break; /* no more columns */
+    /* 2. the tables: row g of table t is the sum of the pivot rows r0 + t*K + l of the bits l of g */
+    const int ntab = (kk + K - 1) / K;
+    for (int t = 0; t < ntab; t++) {
+      word * const Tt = T + ((size_t)t << K) * tstride;
+      const int kt = (kk - t * K < K) ? kk - t * K : K;
+      for (unsigned g = 1; g < (1u << kt); g++) {
+        const unsigned gc = g ^ (g >> 1), gp = (g - 1) ^ ((g - 1) >> 1); /* Gray codes of g and g-1 */
+        rw_row_xor3(Tt + gc * tstride, Tt + gp * tstride, mzd_row(M, r0 + t * K + __builtin_ctz(g)), width);
+      }
+    }
+    /* 3. all other rows, in one pass */
+    for (int r = 0; r < nrows_eff; r++) {
+      if (r == r0) {
+        r = rank - 1; /* (the pivot rows of the block) */
+        continue;
+      }
+      word * const row = mzd_row(M, r);
+      unsigned x[RW_NT_MAX];
+      for (int t = 0; t < ntab; t++) { /* (the bits first: the XORs change the row's bits in the pivot columns) */
+        const int lo = t * K, hi = (lo + K < kk) ? lo + K : kk;
+        unsigned xt = 0;
+        for (int l = lo; l < hi; l++) xt |= (unsigned)((row[bw[l]] >> bs[l]) & 1) << (l - lo);
+        x[t] = xt;
+      }
+      for (int t = 0; t < ntab; t++) {
+        if (x[t]) rw_row_xor(row, T + (((size_t)t << K) + x[t]) * tstride, width);
+      }
+    }
+  }
+  return rank;
+}
+
+/* Run RW batch of the global steps step0 .. step0+n_steps-1; returns the number of completed steps.  `el`: the thread's
+ * RW elimination (blocked or column by column, see rw_elim_t) */
 static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
                         mzd_t *mH, mzd_t *mHT, rci_t *ee,
-                        mzp_t *perm, mzp_t *pivs, word *piv_mask,
+                        mzp_t *perm, mzp_t *pivs, word *piv_mask, rw_elim_t *el,
                         int *eff_nrows_ptr,
                         int *visited_cols, int *visited_checks, int *col_queue,
                         int *visit_marker, uint64_t *rng_state, int tid) {
@@ -643,23 +788,40 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
     }
 
     memset(piv_mask, 0, mH->width * sizeof(word));
+    /* the elimination (see rw_elim_t): column by column, or blocked */
+    int timed = -1; /* tuning: time this step's elimination, column by column (0) or blocked (1) */
+    if (el->choice < 0 && el->steps > 0) timed = el->steps & 1;
+    const double t_elim = (timed >= 0) ? get_time_sec() : 0.0;
     int rank = 0;
-    bool interrupted = false;
-    for (int i = 0; i < nvar && rank < eff_nrows; i++) {
-      /* a step on a large matrix can take many seconds: check the stop flags also every 16 columns */
-      if ((i & 15) == 15 && (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
-                             atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed))) {
-        interrupted = true;
-        break;
+    if (el->choice == 0 || timed == 0) {
+      for (int i = 0; i < nvar && rank < eff_nrows; i++) {
+        /* a step on a large matrix can take many seconds: check the stop flags also every 16 columns */
+        if ((i & 15) == 15 && (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+                               atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed))) {
+          rank = -1;
+          break;
+        }
+        int col = perm->values[i];
+        if (gauss_one_rows(mH, col, rank, eff_nrows)) {
+          pivs->values[rank++] = col;
+          piv_mask[col >> 6] |= (word)1 << (col & 63);
+        }
       }
-      int col = perm->values[i];
-      if (gauss_one_rows(mH, col, rank, eff_nrows)) {
-        pivs->values[rank++] = col;
-        piv_mask[col >> 6] |= (word)1 << (col & 63);
-      }
+    } else {
+      rank = rw_eliminate(ctx, mH, eff_nrows, nvar, perm->values, pivs->values, piv_mask, el);
     }
     /* abandon the step: `eff_nrows` is kept, as rows rank..eff_nrows-1 are not processed (same row space) */
-    if (interrupted) break;
+    if (rank < 0) break;
+    if (el->choice < 0) {
+      if (timed >= 0) el->t[timed] += get_time_sec() - t_elim;
+      if (++el->steps > 2 * RW_TUNE_STEPS) {
+        el->choice = (el->t[1] < el->t[0]) ? 1 : 0;
+        if (tid == 0 && (p->debug & DBG_TIMING)) {
+          fprintf(stderr, "# [thread 0] RW elimination: %s (blocked: %.2fx the time of column by column)\n",
+                  el->choice ? "blocked" : "column by column", el->t[1] / (el->t[0] > 0.0 ? el->t[0] : 1e-9));
+        }
+      }
+    }
     eff_nrows = rank;
     *eff_nrows_ptr = eff_nrows;
     if (atomic_load_explicit(&ctx->rw_rank, memory_order_relaxed) != rank) { /* rank of H (the same in every step) */
@@ -886,6 +1048,7 @@ static void *worker_thread_func(void *arg) {
   mzp_t *perm = NULL;
   mzp_t *pivs = NULL;
   word *piv_mask = NULL;
+  rw_elim_t rw_el = {NULL, 0, 0, 0, 0, {0.0, 0.0}, 0}; /* the RW elimination of this thread */
   int eff_nrows = ctx->p->spaH->rows;
   int *visited_cols = NULL;
   int *visited_checks = NULL;
@@ -915,6 +1078,14 @@ static void *worker_thread_func(void *arg) {
       mH = safe_mzd_from_csr(NULL, ctx->p->spaH);
       mHT_rw = safe_mzd_init(nvar, ctx->p->spaH->rows);
       piv_mask = calloc(mH->width, sizeof(word));
+      /* the tables of rw_eliminate(), with its parameters for this matrix (64-byte aligned rows) */
+      rw_el.tstride = ((size_t)mH->width + 7) & ~(size_t)7;
+      rw_block_params(mH->nrows, mH->width, &rw_el.k, &rw_el.nt);
+      rw_el.choice = (rw_el.nt == 0) ? 0 : ((mH->nrows >= 512) ? 1 : -1); /* (tuning between 128 and 512 rows) */
+      const size_t tbytes = (rw_el.nt > 0 ? ((size_t)rw_el.nt << rw_el.k) : 1) * rw_el.tstride * sizeof(word);
+      rw_el.table = aligned_alloc(64, tbytes);
+      if (!piv_mask || !rw_el.table) ERROR("memory allocation");
+      memset(rw_el.table, 0, tbytes);
     }
   }
 
@@ -1069,7 +1240,7 @@ static void *worker_thread_func(void *arg) {
             }
           } else {
             run_rw_steps(ctx, cur_s, n_steps, mH, mHT_rw, ee, perm, pivs,
-                         piv_mask, &eff_nrows, visited_cols, visited_checks,
+                         piv_mask, &rw_el, &eff_nrows, visited_cols, visited_checks,
                          col_queue, &visit_marker, &rng_state, tid);
             if (eff_nrows > 0 && eff_nrows < mH->nrows) rw_shrink_matrices(&mH, &mHT_rw, eff_nrows);
           }
@@ -1086,6 +1257,7 @@ static void *worker_thread_func(void *arg) {
 
   if (enable_rw) {
     free(piv_mask);
+    free(rw_el.table);
     safe_mzp_free(perm);
     safe_mzp_free(pivs);
     free(ee);
