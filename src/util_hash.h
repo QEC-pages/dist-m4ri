@@ -168,7 +168,7 @@ extern "C"{
     const size_t keylen = syn->wei * sizeof(int);
     if(p_swei[err->wei] > syn->wei){
       //#ifndef NDEBUG
-      if(debug&64){
+      if(debug & 4096){ /* DBG_LEGACY in util_io.h */
 	printf("# swei[%d]=%d -> %d change\n# err: ",
 	       err->wei,p_swei[err->wei],syn->wei);
 	one_vec_print(err);
@@ -180,7 +180,7 @@ extern "C"{
     }
 #ifndef NDEBUG      
     else{	
-      if(debug&64){
+      if(debug & 4096){ /* DBG_LEGACY in util_io.h */
 	printf("p_swei[%d]=%d swei=%d not small enough\n",err->wei,p_swei[err->wei],syn->wei);
 	one_vec_print(err);
 	one_vec_print(syn);
@@ -196,7 +196,7 @@ extern "C"{
     else{  /** we construct small-weight vectors first, thus should not
 	       worry about replacing error vectors already in the hash */
 #ifndef NDEBUG  
-      if(debug&128){
+      if(debug & 4096){ /* DBG_LEGACY in util_io.h */
 	printf("err: ");
 	one_vec_print(err);
 	printf("syn: ");

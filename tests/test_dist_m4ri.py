@@ -3,6 +3,7 @@ Unit tests for dist_m4ri.py Python wrapper.
 """
 
 import os
+import re
 import sys
 import pytest
 import numpy as np
@@ -264,11 +265,35 @@ def test_persistent_json_cache(tmp_path):
     # CSS persistent caching
     hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     hz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+    # First run with method=2 up to wmax=3 (lower bound dmin=4, dmax=0): must NOT be treated as exact
+    d_css_lb, dx_lb, dz_lb = dist_m4ri.compute_css_distance(
+        Hx=hx_file, Hz=hx_file, Lz=hz_file, Lx=hz_file,
+        method=2, wmax=3, threads=4, cache_file=json_file
+    )
+    assert d_css_lb == 4
+    assert dx_lb == [4, 0, 0]
+    assert dz_lb == [4, 0, 0]
+    entry_css_lb = dist_m4ri.get_cached_distance(Hx=hx_file, Hz=hx_file, Lx=hz_file, Lz=hz_file, cache_file=json_file)
+    assert entry_css_lb["dmin"] == 4
+    assert entry_css_lb["dmax"] == 0
+
+    # Second run with method=1 (RW): must execute RW (not falsely hit exact cache) and merge bounds [4, 5, steps]
+    d_css_rw, dx_rw, dz_rw = dist_m4ri.compute_css_distance(
+        Hx=hx_file, Hz=hx_file, Lz=hz_file, Lx=hz_file,
+        method=1, num_steps=50, min_hits=0, threads=4, cache_file=json_file
+    )
+    assert d_css_rw == 5
+    assert dx_rw[0] == 4 and dx_rw[1] == 5 and dx_rw[2] >= 50
+    assert dz_rw[0] == 4 and dz_rw[1] == 5 and dz_rw[2] >= 50
+
+    # Third run with method=3: certifies exact d=5 -> [5, 5, 0]
     d_css, dx_info, dz_info = dist_m4ri.compute_css_distance(
         Hx=hx_file, Hz=hx_file, Lz=hz_file, Lx=hz_file,
         d_exp=5, threads=4, cache_file=json_file
     )
     assert d_css == 5
+    assert dx_info == [5, 5, 0]
+    assert dz_info == [5, 5, 0]
     with open(json_file, "r") as f:
         data_css = json.load(f)
     assert len(data_css) >= 2
@@ -303,7 +328,7 @@ def test_cli_argument_parsing():
     assert args1["finG"] == "g.mtx"
     assert args1["smax"] == 0
     assert args1["finC"] == "init.nz"
-    assert args1["start"] == 2
+    assert args1["start"] == [2]  # start is a list of CC start columns (since version 0.10.0)
 
     # Auto-infer classical = 1 when only finH is given
     args2 = dist_m4ri.parse_cli_args(["finH=h.mtx", "method=2"])
@@ -314,6 +339,43 @@ def test_cli_argument_parsing():
     # Auto-infer classical = 0 when fdem is given
     args3 = dist_m4ri.parse_cli_args(["fdem=model.dem"])
     assert args3["classical"] == 0
+
+
+def test_debug_bits(capsys):
+    # debug values: decimal or hexadecimal (no octal), OR-combined in the CLI
+    assert dist_m4ri.parse_debug_value("0x10004") == dist_m4ri.PY_DBG_COMMANDS | 4
+    assert dist_m4ri.parse_debug_value("011") == 11
+    for bad in ("-1", "0x", "abc", "1.5"):
+        with pytest.raises(ValueError):
+            dist_m4ri.parse_debug_value(bad)
+    args = dist_m4ri.parse_cli_args(["fdem=model.dem", "debug=1", "debug=0x10000"])
+    assert args["debug"] == 1 | dist_m4ri.PY_DBG_COMMANDS
+    # the Python bits are not passed to the binary: the command line is echoed with debug=0 (binary silent)
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    res = dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, threads=2, debug=dist_m4ri.PY_DBG_COMMANDS)
+    assert res == (3, 3, 0)
+    out = capsys.readouterr().out
+    assert " debug=0 method=2 " in out and "Finished in" in out
+    assert "# input:" not in out
+    # binary summary bit: the input summary and the reason why the run ended
+    dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, threads=2, debug=1)
+    out = capsys.readouterr().out
+    assert "# input: detector error model, n=221" in out
+    assert "CC found min-weight codeword: d=3" in out
+    # keep (and list) the temporary files
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        H = np.array([[1, 1, 0], [0, 1, 1]], dtype=np.int8)
+        d = dist_m4ri.compute_classical_distance(H, method=2, wmax=3, threads=1, debug=dist_m4ri.PY_DBG_KEEP_FILES)
+        assert d == 3
+        out = capsys.readouterr().out
+        kept = [line.split("Kept temporary file: ", 1)[1] for line in out.splitlines() if "Kept temporary" in line]
+        assert kept and all(os.path.exists(f) for f in kept)
+        for f in kept:
+            os.remove(f)
+    finally:
+        dist_m4ri.enable_distance_cache()
 
 
 def test_quantum_cache_separation():
@@ -356,6 +418,38 @@ def test_explain_bounds():
     assert "120 completed random information set searches" in exp3
 
 
+def test_rw_infoset_estimate():
+    # P1(w) = w C(n-w, k-1) / C(n, k) with k = n - rank: surf_d3.dem (n=221, rank(H)=24), w=3
+    from math import comb
+    p1 = dist_m4ri.rw_infoset_find_prob(221, 24, 3)
+    assert p1 == pytest.approx(3 * comb(218, 196) / comb(221, 197), rel=1e-9)
+    assert dist_m4ri.rw_infoset_find_prob(221, 24, 26) == 0.0  # w > rank + 1: never found
+    # c204 (n=204, rank(H)=101, d=8): the hardest lighter weight is w=7; miss probability (1-P1)^steps
+    est = dist_m4ri.rw_infoset_estimate(204, 101, 6000, 8, step_time=1e-5, steps_total=12000)
+    p7 = dist_m4ri.rw_infoset_find_prob(204, 101, 7)
+    assert est["w"] == 7
+    assert est["p_find"] == pytest.approx(p7)
+    assert est["p_miss"] == pytest.approx((1.0 - p7) ** 6000)
+    n1 = int(np.ceil(np.log(0.01) / np.log1p(-p7)))
+    assert est["steps_target"] == int(np.ceil(n1 * 2.0))  # half of the steps uniform
+    assert est["time_target"] == pytest.approx(est["steps_target"] * 1e-5)
+    # weights below a certified dmin are excluded; nothing to check if dmin >= d
+    assert dist_m4ri.rw_infoset_estimate(204, 101, 6000, 8, dmin=8) is None
+    # explanation from the stderr statistics of the binary
+    stderr = (
+        "# codewords accumulated: total=100, min_w=8: cws=1, total_hits=170, hits min=170, max=170, avg=170.00, "
+        "stdev=0.00, <n>=5.27 over 100 cws of w=8..15 (min_hits=5, cov_cws=100)\n"
+        "# RW information sets: n=204, rank(H)=101, steps=6000 (uniform permutations: 6000), ksub=0, "
+        "4.4e-05 s/step per thread, 8 RW threads\n"
+    )
+    stats = dist_m4ri._parse_stderr_stats(stderr)
+    assert stats["rw_n"] == 204 and stats["rw_rank"] == 101 and stats["rw_steps_uniform"] == 6000
+    exp = dist_m4ri.explain_bounds([0, 8, 6000], method=1, stats=stats)
+    assert "Hit-based estimate: P_fail ~ exp(-<n>) = 0.0051 (below 1%)" in exp
+    assert "a single codeword of weight 7 < 8 is found with probability" in exp
+    assert "Model check: expected hits per codeword of weight 8" in exp
+
+
 def test_cli_css_dx_dz_bounds(capsys):
     hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     lz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
@@ -374,8 +468,8 @@ def test_cli_verbose_mode(capsys):
     h_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     l_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
     ret = dist_m4ri.main([
-        "--verbose", "method=2", f"finH={h_file}", f"finL={l_file}",
-        "wmax=5", "threads=4"
+        "--verbose", "--no-cache", "method=3", f"finH={h_file}", f"finL={l_file}",
+        "wmax=5", "threads=4", "min_hits=3", "cov_cws=5"
     ])
     assert ret == 0
     captured = capsys.readouterr()
@@ -383,6 +477,10 @@ def test_cli_verbose_mode(capsys):
     assert "Lower bound" in captured.out
     assert "Upper bound" in captured.out
     assert "Random window steps" in captured.out
+    assert "Codewords accumulated:" in captured.out
+    assert "hits min =" in captured.out
+    assert "avg =" in captured.out
+    assert "stdev =" in captured.out
 
 
 def test_check_finc_outc():
@@ -474,7 +572,9 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.9.0" in captured.out
+    assert "0.12.2" in captured.out
+    # also the version of the binary
+    assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
 
 def test_cli_binary_compatibility_silent(capsys):
@@ -483,7 +583,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.9.0" in captured.out
+    assert "0.12.2" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -502,7 +602,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.9.0" in older_warn
+    assert "expected >= 0.12.2" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -523,6 +623,1036 @@ def test_cache_versioning(tmp_path):
     dist_m4ri.load_distance_cache(str(cache_file))
     assert "__version__" not in dist_m4ri._distance_cache
     assert "code_test" in dist_m4ri._distance_cache
+
+
+def test_rw_ksub_kwin_min_hits(capsys):
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        capsys.readouterr()
+        d, d_info = dist_m4ri.compute_dem_distance(
+            dem=dem_file, method=1, num_steps=2000, ksub=32, kwin=48,
+            win_mode=0, min_hits=3, cov_cws=2, refresh=50, threads=4, seed=42
+        )
+        assert d == 3
+        assert d_info[1] == 3
+        assert 0 < d_info[2] < 2000
+        # the experimental ksub: one warning per call (also when the binary falls back to full-matrix RW)
+        assert capsys.readouterr().err.count("# WARNING: ksub=32 is experimental and should not be used") == 1
+
+        args = dist_m4ri.parse_cli_args([
+            "method=1", "ksub=64", "win=128", "win_mode=1",
+            "min_hits=5", "cov_cws=3", "refresh=100"
+        ])
+        assert args["ksub"] == 64
+        assert args["kwin"] == 128
+        assert args["win_mode"] == 1
+        assert args["min_hits"] == 5
+        assert args["cov_cws"] == 3
+        assert args["refresh"] == 100
+
+        default_args = dist_m4ri.parse_cli_args(["method=1"])
+        assert default_args["cov_cws"] == 100
+
+        # Test method=3 with min_hits (stops only RW workers while CC proves exact distance)
+        d3, d3_info = dist_m4ri.compute_dem_distance(
+            dem=dem_file, method=3, num_steps=50000, min_hits=2, cov_cws=2, threads=4, seed=42
+        )
+        assert d3 == 3
+        assert d3_info[0] == 3 and d3_info[1] == 3
+        assert "is experimental" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_add_noise_and_noiseless_circuit():
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    # Create a noiseless surface code circuit
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=2,
+        distance=3,
+        after_clifford_depolarization=0.0
+    )
+    assert not dist_m4ri.has_noise(circuit)
+    noisy = dist_m4ri.add_noise(circuit, p=0.001)
+    assert dist_m4ri.has_noise(noisy)
+
+    # compute_dem_distance should automatically add noise if given a noiseless circuit
+    dist_m4ri.clear_distance_cache()
+    dist, d_info = dist_m4ri.compute_dem_distance(circuit=circuit, threads=4)
+    assert dist == 3
+    assert d_info[0] == 3 and d_info[1] == 3
+
+
+def _make_xzzx_circuit(distance: int = 3, rounds: int = 3, memory_basis: str = "Z"):
+    """Constructs a rotated-surface-code XZZX circuit by conjugating checkerboard data qubits."""
+    import stim
+    task = (
+        "surface_code:rotated_memory_z"
+        if memory_basis.upper() == "Z"
+        else "surface_code:rotated_memory_x"
+    )
+    base_circ = stim.Circuit.generated(
+        task,
+        rounds=rounds,
+        distance=distance,
+        after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001,
+        after_reset_flip_probability=0.001,
+    )
+    t_res = dist_m4ri.classify_qubits_thorough(base_circ, basis_arg=memory_basis)
+    data_set = set(t_res["data_qubits"])
+
+    coords = {}
+    for inst in base_circ.flattened():
+        if inst.name == "QUBIT_COORDS":
+            args = inst.gate_args_copy()
+            for t in inst.targets_copy():
+                if t.is_qubit_target:
+                    coords[t.value] = args
+
+    rot_data = set()
+    for q in data_set:
+        x, y = coords[q][0], coords[q][1]
+        if int(round((x + y) / 2)) % 2 == 1:
+            rot_data.add(q)
+
+    def transform_block(blk):
+        out = stim.Circuit()
+        for inst in blk:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                out.append(
+                    stim.CircuitRepeatBlock(
+                        inst.repeat_count, transform_block(inst.body_copy())
+                    )
+                )
+            elif inst.name in ["R", "RX"]:
+                out.append(inst)
+                rot_t = [
+                    t.value for t in inst.targets_copy()
+                    if t.is_qubit_target and t.value in rot_data
+                ]
+                if rot_t:
+                    out.append("H", rot_t)
+            elif inst.name in ["M", "MX"]:
+                rot_t = [
+                    t.value for t in inst.targets_copy()
+                    if t.is_qubit_target and t.value in rot_data
+                ]
+                if rot_t:
+                    out.append("H", rot_t)
+                out.append(inst)
+            elif inst.name == "CX":
+                t_vals = [t.value for t in inst.targets_copy()]
+                for i in range(0, len(t_vals), 2):
+                    c, t = t_vals[i], t_vals[i + 1]
+                    if t in rot_data:
+                        out.append("CZ", [c, t])
+                    elif c in rot_data:
+                        out.append("H", [c])
+                        out.append("CX", [c, t])
+                        out.append("H", [c])
+                    else:
+                        out.append("CX", [c, t])
+            else:
+                out.append(inst)
+        return out
+
+    return transform_block(base_circ), rot_data
+
+
+def test_stim_simple_vs_full_and_basis_tracking(tmp_path, capsys):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=3,
+        distance=3,
+        after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001,
+        after_reset_flip_probability=0.001,
+    )
+    stim_file = tmp_path / "surf_d3_r3_Z.stim"
+    circuit.to_file(str(stim_file))
+
+    t_res = dist_m4ri.classify_qubits_thorough(circuit)
+    assert t_res["is_css"] is True
+    assert t_res["is_rotated_css"] is False
+    assert t_res["basis"] == "Z"
+    assert len(t_res["data_qubits"]) == 9
+    assert len(t_res["x_ancillas"]) == 4
+    assert len(t_res["z_ancillas"]) == 4
+
+    simp_circ, stripped, kept = dist_m4ri.strip_minority_detectors(
+        circuit, "Z", thorough_res=t_res
+    )
+    assert stripped == 8
+    assert kept == 16
+    assert simp_circ.num_detectors == 16
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        # Default for CSS .stim is --simple
+        ret = dist_m4ri.main([str(stim_file), "-v", "--no-cache", "threads=2"])
+        assert ret == 0
+        out_simple = capsys.readouterr().out
+        assert "mode: simple" in out_simple
+        assert "kept=16, stripped=8" in out_simple
+
+        # Explicit --full keeps all 24 detectors
+        ret = dist_m4ri.main(
+            [str(stim_file), "--full", "-v", "--no-cache", "threads=2"]
+        )
+        assert ret == 0
+        out_full = capsys.readouterr().out
+        assert "mode: full" in out_full
+        assert "kept=24, stripped=0" in out_full
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_stim_xzzx_rotated_css(tmp_path):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+
+    for mem_basis in ("Z", "X"):
+        xzzx_circ, rot_data = _make_xzzx_circuit(
+            distance=3, rounds=3, memory_basis=mem_basis
+        )
+        t_res = dist_m4ri.classify_qubits_thorough(
+            xzzx_circ, basis_arg=mem_basis
+        )
+        assert t_res["is_css"] is True
+        assert t_res["is_rotated_css"] is True
+        assert t_res["basis"] == mem_basis
+        assert len(t_res["data_qubits"]) == 9
+        assert len(t_res["x_ancillas"]) == 4
+        assert len(t_res["z_ancillas"]) == 4
+        assert set(t_res["rotated_data_qubits"]) == rot_data
+
+        simp_circ, stripped, kept = dist_m4ri.strip_minority_detectors(
+            xzzx_circ, mem_basis, thorough_res=t_res
+        )
+        assert stripped == 8
+        assert kept == 16
+        assert simp_circ.num_detectors == 16
+
+        stim_path = tmp_path / f"xzzx_d3_r3_{mem_basis}.stim"
+        xzzx_circ.to_file(str(stim_path))
+
+        dist_m4ri.clear_distance_cache()
+        d_simp, info_simp = dist_m4ri.compute_dem_distance(
+            dem=str(stim_path), simple=True, threads=2
+        )
+        assert d_simp == 3
+        assert info_simp[0] == 3 and info_simp[1] == 3
+
+        dist_m4ri.clear_distance_cache()
+        d_full, info_full = dist_m4ri.compute_dem_distance(
+            dem=str(stim_path), full=True, threads=2
+        )
+        assert d_full == 3
+        assert info_full[0] == 3 and info_full[1] == 3
+
+
+def test_stim_rounds_option(tmp_path, capsys):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=5,
+        distance=3,
+        after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001,
+        after_reset_flip_probability=0.001,
+    )
+    stim_with_repeat = tmp_path / "surf_r5_Z.stim"
+    circuit.to_file(str(stim_with_repeat))
+
+    # CLI argument parsing checks for --rounds, --simple, --full
+    args1 = dist_m4ri.parse_cli_args(["--rounds", str(stim_with_repeat)])
+    assert args1["rounds"] == 2
+    assert args1["fdem"] == str(stim_with_repeat)
+
+    args2 = dist_m4ri.parse_cli_args(["--rounds", "4", "--simple", str(stim_with_repeat)])
+    assert args2["rounds"] == 4
+    assert args2["simple"] is True
+    assert args2["full"] is False
+    assert args2["fdem"] == str(stim_with_repeat)
+
+    args3 = dist_m4ri.parse_cli_args(["rounds=3", "--full", "basis=X", str(stim_with_repeat)])
+    assert args3["rounds"] == 3
+    assert args3["full"] is True
+    assert args3["simple"] is False
+    assert args3["basis"] == "X"
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        # Bare --rounds sets rounds=2 (REPEAT 2 block -> 16 Z-detectors kept, 8 X-detectors stripped)
+        ret = dist_m4ri.main(
+            [str(stim_with_repeat), "--rounds", "-v", "--no-cache", "threads=2"]
+        )
+        assert ret == 0
+        out = capsys.readouterr().out
+        assert "rounds=2" in out
+        assert "kept=16, stripped=8" in out
+
+        # Flattened circuit has no REPEAT block -> issues a warning and continues
+        flat_stim = tmp_path / "surf_flat_Z.stim"
+        circuit.flattened().to_file(str(flat_stim))
+        d_flat, info_flat = dist_m4ri.compute_dem_distance(
+            dem=str(flat_stim), rounds=2, threads=2
+        )
+        assert d_flat == 3
+        assert info_flat[0] == 3 and info_flat[1] == 3
+        err_api = capsys.readouterr().err
+        assert "Warning:" in err_api and "REPEAT block" in err_api
+
+        ret_flat = dist_m4ri.main(
+            [str(flat_stim), "--rounds", "--no-cache", "threads=2"]
+        )
+        assert ret_flat == 0
+        captured_flat = capsys.readouterr()
+        assert "Warning:" in captured_flat.err and "REPEAT block" in captured_flat.err
+
+        # Non-stim input with --rounds must signal an error
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        ret_dem_err = dist_m4ri.main([dem_file, "--rounds", "--no-cache"])
+        assert ret_dem_err != 0
+        assert "--rounds" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_stim_out_dem_out_stim_out_dir(tmp_path):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+
+    in_dir = tmp_path / "inputs"
+    in_dir.mkdir(parents=True, exist_ok=True)
+    stim_file = in_dir / "surf_d3_Z.stim"
+
+    # Create a noiseless circuit to also verify that --out-stim saves the noisy/processed circuit
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        rounds=4,
+        distance=3,
+    )
+    circuit.to_file(str(stim_file))
+
+    # 1. Test CLI parsing of bare --out-dem and --out-stim vs explicit filenames
+    p1 = dist_m4ri.parse_cli_args(["--out-dem", "--out-stim", str(stim_file)])
+    assert p1["out_dem"] is True
+    assert p1["out_stim"] is True
+    assert p1["fdem"] == str(stim_file)
+
+    p2 = dist_m4ri.parse_cli_args(
+        ["--out-dir", "/tmp/out", "--out-dem", "a.dem", "--out-stim", "b.stim", str(stim_file)]
+    )
+    assert p2["out_dir"] == "/tmp/out"
+    assert p2["out_dem"] == "a.dem"
+    assert p2["out_stim"] == "b.stim"
+    assert p2["fdem"] == str(stim_file)
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        # 2. Bare --out-dem and --out-stim (default --simple, default out-dir = input file dir)
+        ret = dist_m4ri.main(
+            [str(stim_file), "--rounds", "2", "--out-dem", "--out-stim", "--no-cache", "threads=2"]
+        )
+        assert ret == 0
+        exp_simp_dem = in_dir / "surf_d3_Z_simp.dem"
+        exp_simp_stim = in_dir / "surf_d3_Z_simp.stim"
+        assert exp_simp_dem.exists()
+        assert exp_simp_stim.exists()
+
+        saved_simp_circ = stim.Circuit.from_file(str(exp_simp_stim))
+        assert dist_m4ri.has_noise(saved_simp_circ)
+        assert saved_simp_circ.num_detectors == 16
+        saved_simp_dem = stim.DetectorErrorModel.from_file(str(exp_simp_dem))
+        assert saved_simp_dem.num_detectors == 16
+
+        # 3. Bare --out-dem and --out-stim with --full and explicit --out-dir
+        custom_dir = tmp_path / "custom_out"
+        ret_full = dist_m4ri.main(
+            [
+                str(stim_file),
+                "--full",
+                "--rounds",
+                "2",
+                "--out-dir",
+                str(custom_dir),
+                "--out-dem",
+                "--out-stim",
+                "--no-cache",
+                "threads=2",
+            ]
+        )
+        assert ret_full == 0
+        exp_full_dem = custom_dir / "surf_d3_Z_full.dem"
+        exp_full_stim = custom_dir / "surf_d3_Z_full.stim"
+        assert exp_full_dem.exists()
+        assert exp_full_stim.exists()
+        saved_full_dem = stim.DetectorErrorModel.from_file(str(exp_full_dem))
+        assert saved_full_dem.num_detectors == 24
+
+        # 4. Explicit bare filenames without --out-dir default to input file's directory
+        ret_named_in_dir = dist_m4ri.main(
+            [
+                str(stim_file),
+                "--rounds",
+                "2",
+                "--out-dem",
+                "named_in_dir.dem",
+                "--out-stim",
+                "named_in_dir.stim",
+                "--no-cache",
+                "threads=2",
+            ]
+        )
+        assert ret_named_in_dir == 0
+        assert (in_dir / "named_in_dir.dem").exists()
+        assert (in_dir / "named_in_dir.stim").exists()
+
+        # 5. Explicit bare filenames with --out-dir save into --out-dir
+        ret_named = dist_m4ri.main(
+            [
+                str(stim_file),
+                "--rounds",
+                "2",
+                "--out-dir",
+                str(custom_dir),
+                "--out-dem",
+                "explicit.dem",
+                "--out-stim",
+                "explicit.stim",
+                "--no-cache",
+                "threads=2",
+            ]
+        )
+        assert ret_named == 0
+        assert (custom_dir / "explicit.dem").exists()
+        assert (custom_dir / "explicit.stim").exists()
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+S5_H = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
+S5_L = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
+
+
+def test_normalize_start_list():
+    norm = dist_m4ri._normalize_start_list
+    assert norm(None) is None
+    assert norm(5) == [5]
+    assert norm(-1) is None
+    assert norm("-1") is None
+    assert norm("") is None
+    assert norm("48,0,48") == [0, 48]
+    assert norm([7, 3, 3]) == [3, 7]
+    assert norm((2,)) == [2]
+    assert norm(np.array([4, 1])) == [1, 4]
+    for bad in ("1,,2", "a", "1.5", "0,-1", [1, -2], 1.5, True, [True]):
+        with pytest.raises(ValueError):
+            norm(bad)
+    assert dist_m4ri._start_key_suffix([0, 48]) == ":start=0,48"
+    assert dist_m4ri._start_key_suffix(None) == ""
+
+
+def test_run_dist_m4ri_start_list_and_disabled_options(capsys):
+    # start list is passed sorted and deduplicated; noscan/cbeg/cend are ignored with a warning
+    res = dist_m4ri.run_dist_m4ri(
+        method=2, finH=S5_H, finL=S5_L, wmax=7, start=[41, 0, 41], noscan=1, cbeg=3, cend=7,
+        threads=2, verbose=True
+    )
+    assert res == (5, 5, 0)
+    captured = capsys.readouterr()
+    run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+    assert "start=0,41" in run_line
+    assert "noscan=" not in run_line and "cbeg=" not in run_line and "cend=" not in run_line
+    for opt in ("noscan=1", "cbeg=3", "cend=7"):
+        assert f"{opt} is disabled in the Python interface" in captured.err
+    assert "WARNING: start=0,41 (expert option)" in captured.err
+
+
+def test_start_list_cache_records(tmp_path, monkeypatch, capsys):
+    import json
+    cache_file = str(tmp_path / "start_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        # 1. Start-list run: separate ':start=0,41' record; the main record only gets dmax (and codewords)
+        dist, d_info = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, start="41,0", threads=2, return_info=True, cache_file=cache_file
+        )
+        assert dist == 5 and d_info == [5, 5, 0]
+        err = capsys.readouterr().err
+        assert "WARNING: start=0,41 (expert option)" in err
+        assert "use trust_start=1 to also accept dmin" in err
+        plain = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)
+        srec = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file, start=[0, 41])
+        assert srec["dmin"] == 5 and srec["dmax"] == 5
+        assert plain["dmin"] == 0 and plain["dmax"] == 5
+        with open(cache_file) as f:
+            data = json.load(f)
+        assert any(k.startswith("quantum:") and k.endswith(":start=0,41") for k in data)
+
+        # 2. Repeated start-list call is a cache hit (the binary is not called)
+        def _no_run(*args, **kwargs):
+            raise AssertionError("dist_m4ri binary should not be called")
+        monkeypatch.setattr(dist_m4ri, "run_dist_m4ri", _no_run)
+        dist2, d_info2 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, start=[0, 41], threads=2, return_info=True, cache_file=cache_file
+        )
+        assert dist2 == 5 and d_info2 == [5, 5, 0]
+        assert dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)["dmin"] == 0
+
+        # 3. trust_start copies the exact start-list record to the main record without a calculation
+        dist3, d_info3 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, start=[0, 41], trust_start=True, threads=2, return_info=True,
+            cache_file=cache_file
+        )
+        assert dist3 == 5 and d_info3 == [5, 5, 0]
+        assert "trust_start=1: start-list results are accepted" in capsys.readouterr().err
+        with open(cache_file) as f:
+            data = json.load(f)
+        plain_keys = [k for k in data if k.startswith("quantum:") and ":start=" not in k]
+        assert len(plain_keys) == 1
+        assert data[plain_keys[0]]["dmin"] == 5 and data[plain_keys[0]]["dmax"] == 5
+
+        # 4. The main record is now exact: a call without a start list is a cache hit
+        dist4, d_info4 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, method=2, wmax=7, threads=2, return_info=True, cache_file=cache_file
+        )
+        assert dist4 == 5 and d_info4 == [5, 5, 0]
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_start_list_trust_after_calculation_css(tmp_path):
+    cache_file = str(tmp_path / "start_css_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        kw = dict(Hx=S5_H, Hz=S5_H, Lz=S5_L, Lx=S5_L, method=2, wmax=7, threads=2, cache_file=cache_file)
+        # Without trust_start: only the upper bounds (and codewords) reach the main record
+        dist, dx, dz = dist_m4ri.compute_css_distance(start="0,41", **kw)
+        assert dist == 5 and dx == [5, 5, 0] and dz == [5, 5, 0]
+        plain = dist_m4ri.get_cached_distance(Hx=S5_H, Hz=S5_H, Lx=S5_L, Lz=S5_L, cache_file=cache_file)
+        assert plain["dmax_X"] == 5 and plain["dmax_Z"] == 5
+        assert plain["dmin_X"] == 0 and plain["dmin_Z"] == 0
+        # With trust_start and another start list: after the calculation, dmin is merged as well
+        dist2, dx2, dz2 = dist_m4ri.compute_css_distance(start=[0, 41, 12], trust_start=True, **kw)
+        assert dist2 == 5 and dx2 == [5, 5, 0] and dz2 == [5, 5, 0]
+        plain2 = dist_m4ri.get_cached_distance(Hx=S5_H, Hz=S5_H, Lx=S5_L, Lz=S5_L, cache_file=cache_file)
+        assert plain2["dX"] == [5, 5, 0] and plain2["dZ"] == [5, 5, 0]
+        assert plain2["dmin"] == 5 and plain2["dmax"] == 5 and plain2["dist"] == 5
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_cli_start_trust_start_and_disabled_options(capsys):
+    args = dist_m4ri.parse_cli_args(
+        ["finH=h.mtx", "start=5,1,1", "--trust-start", "noscan=1", "cbeg=2", "cend=3"]
+    )
+    assert args["start"] == [1, 5]
+    assert args["trust_start"] is True
+    assert (args["noscan"], args["cbeg"], args["cend"]) == (1, 2, 3)
+    assert dist_m4ri.parse_cli_args(["trust_start=0"])["trust_start"] is False
+    assert dist_m4ri.parse_cli_args(["trust-start=1"])["trust_start"] is True
+    assert dist_m4ri.parse_cli_args(["--trust-start=yes"])["trust_start"] is True
+    assert dist_m4ri.parse_cli_args(["start=-1"])["start"] is None
+    assert dist_m4ri.parse_cli_args([])["trust_start"] is False
+
+    try:
+        # Invalid start list is an error
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "start=1,,2", "--no-cache"])
+        assert ret == 1
+        assert "invalid start='1,,2'" in capsys.readouterr().err
+
+        # Disabled options are ignored with a warning; the start list gives the distance with a warning
+        ret = dist_m4ri.main([
+            f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=7", "noscan=1", "cbeg=30",
+            "start=0,41", "--no-cache", "threads=2"
+        ])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "5 5 0 (exact)" in captured.out
+        assert "noscan=1 is disabled in the Python interface" in captured.err
+        assert "cbeg=30 is disabled in the Python interface" in captured.err
+        assert "WARNING: start=0,41 (expert option)" in captured.err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+TRY_X = os.path.join(EXAMPLES_DIR, "tryX.mtx")  # small CSS code [[40,10,4]]
+TRY_Z = os.path.join(EXAMPLES_DIR, "tryZ.mtx")
+
+
+def test_css_distance_requires_both_matrices(capsys):
+    empty = np.zeros((0, 40), dtype=np.int8)
+    for hx, hz in ((TRY_X, None), (None, TRY_Z), (TRY_X, empty), (None, None)):
+        with pytest.raises(ValueError, match="requires both Hx and Hz"):
+            dist_m4ri.compute_css_distance(Hx=hx, Hz=hz, method=2, wmax=4, threads=2)
+    try:
+        # CLI: an error message and exit code 1
+        ret = dist_m4ri.main([f"Hx={TRY_X}", "method=2", "wmax=4", "--no-cache"])
+        assert ret == 1
+        assert "requires both Hx and Hz" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_distance_result_eq():
+    r = dist_m4ri.DistanceResult(5, 5, 0)
+    assert r == 5 and r == np.int64(5) and r != 4
+    assert r == (5, 5, 0) and r == [5, 5, 0]
+    assert r == dist_m4ri.DistanceResult(5, 5, 0) and r != dist_m4ri.DistanceResult(5, 5, 10)
+    assert r != "5"
+    assert len(r) == 3 and r[1] == 5 and tuple(r) == (5, 5, 0)
+    rc = dist_m4ri.DistanceResult(4, 4, 0, cws=[[0, 1, 2, 3]])
+    assert len(rc) == 4 and rc[3] == [[0, 1, 2, 3]] and rc == (4, 4, 0, [[0, 1, 2, 3]])
+    assert int(dist_m4ri.DistanceResult(3, 6, 100)) == 6
+
+
+def test_cache_newer_version_not_overwritten(tmp_path, capsys):
+    import json
+    cache_file = tmp_path / "newer_cache.json"
+    newer = {"__version__": "99.0.0", "some_key": {"dist": 7}}
+    cache_file.write_text(json.dumps(newer))
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        dist_m4ri.load_distance_cache(str(cache_file))
+        assert "has newer version 99.0.0" in capsys.readouterr().err
+        assert "some_key" not in dist_m4ri._distance_cache
+        # neither a calculation with this cache file nor save_distance_cache() overwrites it
+        d = dist_m4ri.compute_classical_distance(S5_H, method=2, wmax=3, threads=2, cache_file=str(cache_file))
+        assert d == 2
+        dist_m4ri.save_distance_cache(str(cache_file))
+        assert json.loads(cache_file.read_text()) == newer
+        # once the file is deleted with clear_distance_cache(clear_file=True), it is written again
+        dist_m4ri.clear_distance_cache(str(cache_file), clear_file=True)
+        dist_m4ri._distance_cache["code_test"] = {"dist": 3, "dmin": 3, "dmax": 3}
+        dist_m4ri.save_distance_cache(str(cache_file))
+        assert json.loads(cache_file.read_text())["__version__"] == dist_m4ri.__version__
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_run_dist_m4ri_stop_event(capsys):
+    import threading
+    import time
+    s5 = dict(finH=S5_H, finL=S5_L)
+    # More than 64 KB of stderr (the matrices: debug=128|2048) with a stop_event which is not set: no deadlock
+    result = {}
+
+    def run():
+        result["res"] = dist_m4ri.run_dist_m4ri(
+            method=2, wmax=3, threads=2, debug=128 | 2048, stop_event=threading.Event(), **s5
+        )
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout=120)
+    assert not worker.is_alive(), "run_dist_m4ri() with stop_event is blocked by a full stderr pipe"
+    assert tuple(result["res"]) == (4, 0, 0)
+    assert len(capsys.readouterr().out) > 65536  # the stderr of the binary is printed (debug > 0)
+
+    # Cancelled run: the binary is terminated, and RuntimeError is raised
+    stop = threading.Event()
+    timer = threading.Timer(0.3, stop.set)
+    timer.start()
+    t0 = time.time()
+    try:
+        with pytest.raises(RuntimeError, match="cancelled by stop_event"):
+            dist_m4ri.run_dist_m4ri(method=1, steps=10**9, min_hits=0, timeout=60, threads=2, stop_event=stop, **s5)
+        assert time.time() - t0 < 30
+    finally:
+        timer.cancel()
+
+
+def test_add_noise_classically_controlled():
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circuit = stim.Circuit("""
+        R 0 1 2
+        TICK
+        H 0
+        CX 0 1
+        TICK
+        M 0
+        CX rec[-1] 1
+        CZ sweep[0] 2
+        TICK
+        M 1 2
+        DETECTOR rec[-2]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+    """)
+    noisy = dist_m4ri.add_noise(circuit, p=0.01)
+    assert "DEPOLARIZE2(0.01) 0 1" in str(noisy)
+    # noise only on qubits: no DEPOLARIZE2 after the classically controlled gates
+    for inst in noisy.flattened():
+        if inst.name in ("DEPOLARIZE1", "DEPOLARIZE2"):
+            assert all(t.qubit_value is not None for t in inst.targets_copy())
+    assert noisy.detector_error_model().num_errors > 0
+
+
+def test_css_outc_sector_files_and_finc(tmp_path, capsys):
+    cache_file = str(tmp_path / "css_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(Hx=TRY_X, Hz=TRY_Z, method=2, wmax=8, threads=2)
+    try:
+        # A calculation writes the sector files outC_X / outC_Z ...
+        res1 = dist_m4ri.compute_css_distance(outC=str(tmp_path / "cws1.nz"), cache_file=cache_file, **kw)
+        assert res1 == (4, [4, 4, 0], [4, 4, 0])
+        # ... and so does the cached exact result
+        capsys.readouterr()
+        res2 = dist_m4ri.compute_css_distance(
+            outC=str(tmp_path / "cws2.nz"), cache_file=cache_file, debug=dist_m4ri.PY_DBG_CACHE, **kw
+        )
+        assert res2 == res1
+        assert "Cache hit for CSS distance" in capsys.readouterr().out
+        assert not (tmp_path / "cws2.nz").exists()
+        for s in ("X", "Z"):
+            cws1 = dist_m4ri.read_sparse_vectors(str(tmp_path / f"cws1_{s}.nz"))
+            cws2 = dist_m4ri.read_sparse_vectors(str(tmp_path / f"cws2_{s}.nz"))
+            assert len(cws1) == 40 and sorted(map(tuple, cws1)) == sorted(map(tuple, cws2))
+
+        dist_m4ri.disable_distance_cache()
+        # finC identical to outC: the sector files are read (finC itself does not exist)
+        same = str(tmp_path / "cws1.nz")
+        res3 = dist_m4ri.compute_css_distance(finC=same, outC=same, debug=1, **kw)
+        assert res3 == res1
+        out = capsys.readouterr().out
+        assert "codewords from " + str(tmp_path / "cws1_X.nz") in out
+        assert "codewords from " + str(tmp_path / "cws1_Z.nz") in out
+        # Without sector files, finC itself is given to both runs (codewords not valid in a sector are skipped)
+        mixed = tmp_path / "mixed.nz"
+        mixed.write_text((tmp_path / "cws1_X.nz").read_text())
+        res4 = dist_m4ri.compute_css_distance(finC=str(mixed), debug=1, **kw)
+        assert res4 == res1
+        assert capsys.readouterr().out.count("codewords from " + str(mixed)) == 2
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def _hgp_rep(a: int, b: int):
+    """Hypergraph product of the repetition codes of lengths a and b (a planar surface code): dZ = a, dX = b."""
+    def rep(n):
+        H = np.zeros((n - 1, n), dtype=np.int8)
+        for i in range(n - 1):
+            H[i, i] = H[i, i + 1] = 1
+        return H
+    H1, H2 = rep(a), rep(b)
+    Hx = np.hstack([np.kron(H1, np.eye(b, dtype=np.int8)), np.kron(np.eye(a - 1, dtype=np.int8), H2.T)]) % 2
+    Hz = np.hstack([np.kron(np.eye(a, dtype=np.int8), H2), np.kron(H1.T, np.eye(b - 1, dtype=np.int8))]) % 2
+    return Hx.astype(np.int8), Hz.astype(np.int8)
+
+
+def test_dstop_stop_target(tmp_path, capsys):
+    import time
+    s5 = dict(finH=S5_H, finL=S5_L)  # d = 5
+    # method=3: the run ends once CC has certified dmin >= dstop, without waiting for RW (here: until the timeout)
+    t0 = time.time()
+    res = dist_m4ri.run_dist_m4ri(method=3, dstop=4, steps=10**8, min_hits=0, timeout=60, threads=4, **s5)
+    assert res[0] == 4 and res[1] in (0, 5) and time.time() - t0 < 30
+    # method=2 needs no wmax with dstop; dstop is not an upper bound (dmax = 0: no codeword found)
+    assert tuple(dist_m4ri.run_dist_m4ri(method=2, dstop=4, threads=2, **s5)) == (4, 0, 0)
+    with pytest.raises(ValueError, match="dstop>0"):
+        dist_m4ri.run_dist_m4ri(method=2, timeout=0, threads=2, **s5)
+
+    cache_file = str(tmp_path / "dstop_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, threads=2, return_info=True, cache_file=cache_file)
+    try:
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, dstop=4, **kw) == (4, [4, 0, 0])
+        # a cached lower bound dmin >= dstop answers the request
+        capsys.readouterr()
+        res2 = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, dstop=3, debug=dist_m4ri.PY_DBG_CACHE, **kw)
+        assert res2 == (4, [4, 0, 0])
+        assert "Cache hit for quantum distance (dmin=4 >= dstop=3 known)!" in capsys.readouterr().out
+        # a larger stop target continues from the cached lower bound, and so does the exact calculation
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, dstop=5, **kw) == (5, [5, 0, 0])
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, wmax=5, **kw) == (5, [5, 5, 0])
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+    text = dist_m4ri.explain_bounds([4, 0, 0], method=2, dstop=4)
+    assert "Stop target (dstop = 4): reached" in text
+    assert "Stop target" not in dist_m4ri.explain_bounds([4, 0, 0], method=2)
+    assert "Stop target" not in dist_m4ri.explain_bounds([5, 5, 0], method=2, dstop=4)
+
+
+def test_cli_dstop(capsys):
+    assert dist_m4ri.parse_cli_args(["dstop=4"])["dstop"] == 4
+    assert dist_m4ri.parse_cli_args([])["dstop"] == 0
+    try:
+        assert dist_m4ri.main([f"finH={S5_H}", "dstop=-1", "--no-cache"]) == 1
+        assert "invalid 'dstop=-1': dstop must be non-negative" in capsys.readouterr().err
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=2", "dstop=4", "threads=2", "--no-cache", "-v"])
+        assert ret == 0
+        out = capsys.readouterr().out
+        assert out.rstrip().endswith("4 0 0") and "Stop target (dstop = 4): reached" in out
+        # CSS: a user dmax (a bound on d = min(dX, dZ)) only stops both sector runs; then d = dmax
+        ret = dist_m4ri.main([f"Hx={TRY_X}", f"Hz={TRY_Z}", "method=2", "dmax=4", "threads=2", "--no-cache"])
+        assert ret == 0
+        assert "dX: 4 0 0  dZ: 4 0 0  (d = 4) (exact)" in capsys.readouterr().out
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_css_user_dmax_and_sector_records(tmp_path, capsys):
+    Hx, Hz = _hgp_rep(3, 5)  # dZ = 3, dX = 5
+    cache_file = str(tmp_path / "css_sectors.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, wmax=6, threads=2, cache_file=cache_file)
+    try:
+        # A user dmax is a bound on d = min(dX, dZ), not on either sector: it stops both sector runs (dstop),
+        # and it is neither reported as nor stored as the upper bound of a sector
+        assert dist_m4ri.compute_css_distance(Hx, Hz, dmax=3, **kw) == (3, [3, 0, 0], [3, 0, 0])
+        assert dist_m4ri.get_cached_distance(H=Hz, G=Hx, cache_file=cache_file)["d_info"] == [3, 0, 0]
+        # Without dmax, both sectors are computed (from the cached lower bounds)
+        assert dist_m4ri.compute_css_distance(Hx, Hz, **kw) == (3, [5, 5, 0], [3, 3, 0])
+        # The sector records are those of compute_quantum_distance(): (H=Hz, G=Hx) -> dX, (H=Hx, G=Hz) -> dZ
+        capsys.readouterr()
+        dbg = dist_m4ri.PY_DBG_CACHE
+        assert dist_m4ri.compute_quantum_distance(Hz, G=Hx, return_info=True, debug=dbg, **kw) == (5, [5, 5, 0])
+        assert dist_m4ri.compute_quantum_distance(Hx, G=Hz, return_info=True, debug=dbg, **kw) == (3, [3, 3, 0])
+        assert capsys.readouterr().out.count("Cache hit for quantum distance (exact distance known)!") == 2
+        entry = dist_m4ri.get_cached_distance(Hx=Hx, Hz=Hz, cache_file=cache_file)
+        assert entry["dX"] == [5, 5, 0] and entry["dZ"] == [3, 3, 0]
+        assert (entry["dist"], entry["dmin"], entry["dmax"]) == (3, 3, 3)
+        assert dist_m4ri.compute_css_distance(Hx, Hz, dstop=3, debug=dbg, **kw) == (3, [5, 5, 0], [3, 3, 0])
+        assert "Cache hit for CSS distance (exact distance known)!" in capsys.readouterr().out
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_css_cache_migration(tmp_path):
+    import json
+    Hx, Hz = _hgp_rep(3, 5)  # dZ = 3, dX = 5
+    st = dist_m4ri.get_sparse_array_state
+    key = f"css:X={st(Hx)}:Z={st(Hz)}"
+    key_x, key_z = f"quantum:H={st(Hz)}:G={st(Hx)}", f"quantum:H={st(Hx)}:G={st(Hz)}"
+    # A CSS record of an earlier version after compute_css_distance(dmax=3): the bound on d = min(dX, dZ) was
+    # reported back as the upper bound of both sectors (wrong for dX = 5)
+    old = {"dist": 3, "dmin": 3, "dmax": 3, "rw_steps": 0, "dmin_X": 3, "dmax_X": 3, "rw_steps_X": 0,
+           "dmin_Z": 3, "dmax_Z": 3, "rw_steps_Z": 0, "dX": [3, 3, 0], "dZ": [3, 3, 0], "cws_X": [], "cws_Z": []}
+    cache_file = tmp_path / "old_css_cache.json"
+    cache_file.write_text(json.dumps({"__version__": dist_m4ri.__version__, key: old}))
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        # The lower bounds are kept, the unconfirmed upper bounds are dropped, and the old record is removed
+        entry = dist_m4ri.get_cached_distance(Hx=Hx, Hz=Hz, cache_file=str(cache_file))
+        assert entry["dX"] == [3, 0, 0] and entry["dZ"] == [3, 0, 0]
+        data = json.loads(cache_file.read_text())
+        assert key not in data and key_x in data and key_z in data
+        res = dist_m4ri.compute_css_distance(Hx, Hz, method=2, wmax=6, threads=2, cache_file=str(cache_file))
+        assert res == (3, [5, 5, 0], [3, 3, 0])
+
+        # An upper bound confirmed by a stored codeword (only its weight is used here), or smaller than the upper
+        # bound of the other sector, is kept
+        dist_m4ri.clear_distance_cache()
+        old2 = dict(old, dmax_X=5, cws_X=[[0, 1, 2, 3, 4]], dmax_Z=3)
+        cache_file.write_text(json.dumps({"__version__": dist_m4ri.__version__, key: old2}))
+        entry2 = dist_m4ri.get_cached_distance(Hx=Hx, Hz=Hz, cache_file=str(cache_file))
+        assert entry2["dX"] == [3, 5, 0] and entry2["dZ"] == [3, 3, 0] and entry2["cws_X"] == [[0, 1, 2, 3, 4]]
+        assert (entry2["dist"], entry2["dmin"], entry2["dmax"]) == (3, 3, 3)
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_cached_outc_keeps_finc_codewords(tmp_path):
+    cache_file = str(tmp_path / "cws_cache.json")
+    out = str(tmp_path / "cws.nz")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, wmax=5, threads=2, cache_file=cache_file)
+    try:
+        d, cws = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, outC=out, do_cws=True, **kw)
+        assert d == 5 and len(cws) >= 2
+        extra = sorted(set(cws[0]) ^ set(cws[1]))  # another vector (of even weight, not in cws)
+        dist_m4ri._write_nzlist_file(out, cws + [extra])
+        # A cache hit with finC identical to outC keeps the codewords in the file
+        d2, cws2 = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, finC=out, outC=out, do_cws=True, **kw)
+        assert d2 == 5 and sorted(map(tuple, cws2)) == sorted(map(tuple, cws))
+        assert sorted(map(tuple, dist_m4ri.read_sparse_vectors(out))) == sorted(map(tuple, cws + [extra]))
+        # Without finC, outC gets the cached codewords
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, outC=out, **kw)
+        assert sorted(map(tuple, dist_m4ri.read_sparse_vectors(out))) == sorted(map(tuple, cws))
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+SURF_D3_DEM = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+
+
+def test_unknown_keyword_arguments():
+    with pytest.raises(TypeError, match=r"compute_quantum_distance\(\) got an unexpected keyword argument 'dmx' "
+                                        r"\(did you mean 'dmax'\?\)"):
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=2, wmax=5, dmx=5)
+    with pytest.raises(TypeError, match=r"compute_css_distance\(\) got unexpected keyword arguments 'stpes'.*, "
+                                        r"'dexp' \(did you mean 'd_exp'\?\)"):
+        dist_m4ri.compute_css_distance(TRY_X, TRY_Z, method=2, wmax=4, stpes=10, dexp=4)
+    for func, kw in ((dist_m4ri.compute_classical_distance, dict(H=S5_H)),
+                     (dist_m4ri.compute_dem_distance, dict(dem=SURF_D3_DEM))):
+        with pytest.raises(TypeError, match="unexpected keyword argument 'foo'"):
+            func(foo=1, method=2, wmax=3, **kw)
+    # the alias win (of kwin) is accepted
+    assert dist_m4ri.compute_classical_distance(S5_H, method=2, wmax=3, threads=2, win=0) == 2
+
+
+def test_cli_conflict_warnings(capsys):
+    try:
+        ret = dist_m4ri.main([f"fdem={SURF_D3_DEM}", f"finH={S5_H}", "--simple", "method=2", "wmax=3", "threads=2",
+                              "--no-cache"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert f"# Warning: fdem={SURF_D3_DEM} given: ignoring finH=" in captured.err
+        assert "# Warning: --simple: only used for a Stim circuit (.stim); ignored" in captured.err
+        assert captured.out.rstrip().endswith("3 3 0 (exact)")
+
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", f"Lx={S5_L}", "pmin=0.01", "classical=1", "method=2",
+                              "wmax=5", "threads=2", "--no-cache"])
+        assert ret == 0
+        err = capsys.readouterr().err
+        assert "# Warning: pmin=: only used with fdem= (a DEM or Stim circuit); ignored" in err
+        assert "# Warning: Lx=: only used for a CSS code (Hx= and Hz=); ignored" in err
+        assert "# Warning: classical=1 ignored: the input is a quantum code or a DEM" in err
+
+        prefix = os.path.join(EXAMPLES_DIR, "try")
+        ret = dist_m4ri.main([f"fin={prefix}", f"finH={TRY_X}", "method=2", "wmax=4", "threads=2", "--no-cache"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert f"# Warning: fin={prefix} together with finH=: the explicit file names take precedence" in captured.err
+        assert captured.out.rstrip().endswith("4 4 0 (exact)")
+
+        ret = dist_m4ri.main([f"Hx={TRY_X}", f"Hz={TRY_Z}", f"finH={S5_H}", "method=2", "wmax=4", "threads=2",
+                              "--no-cache"])
+        assert ret == 0
+        assert "# Warning: Hx=/Hz= given (CSS code): ignoring finH=" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cli_outc_keeps_finc_codewords(tmp_path, capsys):
+    cache_file = str(tmp_path / "cli_cache.json")
+    out = str(tmp_path / "cli_cws.nz")
+    base = [f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=5", "threads=2", f"cache={cache_file}"]
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.main(base + [f"outC={out}"]) == 0
+        cws = dist_m4ri.read_sparse_vectors(out)
+        assert len(cws) >= 2
+        extra = sorted(set(cws[0]) ^ set(cws[1]))
+        dist_m4ri._write_nzlist_file(out, cws + [extra])
+        # a cache hit with finC identical to outC: the file is written once, keeping its codewords
+        assert dist_m4ri.main(base + [f"finC={out}", f"outC={out}"]) == 0
+        assert sorted(map(tuple, dist_m4ri.read_sparse_vectors(out))) == sorted(map(tuple, cws + [extra]))
+        capsys.readouterr()
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_dem_cache_merged_bounds_and_circuit_key(tmp_path):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated(
+        "surface_code:rotated_memory_z", rounds=3, distance=3, after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001, after_reset_flip_probability=0.001,
+    )
+    cache_file = str(tmp_path / "dem_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    kw = dict(method=2, threads=2, cache_file=cache_file)
+    try:
+        assert dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file) is None
+        assert dist_m4ri.compute_dem_distance(circuit=circ, dstop=2, **kw) == (2, [2, 0, 0])
+        # get_cached_distance(circuit=...) finds the record of the processed (here: stripped) DEM
+        assert dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file)["d_info"] == [2, 0, 0]
+        assert dist_m4ri.get_cached_distance(circuit=circ, full=True, cache_file=cache_file) is None
+        # the exact distance from the cached lower bound; the cached dist is that of the merged bounds
+        d, info, cws = dist_m4ri.compute_dem_distance(circuit=circ, wmax=3, do_cws=True, **kw)
+        assert d == 3 and info == [3, 3, 0] and len(cws) > 0
+        entry = dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file)
+        assert entry["dist"] == 3 and entry["d_info"] == [3, 3, 0] and len(entry["cws"]) == len(cws)
+        stim_file = tmp_path / "c.stim"
+        circ.to_file(str(stim_file))
+        assert dist_m4ri.get_cached_distance(circuit=str(stim_file), cache_file=cache_file)["dist"] == 3
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def _surface_memory_z(x_in_h_frame: bool, meas_before_h: bool, rounds: int = 3):
+    """
+    Memory-Z circuit of the d=3 rotated surface code (data 0..8, Z ancillas 9..12, X ancillas 13..16).  With
+    x_in_h_frame, the X checks are measured as Z checks in the Hadamard frame of the data qubits (H on all data, CX
+    data -> ancilla, H on all data), with the X ancillas measured before or after the closing H gates.
+    """
+    import stim
+    x_checks = [[1, 2, 4, 5], [3, 4, 6, 7], [0, 1], [7, 8]]
+    z_checks = [[0, 1, 3, 4], [4, 5, 7, 8], [3, 6], [2, 5]]
+    data, za, xa = list(range(9)), [9, 10, 11, 12], [13, 14, 15, 16]
+
+    def line(name, qubits):
+        return f"{name} " + " ".join(map(str, qubits)) + "\n"
+
+    def body():
+        s = "".join(line("CX", [x for q in row for x in (q, a)]) for a, row in zip(za, z_checks))
+        if x_in_h_frame:
+            s += line("MR", za) + line("H", data)
+            s += "".join(line("CX", [x for q in row for x in (q, a)]) for a, row in zip(xa, x_checks))
+            s += (line("MR", xa) + line("H", data)) if meas_before_h else (line("H", data) + line("MR", xa))
+        else:
+            s += line("H", xa)
+            s += "".join(line("CX", [x for q in row for x in (a, q)]) for a, row in zip(xa, x_checks))
+            s += line("H", xa) + line("MR", za + xa)
+        return s
+
+    c = line("R", data + za + xa) + body() + "".join(f"DETECTOR rec[-{k}]\n" for k in (8, 7, 6, 5))
+    c += f"REPEAT {rounds - 1} {{\n" + body()
+    c += "".join(f"DETECTOR rec[-{k}] rec[-{k + 8}]\n" for k in range(8, 0, -1)) + "}\n"
+    c += line("M", data)  # data 0..8: rec[-9]..rec[-1]; the last Z-ancilla results: rec[-17]..rec[-14]
+    for a_rec, row in zip((17, 16, 15, 14), z_checks):
+        c += "DETECTOR " + " ".join(f"rec[-{9 - q}]" for q in row) + f" rec[-{a_rec}]\n"
+    c += "OBSERVABLE_INCLUDE(0) rec[-9] rec[-8] rec[-7]\n"  # logical Z on the data qubits 0, 1, 2
+    return stim.Circuit(c)
+
+
+def test_classify_qubits_checks_measured_in_hadamard_frame():
+    # E.2.10: single-qubit gates on data qubits act on the Paulis of all checks, including those already measured,
+    # so that all checks are expressed in the same frame
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    for x_in_h_frame, meas_before_h in ((False, False), (True, False), (True, True)):
+        circ = _surface_memory_z(x_in_h_frame, meas_before_h)
+        circ.detector_error_model()  # deterministic detectors and observable
+        t_res = dist_m4ri.classify_qubits_thorough(circ)
+        assert t_res["is_css"] is True and t_res["is_rotated_css"] is False and t_res["basis"] == "Z"
+        assert t_res["data_qubits"] == list(range(9))
+        assert t_res["z_ancillas"] == [9, 10, 11, 12] and t_res["x_ancillas"] == [13, 14, 15, 16]
+        _, stripped, kept = dist_m4ri.strip_minority_detectors(circ, "Z", thorough_res=t_res)
+        assert (stripped, kept) == (8, 16)
 
 
 if __name__ == "__main__":

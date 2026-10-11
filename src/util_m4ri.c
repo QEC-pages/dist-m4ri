@@ -13,6 +13,34 @@
 #include "util_m4ri.h"
 
 
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+/* gauss_one_rows() for rows not at equal distances in memory (M4RI before 2024, a matrix spanning several blocks):
+ * each row is found with mzd_row().  Kept out of line, so that the inlined gauss_one_rows() stays small. */
+int gauss_one_rows_blocks(mzd_t *M, const int idx, const int begrow, const rci_t nrows_eff) {
+  const wi_t word_idx = idx >> 6;
+  const word bit_mask = (word)1 << (idx & 63);
+  const wi_t width = M->width;
+  for (rci_t j = begrow; j < nrows_eff; ++j) {
+    if (mzd_row(M, j)[word_idx] & bit_mask) {
+      if (j != begrow) {
+        mzd_row_swap(M, begrow, j);
+      }
+      const word * const piv_row = mzd_row(M, begrow);
+      for (rci_t ii = 0; ii < nrows_eff; ++ii) {
+        word * const dst_row = mzd_row(M, ii);
+        if (ii != begrow && (dst_row[word_idx] & bit_mask)) {
+          for (wi_t w = 0; w < width; ++w) {
+            dst_row[w] ^= piv_row[w];
+          }
+        }
+      }
+      return 1;
+    }
+  }
+  return 0;
+}
+#endif /* __M4RI_MAX_MZD_BLOCKSIZE */
+
 size_t mzd_weight_naive(const mzd_t *A){
   size_t count = 0;
   for(rci_t i = 0; i < A->nrows; ++i)
@@ -499,12 +527,11 @@ csr_t *csr_init(csr_t *mat, int rows, int cols, int nzmax){
   return mat;
 }
 
-/* helper function */
-static int cmp_int_pairs(const void *p1, const void *p2){
-  if ((((int_pair *) p1)->a)!=(((int_pair *) p2)->a))
-    return  ((((int_pair *) p1)->a)-(((int_pair *) p2)->a));    
-  return ((((int_pair *) p1)->b)-(((int_pair *) p2)->b));
-}
+#define SORT_NAME int_pair
+#define SORT_TYPE int_pair
+#define SORT_CMP(x, y) (((x).a != (y).a) ? ((x).a - (y).a) : ((x).b - (y).b))
+#define SORT_DEF static inline
+#include "sort.h"
 
 /**
  *  compress a CSR matrix  
@@ -518,7 +545,7 @@ void csr_compress(csr_t *mat){
     pairs[i].a=mat->p[i];
     pairs[i].b=mat->i[i];
   }
-  qsort(pairs,nz,sizeof(int_pair),cmp_int_pairs);
+  int_pair_quick_sort(pairs, nz);
   int i, j=0;
   for(i=0;i<mat->rows;i++){
     mat->p[i]=j;
@@ -534,7 +561,7 @@ void csr_compress(csr_t *mat){
 
 csr_t * csr_from_pairs(csr_t *mat, const int nz, int_pair * const prs, const int nrows, const int ncols){
   mat = csr_init(mat, nrows, ncols, nz);
-  qsort(prs, nz, sizeof(int_pair), cmp_int_pairs);
+  int_pair_quick_sort(prs, nz);
   int i, j=0;
   for(i=0; i < nrows; i++){
     mat->p[i]=j;
@@ -907,4 +934,205 @@ csr_t * Lx_for_CSS_code(const csr_t * const Hx, const csr_t *const Hz){
   mzp_free(perm);
   mzd_free(mat);
   return ans;
+}
+
+mzd_t * mzd_nullspace(const csr_t * const H) {
+  if (!H) return NULL;
+  mzd_t *mH = mzd_from_csr(NULL, H);
+  mzd_t *X = mzd_kernel_left_pluq(mH, 0);
+  mzd_free(mH);
+  if (!X) return NULL;
+  mzd_t *N = mzd_transpose(NULL, X);
+  mzd_free(X);
+  return N;
+}
+
+colmask_t * colmask_from_csr(const csr_t * const A) {
+  if (!A || A->nz != -1) ERROR("expected a sparse matrix in CSR form");
+  colmask_t *cm = malloc(sizeof(colmask_t));
+  if (!cm) ERROR("memory allocation");
+  cm->rows = A->rows;
+  cm->cols = A->cols;
+  cm->kw = (A->rows + 63) >> 6;
+  const size_t num = (size_t)A->cols * (size_t)cm->kw;
+  cm->mask = calloc(num > 0 ? num : 1, sizeof(word));
+  if (!cm->mask) ERROR("memory allocation");
+  for (int ir = 0; ir < A->rows; ir++) {
+    const word bit = (word)1 << (ir & 63);
+    for (int iL = A->p[ir]; iL < A->p[ir + 1]; iL++)
+      cm->mask[(size_t)A->i[iL] * cm->kw + (ir >> 6)] ^= bit; /* duplicate entries cancel */
+  }
+  return cm;
+}
+
+colmask_t * colmask_free(colmask_t *cm) {
+  if (cm) {
+    free(cm->mask);
+    free(cm);
+  }
+  return NULL;
+}
+
+static inline uint64_t util_splitmix64(uint64_t *state) {
+  uint64_t z = (*state += 0x9e3779b97f4a7c15ULL);
+  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+  return z ^ (z >> 31);
+}
+
+static inline int util_rand_uniform(int max, uint64_t *state) {
+  if (max <= 1) return 0;
+  return (int)(util_splitmix64(state) % (uint64_t)max);
+}
+
+void localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode,
+                           const csr_t *spaH, const csr_t *mHT,
+                           int *visited_cols, int *visited_checks, int *col_queue,
+                           int *visit_marker, uint64_t *rng_state) {
+  if (kwin <= 0 || kwin >= nvar || !visited_cols) {
+    for (int i = 0; i < nvar; i++) perm->values[i] = i;
+    for (int i = 0; i < nvar - 1; i++) {
+      int j = i + util_rand_uniform(nvar - i, rng_state);
+      SWAPINT(perm->values[i], perm->values[j]);
+    }
+    return;
+  }
+
+  (*visit_marker)++;
+  int marker = *visit_marker;
+  if (marker <= 0) {
+    memset(visited_cols, 0, (size_t)nvar * sizeof(int));
+    if (spaH && visited_checks) {
+      memset(visited_checks, 0, (size_t)spaH->rows * sizeof(int));
+    }
+    *visit_marker = marker = 1;
+  }
+
+  int count = 0;
+  if (win_mode == 0 && spaH && mHT && visited_checks && col_queue) {
+    int head = 0, tail = 0;
+    visited_cols[seed_col] = marker;
+    col_queue[tail++] = seed_col;
+    perm->values[count++] = seed_col;
+
+    while (count < kwin) {
+      if (head < tail) {
+        int col = col_queue[head++];
+        for (int p_idx = mHT->p[col]; p_idx < mHT->p[col + 1] && count < kwin; p_idx++) {
+          int chk = mHT->i[p_idx];
+          if (visited_checks[chk] != marker) {
+            visited_checks[chk] = marker;
+            for (int h_idx = spaH->p[chk]; h_idx < spaH->p[chk + 1] && count < kwin; h_idx++) {
+              int c_adj = spaH->i[h_idx];
+              if (visited_cols[c_adj] != marker) {
+                visited_cols[c_adj] = marker;
+                col_queue[tail++] = c_adj;
+                perm->values[count++] = c_adj;
+              }
+            }
+          }
+        }
+      } else {
+        int r_start = util_rand_uniform(nvar, rng_state);
+        int found = -1;
+        for (int offset = 0; offset < nvar; offset++) {
+          int cand = (r_start + offset) % nvar;
+          if (visited_cols[cand] != marker) {
+            found = cand;
+            break;
+          }
+        }
+        if (found == -1) break;
+        visited_cols[found] = marker;
+        col_queue[tail++] = found;
+        perm->values[count++] = found;
+      }
+    }
+  } else {
+    for (int i = 0; i < kwin; i++) {
+      int col = (seed_col + i) % nvar;
+      visited_cols[col] = marker;
+      perm->values[count++] = col;
+    }
+  }
+
+  int win_actual = count;
+  for (int i = 0; i < win_actual - 1; i++) {
+    int j = i + util_rand_uniform(win_actual - i, rng_state);
+    SWAPINT(perm->values[i], perm->values[j]);
+  }
+
+  int rem_idx = win_actual;
+  for (int col = 0; col < nvar; col++) {
+    if (visited_cols[col] != marker) {
+      perm->values[rem_idx++] = col;
+    }
+  }
+  for (int i = win_actual; i < nvar - 1; i++) {
+    int j = i + util_rand_uniform(nvar - i, rng_state);
+    SWAPINT(perm->values[i], perm->values[j]);
+  }
+}
+
+void refresh_nullspace_basis(mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *rng_state) {
+  if (!N || N->nrows == 0 || N->ncols == 0) return;
+  const rci_t nu = N->nrows;
+  const rci_t n = N->ncols;
+
+  mzp_t *pivs = mzp_init(n);
+  mzp_t *perm = mzp_init(n);
+  rci_t *piv_cols = malloc((size_t)nu * sizeof(rci_t));
+  if (!pivs || !perm || !piv_cols) {
+    if (pivs) mzp_free(pivs);
+    if (perm) mzp_free(perm);
+    free(piv_cols);
+    return;
+  }
+
+  for (int i = 0; i <= (int)n - 2; i++) {
+    pivs->values[i] = i + util_rand_uniform(n - i, rng_state);
+  }
+  pivs->values[n - 1] = n - 1;
+
+  mzp_set_ui(perm, 1);
+  perm = perm_p_trans(perm, pivs, 0);
+
+  rci_t rank = 0;
+  for (rci_t i = 0; i < n && rank < nu; i++) {
+    int col = perm->values[i];
+    if (gauss_one(N, col, rank)) {
+      piv_cols[rank++] = col;
+    }
+  }
+
+  int target_row = -1;
+  size_t max_row_wt = 0;
+  if (cw_arr && cw_wt > 0) {
+    for (rci_t r = 0; r < rank; r++) {
+      int orig_col = piv_cols[r];
+      for (int k = 0; k < cw_wt; k++) {
+        if (cw_arr[k] == orig_col) {
+          size_t r_wt = mzd_weight_row(N, r);
+          if (r_wt > (size_t)cw_wt && r_wt > max_row_wt) {
+            max_row_wt = r_wt;
+            target_row = r;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (target_row >= 0 && cw_arr && cw_wt > 0) {
+    mzd_row_clear_offset(N, target_row, 0);
+    for (int k = 0; k < cw_wt; k++) {
+      if (cw_arr[k] >= 0 && cw_arr[k] < n) {
+        mzd_write_bit(N, target_row, cw_arr[k], 1);
+      }
+    }
+  }
+
+  free(piv_cols);
+  mzp_free(perm);
+  mzp_free(pivs);
 }

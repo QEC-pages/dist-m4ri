@@ -35,7 +35,7 @@ util_m4ri.o: util_m4ri.c util_m4ri.h mmio.h util_hash.h makefile
 util_io.o: util_io.c util_io.h util_m4ri.h mmio.h util_hash.h makefile 
 	${CC} ${CFLAGS} -c -o util_io.o $<  
 
-dist_cc.o: dist_cc.c util_io.h util_m4ri.h mmio.h util_hash.h makefile 
+dist_cc.o: dist_cc.c dist_cc.h util_io.h util_m4ri.h mmio.h util_hash.h makefile 
 	${CC} ${CFLAGS} -c -o dist_cc.o $<  
 
 mmio.o: mmio.c mmio.h makefile

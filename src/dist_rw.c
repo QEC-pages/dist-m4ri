@@ -32,7 +32,8 @@
  * @param dW weight increment from the minimum found
  * @param p pointer to global parameters structure
  * @param classical set to `1` for classical code (do not use `L` matrix), `0` otherwise  
- * @return minimum `weight` of a CW found (or `-weigt` if early termination condition is reached). Or `0` if no codewords wit `w<wmax` have been found.
+ * @return minimum `weight` of a CW found (or `-weight` if early termination condition is reached),
+ *         or `0` if no codewords with `w<wmax` have been found.
  */
 int do_RW_dist(params_t * const p){
   const csr_t * const spaH0 = p->spaH;
@@ -58,7 +59,7 @@ int do_RW_dist(params_t * const p){
     minW = p->min_w;
   }
 
-  if(debug&2)
+  if (debug & DBG_PROGRESS)
     printf("# running do_RW_dist() with steps=%d wmin=%d wmax=%d classical=%d nvar=%d\n",
 	   steps, wmin, wmax, classical, nvar);
   
@@ -73,43 +74,146 @@ int do_RW_dist(params_t * const p){
   /** 1. Construct random column permutation P */
   mzp_t * perm=mzp_init(nvar); /** identity column permutation */
   mzp_t * pivs=mzp_init(nvar); /** list of pivot columns */
-  mzp_t * pivs_srtd=mzp_init(nvar); /** list of pivot columns */
-  mzp_t * skip_pivs=mzp_init(nvar); /** list of pivot columns */
-  if((!pivs) || (!perm))
+  word * piv_mask=calloc(mH->width, sizeof(word)); /** bitmask of pivot columns */
+  if((!pivs) || (!perm) || (!piv_mask))
     ERROR("memory allocation failed!\n");
+  int eff_nrows = spaH0->rows;
+
+  mzd_t *N_ker = NULL;
+  mzd_t *M_sub = NULL;
+  int nu = 0;
+  int ksub_eff = 0;
+  if (p->ksub > 0) {
+    if (2 * spaH0->rows < nvar) {
+      if (debug & DBG_SUMMARY) {
+        fprintf(stderr,
+                "# Warning: ksub=%d requested, but m=%d < n-m=%d (<= nu); "
+                "falling back to full-matrix RW (ksub=0)\n",
+                p->ksub, spaH0->rows, nvar - spaH0->rows);
+      }
+      p->ksub = 0;
+    } else {
+      N_ker = mzd_nullspace(spaH0);
+      nu = N_ker ? N_ker->nrows : 0;
+      if (spaH0->rows < nu || nu <= 0) {
+        if (debug & DBG_SUMMARY) {
+          fprintf(stderr,
+                  "# Warning: ksub=%d requested, but m=%d < nu=%d; "
+                  "falling back to full-matrix RW (ksub=0)\n",
+                  p->ksub, spaH0->rows, nu);
+        }
+        if (N_ker) {
+          mzd_free(N_ker);
+          N_ker = NULL;
+        }
+        nu = 0;
+        p->ksub = 0;
+      } else {
+        ksub_eff = minint(p->ksub, nu);
+        if (ksub_eff > 0) {
+          M_sub = mzd_init(ksub_eff, nvar);
+        }
+      }
+    }
+  }
+
+  csr_t *mHT_csr = NULL;
+  int *visited_cols = NULL;
+  int *visited_checks = NULL;
+  int *col_queue = NULL;
+  int visit_marker = 0;
+  uint64_t rng_state = (uint64_t)p->seed + 0x517cc1b727220a95ULL;
+  if ((p->kwin > 0 && p->kwin < nvar) || nvar >= 500) {
+    mHT_csr = csr_transpose(NULL, spaH0);
+    visited_cols = calloc(nvar, sizeof(int));
+    visited_checks = calloc(spaH0->rows, sizeof(int));
+    col_queue = calloc(nvar, sizeof(int));
+  }
 
   for (int ii=0; ii< steps; ii++){
-    pivs=mzp_rand(pivs); /** random pivots LAPAC-style */
-    mzp_set_ui(perm,1);
-    perm=perm_p_trans(perm,pivs,0); /**< corresponding permutation */
+    int eff_kwin = p->kwin;
+    int eff_win_mode = p->win_mode;
+    if (eff_kwin == 0 && nvar >= 500 && (ii & 1) == 1) {
+      eff_kwin = minint(512, (nvar * 3) / 4);
+      eff_win_mode = 1;
+    }
+    if (eff_kwin > 0 && eff_kwin < nvar) {
+      int seed_col = rand_uniform(nvar);
+      localized_window_perm(perm, nvar, seed_col, eff_kwin, eff_win_mode,
+                            spaH0, mHT_csr, visited_cols, visited_checks,
+                            col_queue, &visit_marker, &rng_state);
+    } else {
+      pivs=mzp_rand(pivs); /** random pivots LAPAC-style */
+      mzp_set_ui(perm,1);
+      perm=perm_p_trans(perm,pivs,0); /**< corresponding permutation */
+    }
+
+    if (p->ksub > 0) {
+      if (ksub_eff <= 0) break;
+      for (int i = 0; i < ksub_eff; i++) {
+        int r = rand_uniform(nu);
+        mzd_copy_row(M_sub, i, N_ker, r);
+      }
+      int rank = 0;
+      for (int i = 0; i < nvar && rank < ksub_eff; i++) {
+        int col = perm->values[i];
+        if (gauss_one(M_sub, col, rank)) {
+          rank++;
+        }
+      }
+      for (int ir = 0; ir < rank; ir++) {
+        int cnt = 0;
+        const int cur_d = (minW <= nvar) ? minW : 0;
+        const int limit = codeword_rw_limit(p, cur_d, codeword_feed_limit(p));
+        word *rawrow = mzd_row(M_sub, ir);
+        rci_t j = -1;
+        while (cnt < limit) {
+          j = nextelement(rawrow, M_sub->width, j);
+          if (j == -1 || j >= nvar) break;
+          ee[cnt++] = j++;
+        }
+        if (cnt > 0 && cnt < limit) {
+          int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
+          if (nz) {
+            p->codewords = codeword_add_maybe(p, ee, cnt);
+            if (cnt < minW) minW = cnt;
+            if (codeword_maxc_reached(p)) goto alldone;
+            if (check_min_hits_convergence(p)) goto alldone;
+            if (minW <= wmin) {
+              minW = -minW;
+              goto alldone;
+            }
+          }
+        }
+      }
+      if (p->refresh > 0 && (ii + 1) % p->refresh == 0) {
+        int cw_wt = 0;
+        if (p->codewords && p->min_w < nvar) {
+          cw_vec_t *cw, *tmp;
+          HASH_ITER(hh, p->codewords, cw, tmp) {
+            if (cw->weight == p->min_w) {
+              cw_wt = cw->weight;
+              for (int k = 0; k < cw_wt; k++) ee[k] = cw->arr[k];
+              break;
+            }
+          }
+        }
+        refresh_nullspace_basis(N_ker, cw_wt > 0 ? ee : NULL, cw_wt, &rng_state);
+      }
+      continue;
+    }
 
     /** full row echelon form of `H` (gauss) using the order in `perm` */
-    int rank=0;
-    for(int i=0; i< nvar; i++){
-      int col=perm->values[i];
-      int ret=gauss_one(mH, col, rank);
-      if(ret)
-        pivs->values[rank++]=col;
+    memset(piv_mask, 0, mH->width * sizeof(word));
+    int rank = 0;
+    for (int i = 0; i < nvar && rank < eff_nrows; i++) {
+      int col = perm->values[i];
+      if (gauss_one_rows(mH, col, rank, eff_nrows)) {
+        pivs->values[rank++] = col;
+        piv_mask[col >> 6] |= (word)1 << (col & 63);
+      }
     }
-
-    /** construct skip-pivot permutation */
-    pivs_srtd = mzp_copy(pivs_srtd,pivs);
-    qsort(pivs_srtd->values, rank, sizeof(pivs->values[0]), cmp_rci_t);
-    int end=-1, num=0;
-    for(int i=0; i < rank; i++){
-      int beg = end + 1;
-      end = pivs_srtd->values[i];
-      for(int j = beg; j < end; j++)
-	skip_pivs->values[num++] = j;
-    }
-    for(int j = end + 1 ; j < nvar; j++)
-      skip_pivs->values[num++] = j;
-    
-#ifndef NDEBUG
-    if (num + rank != nvar)
-      ERROR("mismatch: rank=%d and num=%d do not add to nvar=%d\n",rank,num,nvar);
-#endif
-    skip_pivs->length = num;
+    eff_nrows = rank;
 
 #ifndef NEW
 # define NEW 1
@@ -124,19 +228,14 @@ int do_RW_dist(params_t * const p){
      *  [   a2  1     b2 ]     [b1  0  b2 b3 1 ]
      *  [   a3     1  b3 ]
      */
-    int k = nvar - rank;
-    for (int ir=0; ir< k; ir++){ /** each row in the dual matrix */
+    for (int col = 0, ir = 0; col < nvar; col++){ /** each row in the dual matrix */
+      if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
+      ir++;
       int cnt=0; /** how many non-zero elements */
-      const int col = ee[cnt++] = skip_pivs->values[ir];
-      int limit = nvar + 1;
-      int cur_d = (minW <= nvar) ? minW : 0;
-      if (cur_d > 0) {
-        if ((p->outC || p->maxC || p->dW > 0) && p->dW >= 0) {
-          limit = minint(limit, cur_d + p->dW + 1);
-        } else {
-          limit = minint(limit, cur_d);
-        }
-      }
+      ee[cnt++] = col;
+      const int cur_d = (minW <= nvar) ? minW : 0;
+      /** weight limit of candidates of interest (the same with any `debug` value) */
+      const int limit = codeword_rw_limit(p, cur_d, codeword_feed_limit(p));
 #if (NEW==0) /** older version going over columns of `H` */
       for(int ix=0; ix<rank; ix++){
         if(mzd_read_bit(mH,ix,col))
@@ -165,16 +264,17 @@ int do_RW_dist(params_t * const p){
 #else /** NEW==1, use transposed `H` -- the `fastest` version of the code*/
       word * rawrow = mzd_row(mHT,col);  
       rci_t j=-1;
+      const int active_width = (rank + 63) >> 6;
       while(cnt < limit){/** `cw` of no interest */
-	j=nextelement(rawrow,mHT->width,j);
-	if(j==-1) // empty line after simplification
+	j=nextelement(rawrow,active_width,j);
+	if(j==-1 || j >= rank) // empty line after simplification
 	  break; 
 	ee[cnt++] = pivs->values[j++];
       }
 #endif /* NEW */              
       if (cnt < limit){
 	/** sort the column indices */
-	qsort(ee, cnt, sizeof(rci_t), cmp_rci_t);
+	rci_quick_sort(ee, cnt);
 #ifndef NDEBUG
 	/** expensive: verify orthogonality */
 	if(sparse_syndrome_non_zero(spaH0, cnt, ee)){
@@ -195,16 +295,19 @@ int do_RW_dist(params_t * const p){
 	  /** TODO: try local search to `lerr` (if 2 or larger) */
 	  /** at this point we have `cnt` codeword indices in `ee` */
           p->codewords = codeword_add_maybe(p, ee, cnt);
-	  if(debug&16){
+	  if (debug & DBG_CODEWORDS){
 	    printf("# step=%d row=%d minW=%d found cw of W=%d: [",ii,ir,minW,cnt);
-	    const int max = ((cnt<25) || (debug&2048)) ?  cnt : 25 ;
+	    const int max = ((cnt<25) || (debug & DBG_LARGE)) ?  cnt : 25 ;
 	    for(int i=0; i< max; i++)
 	      printf("%d%s", ee[i], i+1!=max?" ": (cnt==max ? "]\n" : "...]\n"));
 	  }
           if (cnt < minW) {
             minW = cnt;
           }
-          if (p->maxC && p->num_cws >= p->maxC) {
+          if (codeword_maxc_reached(p)) {
+            goto alldone;
+          }
+          if (check_min_hits_convergence(p)) {
             goto alldone;
           }
 	  if (minW <= wmin){ /** early termination condition */
@@ -214,7 +317,7 @@ int do_RW_dist(params_t * const p){
 	}
       }      
     } /** end of the dual matrix rows loop */
-    if(debug&8){
+    if (debug & DBG_STATUS){
       if(ii%1000==999)
 	printf("# round=%d of %d minW=%d\n", ii+1, steps, minW);
     }
@@ -224,10 +327,13 @@ int do_RW_dist(params_t * const p){
  alldone: /** early termination label */
 
   /** clean up */
-  if(skip_pivs)
-    mzp_free(skip_pivs);
-  if(pivs_srtd)
-    mzp_free(pivs_srtd);
+  if (M_sub) mzd_free(M_sub);
+  if (N_ker) mzd_free(N_ker);
+  if (mHT_csr) csr_free(mHT_csr);
+  free(visited_cols);
+  free(visited_checks);
+  free(col_queue);
+  free(piv_mask);
   mzp_free(perm);
   mzp_free(pivs);
   free(ee);
@@ -268,7 +374,7 @@ int main(int argc, char **argv){
     
     prm.dist_max=do_RW_dist(p);
 
-    if (prm.debug&1){
+    if (prm.debug & DBG_SUMMARY){
       if (prm.dist_max != 0)
         printf("### RW upper bound on the distance: %d\n",prm.dist_max);
       else
@@ -279,18 +385,19 @@ int main(int argc, char **argv){
         printf("### no codewords of weight <= %d found\n",prm.wmax);
     }
     if (prm.dist_max < 0) {
-      if(prm.debug) {
+      if (prm.debug & DBG_SUMMARY) {
         if (prm.method == 1) 
           printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
         else
-          printf("RW algorithm upper bound for the distance d=%d (early termination due to wmin=%d)\n", prm.dist_max, prm.wmin);
+          printf("RW algorithm upper bound for the distance d=%d "
+                 "(early termination due to wmin=%d)\n", prm.dist_max, prm.wmin);
       }
       printf("%d\n",prm.dist_max);
       prm.dist_min = prm.dist_max;
       goto end_all;
     }
     if (prm.method==1){ /** just RW */
-      if(prm.debug) {
+      if (prm.debug & DBG_SUMMARY) {
         if (prm.dist_max > 0)
           printf("RW algorithm upper bound for the distance d=%d\n", prm.dist_max);
         else
@@ -311,7 +418,7 @@ int main(int argc, char **argv){
       if (prm.wmax == 0) {
         prm.dist_min = 1;
         prm.dist_max = 1;
-        if (prm.debug & 1) {
+        if (prm.debug & DBG_SUMMARY) {
           printf("success (distance is 1) d=1\n");
         }
         printf("1\n");
@@ -322,28 +429,35 @@ int main(int argc, char **argv){
   
   if (prm.method & 2){ /* cluster method */
     int dmin=do_CC_dist(p);
+    /* with noscan=1 (unless the supplied dmin equals wmax) lower weights are not scanned */
+    const int certified = (!prm.noscan) || (prm.wmax <= ((prm.dmin > 1) ? prm.dmin : 1));
 
     if (dmin>0){ 
-      if (prm.debug&1)
-	printf("### Cluster (actual min-weight codeword found): d=%d\n",dmin);
+      if (prm.debug & DBG_SUMMARY){
+        if (certified)
+          printf("### Cluster (actual min-weight codeword found): d=%d\n",dmin);
+        else
+          printf("### Cluster (codeword found, upper bound only with noscan=1): d<=%d\n",dmin);
+      }
       printf("%d\n",dmin);
-      prm.dist_min = dmin; /* actual distance found */
+      if (certified)
+        prm.dist_min = dmin; /* actual distance found */
       prm.dist_max = dmin;
       goto end_all;
     }
     else if (dmin<0){
-      if (prm.debug&1)
+      if (prm.debug & DBG_SUMMARY)
 	printf("### Cluster dmin=%d  (no codewords of weight up to %d)\n",dmin,-dmin);
       if (-dmin==abs(prm.dist_max)-1){
 	prm.dist_min=abs(prm.dist_max); /* OK */
-        if (prm.debug&1)
+        if (prm.debug & DBG_SUMMARY)
           printf("success (two distance bounds coincide) d=%d\n",prm.dist_min);
         printf("%d\n",prm.dist_min);       
         goto end_all;
       }
       else{
 	prm.dist_min=-dmin;
-        if(prm.debug){
+        if (prm.debug & DBG_SUMMARY){
           if (prm.dist_max>prm.dist_min)
             printf("# distance in the interval (inclusive) %d to %d\n", prm.dist_min,prm.dist_max);
           else
@@ -352,8 +466,11 @@ int main(int argc, char **argv){
         printf("%d\n",dmin);
       }
     }
-    else
-      ERROR("unexpected dmin=0\n");
+    else { /* noscan=1 without dmin: no codeword of weight wmax, and no lower bound certified */
+      if (prm.debug & DBG_SUMMARY)
+        printf("### Cluster: no codewords of weight %d (noscan=1: lower weights not scanned)\n", prm.wmax);
+      printf("0\n");
+    }
   }
  end_all:
     if (p->outC) {
@@ -361,7 +478,7 @@ int main(int argc, char **argv){
       sprintf(comment, "generated by dist_m4ri");
       nzlist_write(p->outC, comment, p);
     }
-    if (p->debug & 32) {
+    if (p->debug & DBG_CWDUMP) {
       cw_vec_t *cw;
       for(cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)){
         printf("# cw: [ ");

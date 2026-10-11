@@ -61,15 +61,19 @@ static inline int one_csr_row_combine(one_vec_t * const v1, const one_vec_t * co
   return i1; /** weight of the out vector */
 }
 
-/** @brief insert `j` (originally absent) into ordered array, return position */
+/** @brief insert `j` (originally absent) into ordered array, return position
+ *
+ *  The check `pos >= 0` is needed when `j` may be smaller than all entries (unlimited
+ *  clusters with the expert `start` list); otherwise, `j` is larger than the start column `vec[0]`.
+ */
 static inline int one_ordered_ins(one_vec_t * const err, const int j){
   int pos=err->wei-1;
-  while(j < err->vec[pos]){
+  while((pos >= 0) && (j < err->vec[pos])){
     err->vec[pos+1] = err->vec[pos];
     pos--;
   }
 #ifndef NDEBUG  
-  if (j == err->vec[pos]) 
+  if ((pos >= 0) && (j == err->vec[pos]))
     ERROR("Unexpected! vec[%d]=%d is already present!",pos,j);
 #endif   
   err->vec[pos+1]=j;

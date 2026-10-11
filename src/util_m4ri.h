@@ -27,6 +27,16 @@ static inline word const * mzd_row_cons(const mzd_t * mat, const int row){
 #pragma GCC diagnostic pop
 }
 
+/** The first word of row 0 of a dense matrix, the start of the rows at distances of M->rowstride words: `M->data` (all
+ * rows in one array) with M4RI 20240729 and later.  Older versions (e.g., 20200125, as in Ubuntu 24.04) have no field
+ * `data`: they keep the rows in blocks of up to 2^27 words (recognized by the macro __M4RI_MAX_MZD_BLOCKSIZE), at equal
+ * distances unless the matrix spans several blocks (see gauss_one_rows()). */
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+#define MZD_FIRST_ROW(M) mzd_row((M), 0)
+#else
+#define MZD_FIRST_ROW(M) ((M)->data)
+#endif
+
 
 /**
  * macros from nauty.h
@@ -118,6 +128,25 @@ typedef struct{    /*  */
 
 
 typedef struct { int a; int b; } int_pair;
+
+/**
+ * Column bit masks of a sparse binary matrix A (e.g., the logical operators L), see colmask_from_csr():
+ * column j is the set of rows i with A[i][j]=1, stored in `kw` words.  The syndrome A e of a sparse
+ * vector e is then the XOR of the masks of its columns (colmask_syndrome_non_zero()), which takes
+ * O(|e| kw) operations instead of O(nnz(A)) for sparse_syndrome_non_zero().
+ */
+typedef struct {
+  int rows;   /**< number of rows of A */
+  int cols;   /**< number of columns of A */
+  int kw;     /**< number of words per column, ceil(rows/64) */
+  word *mask; /**< cols * kw words: the mask of column j starts at mask[j * kw] */
+} colmask_t;
+
+#define SORT_NAME rci
+#define SORT_TYPE rci_t
+#define SORT_CMP(x, y) ((x) - (y))
+#define SORT_DEF static inline
+#include "sort.h"
 
 
 #if defined(__cplusplus) && !defined (_MSC_VER)
@@ -419,6 +448,67 @@ static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const co
   __M4RI_FLIP_BIT(rawrow[col/m4ri_radix], col%m4ri_radix);
 }
 
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+/**
+ * @brief gauss_one_rows() for a matrix whose rows are not at equal distances in memory (with M4RI versions before
+ *        2024, a matrix spanning several blocks of 2^27 words): the rows are found with mzd_row().
+ */
+int gauss_one_rows_blocks(mzd_t *M, const int idx, const int begrow, const rci_t nrows_eff);
+#endif
+
+/**
+ * @brief Perform one step of Gaussian elimination on column idx of M
+ *        restricted to the first nrows_eff rows.
+ * @param M Dense matrix.
+ * @param idx Column index to eliminate.
+ * @param begrow Starting row index.
+ * @param nrows_eff Active row count to scan and eliminate.
+ * @return Number of pivots found (0 or 1).
+ */
+static inline int gauss_one_rows(mzd_t *M, const int idx, const int begrow,
+                                 const rci_t nrows_eff) {
+  if (begrow >= nrows_eff) return 0;
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+  /* The rows i are at mzd_row(M, 0) + i * rowstride, see MZD_FIRST_ROW(); with M4RI versions before 2024, unless the
+   * matrix spans several blocks */
+  if (__builtin_expect((uintptr_t)mzd_row(M, nrows_eff - 1) - (uintptr_t)mzd_row(M, 0) !=
+                       (uintptr_t)(nrows_eff - 1) * (uintptr_t)M->rowstride * sizeof(word), 0)) {
+    return gauss_one_rows_blocks(M, idx, begrow, nrows_eff);
+  }
+#endif
+  const wi_t word_idx = idx >> 6;
+  const word bit_mask = (word)1 << (idx & 63);
+  const wi_t width = M->width;
+  const wi_t rowstride = M->rowstride;
+  word *row_j = mzd_row(M, begrow);
+  for (rci_t j = begrow; j < nrows_eff; ++j, row_j += rowstride) {
+    if (row_j[word_idx] & bit_mask) {
+      if (j != begrow) {
+        mzd_row_swap(M, begrow, j);
+      }
+      const word * const __restrict piv_row = mzd_row(M, begrow);
+      word * __restrict dst_row = MZD_FIRST_ROW(M);
+      for (rci_t ii = 0; ii < begrow; ++ii, dst_row += rowstride) {
+        if (dst_row[word_idx] & bit_mask) {
+          for (wi_t w = 0; w < width; ++w) {
+            dst_row[w] ^= piv_row[w];
+          }
+        }
+      }
+      dst_row += rowstride;
+      for (rci_t ii = begrow + 1; ii < nrows_eff; ++ii, dst_row += rowstride) {
+        if (dst_row[word_idx] & bit_mask) {
+          for (wi_t w = 0; w < width; ++w) {
+            dst_row[w] ^= piv_row[w];
+          }
+        }
+      }
+      return 1;
+    }
+  }
+  return 0;
+}
+
 /**
  * @brief Perform one step of Gaussian elimination on column idx of M.
  * @param M Dense matrix.
@@ -426,30 +516,8 @@ static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const co
  * @param begrow Starting row index.
  * @return Number of pivots found (0 or 1).
  */
-static inline int gauss_one(mzd_t *M, const int idx, const int begrow){
-  /** note: force-inlining actually slows it down (`???`) */
-  rci_t startrow = begrow;
-  rci_t pivots = 0;
-  const rci_t i = idx;
-  //  for (rci_t i = startcol; i < endcol ; ++i) {
-  for(rci_t j = startrow ; j < M->nrows; ++j) {
-    if (mzd_read_bit(M, j, i)) {
-      mzd_row_swap(M, startrow, j);
-      ++pivots;
-      for(rci_t ii = 0 ;  ii < M->nrows; ++ii) {
-        if (ii != startrow) {
-          if (mzd_read_bit(M, ii, i)) {
-            mzd_row_add_offset(M, ii, startrow,0);
-          }
-        }
-      }
-      startrow = startrow + 1;
-      break;
-    }
-  }
-  //  }
-  return pivots; /** 0 or 1 only */
-  // if one, need to update the current pivot list
+static inline int gauss_one(mzd_t *M, const int idx, const int begrow) {
+  return gauss_one_rows(M, idx, begrow, M->nrows);
 }
 
 /**
@@ -476,6 +544,36 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
 	nz ^= 1;      
     }
     if (nz)
+      return 1;
+  }
+  return 0;
+}
+
+/**
+ * @brief Check if the syndrome A e of a sparse vector e is non-zero, with the column masks of A.
+ *
+ * Same result as sparse_syndrome_non_zero(A, cnt, ee), in O(cnt kw) operations; the indices need not
+ * be sorted.
+ *
+ * @param cm Column masks of A (see colmask_from_csr()).
+ * @param cnt Weight of the vector e.
+ * @param ee Array of the indices of the non-zero entries of e (each index at most once).
+ * @return 1 if the syndrome is non-zero, 0 if it is zero.
+ */
+static inline int colmask_syndrome_non_zero(const colmask_t * const cm, const int cnt, const int ee[]) {
+  const int kw = cm->kw;
+  const word * const mask = cm->mask;
+  if (kw == 1) {
+    word s = 0;
+    for (int i = 0; i < cnt; i++)
+      s ^= mask[ee[i]];
+    return s != 0;
+  }
+  for (int w = 0; w < kw; w++) {
+    word s = 0;
+    for (int i = 0; i < cnt; i++)
+      s ^= mask[(size_t)ee[i] * kw + w];
+    if (s)
       return 1;
   }
   return 0;
@@ -530,6 +628,52 @@ static inline int sparse_syndrome_non_zero(const csr_t * const H, const int cnt,
    * @return Pointer to the constructed sparse logical matrix Lx.
    */
   csr_t * Lx_for_CSS_code(const csr_t * const Hx, const csr_t *const Hz);
+
+  /**
+   * @brief Compute the null space basis N = ker(H) of dimension nu x n.
+   *
+   * Uses M4RI's mzd_kernel_left_pluq to find X such that H * X = 0, and
+   * returns N = X^T of size (n - rank(H)) x n.
+   *
+   * @param H Sparse parity check matrix in CSR form.
+   * @return Newly allocated dense matrix N, or NULL if kernel is trivial.
+   */
+  mzd_t * mzd_nullspace(const csr_t * const H);
+
+  /**
+   * @brief Construct the column bit masks of a sparse binary matrix (see colmask_t).
+   *
+   * Duplicate entries of A cancel (mod 2), as in sparse_syndrome_non_zero().
+   *
+   * @param A Sparse matrix in CSR form.
+   * @return Newly allocated column masks (free with colmask_free()).
+   */
+  colmask_t * colmask_from_csr(const csr_t * const A);
+
+  /**
+   * @brief Free the column masks allocated by colmask_from_csr().
+   * @param cm Column masks (may be NULL).
+   * @return Always returns NULL.
+   */
+  colmask_t * colmask_free(colmask_t *cm);
+
+  /**
+   * @brief Construct a column permutation with a localized window at the front.
+   *
+   * Places kwin columns around seed_col (via Tanner BFS if win_mode == 0, or
+   * contiguous index proximity if win_mode == 1) in perm->values[0 .. kwin-1],
+   * internally shuffled, followed by the shuffled remaining columns.
+   */
+  void localized_window_perm(mzp_t *perm, int nvar, int seed_col, int kwin, int win_mode,
+                             const csr_t *spaH, const csr_t *mHT,
+                             int *visited_cols, int *visited_checks, int *col_queue,
+                             int *visit_marker, uint64_t *rng_state);
+
+  /**
+   * @brief Refresh the null space basis N under a random column permutation
+   *        and optionally inject a low-weight codeword via Steinitz exchange.
+   */
+  void refresh_nullspace_basis(mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *rng_state);
   
 #if defined(__cplusplus) && !defined (_MSC_VER)
 }
