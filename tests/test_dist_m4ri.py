@@ -1603,6 +1603,103 @@ def test_dem_cache_merged_bounds_and_circuit_key(tmp_path):
         dist_m4ri.clear_distance_cache()
 
 
+def test_dem_merge_equal_columns(tmp_path, capsys):
+    # the binary merges the equal columns of a DEM (merge=True, the default; exact): the codewords use the first one of
+    # each set of equal columns (0-based columns 0=4, 1=3, and 5=6); merge=False (CLI: merge=0) keeps all columns
+    dem_file = str(tmp_path / "dup.dem")
+    with open(dem_file, "w") as f:
+        f.write("error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\nerror(0.1) D0 D1\nerror(0.1) D0 L0\n"
+                "error(0.1) D2\nerror(0.1) D2\n")
+    dist_m4ri.disable_distance_cache()
+    try:
+        kw = dict(dem=dem_file, method=2, wmax=3, do_cws=True, threads=1)
+        assert dist_m4ri.compute_dem_distance(**kw) == (3, [3, 3, 0], [[0, 1, 2]])
+        d, info, cws = dist_m4ri.compute_dem_distance(merge=False, **kw)
+        assert (d, info) == (3, [3, 3, 0])
+        assert sorted(map(tuple, cws)) == [(0, 1, 2), (0, 2, 3), (1, 2, 4), (2, 3, 4)]
+        out = str(tmp_path / "cws.nz")
+        assert dist_m4ri.main([f"fdem={dem_file}", "merge=0", "method=2", "wmax=3", "threads=1", f"outC={out}",
+                               "--no-cache"]) == 0
+        assert len(dist_m4ri.read_sparse_vectors(out)) == 4
+        capsys.readouterr()
+        assert dist_m4ri.main([f"fdem={dem_file}", "merge=2", "method=2", "wmax=3", "--no-cache"]) == 1
+        assert "invalid 'merge=2': merge should be 0 or 1" in capsys.readouterr().err
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "merge=0", "method=2", "wmax=5", "threads=2",
+                               "--no-cache"]) == 0
+        assert "# Warning: merge=: only used with fdem= (a DEM or Stim circuit); ignored" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_dem_expand_equal_columns(tmp_path, capsys):
+    # expand=True (Python only): each codeword of the merged list is listed for every choice among equal columns
+    # (0-based columns 0=4, 1=3, and 5=6); the cache keeps the merged list; maxC limits the expanded list (warning)
+    dem_file = str(tmp_path / "dup.dem")
+    with open(dem_file, "w") as f:
+        f.write("error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\nerror(0.1) D0 D1\nerror(0.1) D0 L0\n"
+                "error(0.1) D2\nerror(0.1) D2\n")
+    full = [[0, 1, 2], [0, 2, 3], [1, 2, 4], [2, 3, 4]]
+    cache_file = str(tmp_path / "cache.json")
+    kw = dict(dem=dem_file, method=2, wmax=3, do_cws=True, threads=1, cache_file=cache_file)
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        assert dist_m4ri.compute_dem_distance(**kw) == (3, [3, 3, 0], [[0, 1, 2]])
+        # from the cache (the merged list), expanded
+        d, info, cws = dist_m4ri.compute_dem_distance(expand=True, **kw)
+        assert (d, info) == (3, [3, 3, 0]) and sorted(cws) == full
+        assert dist_m4ri.get_cached_distance(dem=dem_file, cache_file=cache_file)["cws"] == [[0, 1, 2]]
+        capsys.readouterr()
+        d, info, cws = dist_m4ri.compute_dem_distance(expand=True, maxC=2, **kw)
+        assert len(cws) == 2 and all(cw in full for cw in cws)
+        assert ("# Warning: expand: the expanded list has 4 codewords (1 up to equal columns); only the first maxC=2 "
+                "are written (the list is incomplete)") in capsys.readouterr().err
+        # a run of the binary (no cache), CLI
+        out = str(tmp_path / "cws.nz")
+        assert dist_m4ri.main([f"fdem={dem_file}", "expand=1", "method=2", "wmax=3", "threads=1", f"outC={out}",
+                               "--no-cache"]) == 0
+        assert sorted(dist_m4ri.read_sparse_vectors(out)) == full
+        capsys.readouterr()
+        assert dist_m4ri.main([f"fdem={dem_file}", "expand=2", "method=2", "wmax=3", "--no-cache"]) == 1
+        assert "invalid 'expand=2': expand should be 0 or 1" in capsys.readouterr().err
+        assert dist_m4ri.main([f"fdem={dem_file}", "expand=1", "method=2", "wmax=3", "threads=1", "--no-cache"]) == 0
+        assert "# Warning: expand=: only used with outC= or --cws; ignored" in capsys.readouterr().err
+    finally:
+        dist_m4ri.clear_distance_cache()
+        dist_m4ri.enable_distance_cache()
+
+
+def test_dem_error_columns_parser(tmp_path):
+    # the columns of a DEM as read by the binary: repeat blocks unrolled with shift_detectors, components summed mod 2,
+    # and the errors with probability < pmin skipped
+    dem_file = tmp_path / "r.dem"
+    dem_file.write_text("error(0.1) D0 L0\nrepeat 2 {\n    error(0.1) D0 D1\n    shift_detectors 1\n}\n"
+                        "error(0.01) D5\nerror(0.1) D0 ^ D0 D2  # comment\ndetector(1, 2) D3\n")
+    cols = dist_m4ri._dem_error_columns(str(dem_file))
+    assert cols == [({0}, {0}), ({0, 1}, set()), ({1, 2}, set()), ({7}, set()), ({4}, set())]
+    assert dist_m4ri._dem_error_columns(str(dem_file), pmin=0.05) == [cols[i] for i in (0, 1, 2, 4)]
+    if dist_m4ri._HAS_STIM:  # the same columns from the stim object (flattened)
+        import stim
+        assert dist_m4ri._dem_error_columns(stim.DetectorErrorModel(dem_file.read_text())) == cols
+
+
+def test_dem_circuit_outc_without_out_dem_warning(tmp_path, capsys):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated("repetition_code:memory", rounds=2, distance=3, after_clifford_depolarization=0.01)
+    kw = dict(circuit=circ, method=2, wmax=3, threads=1, outC=str(tmp_path / "cws.nz"), out_dir=str(tmp_path))
+    dist_m4ri.disable_distance_cache()
+    try:
+        assert dist_m4ri.compute_dem_distance(**kw)[0] == 3
+        assert "the codewords index the error lines of the DEM generated from the Stim circuit in this run" in \
+            capsys.readouterr().err
+        assert dist_m4ri.compute_dem_distance(out_dem=str(tmp_path / "c.dem"), **kw)[0] == 3
+        assert "the codewords index the error lines" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
 def _surface_memory_z(x_in_h_frame: bool, meas_before_h: bool, rounds: int = 3):
     """
     Memory-Z circuit of the d=3 rotated surface code (data 0..8, Z ancillas 9..12, X ancillas 13..16).  With

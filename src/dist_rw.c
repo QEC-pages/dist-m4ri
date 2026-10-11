@@ -482,7 +482,7 @@ int main(int argc, char **argv){
       cw_vec_t *cw;
       for(cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)){
         printf("# cw: [ ");
-        for(int i=0; i<cw->weight; i++) printf("%d ", 1 + cw->arr[i]);
+        for(int i=0; i<cw->weight; i++) printf("%d ", 1 + col_orig_index(p, cw->arr[i]));
         printf("] cnt=%d\n", cw->cnt);
       }
     }

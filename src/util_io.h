@@ -95,6 +95,10 @@ typedef struct{
   long long int *cw_hits_w; /* total hits of the codewords of each weight in hash (same size) */
   char *fdem;
   double pmin;
+  int merge;       /* 1: merge the equal columns of a DEM (same detectors and observables), see dem_merge_columns() */
+  int nvar_orig;   /* number of columns before merging (0: not merged) */
+  int *col_orig;   /* column -> its original column (the first one of its class; NULL: not merged) */
+  int *col_class;  /* original column -> column (NULL: not merged) */
   char *finH;
   char *finG;
   char *finL;
@@ -120,6 +124,10 @@ typedef struct{
 
 static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
 // #define MININT(a,b) do{ int t1=(a); int t2=(b); t1<t2? t1 :t2; } while(0)
+
+/* The original (1-based in output: + 1) column of the column j: different only after merging the equal columns of a
+ * DEM (see dem_merge_columns()) */
+static inline int col_orig_index(const params_t * const p, const int j) { return p->col_orig ? p->col_orig[j] : j; }
 
 extern params_t prm;
 /**
@@ -402,7 +410,7 @@ void print_short_help(const char *prog);
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
-  "  method, finH, finG, finL, fin, fdem, pmin, classical, css,\n" \
+  "  method, finH, finG, finL, fin, fdem, pmin, merge, classical, css,\n" \
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start,\n" \
   "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, min_hits, cov_cws, refresh,\n" \
@@ -426,6 +434,7 @@ void print_short_help(const char *prog);
   "  fin=[str]          Base name for CSS matrices (loads ${fin}X.mtx, ${fin}Z.mtx)\n" \
   "  fdem=[file]        Stim detector error model (DEM) file\n" \
   "  pmin=[float]       Minimum error probability threshold to keep for DEM (0.0)\n" \
+  "  merge=[0|1]        Merge equal DEM columns (exact; codewords use the first one) (1)\n" \
   "  classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)\n\n" \
   "Distance bounds and guidance:\n" \
   "  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)\n" \
@@ -499,7 +508,18 @@ void print_short_help(const char *prog);
   "                     combined with finH, finG, finL, or fin.\n" \
   "  pmin=[float]       Minimum error probability threshold for DEM parsing (0.0).\n" \
   "                     Error mechanisms with probability < pmin are ignored.\n" \
-  "                     Only valid when fdem is specified.\n" \
+  "                     Only valid when fdem is specified. The column indices\n" \
+  "                     (start, finC, outC) count only the error mechanisms kept:\n" \
+  "                     they change with pmin.\n" \
+  "  merge=[0|1]        Merge the equal columns of a DEM (error mechanisms with the\n" \
+  "                     same detectors and observables) when reading it (default:\n" \
+  "                     1; ignored without fdem). Exact: dropping two equal columns\n" \
+  "                     of a codeword gives a lighter one, so the distance does not\n" \
+  "                     change. Column indices (outC, finC, start, cbeg, cend, and\n" \
+  "                     the printed codewords) are those of the DEM; the codewords\n" \
+  "                     found use the first one of each set of equal columns (use\n" \
+  "                     merge=0 to enumerate the codewords with each of them, or\n" \
+  "                     expand=1 of dist_m4ri.py to expand the list found).\n" \
   "  classical=[0|1]    Code type override:\n" \
   "                     1: Treat as a classical linear code (Hx only; ignores\n" \
   "                        or discards logical matrix L).\n" \
@@ -570,7 +590,8 @@ void print_short_help(const char *prog);
   "  outC=[file]        Export found codewords of weight up to min_w + dW (min_w:\n" \
   "                     minimum weight found) to file in .nz list format.  In\n" \
   "                     method=2/3, once dmin = dmax = d, CC rounds w = d..d+dW\n" \
-  "                     enumerate all such codewords (unless the timeout is hit).\n" \
+  "                     enumerate all such codewords (unless the timeout is hit;\n" \
+  "                     for a DEM, up to the choice of equal columns: see merge).\n" \
   "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
   "  maxC=[int]         Maximum number of codewords to collect (default: 0).\n" \
   "                     0 means collect all valid codewords found up to wmax or stop\n" \

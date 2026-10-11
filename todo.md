@@ -252,14 +252,16 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ## 4. Large DEMs, Simplified DEMs, and Symmetry (discussion, Oct 2026)
 
-- [ ] **No equal columns in DEMs**: stim's DEM of a circuit with a REPEAT block has duplicate error mechanisms even
+- [x] **No equal columns in DEMs**: stim's DEM of a circuit with a REPEAT block has duplicate error mechanisms even
   after flattening the DEM (loop folding), e.g., mitten_90 custom: 23394 errors, 22170 distinct (the DEM of the
   flattened circuit has none); about 16% of the columns of the BB DEMs. CC treats each duplicate separately: merging
   them gave 1.6–1.7x for CC (dem150 and dgross DEMs, `wmax=6`, 128 threads), and RW eliminates fewer columns.
   - Python: merge equal columns (XOR-reduced detector and observable sets, combined probability $p_1 + p_2 - 2p_1p_2$)
     when writing the DEM (or flatten the circuit before generating the DEM; this loses stim's loop folding for very
-    long circuits).
-  - C: optionally also merge on reading any DEM (with a map back to the original columns for `outC`).
+    long circuits). Not needed now that the binary merges (and it would change the DEM cache keys).
+  - C: done, the binary merges the equal columns on reading a DEM (`merge=1`, the default), with a map back to the
+    original columns (`outC`, `finC`, `start`, `cbeg`, `cend`); bb72 DEM: 2664 -> 2232 columns, CC `wmax=6` in 0.06 s
+    instead of 0.21 s.
 - [ ] **Full DEM from the simplified DEM** (`--full` mode of CSS circuits): the simplified DEM is the full DEM with the
   minority-basis detector rows deleted (equal columns merged, empty columns dropped; they never flip an observable), so
   $d_{\rm simp} \le d_{\rm full}$, and $d_{\rm full} = d_{\rm simp}$ iff some minimum-weight simplified codeword lifts

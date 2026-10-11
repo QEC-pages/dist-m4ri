@@ -19,6 +19,10 @@ params_t prm={
   .noscan=0,
   .fdem=NULL,
   .pmin=0.0,
+  .merge=1,
+  .nvar_orig=0,
+  .col_orig=NULL,
+  .col_class=NULL,
   .start_list=NULL,
   .start_num=0,
   .cbeg=-1,
@@ -202,6 +206,9 @@ static void print_input_summary(FILE *stream, const params_t * const p){
   }
   fprintf(stream, ")\n");
   print_matrix_summary(stream, "H", p->spaH, p->fdem ? " (detectors)" : "");
+  if (p->nvar_orig > 0)
+    fprintf(stream, "#   merged %d equal columns of the DEM: %d of %d columns kept (merge=0 to keep all)\n",
+            p->nvar_orig - p->nvar, p->nvar, p->nvar_orig);
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
   if (p->spaL)
@@ -248,6 +255,8 @@ static void print_code_params(FILE *stream, const params_t * const p){
   if (k <= 0)
     fprintf(stream, "# Warning: k=%d, there are no non-trivial codewords\n", k);
 }
+
+static void dem_merge_columns(params_t * const p);
 
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
@@ -412,6 +421,13 @@ void var_init(int argc, char **argv, params_t * const p){
       p->pmin=prob;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, pmin=%g\n",argv[i],p->pmin);
+    }
+    else if (sscanf(argv[i],"merge=%d",&dbg)==1){
+      if ((dbg != 0) && (dbg != 1))
+        ERROR("invalid '%s': merge should be 0 or 1\n", argv[i]);
+      p->merge=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, merge=%d\n",argv[i],p->merge);
     }
     else if (0==strncmp(argv[i],"finC=",5)){
       p->finC = file_arg_value(argc, argv, &i, 5);
@@ -617,6 +633,8 @@ void var_init(int argc, char **argv, params_t * const p){
   
   if (p->fdem) {
     read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
+    if (p->merge)
+      dem_merge_columns(p);
     if (p->classical == -1) p->classical = 0;
     p->nvar = p->spaH->cols;
     p->n0 = p->nvar;
@@ -695,16 +713,21 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->css!=1)
     ERROR("Non-CSS codes are currently not supported, css=%d",p->css);
 
-  if (p->cbeg >= p->nvar) {
-    ERROR("cbeg=%d cannot be larger than nvar-1=%d\n", p->cbeg, p->nvar-1);
+  /* start, cbeg, and cend refer to the original columns (before merging the equal columns of a DEM) */
+  const int n_orig = (p->nvar_orig > 0) ? p->nvar_orig : p->nvar;
+  if (p->cbeg >= n_orig) {
+    ERROR("cbeg=%d cannot be larger than nvar-1=%d\n", p->cbeg, n_orig-1);
   }
-  if (p->cend >= p->nvar) {
-    ERROR("cend=%d cannot be larger than nvar-1=%d\n", p->cend, p->nvar-1);
+  if (p->cend >= n_orig) {
+    ERROR("cend=%d cannot be larger than nvar-1=%d\n", p->cend, n_orig-1);
   }
-  if (p->start_num > 0) { /* range check, sort, and remove duplicates */
-    for (int k = 0; k < p->start_num; k++)
-      if (p->start_list[k] >= p->nvar)
-        ERROR("start column %d cannot be larger than nvar-1=%d\n", p->start_list[k], p->nvar-1);
+  if (p->start_num > 0) { /* range check, map to the merged columns, sort, and remove duplicates */
+    for (int k = 0; k < p->start_num; k++) {
+      if (p->start_list[k] >= n_orig)
+        ERROR("start column %d cannot be larger than nvar-1=%d\n", p->start_list[k], n_orig-1);
+      if (p->col_class)
+        p->start_list[k] = p->col_class[p->start_list[k]];
+    }
     qsort(p->start_list, p->start_num, sizeof(int), cmp_int);
     int num = 1;
     for (int k = 1; k < p->start_num; k++)
@@ -773,7 +796,7 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->start_num > 0) {
     fprintf(stderr, "# WARNING: start=");
     for (int k = 0; (k < p->start_num) && (k < 8); k++)
-      fprintf(stderr, "%s%d", k ? "," : "", p->start_list[k]);
+      fprintf(stderr, "%s%d", k ? "," : "", col_orig_index(p, p->start_list[k]));
     fprintf(stderr,
             "%s (expert option): CC clusters are grown only from %d listed column(s)\n"
             "#   (not limited to larger column indices); dmin is valid only if a code symmetry maps every\n"
@@ -782,11 +805,20 @@ void var_init(int argc, char **argv, params_t * const p){
   }
   if (p->cbeg >= 0 || p->cend >= 0) {
     const int beg = (p->cbeg >= 0) ? p->cbeg : 0;
-    const int end = (p->cend >= 0) ? p->cend : p->nvar - 1;
+    const int end = (p->cend >= 0) ? p->cend : n_orig - 1;
     fprintf(stderr,
             "# WARNING: cbeg/cend (expert option for split runs): CC starts only from columns [%d,%d];\n"
             "#   dmin only covers codewords whose smallest column is in this range; take the minimum of\n"
-            "#   dmin (and of dmax) over runs covering all columns 0..%d\n", beg, end, p->nvar - 1);
+            "#   dmin (and of dmax) over runs covering all columns 0..%d\n", beg, end, n_orig - 1);
+    if (p->col_class) { /* the merged columns with their first (original) column in the range (in order) */
+      int b = 0, e = -1;
+      for (int j = 0; j < p->nvar; j++) {
+        if (p->col_orig[j] < beg) b = j + 1;
+        if (p->col_orig[j] <= end) e = j;
+      }
+      p->cbeg = b;
+      p->cend = e;
+    }
   }
   /* The experimental RW option ksub (with or without min_hits, also if it falls back to ksub=0 for m < nu) */
   if (p->ksub > 0 && (p->method & 1)) {
@@ -804,6 +836,9 @@ void var_kill(params_t * const p){
     p->start_list = NULL;
     p->start_num = 0;
   }
+  free(p->col_orig);
+  free(p->col_class);
+  p->col_orig = p->col_class = NULL;
   if(p->spaL)
     csr_free(p->spaL);
   p->maskL = colmask_free(p->maskL);
@@ -1066,6 +1101,122 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
   free_dem_program(prog);
 }
 
+/* A 64-bit hash of an integer (the splitmix64 output function) */
+static inline uint64_t dem_hash64(uint64_t z) {
+  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+  return z ^ (z >> 31);
+}
+
+typedef struct {
+  uint64_t h;
+  int j;
+} dem_col_hash_t;
+
+static int dem_col_hash_cmp(const void *a, const void *b) {
+  const dem_col_hash_t *x = a, *y = b;
+  if (x->h != y->h) return (x->h < y->h) ? -1 : 1;
+  return (x->j > y->j) - (x->j < y->j);
+}
+
+/* Are the columns a and b equal in H and L (rows a and b of their transposes HT and LT, sorted)? */
+static int dem_cols_equal(const csr_t * const HT, const csr_t * const LT, const int a, const int b) {
+  const int wh = HT->p[a + 1] - HT->p[a], wl = LT->p[a + 1] - LT->p[a];
+  if ((wh != HT->p[b + 1] - HT->p[b]) || (wl != LT->p[b + 1] - LT->p[b])) return 0;
+  return (memcmp(HT->i + HT->p[a], HT->i + HT->p[b], (size_t)wh * sizeof(int)) == 0) &&
+         (memcmp(LT->i + LT->p[a], LT->i + LT->p[b], (size_t)wl * sizeof(int)) == 0);
+}
+
+/* The rows of the CSR matrix M restricted to the columns j with keep[j] >= 0, renumbered to keep[j] (increasing in j,
+ * so that the rows stay sorted) */
+static csr_t * csr_keep_columns(const csr_t * const M, const int * const keep, const int ncols) {
+  int nz = 0;
+  for (int t = 0; t < M->p[M->rows]; t++) nz += (keep[M->i[t]] >= 0);
+  csr_t * const R = csr_init(NULL, M->rows, ncols, nz > 0 ? nz : 1);
+  int t2 = 0;
+  for (int r = 0; r < M->rows; r++) {
+    R->p[r] = t2;
+    for (int t = M->p[r]; t < M->p[r + 1]; t++)
+      if (keep[M->i[t]] >= 0) R->i[t2++] = keep[M->i[t]];
+  }
+  R->p[M->rows] = t2;
+  R->nz = -1; /* compressed form */
+  return R;
+}
+
+/* Merge the equal columns of the DEM matrices H and L (error mechanisms with the same detectors and observables, e.g.,
+ * from stim's DEM of a circuit with a REPEAT block): a codeword with two equal columns contains a lighter one (without
+ * both), so that the distance does not change, only the number of codewords.  The first column of each class
+ * represents it, and the classes keep the order of their first columns, so that a sorted support stays sorted when
+ * mapped back to the original columns (p->col_orig; p->col_class: original column -> class).  Nothing changes if all
+ * columns are distinct. */
+static void dem_merge_columns(params_t * const p) {
+  const int n = p->spaH->cols;
+  if (n <= 1) return;
+  csr_t * const HT = csr_transpose(NULL, p->spaH);
+  csr_t * const LT = csr_transpose(NULL, p->spaL);
+  dem_col_hash_t * const ch = malloc((size_t)n * sizeof(dem_col_hash_t));
+  int * const rep = malloc((size_t)n * sizeof(int)); /* the first column equal to column j */
+  if (!ch || !rep) ERROR("memory allocation");
+  for (int j = 0; j < n; j++) { /* (XOR of row hashes: equal columns have equal hashes) */
+    uint64_t h = 0;
+    for (int t = HT->p[j]; t < HT->p[j + 1]; t++) h ^= dem_hash64(2 * (uint64_t)HT->i[t] + 1);
+    for (int t = LT->p[j]; t < LT->p[j + 1]; t++) h ^= dem_hash64(2 * (uint64_t)LT->i[t] + 2);
+    ch[j].h = h;
+    ch[j].j = j;
+  }
+  qsort(ch, n, sizeof(dem_col_hash_t), dem_col_hash_cmp);
+  int nclass = 0;
+  for (int a = 0; a < n;) { /* a run of equal hashes, in increasing column order */
+    int b = a + 1;
+    while (b < n && ch[b].h == ch[a].h) b++;
+    for (int s = a; s < b; s++) {
+      const int j = ch[s].j;
+      rep[j] = j;
+      for (int t = a; t < s; t++) { /* an earlier column of the run (a first one) equal to j */
+        const int i = ch[t].j;
+        if (rep[i] == i && dem_cols_equal(HT, LT, i, j)) {
+          rep[j] = i;
+          break;
+        }
+      }
+      if (rep[j] == j) nclass++;
+    }
+    a = b;
+  }
+  free(ch);
+  csr_free(HT);
+  csr_free(LT);
+  if (nclass == n) { /* all columns distinct */
+    free(rep);
+    return;
+  }
+  int * const col_class = malloc((size_t)n * sizeof(int));
+  int * const col_orig = malloc((size_t)nclass * sizeof(int));
+  int * const keep = malloc((size_t)n * sizeof(int));
+  if (!col_class || !col_orig || !keep) ERROR("memory allocation");
+  for (int j = 0, c = 0; j < n; j++) {
+    if (rep[j] == j) {
+      col_orig[c] = j;
+      col_class[j] = keep[j] = c++;
+    } else {
+      col_class[j] = col_class[rep[j]]; /* (rep[j] < j) */
+      keep[j] = -1;
+    }
+  }
+  csr_t * const H2 = csr_keep_columns(p->spaH, keep, nclass);
+  csr_t * const L2 = csr_keep_columns(p->spaL, keep, nclass);
+  csr_free(p->spaH);
+  csr_free(p->spaL);
+  p->spaH = H2;
+  p->spaL = L2;
+  p->nvar_orig = n;
+  p->col_orig = col_orig;
+  p->col_class = col_class;
+  free(keep);
+  free(rep);
+}
+
 FILE * nzlist_w_new(const char fnam[], const char comment[]){
   FILE *f=fopen(fnam,"w");
   if(!f){
@@ -1084,8 +1235,8 @@ int nzlist_w_append(FILE *f, const cw_vec_t * const vec){
   const int w=vec->weight;
   if(fprintf(f,"%d ",w)<=0)
     ERROR("can't write to `NZLIST` file");
-  for(int i=0; i < w; i++)
-    if(fprintf(f," %d%s", 1 + vec->arr[i], i+1 < w ? "" :"\n")<=0)
+  for(int i=0; i < w; i++) /* (the original columns of a merged DEM: still increasing) */
+    if(fprintf(f," %d%s", 1 + col_orig_index(&prm, vec->arr[i]), i+1 < w ? "" :"\n")<=0)
       ERROR("can't write to `NZLIST` file");
   return 0;
 }
@@ -1572,12 +1723,27 @@ long long int nzlist_read(const char fnam[], params_t *p){
       return 0;
   }
   cw_vec_t *entry=NULL;
+  const int n_orig = (p->nvar_orig > 0) ? p->nvar_orig : p->nvar; /* finC refers to the original columns */
   while((entry=nzlist_r_one(f,NULL, fnam, &lineno))){
     if (codeword_maxc_reached(p)) {
       free(entry);
       break;
     }
-    int valid = (entry->weight > 0) && (entry->arr[entry->weight - 1] < p->nvar); /* column indices in range */
+    int valid = (entry->weight > 0) && (entry->arr[entry->weight - 1] < n_orig); /* column indices in range */
+    if (valid && p->col_class) { /* the merged columns of a DEM: two equal columns cancel */
+      for (int i = 0; i < entry->weight; i++) entry->arr[i] = p->col_class[entry->arr[i]];
+      qsort(entry->arr, entry->weight, sizeof(int), cmp_int);
+      int w = 0;
+      for (int i = 0; i < entry->weight;) {
+        if (i + 1 < entry->weight && entry->arr[i] == entry->arr[i + 1]) {
+          i += 2;
+        } else {
+          entry->arr[w++] = entry->arr[i++];
+        }
+      }
+      entry->weight = w;
+      valid = (w > 0);
+    }
     if (valid && p->spaH) {
       if (sparse_syndrome_non_zero(p->spaH, entry->weight, entry->arr)) {
         valid = 0;
@@ -1635,7 +1801,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
   const int max = ((debug & DBG_LARGE) || (weight <= DBG_CW_MAX)) ? weight : DBG_CW_MAX;
   fprintf(stream, "%s of weight %d (1-based columns):", prefix, weight);
   for (int i = 0; i < max; i++)
-    fprintf(stream, " %d", arr[i] + 1);
+    fprintf(stream, " %d", col_orig_index(&prm, arr[i]) + 1); /* (original columns of a merged DEM) */
   if (max < weight)
     fprintf(stream, " ... (%d more)", weight - max);
   fprintf(stream, "\n");

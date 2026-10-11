@@ -2902,7 +2902,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "# all %lld codewords in hash (1-based columns, cnt: number of hits):\n", p->num_cws);
     for (cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)) {
       fprintf(stderr, "# cw: [ ");
-      for (int i = 0; i < cw->weight; i++) fprintf(stderr, "%d ", 1 + cw->arr[i]);
+      for (int i = 0; i < cw->weight; i++) fprintf(stderr, "%d ", 1 + col_orig_index(p, cw->arr[i]));
       fprintf(stderr, "] cnt=%d\n", cw->cnt);
     }
   }

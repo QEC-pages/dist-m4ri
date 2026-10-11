@@ -21,6 +21,7 @@ import shutil
 import hashlib
 import numbers
 import tempfile
+import itertools
 import threading
 import subprocess
 from pathlib import Path
@@ -1340,6 +1341,7 @@ def run_dist_m4ri(
     dW: int = -1,
     maxC: int = 0,
     pmin: float = 0.0,
+    merge: bool = True,
     outC: Optional[str] = None,
     seed: int = 0,
     debug: int = 0,
@@ -1358,6 +1360,13 @@ def run_dist_m4ri(
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
+
+    DEM input:
+        merge: If True (default), the binary merges the equal columns of the DEM fdem (error mechanisms with the
+            same detectors and observables).  Exact: dropping two equal columns of a codeword gives a lighter one,
+            so the distance does not change.  Column indices (finC, outC, start) are those of the DEM; the codewords
+            found use the first one of each set of equal columns.  merge=False passes merge=0 (all columns are
+            kept, e.g., to enumerate the codewords with each of them).  Ignored without fdem.
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -1441,6 +1450,7 @@ def run_dist_m4ri(
     if dW >= 0: cmd.append(f"dW={dW}")
     if maxC > 0: cmd.append(f"maxC={maxC}")
     if pmin > 0.0: cmd.append(f"pmin={pmin}")
+    if fdem and not merge: cmd.append("merge=0")
     if outC: cmd.append(f"outC={outC}")
     if seed != 0: cmd.append(f"seed={seed}")
     if nothrottle: cmd.append("nothrottle=1")
@@ -2968,6 +2978,118 @@ def _write_dem_file(dem: Any, path: str) -> None:
             f.write(str(dem))
 
 
+def _dem_error_columns(dem: Any, pmin: float = 0.0) -> List[Tuple[frozenset, frozenset]]:
+    """
+    The columns of a DEM (a stim.DetectorErrorModel, or a .dem file) as read by the dist_m4ri binary: the detector and
+    observable sets of its error mechanisms, in their order in the flattened DEM (repeat blocks unrolled, with
+    shift_detectors), after the probability cutoff pmin (an error with probability < pmin is skipped).  The components
+    of a decomposed error (separated by '^') are summed mod 2, so that a target listed twice cancels.
+    """
+    if isinstance(dem, (str, Path)):
+        with open(str(dem)) as f:
+            lines = f.read().splitlines()
+    else:
+        lines = str(dem.flattened() if hasattr(dem, 'flattened') else dem).splitlines()
+    cols: List[Tuple[frozenset, frozenset]] = []
+
+    def block(i: int, shift: int) -> Tuple[int, int]:
+        # runs the instructions from line i up to the closing brace (or the end): (next line, detector shift)
+        while i < len(lines):
+            s = lines[i].split('#', 1)[0].strip()
+            i += 1
+            if not s:
+                continue
+            if s.startswith('}'):
+                return i, shift
+            if s.startswith('repeat'):
+                count = int(s.split()[1])
+                body, end = i, i
+                for _ in range(count):
+                    end, shift = block(body, shift)
+                if count <= 0:  # skip the body
+                    depth = 1
+                    while end < len(lines) and depth > 0:
+                        t = lines[end].split('#', 1)[0].strip()
+                        end += 1
+                        depth += t.startswith('repeat') - t.startswith('}')
+                i = end
+            elif s.startswith('shift_detectors'):
+                shift += int(s.rsplit(None, 1)[-1])
+            elif s.startswith('error'):
+                if float(s[s.index('(') + 1:s.index(')')]) < pmin:
+                    continue
+                dets: Set[int] = set()
+                obs: Set[int] = set()
+                for tok in s[s.index(')') + 1:].split():
+                    if tok[0] == 'D':
+                        dets ^= {int(tok[1:]) + shift}
+                    elif tok[0] == 'L':
+                        obs ^= {int(tok[1:])}
+                cols.append((frozenset(dets), frozenset(obs)))
+        return i, shift
+
+    block(0, 0)
+    return cols
+
+
+def _expand_equal_columns(
+    cws: List[List[int]],
+    dem: Any,
+    pmin: float = 0.0,
+    maxC: int = 0,
+    verbose: bool = False
+) -> List[List[int]]:
+    """
+    The expanded list of the DEM codewords cws (0-based columns of the DEM, see _dem_error_columns()): every version
+    over the choices among equal columns (the same detectors and observables), which the binary merges (merge=1).
+    Each codeword is mapped to the first columns of its sets of equal columns (two equal columns cancel), and every
+    distinct result c is expanded into the prod_{j in c} |set(j)| codewords with one column from each set (sorted, in
+    the order of cws).  With maxC > 0, at most maxC codewords are returned, with a warning to stderr if some are
+    dropped.
+    """
+    if not cws:
+        return []
+    cols = _dem_error_columns(dem, pmin)
+    sets: Dict[Tuple[frozenset, frozenset], List[int]] = {}
+    for j, c in enumerate(cols):
+        sets.setdefault(c, []).append(j)
+    members = [sets[c] for c in cols]  # the sorted set of the columns equal to column j (j included)
+    keys: List[Tuple[int, ...]] = []
+    seen: Set[Tuple[int, ...]] = set()
+    for cw in cws:
+        if any(j < 0 or j >= len(members) for j in cw):
+            raise ValueError(f"expand: codeword column out of range (the DEM has {len(members)} columns after the "
+                             f"pmin={pmin} cutoff)")
+        odd: Set[int] = set()
+        for j in cw:
+            odd ^= {members[j][0]}
+        key = tuple(sorted(odd))
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    total = 0
+    for key in keys:
+        num = 1
+        for r in key:
+            num *= len(members[r])
+        total += num
+    limit = total if maxC <= 0 else min(total, maxC)
+    out: List[List[int]] = []
+    for key in keys:
+        if len(out) >= limit:
+            break
+        for choice in itertools.product(*(members[r] for r in key)):
+            out.append(sorted(choice))
+            if len(out) >= limit:
+                break
+    if limit < total:
+        sys.stderr.write(f"# Warning: expand: the expanded list has {total} codewords ({len(keys)} up to equal "
+                         f"columns); only the first maxC={maxC} are written (the list is incomplete)\n")
+    elif verbose:
+        print(f"[dist_m4ri] expand: {len(keys)} codewords up to equal columns -> {total} codewords")
+    return out
+
+
 def _css_sector_codes(Hx: Any, Hz: Any, Lx: Optional[Any], Lz: Optional[Any]) -> Dict[str, Tuple[Any, Any, Any]]:
     """The quantum codes (H, G, L) of the two sectors of a CSS code: Z -> (Hx, Hz or Lx), X -> (Hz, Hx or Lz)."""
     return {
@@ -3110,19 +3232,23 @@ def _cached_code_distance(
     trust_start: bool,
     fdem: Optional[Any] = None,
     pmin: float = 0.0,
-    key_fn: Optional[Callable[[], str]] = None
+    merge: bool = True,
+    key_fn: Optional[Callable[[], str]] = None,
+    cws_out_fn: Optional[Callable[[List[List[int]]], List[List[int]]]] = None
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
-    file, with the probability cutoff pmin) with the dist_m4ri binary, using the distance cache shared by
-    compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
-    compute_dem_distance() (the warnings for the expert options are issued by the callers).
+    file, with the probability cutoff pmin, and merge: see run_dist_m4ri()) with the dist_m4ri binary, using the
+    distance cache shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of
+    compute_css_distance(), and compute_dem_distance() (the warnings for the expert options are issued by the callers).
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
     Otherwise, the binary is run, starting from the cached bounds, and the merged bounds are stored.  The returned
     codewords (those of the run merged with the cached ones, or the cached ones) are written to outC; with finC
-    identical to outC, the codewords already in the file are kept.
+    identical to outC, the codewords already in the file are kept.  If given, cws_out_fn transforms the codewords
+    returned and written to outC (e.g., the expansion over equal DEM columns, see _expand_equal_columns()); the cache
+    keeps the codewords as found.
 
     Returns:
         dict with the distance "dist" (see _dist_from_bounds()), the bounds "dmin", "dmax", "rw_steps", "d_info"
@@ -3133,14 +3259,20 @@ def _cached_code_distance(
     same_file = bool(finC and outC) and os.path.abspath(str(finC)) == os.path.abspath(str(outC))
     finC = check_finc_outc(finC, outC, verbose=verbose)
 
-    def write_out(cws_res: List[List[int]]) -> None:
-        # the codewords to outC; with finC identical to outC, the codewords already in the file are kept
+    def write_out(cws_res: List[List[int]]) -> List[List[int]]:
+        # the codewords returned (transformed by cws_out_fn) and written to outC; with finC identical to outC, the
+        # codewords already in the file are kept
+        if cws_out_fn is not None and cws_res:
+            cws_res = cws_out_fn(cws_res)
         if outC and cws_res:
+            out = cws_res
             if same_file and os.path.isfile(outC):
-                cws_res = _union_cws(read_sparse_vectors(outC), cws_res)
-            _write_nzlist_file(outC, cws_res)
+                out = _union_cws(read_sparse_vectors(outC), cws_res)
+            _write_nzlist_file(outC, out)
+        return cws_res
 
     code_key = cached_entry = plain_key = plain_entry = None
+    hit: Optional[Dict[str, Any]] = None  # the result of a cache hit
     eff_dmin, eff_dmax = dmin, dmax
     if _use_distance_cache:
         if eff_cache_file:
@@ -3165,19 +3297,22 @@ def _cached_code_distance(
                     elif debug & PY_DBG_CACHE:
                         print(f"[dist_m4ri] Cache hit for {kind} distance ({found} known)!")
                     cws_res = [list(cw) for cw in cached_entry.get("cws", [])] if need_cws else []
-                    write_out(cws_res)
-                    return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax,
-                            "rw_steps": c_rw, "d_info": d_info, "cws": cws_res, "cached": True}
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached bounds: dmin={c_dmin}, dmax={c_dmax}, "
-                          f"rw_steps={cached_entry.get('rw_steps', 0)}; continuing search)")
-                eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, cached_entry)
+                    hit = {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax,
+                           "rw_steps": c_rw, "d_info": d_info, "cws": cws_res, "cached": True}
+                else:
+                    if verbose:
+                        print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached bounds: dmin={c_dmin}, dmax={c_dmax}, "
+                              f"rw_steps={cached_entry.get('rw_steps', 0)}; continuing search)")
+                    eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, cached_entry)
             elif verbose:
                 print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
         except Exception:
-            code_key = cached_entry = plain_key = plain_entry = None
+            code_key = cached_entry = plain_key = plain_entry = hit = None
     elif verbose:
         print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
+    if hit is not None:
+        hit["cws"] = write_out(hit["cws"])
+        return hit
 
     if wmax > 0 and eff_dmin > max(wmax, dmin):  # a cached lower bound beyond wmax (the binary needs dmin <= wmax)
         src = cached_entry or plain_entry
@@ -3185,8 +3320,7 @@ def _cached_code_distance(
             c_dmin, c_dmax, c_rw = src.get("dmin", 0) or 0, src.get("dmax", 0) or 0, src.get("rw_steps", 0) or 0
             if verbose:
                 print(f"[dist_m4ri] Cached lower bound dmin={c_dmin} > wmax={wmax}: no CC round needed")
-            cws_res = [list(cw) for cw in src.get("cws", [])] if need_cws else []
-            write_out(cws_res)
+            cws_res = write_out([list(cw) for cw in src.get("cws", [])] if need_cws else [])
             return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax, "rw_steps": c_rw,
                     "d_info": format_bounds_list(c_dmin, c_dmax, c_rw), "cws": cws_res, "cached": True}
         eff_dmin = max(wmax, dmin)
@@ -3239,6 +3373,7 @@ def _cached_code_distance(
             threads=threads,
             timeout=timeout,
             pmin=pmin,
+            merge=merge,
             dW=dW,
             maxC=maxC,
             outC=outC_file,
@@ -3279,7 +3414,7 @@ def _cached_code_distance(
             res = {"dist": _dist_from_bounds(dmin_res, dmax_res), "dmin": dmin_res, "dmax": dmax_res,
                    "rw_steps": rw_steps, "d_info": format_bounds_list(dmin_res, dmax_res, rw_steps), "cws": cws,
                    "cached": False}
-        write_out(res["cws"])
+        res["cws"] = write_out(res["cws"])
         return res
     finally:
         _remove_temp_files(temp_files, debug)
@@ -4059,6 +4194,8 @@ def compute_dem_distance(
     dW: int = -1,
     maxC: int = 0,
     pmin: float = 0.0,
+    merge: bool = True,
+    expand: bool = False,
     finC: Optional[str] = None,
     outC: Optional[str] = None,
     do_cws: bool = False,
@@ -4121,10 +4258,23 @@ def compute_dem_distance(
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
-        maxC: Maximum number of codewords to collect.
+        maxC: Maximum number of codewords to collect (with expand=True, also the maximum number of codewords of the
+            expanded list returned and written to outC; a warning is printed to stderr if some are dropped).
         pmin: Probability cutoff for error mechanisms in DEM.
-            Note: CC start columns (start) index the error mechanisms in their order of appearance in
-            the (flattened) DEM, after the pmin cutoff.
+            Note: CC start columns (start) and the codewords (finC, outC, do_cws) index the error mechanisms in
+            their order of appearance in the (flattened) DEM, after the pmin cutoff: with another pmin, the columns
+            (and the codewords) change.
+        merge: Merge the equal columns of the DEM (error mechanisms with the same detectors and observables) in the
+            binary (default: True).  Exact: dropping two equal columns of a codeword gives a lighter one, so the
+            distance does not change (and the cache key does not depend on merge).  Column indices (finC, outC,
+            start, the returned codewords) are those of the DEM; the codewords found use the first one of each set
+            of equal columns (merge=False: all columns are kept, e.g., to enumerate the codewords with each of them;
+            or expand=True to expand the list found).
+        expand: If True, the codewords returned and written to outC are expanded in Python: each codeword is listed
+            once for every choice among equal columns (default: False; see _expand_equal_columns()).  The binary
+            and the cache keep the merged list.  With dW <= 1, the expanded list is that of merge=False (with
+            dW >= 2, merge=False also lists lighter codewords with two equal columns added).  The expanded list can
+            be much longer (it grows quickly with the weight); with maxC > 0, it is cut at maxC codewords.
         finC: Input file with initial codewords.
         outC: Output file to save codewords (NZLIST format).
         do_cws: Whether to return extracted error mechanisms / codewords.
@@ -4141,7 +4291,10 @@ def compute_dem_distance(
         rounds: Optional number of REPEAT rounds for .stim circuits (warns if no REPEAT block).
         out_dir: Optional output directory for saved DEM and/or Stim circuit files.
         out_dem: Optional bool or filename to save the constructed DEM (True = auto-named
-            <basename>_simp.dem or <basename>_full.dem).
+            <basename>_simp.dem or <basename>_full.dem).  The codewords (outC, do_cws) index its error lines (in the
+            order of the flattened DEM): save the DEM in the same run, since a DEM generated again from the circuit
+            may differ (e.g., with another stim version); with outC but without out_dem, a warning is printed to
+            stderr for a Stim circuit.
         out_stim: Optional bool or filename to save the processed (noisy) Stim circuit
             (True = auto-named <basename>_simp.stim or <basename>_full.stim).
         p_noise: Strength of the circuit-level noise added to a noiseless Stim circuit (see add_noise(); default:
@@ -4192,6 +4345,16 @@ def compute_dem_distance(
         return d, d_info
 
     # Solver is native multithreaded dist_m4ri (the cache key is that of the processed DEM, see get_cached_distance())
+    if outC and circuit is not None and saved_dem_path is None:
+        sys.stderr.write(f"# Warning: outC={outC}: the codewords index the error lines of the DEM generated from the "
+                         f"Stim circuit in this run (after the pmin cutoff), which is not saved; save it with "
+                         f"--out-dem (out_dem=...), since a DEM generated again later (e.g., with another stim "
+                         f"version) may not fit\n")
+    fdem_run = saved_dem_path if (saved_dem_path is not None and os.path.exists(saved_dem_path)) else dem
+    cws_out_fn = None
+    if expand and (do_cws or outC):
+        def cws_out_fn(cws_in: List[List[int]]) -> List[List[int]]:
+            return _expand_equal_columns(cws_in, fdem_run, pmin=pmin, maxC=maxC, verbose=verbose)
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     res = _cached_code_distance(
         None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
@@ -4200,9 +4363,8 @@ def compute_dem_distance(
         need_cws=bool(do_cws or outC), eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose,
         nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
         kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-        cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        fdem=saved_dem_path if (saved_dem_path is not None and os.path.exists(saved_dem_path)) else dem, pmin=pmin,
-        key_fn=lambda: _dem_cache_key(dem, pmin)
+        cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
+        merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     return (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -4254,6 +4416,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "dW": -1,
         "maxC": 0,
         "pmin": 0.0,
+        "merge": None,
+        "expand": None,
         "noscan": 0,
         "classical": -1,
         "seed": 0,
@@ -4515,6 +4679,13 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["maxC"] = int(val)
             elif key_lower == "pmin":
                 args["pmin"] = float(val)
+            elif key_lower in ("merge", "expand"):
+                if val.lower() in ("1", "true", "yes", "on"):
+                    args[key_lower] = True
+                elif val.lower() in ("0", "false", "no", "off"):
+                    args[key_lower] = False
+                else:
+                    raise ValueError(f"invalid '{arg}': {key_lower} should be 0 or 1")
             elif key_lower == "noscan":
                 args["noscan"] = int(val)
             elif key_lower == "classical":
@@ -4612,11 +4783,11 @@ def print_cli_short_help(file: Optional[Any] = None) -> None:
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Allowed parameters:
-  fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, classical,
+  fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, merge, classical,
   --simple, --full, basis, --rounds, --out-dir, --out-dem, --out-stim,
   method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax, timeout, threads,
   nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, min_hits,
-  cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC,
+  cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC, expand,
   dW, seed, debug, solver, cache, --no-cache, --verbose, --cws, --trust-start
 
 Help options:
@@ -4639,6 +4810,7 @@ Input matrices & models:
   Hx=FILE, Hz=FILE      CSS check matrices, both required (computes dX and dZ)
   Lx=FILE, Lz=FILE      CSS logical operators (optional, constructed if omitted)
   pmin=PROB             Minimum error probability threshold for DEM errors (default: 0.0)
+  merge=0|1             Merge equal DEM columns (exact; codewords use the first one) (default: 1)
   classical=0|1         1: classical code (Hx only), 0: quantum CSS (auto-detected)
   --simple / --full     For .stim files: keep primary-basis detectors only (--simple, default
                         for CSS/XZZX circuits) or keep all detectors (--full)
@@ -4671,6 +4843,7 @@ Codeword collection & caching:
   --cws                 Collect and output non-trivial minimum-weight codewords
   outC=FILE             Save output codewords (for CSS, auto-suffixed _X.nz / _Z.nz)
   finC=FILE             Input initial candidate codewords (.nz file)
+  expand=0|1            DEM codewords: list all choices among equal columns (merge) (default: 0)
   cache=FILE            Persistent JSON cache file (default: tmp_dist_cache.json)
   --no-cache / nocache  Disable persistent JSON caching
   --verbose / -v        Explain bounds, steps, cache status, and miss probability estimates
@@ -4717,7 +4890,16 @@ Required input (at least one matrix/model specification):
                         d = min(dX, dZ) (finH=Hx with finG=Hz gives dZ only).
   Lx=FILE, Lz=FILE      Alternative syntax for specifying CSS logical operator matrices.
   pmin=PROB             Minimum error probability threshold for DEM parsing (default: 0.0).
-                        Error mechanisms with probability < pmin are filtered out.
+                        Error mechanisms with probability < pmin are filtered out.  The column
+                        indices (start, finC, outC) count only the error mechanisms kept: with
+                        another pmin, the columns (and the codewords) change.
+  merge=0|1             Merge the equal columns of the DEM (error mechanisms with the same detectors
+                        and observables) in the dist_m4ri binary (default: 1).  Exact: dropping two
+                        equal columns of a codeword gives a lighter one, so the distance does not
+                        change (nor does the cache key).  Column indices (finC, outC, start) are those
+                        of the DEM; the codewords found use the first one of each set of equal columns
+                        (use merge=0 to enumerate the codewords with each of them, or expand=1 to
+                        expand the list found).
   classical=0|1         Code type override:
                         1: Classical linear code (Hx only; ignores/discards logicals).
                         0: Quantum CSS code (requires logicals or Hz).
@@ -4735,13 +4917,15 @@ Required input (at least one matrix/model specification):
                         files (also out_dir=DIR; default: directory of the input .stim/.dem file).
   --out-dem [FILE]      Save constructed (flattened) DEM to FILE. If given without a filename (or
                         out_dem=1), automatically saves as <basename>_simp.dem or <basename>_full.dem.
+                        The codewords (outC) index its error lines: save the DEM in the same run (a DEM
+                        generated again from the circuit may differ, e.g., with another stim version).
   --out-stim [FILE]     Save processed (noisy, rounds-adjusted, detector-filtered) Stim circuit to
                         FILE. If given without a filename (or out_stim=1), automatically saves as
                         <basename>_simp.stim or <basename>_full.stim.
   (conflicting inputs)  The input is selected in the order fdem, Hx/Hz (CSS code), and
                         finH/finG/finL/fin (fin only supplies the missing finH and finG); the
-                        ignored inputs (e.g., matrices with fdem, pmin without fdem, fin with finH,
-                        classical=1 with finG) give a warning.
+                        ignored inputs (e.g., matrices with fdem, pmin, merge, or expand without fdem,
+                        fin with finH, classical=1 with finG) give a warning.
 
 Calculation method:
   method=1|2|3          Calculation method (default: 3):
@@ -4876,15 +5060,26 @@ Codeword collection and export:
   outC=FILE             Export found codewords of weight up to min_w + dW (min_w: minimum weight
                         found) to file in .nz format.  In method=2/3, once the distance d is
                         known, CC rounds w = d..d+dW enumerate all such codewords (unless the
-                        timeout is hit).
+                        timeout is hit; for a DEM, up to the choice of equal columns: see merge).
                         In CSS mode, automatically saves X-codewords to FILE_X.nz and
                         Z-codewords to FILE_Z.nz.  The codewords of the run are merged with the
                         cached ones; with finC=FILE (the same file), those already in FILE are kept.
   finC=FILE             Import initial candidate codewords from file in .nz format.
                         In CSS mode, automatically resolves FILE_X.nz and FILE_Z.nz.
-  maxC=N                Maximum number of codewords to collect (default: 0 = unlimited).
+  maxC=N                Maximum number of codewords to collect (default: 0 = unlimited); with
+                        expand=1, also the maximum number of codewords of the expanded list.
   dW=N                  Extra weight window above minimum distance to collect codewords
                         (w <= min_w + dW) (default: 0).
+  expand=0|1            Python only, for a DEM: list each codeword found once for every choice
+                        among equal columns, which the binary merges (see merge; default: 0).  The
+                        binary and the cache keep the merged list.  With dW <= 1, the expanded list
+                        is that of merge=0 (with dW >= 2, merge=0 also lists lighter codewords with
+                        two equal columns added).  The list grows quickly with the weight: with
+                        maxC > 0, at most maxC codewords are written (a warning if some are dropped).
+  (DEM codewords)       The indices refer to the error lines of the DEM in the order of the flattened
+                        DEM, after the pmin cutoff.  For a Stim circuit, save the DEM with --out-dem in
+                        the same run (a warning is printed otherwise): a DEM generated again from the
+                        circuit may differ (e.g., with another stim version).
 
 Distance caching (Python CLI):
   cache=FILE            Path to persistent JSON cache file (default: tmp_dist_cache.json).
@@ -4944,11 +5139,17 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
             warns.append(f"fdem={args['fdem']} given: ignoring {', '.join(k + '=' for k in ign)}")
         if stim_opts and not str(args["fdem"]).endswith(".stim"):
             warns.append(f"{', '.join(stim_opts)}: only used for a Stim circuit (.stim); ignored")
+        if args.get("expand") and not (args.get("outC") or args.get("do_cws")):
+            warns.append("expand=: only used with outC= or --cws; ignored")
     else:
         dem_opts = stim_opts + [opt for opt, on in (("--out-dir", args.get("out_dir") is not None),
                                                     ("--out-dem", args.get("out_dem") is not None)) if on]
         if (args.get("pmin") or 0.0) > 0.0:
             dem_opts.append("pmin=")
+        if args.get("merge") is not None:
+            dem_opts.append("merge=")
+        if args.get("expand") is not None:
+            dem_opts.append("expand=")
         if dem_opts:
             warns.append(f"{', '.join(dem_opts)}: only used with fdem= (a DEM or Stim circuit); ignored")
         if args.get("Hx") is not None or args.get("Hz") is not None:
@@ -5044,6 +5245,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 dW=args["dW"],
                 maxC=args["maxC"],
                 pmin=args["pmin"],
+                merge=args["merge"] is not False,
+                expand=bool(args["expand"]),
                 finC=args["finC"],
                 outC=args["outC"],
                 do_cws=args["do_cws"] or (args["outC"] is not None),

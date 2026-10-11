@@ -826,6 +826,36 @@ assert_output "$BIN_FORK method=2 fdem=$DEM101 wmax=2 threads=1 debug=1" 0 "^2 2
     "^#   L: 1 x 2 \(observables\), 1 nonzeros, max row weight 1, max column weight 1$"
 rm -f "$DEM101"
 
+# Test 102: the equal columns of a DEM (same detectors and observables) are merged (merge=1, the default; exact): the
+# column indices (outC, finC, and the printed codewords) are those of the DEM, the codewords found use the first one of
+# each set of equal columns (here 1-based columns 1=5, 2=4, and 6=7), and two equal columns of a finC codeword cancel;
+# merge=0 keeps all columns (4 codewords of weight 3)
+DEM102=$(mktemp --suffix=.dem)
+CWS102=$(mktemp --suffix=.nz)
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\nerror(0.1) D0 D1\n' > "$DEM102"
+printf 'error(0.1) D0 L0\nerror(0.1) D2\nerror(0.1) D2\n' >> "$DEM102"
+for bin in "$BIN_FORK" "$BIN"; do
+    assert_output "$bin method=2 fdem=$DEM102 wmax=3 outC=$CWS102 threads=1 debug=1" 0 "^3( 3 0)?$" \
+        "^#   merged 3 equal columns of the DEM: 4 of 7 columns kept \(merge=0 to keep all\)$"
+    if [ "$(grep -v '^%' "$CWS102" | tr -s ' ')" != "3 1 2 3" ]; then
+        echo "  [FAIL] Test 102: expected the single codeword '3 1 2 3' in outC, got: $(grep -v '^%' "$CWS102")"
+        FAILED=1
+    fi
+done
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 merge=0 outC=$CWS102 threads=1 debug=1" 0 "^3 3 0$" \
+    "^#   H: 3 x 7 \(detectors\), 9 nonzeros"
+if [ "$(grep -c -v '^%' "$CWS102")" != 4 ]; then
+    echo "  [FAIL] Test 102: expected 4 codewords in outC with merge=0, got: $(grep -v '^%' "$CWS102")"
+    FAILED=1
+fi
+printf '%%%% NZLIST\n3 3 4 5\n5 1 2 3 6 7\n' > "$CWS102"
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 finC=$CWS102 threads=1 debug=33" 0 "^3 3 0$" \
+    "^# read 1 codewords from .*, total 1, min weight 3$"
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 finC=$CWS102 threads=1 debug=33" 0 "^3 3 0$" \
+    "^# finC: lightest codeword of weight 3 \(1-based columns\): 1 2 3$"
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 merge=2" 255 "" "invalid 'merge=2': merge should be 0 or 1"
+rm -f "$DEM102" "$CWS102"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

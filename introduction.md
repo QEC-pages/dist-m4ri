@@ -29,7 +29,9 @@ results). This page summarizes how the program works; `README.md` describes all 
   constructed automatically. For the other sector, swap the roles of `Hx` and `Hz`; the CSS distance is the smaller of
   the two (the Python function `compute_css_distance()` runs both sectors).
 - **DEM**: `fdem=...` gives `H` (detectors) and `L` (observables), with one column for each error mechanism; the
-  distance is the minimum number of error mechanisms which trigger no detector but flip an observable.
+  distance is the minimum number of error mechanisms which trigger no detector but flip an observable. Equal columns
+  (error mechanisms with the same detectors and observables) are merged by default (`merge=1`): a codeword with two
+  equal columns is not of minimum weight, since dropping both gives a lighter one.
 
 All matrices are binary, with `n` columns, in Matrix Market format (`.mtx` or `.mmx`). For a CSS code, they obey the
 orthogonality conditions `Hx Hz^T = 0`, `Hx Lz^T = 0`, and `Lx Hz^T = 0`, and the number of encoded qubits is
