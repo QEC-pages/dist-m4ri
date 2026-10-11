@@ -13,6 +13,34 @@
 #include "util_m4ri.h"
 
 
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+/* gauss_one_rows() for rows not at equal distances in memory (M4RI before 2024, a matrix spanning several blocks):
+ * each row is found with mzd_row().  Kept out of line, so that the inlined gauss_one_rows() stays small. */
+int gauss_one_rows_blocks(mzd_t *M, const int idx, const int begrow, const rci_t nrows_eff) {
+  const wi_t word_idx = idx >> 6;
+  const word bit_mask = (word)1 << (idx & 63);
+  const wi_t width = M->width;
+  for (rci_t j = begrow; j < nrows_eff; ++j) {
+    if (mzd_row(M, j)[word_idx] & bit_mask) {
+      if (j != begrow) {
+        mzd_row_swap(M, begrow, j);
+      }
+      const word * const piv_row = mzd_row(M, begrow);
+      for (rci_t ii = 0; ii < nrows_eff; ++ii) {
+        word * const dst_row = mzd_row(M, ii);
+        if (ii != begrow && (dst_row[word_idx] & bit_mask)) {
+          for (wi_t w = 0; w < width; ++w) {
+            dst_row[w] ^= piv_row[w];
+          }
+        }
+      }
+      return 1;
+    }
+  }
+  return 0;
+}
+#endif /* __M4RI_MAX_MZD_BLOCKSIZE */
+
 size_t mzd_weight_naive(const mzd_t *A){
   size_t count = 0;
   for(rci_t i = 0; i < A->nrows; ++i)

@@ -27,6 +27,16 @@ static inline word const * mzd_row_cons(const mzd_t * mat, const int row){
 #pragma GCC diagnostic pop
 }
 
+/** The first word of row 0 of a dense matrix, the start of the rows at distances of M->rowstride words: `M->data` (all
+ * rows in one array) with M4RI 20240729 and later.  Older versions (e.g., 20200125, as in Ubuntu 24.04) have no field
+ * `data`: they keep the rows in blocks of up to 2^27 words (recognized by the macro __M4RI_MAX_MZD_BLOCKSIZE), at equal
+ * distances unless the matrix spans several blocks (see gauss_one_rows()). */
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+#define MZD_FIRST_ROW(M) mzd_row((M), 0)
+#else
+#define MZD_FIRST_ROW(M) ((M)->data)
+#endif
+
 
 /**
  * macros from nauty.h
@@ -438,6 +448,14 @@ static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const co
   __M4RI_FLIP_BIT(rawrow[col/m4ri_radix], col%m4ri_radix);
 }
 
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+/**
+ * @brief gauss_one_rows() for a matrix whose rows are not at equal distances in memory (with M4RI versions before
+ *        2024, a matrix spanning several blocks of 2^27 words): the rows are found with mzd_row().
+ */
+int gauss_one_rows_blocks(mzd_t *M, const int idx, const int begrow, const rci_t nrows_eff);
+#endif
+
 /**
  * @brief Perform one step of Gaussian elimination on column idx of M
  *        restricted to the first nrows_eff rows.
@@ -450,6 +468,14 @@ static inline void mzd_flip_bit(mzd_t * const M, rci_t const row, rci_t const co
 static inline int gauss_one_rows(mzd_t *M, const int idx, const int begrow,
                                  const rci_t nrows_eff) {
   if (begrow >= nrows_eff) return 0;
+#ifdef __M4RI_MAX_MZD_BLOCKSIZE
+  /* The rows i are at mzd_row(M, 0) + i * rowstride, see MZD_FIRST_ROW(); with M4RI versions before 2024, unless the
+   * matrix spans several blocks */
+  if (__builtin_expect((uintptr_t)mzd_row(M, nrows_eff - 1) - (uintptr_t)mzd_row(M, 0) !=
+                       (uintptr_t)(nrows_eff - 1) * (uintptr_t)M->rowstride * sizeof(word), 0)) {
+    return gauss_one_rows_blocks(M, idx, begrow, nrows_eff);
+  }
+#endif
   const wi_t word_idx = idx >> 6;
   const word bit_mask = (word)1 << (idx & 63);
   const wi_t width = M->width;
@@ -461,7 +487,7 @@ static inline int gauss_one_rows(mzd_t *M, const int idx, const int begrow,
         mzd_row_swap(M, begrow, j);
       }
       const word * const __restrict piv_row = mzd_row(M, begrow);
-      word * __restrict dst_row = M->data;
+      word * __restrict dst_row = MZD_FIRST_ROW(M);
       for (rci_t ii = 0; ii < begrow; ++ii, dst_row += rowstride) {
         if (dst_row[word_idx] & bit_mask) {
           for (wi_t w = 0; w < width; ++w) {
