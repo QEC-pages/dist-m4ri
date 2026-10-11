@@ -156,8 +156,33 @@ static inline mzp_t * mzp_rand_thread(mzp_t *q, rci_t length, uint64_t *state) {
 
 #define CC_SPLIT_MAX_LEVELS 3 /* CC work units: at most 3 fixed levels, B^3 units per start index (cc_round_levels()) */
 
+/* The CC column-syndrome hash, for the last two levels of a cluster (see cc_walk_last2()).  The hash of a set S of rows
+ * of H is the XOR of the random 64-bit values zr[r], r in S (Zobrist hashing): the hash of the syndrome s + h_c, where
+ * h_c is the column c of H, is that of s XOR hc[c].  The nonzero columns are sorted by (hash, column), and each
+ * distinct hash value `key` has an entry {key, beg, cnt} in the open-addressing table `tab` (linear probing from the
+ * slot key >> tshift) for its run of columns cols[beg..beg+cnt-1].  The bit (key & bmask) of the filter `bits` is set
+ * for each key, so that most failed lookups only read one bit. */
+typedef struct {
+  uint64_t key;
+  int beg, cnt; /* cnt = 0: empty slot */
+} cc_hash_slot_t;
+
+typedef struct {
+  uint64_t *zr;         /* random value of each row of H */
+  uint64_t *hc;         /* hash of each column of H (0 for a zero column) */
+  uint64_t *bits;       /* filter: bit (key & bmask) set for each key */
+  uint64_t bmask;
+  cc_hash_slot_t *tab;  /* 2^(64-tshift) slots */
+  int tshift;
+  int tmask;
+  int *cols;            /* the nonzero columns sorted by (hash, column) */
+  int ncols;            /* their number */
+  int nkeys;            /* number of distinct keys */
+} cc_hash_t;
+
 typedef struct {
   params_t *p;
+  const cc_hash_t *cc_hash; /* CC column-syndrome hash for cc_walk() (NULL with smax > 0: start_CC_recurs_mt()) */
   int num_threads;
   int rw_threads; /* workers 0..rw_threads-1 may run RW (dense RW matrices); all workers may run CC */
   double timeout;
@@ -347,8 +372,258 @@ static inline void ctx_update_feed_limit(distfork_ctx_t * const ctx) {
   }
 }
 
-/* Recursive CC worker function (interruptible).  At the fixed levels w = err->wei <= nfix of a CC work unit (see
- * `cc_pack()`), only the column at position fix[w-1] of the row is added (none if the row is shorter). */
+/* Record the CC codeword `err` (sorted columns, nonzero syndrome of L) found by worker `warg`, and update the upper
+ * bound; returns true if the run is to stop (the first codeword without outC and maxC, or maxC codewords) */
+static __attribute__((noinline)) bool cc_record(distfork_ctx_t * const ctx, const worker_arg_t * const warg,
+                                                const one_vec_t * const err) {
+  params_t * const p = ctx->p;
+  bool stop = false;
+  pthread_mutex_lock(&ctx->cw_mutex);
+  p->codewords = codeword_add_maybe(p, err->vec, err->wei);
+  ctx_update_feed_limit(ctx);
+  int cur_d = atomic_load(&ctx->dmax);
+  if (p->min_w < cur_d || cur_d == 0) {
+    atomic_store(&ctx->dmax, p->min_w);
+    if ((p->debug & DBG_CODEWORDS) && err->wei == p->min_w) {
+      char prefix[48];
+      snprintf(prefix, sizeof(prefix), "# [thread %d] CC codeword", warg->tid);
+      print_codeword_support(stderr, prefix, err->vec, err->wei, p->debug);
+    }
+  }
+  int cur_cc_found = atomic_load(&ctx->cc_found_weight);
+  if (cur_cc_found == 0 || err->wei < cur_cc_found) {
+    atomic_store(&ctx->cc_found_weight, err->wei);
+  }
+  if (!p->outC && p->maxC == 0) {
+    ctx_stop(ctx, STOP_CC_FOUND);
+    stop = true;
+  }
+  if (codeword_maxc_reached(p)) {
+    ctx_stop(ctx, STOP_MAXC);
+    stop = true;
+  }
+  pthread_mutex_unlock(&ctx->cw_mutex);
+  return stop;
+}
+
+static inline int bit_get(const uint64_t * const b, const int i) { return (int)((b[i >> 6] >> (i & 63)) & 1); }
+static inline void bit_flip(uint64_t * const b, const int i) { b[i >> 6] ^= (uint64_t)1 << (i & 63); }
+
+/* The first set bit of the bitset b in from..limit-1 (limit if none) */
+static inline int bits_first(const uint64_t * const b, const int from, const int limit) {
+  if (from >= limit) return limit;
+  int k = from >> 6;
+  const int k_last = (limit - 1) >> 6;
+  uint64_t x = b[k] & (~(uint64_t)0 << (from & 63));
+  while (x == 0) {
+    if (++k > k_last) return limit;
+    x = b[k];
+  }
+  const int r = (k << 6) + __builtin_ctzll(x);
+  return (r < limit) ? r : limit;
+}
+
+/* The state of the CC walk of a worker (smax = 0, see cc_walk()) */
+typedef struct {
+  distfork_ctx_t *ctx;
+  worker_arg_t *warg;
+  const csr_t *mH;     /* H (sorted rows) */
+  const csr_t *mHT;    /* its transpose: the columns of H (sorted rows) */
+  const cc_hash_t *hs; /* the column-syndrome hash */
+  uint64_t *S;         /* the syndrome of the cluster: bitset of the rows of H */
+  uint64_t *E;         /* the columns of the cluster: bitset */
+  int *cols;           /* the columns of the cluster in the order added (cols[0]: the start column) */
+  one_vec_t *cw;       /* a codeword found: its sorted columns */
+  int w;               /* the number of columns of the cluster */
+  int col_min;         /* columns are added only if larger (-1: unlimited clusters with the expert `start` list) */
+  int w_limit;         /* the weight of the CC round */
+  int max_col_wt;      /* the maximum column weight of H */
+  int m;               /* the number of rows of H */
+  const int *fix;      /* the fixed levels 1..nfix of the work unit, see `cc_pack()` */
+  int nfix;
+} cc_walk_t;
+
+/* Record the codeword: the cluster with the columns c1 (unless negative) and c2, if its syndrome of L is nonzero;
+ * returns true if the run is to stop */
+static bool cc_walk_found(cc_walk_t * const t, const int c1, const int c2) {
+  one_vec_t * const cw = t->cw;
+  int n = 0;
+  for (int i = 0; i < t->w; i++) cw->vec[n++] = t->cols[i];
+  if (c1 >= 0) cw->vec[n++] = c1;
+  cw->vec[n++] = c2;
+  for (int i = 1; i < n; i++) { /* insertion sort */
+    const int x = cw->vec[i];
+    int j = i - 1;
+    while (j >= 0 && cw->vec[j] > x) {
+      cw->vec[j + 1] = cw->vec[j];
+      j--;
+    }
+    cw->vec[j + 1] = x;
+  }
+  cw->wei = n;
+  const colmask_t * const mL = t->ctx->p->maskL; /* NULL for a classical code */
+  if (mL && !colmask_syndrome_non_zero(mL, n, cw->vec)) return false;
+  return cc_record(t->ctx, t->warg, cw);
+}
+
+/* Is the syndrome S (bitset of weight sw) the sum h_{c1} + h_{c2} of the columns c1 and c2 of H (rows of mHT)? */
+static bool cc_sum2_equal(const uint64_t * const S, const int sw, const csr_t * const mHT, const int c1, const int c2) {
+  int a = mHT->p[c1], b = mHT->p[c2], k = 0;
+  const int a_end = mHT->p[c1 + 1], b_end = mHT->p[c2 + 1];
+  while (a < a_end || b < b_end) {
+    int r;
+    if (b >= b_end) r = mHT->i[a++];
+    else if (a >= a_end) r = mHT->i[b++];
+    else if (mHT->i[a] < mHT->i[b]) r = mHT->i[a++];
+    else if (mHT->i[b] < mHT->i[a]) r = mHT->i[b++];
+    else { /* a common row cancels */
+      a++;
+      b++;
+      continue;
+    }
+    if (!bit_get(S, r)) return false;
+    k++;
+  }
+  return k == sw;
+}
+
+/* The last two levels of cc_walk() at the level w = t->w with w + 2 = current_limit (the leaf level w + 1 is not a
+ * fixed level of the work unit; `i1_beg`..`i1_end`: the positions in mH of the columns of the row r0 = min(S) to add).
+ * There, the recursion adds each column c1 > col_min of r0 not in the cluster with the syndrome s = S + h_{c1} nonzero,
+ * and the leaf level adds each column c2 > col_min of the row min(s) not in the cluster with h_{c2} = s, which gives a
+ * codeword.  These columns c2 are found by a lookup of the hash h ^ hc[c1] of s instead (cc_hash_t, verified exactly).
+ * The pairs (c1, c2) are the same and come in the same order (c2 in ascending order, as in the row min(s)).  As at the
+ * entry of the leaf level, a codeword is not recorded once the stop flag is set or the weight limit has dropped (a
+ * smaller upper bound).  Returns 1 if the run is to stop. */
+static __attribute__((noinline)) int cc_walk_last2(cc_walk_t * const t, const int sw, const uint64_t h,
+                                                   const int i1_beg, const int i1_end) {
+  distfork_ctx_t * const ctx = t->ctx;
+  const cc_hash_t * const hs = t->hs;
+  const uint64_t * const hc = hs->hc;
+  const uint64_t * const bits = hs->bits;
+  const uint64_t bmask = hs->bmask;
+  const csr_t * const mH = t->mH;
+  const int col_min = t->col_min;
+  for (int i1 = i1_beg; i1 < i1_end; i1++) {
+    const int c1 = mH->i[i1];
+    if (c1 <= col_min) continue;
+    const uint64_t key = h ^ hc[c1]; /* the hash of s = S + h_{c1} */
+    const uint64_t fb = key & bmask;
+    if (!((bits[fb >> 6] >> (fb & 63)) & 1)) continue;
+    int j = (int)(key >> hs->tshift);
+    while (hs->tab[j].cnt > 0 && hs->tab[j].key != key) j = (j + 1) & hs->tmask;
+    if (hs->tab[j].cnt == 0) continue;
+    /* columns c2 with the hash of s (s is nonzero: no zero columns in the table) */
+    if (bit_get(t->E, c1)) continue;
+    const int k_end = hs->tab[j].beg + hs->tab[j].cnt;
+    for (int k = hs->tab[j].beg; k < k_end; k++) {
+      const int c2 = hs->cols[k];
+      if (c2 <= col_min || c2 == c1 || bit_get(t->E, c2)) continue;
+      if (!cc_sum2_equal(t->S, sw, t->mHT, c1, c2)) continue; /* a hash collision */
+      /* the checks at the entry of the leaf level */
+      if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) return 0;
+      const int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+      if (cur_dmax > 0 && ctx->p->dW >= 0 && minint(t->w_limit, cur_dmax + ctx->p->dW) < t->w + 2) return 0;
+      if (cc_walk_found(t, c1, c2)) return 1;
+    }
+  }
+  return 0;
+}
+
+/* The CC recursion of start_CC_recurs_mt() for smax = 0, with the syndrome of the cluster as the bitset t->S (weight
+ * sw, smallest row r0, hash h, see cc_hash_t), and its columns as the bitset t->E: a column is added by flipping its
+ * rows in S (and back after the recursion) instead of merging sorted lists, and the weight of the new syndrome is
+ * known before.  The clusters are the same, in the same order, and so are the codewords found (and their CC hit
+ * counts).  The last two levels use hash lookups (cc_walk_last2()).  Returns 1 if the run is to stop. */
+static int cc_walk(cc_walk_t * const t, const int sw, const int r0, const uint64_t h) {
+  distfork_ctx_t * const ctx = t->ctx;
+  if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) return 0;
+  const params_t * const p = ctx->p;
+  const int w = t->w;
+  int current_limit = t->w_limit;
+  const int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+  if (cur_dmax > 0 && p->dW >= 0) current_limit = minint(t->w_limit, cur_dmax + p->dW);
+  if (w >= current_limit) return 0;
+  const csr_t * const mH = t->mH;
+  const csr_t * const mHT = t->mHT;
+  /* the positions in mH of the columns of the row r0 to add: all of them, or one at a fixed level of the work unit */
+  int i1_beg = mH->p[r0], i1_end = mH->p[r0 + 1];
+  if (w <= t->nfix) {
+    i1_beg += t->fix[w - 1];
+    if (i1_beg >= i1_end) return 0;
+    i1_end = i1_beg + 1;
+  }
+  const int col_min = t->col_min;
+  uint64_t * const S = t->S;
+  uint64_t * const E = t->E;
+
+  if (w + 1 == current_limit) { /* leaf level: the columns c with h_c = S */
+    for (int i1 = i1_beg; i1 < i1_end; i1++) {
+      const int c = mH->i[i1];
+      if (c <= col_min) continue;
+      const int pb = mHT->p[c];
+      if (mHT->p[c + 1] - pb != sw) continue;
+      int k = 0;
+      while (k < sw && bit_get(S, mHT->i[pb + k])) k++;
+      if (k < sw || bit_get(E, c)) continue;
+      if (cc_walk_found(t, -1, c)) return 1;
+    }
+    return 0;
+  }
+  if (w + 2 == current_limit && w + 1 > t->nfix) return cc_walk_last2(t, sw, h, i1_beg, i1_end);
+
+  /* internal level */
+  const int max_reach = (current_limit - (w + 1)) * t->max_col_wt;
+  const uint64_t * const hc = t->hs->hc;
+  for (int i1 = i1_beg; i1 < i1_end; i1++) {
+    const int c1 = mH->i[i1];
+    if (c1 <= col_min) continue;
+    const int pb = mHT->p[c1], pe = mHT->p[c1 + 1];
+    if (sw - (pe - pb) > max_reach || bit_get(E, c1)) continue;
+    int nset = 0; /* the rows of c1 in S */
+    for (int k = pb; k < pe; k++) nset += bit_get(S, mHT->i[k]);
+    const int sw1 = sw + (pe - pb) - 2 * nset;
+    if (sw1 <= 0 || sw1 > max_reach) continue;
+    /* add c1: flip its rows; the smallest row of the new syndrome (r0 is in c1, all the other rows of S are larger) */
+    int rmin = t->m;
+    for (int k = pb; k < pe; k++) {
+      const int r = mHT->i[k];
+      if (!bit_get(S, r) && r < rmin) rmin = r;
+      bit_flip(S, r);
+    }
+    const int r1 = (rmin < r0) ? rmin : bits_first(S, r0 + 1, rmin);
+    bit_flip(E, c1);
+    t->cols[t->w++] = c1;
+    const int result = cc_walk(t, sw1, r1, h ^ hc[c1]);
+    t->w--;
+    bit_flip(E, c1);
+    for (int k = pb; k < pe; k++) bit_flip(S, mHT->i[k]);
+    if (result == 1) return 1;
+  }
+  return 0;
+}
+
+/* The CC work unit from the start column `col` (w_limit > 1, see cc_walk()) */
+static void cc_walk_unit(cc_walk_t * const t, const int col, const int w_limit, const int * const fix, const int nfix) {
+  const csr_t * const mHT = t->mHT;
+  const int pb = mHT->p[col], pe = mHT->p[col + 1];
+  for (int k = pb; k < pe; k++) bit_flip(t->S, mHT->i[k]);
+  bit_flip(t->E, col);
+  t->cols[0] = col;
+  t->w = 1;
+  t->col_min = (t->ctx->p->start_num > 0) ? -1 : col;
+  t->w_limit = w_limit;
+  t->fix = fix;
+  t->nfix = nfix;
+  cc_walk(t, pe - pb, mHT->i[pb], t->hs->hc[col]);
+  t->w = 0;
+  bit_flip(t->E, col);
+  for (int k = pb; k < pe; k++) bit_flip(t->S, mHT->i[k]);
+}
+
+/* Recursive CC worker function (interruptible), used with smax > 0 (otherwise, cc_walk() explores the same clusters).
+ * At the fixed levels w = err->wei <= nfix of a CC work unit (see `cc_pack()`), only the column at position fix[w-1]
+ * of the row is added (none if the row is shorter). */
 static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
                               const int w_limit, const int max_col_wt,
                               const csr_t * const mH, const csr_t * const mHT,
@@ -428,38 +703,9 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
       /* swei == 0: insert col into err to verify against mL and record codeword */
       int pos = one_ordered_ins(err, col);
       int nz = (!mL) || colmask_syndrome_non_zero(mL, err->wei, err->vec);
-      if (nz) {
-        bool stop = false;
-        pthread_mutex_lock(&ctx->cw_mutex);
-        p->codewords = codeword_add_maybe(p, err->vec, err->wei);
-        ctx_update_feed_limit(ctx);
-        int cur_d = atomic_load(&ctx->dmax);
-        if (p->min_w < cur_d || cur_d == 0) {
-          atomic_store(&ctx->dmax, p->min_w);
-          if ((p->debug & DBG_CODEWORDS) && err->wei == p->min_w) {
-            char prefix[48];
-            snprintf(prefix, sizeof(prefix), "# [thread %d] CC codeword", warg->tid);
-            print_codeword_support(stderr, prefix, err->vec, err->wei, p->debug);
-          }
-        }
-        int cur_cc_found = atomic_load(&ctx->cc_found_weight);
-        if (cur_cc_found == 0 || err->wei < cur_cc_found) {
-          atomic_store(&ctx->cc_found_weight, err->wei);
-        }
-        if (!p->outC && p->maxC == 0) {
-          ctx_stop(ctx, STOP_CC_FOUND);
-          stop = true;
-        }
-        if (codeword_maxc_reached(p)) {
-          ctx_stop(ctx, STOP_MAXC);
-          stop = true;
-        }
-        pthread_mutex_unlock(&ctx->cw_mutex);
-
-        if (stop) {
-          one_ordered_pos_del(err, col, pos);
-          return 1;
-        }
+      if (nz && cc_record(ctx, warg, err)) {
+        one_ordered_pos_del(err, col, pos);
+        return 1;
       }
       one_ordered_pos_del(err, col, pos);
     }
@@ -1092,6 +1338,8 @@ static void *worker_thread_func(void *arg) {
   /* Thread-local CC memory (only for CC, method 2 or 3) */
   const int wmax_alloc = MAX_W - 1;
   one_vec_t *err = NULL, *urr = NULL, **syn = NULL;
+  cc_walk_t walk; /* the CC walk with bitset syndromes (smax = 0: ctx->cc_hash, see cc_walk()) */
+  memset(&walk, 0, sizeof(walk));
   if (ctx->p->method >= 2) {
     err = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2));
     urr = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 2));
@@ -1100,6 +1348,20 @@ static void *worker_thread_func(void *arg) {
     for (int i = 0; i <= wmax_alloc + 2; i++) {
       syn[i] = calloc(1, sizeof(one_vec_t) + sizeof(int) * (ctx->p->spaH->rows + 1));
       if (!syn[i]) ERROR("memory allocation");
+    }
+    if (ctx->cc_hash) {
+      walk.ctx = ctx;
+      walk.warg = warg;
+      walk.mH = ctx->p->spaH;
+      walk.mHT = ctx->mHT_cc;
+      walk.hs = ctx->cc_hash;
+      walk.m = ctx->p->spaH->rows;
+      walk.max_col_wt = ctx->max_col_W;
+      walk.S = calloc((size_t)(walk.m / 64 + 2), sizeof(uint64_t));
+      walk.E = calloc((size_t)(nvar / 64 + 2), sizeof(uint64_t));
+      walk.cols = calloc(wmax_alloc + 3, sizeof(int));
+      walk.cw = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 3));
+      if (!walk.S || !walk.E || !walk.cols || !walk.cw) ERROR("memory allocation");
     }
   }
 
@@ -1156,8 +1418,12 @@ static void *worker_thread_func(void *arg) {
 
             if (w > 1) {
               if (swei > 0 && swei <= (w - 1) * ctx->max_col_W + ctx->p->smax) {
-                start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W,
-                                   ctx->p->spaH, ctx->mHT_cc, warg, fix, lev);
+                if (walk.S) {
+                  cc_walk_unit(&walk, col, w, fix, lev);
+                } else {
+                  start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W,
+                                     ctx->p->spaH, ctx->mHT_cc, warg, fix, lev);
+                }
               }
             } else {
               if (!swei) {
@@ -1276,6 +1542,10 @@ static void *worker_thread_func(void *arg) {
   }
   free(err);
   free(urr);
+  free(walk.S);
+  free(walk.E);
+  free(walk.cols);
+  free(walk.cw);
 
   return NULL;
 }
@@ -2178,6 +2448,88 @@ static void print_stop_reason(distfork_ctx_t * const ctx, const int final_dmax, 
   fprintf(stderr, "\n");
 }
 
+typedef struct {
+  uint64_t h;
+  int c;
+} cc_hash_col_t;
+
+static int cc_hash_col_cmp(const void *a, const void *b) {
+  const cc_hash_col_t *x = a, *y = b;
+  if (x->h != y->h) return (x->h < y->h) ? -1 : 1;
+  return (x->c > y->c) - (x->c < y->c);
+}
+
+/* The CC column-syndrome hash of H (mHT: its transpose with m rows), see cc_hash_t; NULL if H has no nonzero column */
+static cc_hash_t *cc_hash_new(const csr_t * const mHT, const int m) {
+  const int n = mHT->rows;
+  cc_hash_t * const hs = calloc(1, sizeof(cc_hash_t));
+  cc_hash_col_t * const tmp = malloc((size_t)(n > 0 ? n : 1) * sizeof(cc_hash_col_t));
+  if (!hs || !tmp) ERROR("memory allocation");
+  hs->zr = malloc((size_t)(m > 0 ? m : 1) * sizeof(uint64_t));
+  hs->hc = calloc((size_t)(n > 0 ? n : 1), sizeof(uint64_t));
+  if (!hs->zr || !hs->hc) ERROR("memory allocation");
+  uint64_t state = 0x243f6a8885a308d3ULL; /* fixed: the results do not depend on the hash */
+  for (int r = 0; r < m; r++) hs->zr[r] = splitmix64(&state);
+  int nz = 0;
+  for (int c = 0; c < n; c++) {
+    if (mHT->p[c + 1] == mHT->p[c]) continue;
+    uint64_t h = 0;
+    for (int k = mHT->p[c]; k < mHT->p[c + 1]; k++) h ^= hs->zr[mHT->i[k]];
+    hs->hc[c] = h;
+    tmp[nz].h = h;
+    tmp[nz++].c = c;
+  }
+  if (nz == 0) {
+    free(tmp);
+    free(hs->zr);
+    free(hs->hc);
+    free(hs);
+    return NULL;
+  }
+  qsort(tmp, nz, sizeof(cc_hash_col_t), cc_hash_col_cmp);
+  int nkeys = 0;
+  for (int k = 0; k < nz; k++) nkeys += (k == 0 || tmp[k].h != tmp[k - 1].h);
+  int lg = 0; /* ceil(log2(nkeys)) */
+  while ((1LL << lg) < nkeys) lg++;
+  const int tbits = lg + 1;             /* table: at most half full */
+  const int fbits = (lg + 4 > 6) ? lg + 4 : 6; /* filter: 16 bits per key */
+  hs->tshift = 64 - tbits;
+  hs->tmask = (int)((1ULL << tbits) - 1);
+  hs->tab = calloc((size_t)1 << tbits, sizeof(cc_hash_slot_t));
+  hs->bmask = ((uint64_t)1 << fbits) - 1;
+  hs->bits = calloc((size_t)1 << (fbits - 6), sizeof(uint64_t));
+  hs->cols = malloc((size_t)nz * sizeof(int));
+  if (!hs->tab || !hs->bits || !hs->cols) ERROR("memory allocation");
+  for (int k = 0; k < nz; k++) hs->cols[k] = tmp[k].c;
+  for (int k = 0; k < nz;) {
+    const uint64_t key = tmp[k].h;
+    int k2 = k + 1;
+    while (k2 < nz && tmp[k2].h == key) k2++;
+    int j = (int)(key >> hs->tshift);
+    while (hs->tab[j].cnt > 0) j = (j + 1) & hs->tmask;
+    hs->tab[j].key = key;
+    hs->tab[j].beg = k;
+    hs->tab[j].cnt = k2 - k;
+    const uint64_t fb = key & hs->bmask;
+    hs->bits[fb >> 6] |= (uint64_t)1 << (fb & 63);
+    k = k2;
+  }
+  hs->ncols = nz;
+  hs->nkeys = nkeys;
+  free(tmp);
+  return hs;
+}
+
+static void cc_hash_free(cc_hash_t * const hs) {
+  if (!hs) return;
+  free(hs->zr);
+  free(hs->hc);
+  free(hs->bits);
+  free(hs->tab);
+  free(hs->cols);
+  free(hs);
+}
+
 int main(int argc, char **argv) {
   params_t * const p = &prm;
 
@@ -2347,6 +2699,14 @@ int main(int argc, char **argv) {
 
   ctx.mHT_cc = csr_transpose(NULL, p->spaH);
   ctx.max_col_W = csr_max_row_wght(ctx.mHT_cc);
+  /* the CC walk with bitset syndromes and the column-syndrome hash for its last two levels (see cc_walk(); not with
+   * smax > 0, which needs the syndrome weights of the leaf level) */
+  cc_hash_t * const cc_hash = ((p->method & 2) && p->smax == 0) ? cc_hash_new(ctx.mHT_cc, p->spaH->rows) : NULL;
+  ctx.cc_hash = cc_hash;
+  if (cc_hash && (p->debug & DBG_TIMING)) {
+    fprintf(stderr, "# CC: bitset syndromes, hash of %d nonzero columns (%d distinct) for the last two levels"
+            " (%d table slots)\n", cc_hash->ncols, cc_hash->nkeys, cc_hash->tmask + 1);
+  }
   /* CC work units (see `cc_pack()`): radix B = the maximum row weight of H, B^L units per start index */
   ctx.cc_B = csr_max_row_wght(p->spaH);
   ctx.cc_branch = (p->spaH->rows > 0) ? fmax(1.0, (double)p->spaH->p[p->spaH->rows] / p->spaH->rows - 1.0) : 1.0;
@@ -2549,6 +2909,7 @@ int main(int argc, char **argv) {
 
   /* Cleanup */
   safe_mzd_free(ctx.N_global);
+  cc_hash_free(cc_hash);
   csr_free(ctx.mHT_cc);
   free(ctx.threads);
   free(args);

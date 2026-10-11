@@ -781,7 +781,7 @@ rm -f "$CWS97"
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=2" 0 "^5 5 0$" \
     "^# run plan: method=2 \(CC\), 8 threads \(4 at first\), CC from w=1 to wmax=5,"
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=8" 0 "^5 5 0$" \
-    "^# CC round w=[34]: started 4 more threads, 8 in total \("
+    "^# CC round w=[345]: started 4 more threads, 8 in total \("
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 nothrottle=1 debug=2" 0 "^5 5 0$" \
     "^# run plan: method=2 \(CC\), 8 threads, CC from w=1 to wmax=5,"
 if command -v taskset > /dev/null && [ "$(nproc --all)" -ge 2 ]; then
@@ -802,6 +802,18 @@ assert_output "$BIN_FORK method=1 $S7 $RW99 debug=1" 0 "^1 7 400$" \
     "^# codewords accumulated: total=5835, min_w=7: cws=70, total_hits=71,"
 assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
     "^# \[thread 0\] RW elimination: (blocked|column by column) \(blocked: [0-9.]+x the time of column by column\)$"
+
+# Test 100: CC with bitset syndromes and a hash lookup for the last column of a cluster (smax=0, the default) finds the
+# same codewords with the same hit counts as the recursion on sorted syndrome lists (smax>0), also with duplicate
+# columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a codeword of weight 5 is found up to 5 times)
+CWS100=$(mktemp --suffix=.nz)
+for sm in 0 3; do
+    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 debug=1" 0 "^5 5 0$" \
+        "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
+done
+assert_output "$BIN_FORK method=2 $S5 wmax=3 threads=2 debug=8" 0 "^4 0 0$" \
+    "^# CC: bitset syndromes, hash of 1958 nonzero columns \(1679 distinct\) for the last two levels"
+rm -f "$CWS100"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

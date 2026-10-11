@@ -121,6 +121,10 @@ also fix the first one to three cluster extensions, for a balanced load (see
 [Multithreading](#4-multithreading-throttling--batch-sizing)).
 If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `outC` is specified, CC exhausts all
 columns for weight $w$ to collect all unique minimum-weight codewords.
+With `smax=0` (default), the syndrome of a cluster is kept as a bitset (a column is added by flipping its rows), and
+the last column of a cluster is found by a hash lookup: the syndrome left after the next-to-last column must equal a
+column of $H$ (instead of a scan of the candidate columns). The clusters and the codewords found (with their hit
+counts) are the same as with `smax>0`, only faster (about 3-5 times for CSS codes, and 5-20 times for circuit DEMs).
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
 $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
 soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`). A stop target `dstop=U` ends the scan
@@ -135,8 +139,8 @@ Relevant parameters:
 - `wmax=[int]`: Maximum cluster weight to search (optional with `timeout>0`, the default, with `dmax>0`, where the
   rounds end once $d_{\min} = d_{\max}$, or with `dstop>0`, where they end once $d_{\min} \ge$ `dstop`; otherwise
   required for `method=2`).
-- `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning;
-  set e.g. `smax=5` to compute confinement).
+- `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning
+  and the bitset syndromes with hash lookups above; set e.g. `smax=5` to compute confinement).
 
 Expert parameters (each prints a `# WARNING:` to `stderr`; see
 [Restricting the CC Search](#restricting-the-cc-search-expert-options) below):

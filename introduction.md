@@ -67,7 +67,9 @@ A round without codewords raises the lower bound to `dmin = w + 1`, and a codewo
 distance. This search finds every minimum-weight codeword, starting from its smallest column: a proper subset of a
 minimum-weight codeword has a non-zero syndrome (otherwise, the subset or the rest of the codeword would be a lighter
 codeword), and the support of its first unsatisfied check contains another position of the codeword [DKP17]. The work
-of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`.
+of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`. With `smax=0` (default),
+the syndrome of a cluster is kept as a bitset, and the last column of a cluster is found by a hash lookup: the syndrome
+left after the next-to-last column must be that of a single column of `H`.
 
 The expert options `start`, `cbeg`/`cend`, and `noscan` restrict the search; each of them prints a warning, since the
 reported `dmin` is then not necessarily a lower bound (`dmax` is always valid). With `smax > 0`, CC also computes the
