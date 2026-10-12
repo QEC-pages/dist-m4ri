@@ -30,7 +30,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.13.0"
+__version__ = "0.13.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -4045,6 +4045,29 @@ def _resolve_stim_dem_out_path(
     return str(out_path)
 
 
+def _circuit_dem(circuit: Any) -> Tuple[Any, bool, bool]:
+    """
+    The DEM of a Stim circuit: with decompose_errors=True if stim can decompose its errors (otherwise without).  An
+    error channel with disjoint cases which stim cannot write as independent error mechanisms (e.g., a PAULI_CHANNEL_1
+    with X and Z but no Y errors, PAULI_CHANNEL_2, or ELSE_CORRELATED_ERROR) needs approximate_disjoint_errors=True,
+    which is used only if the conversion fails without it: it only changes the probabilities of the error mechanisms,
+    not which errors are possible (so neither the distance, unless pmin > 0, nor the codewords).
+
+    Returns:
+        (dem, decompose_errors, approximate_disjoint_errors): the DEM, and the options used.
+    """
+    error: Optional[Exception] = None
+    for approx in (False, True):
+        for decomp in (True, False):
+            try:
+                return circuit.detector_error_model(decompose_errors=decomp, approximate_disjoint_errors=approx), \
+                    decomp, approx
+            except Exception as e:  # (stim raises ValueError)
+                error = e
+    assert error is not None
+    raise error
+
+
 def _warn_disabled_simple_full(simple: Optional[bool] = None, full: Optional[bool] = None, cli: bool = False) -> None:
     """
     Writes a warning to stderr if the options simple or full (CLI: --simple, --full) are given: they are disabled since
@@ -4172,15 +4195,12 @@ def _dem_from_input(
             if circ_verbose:
                 print(f"[dist_m4ri] Saved Stim circuit to '{stim_out_path}'")
 
-        try:
-            dem = circuit.detector_error_model(decompose_errors=True)
-            decomp_used = True
-        except Exception:
-            dem = circuit.detector_error_model(decompose_errors=False)
-            decomp_used = False
+        dem, decomp_used, approx_used = _circuit_dem(circuit)
         if circ_verbose:
             noise_msg = f"added circuit-level noise (p={p_noise})" if noise_added else "existing noise detected"
-            print(f"[dist_m4ri] Converted '{circuit_src}' to DEM ({noise_msg}, decompose_errors={decomp_used})")
+            approx_msg = ", approximate_disjoint_errors=True" if approx_used else ""
+            print(f"[dist_m4ri] Converted '{circuit_src}' to DEM ({noise_msg}, decompose_errors={decomp_used}"
+                  f"{approx_msg})")
             if all(hasattr(dem, a) for a in ("num_detectors", "num_observables", "num_errors")):
                 print(
                     f"[dist_m4ri] DEM size: {dem.num_detectors} detectors, {dem.num_observables} observables, "
@@ -4272,7 +4292,9 @@ def compute_dem_distance(
 
     Args:
         dem: stim.DetectorErrorModel object or path to .dem / .stim file.
-        circuit: stim.Circuit object or path to .stim file (converted to DEM).
+        circuit: stim.Circuit object or path to .stim file (converted to DEM; if stim cannot write an error channel with
+            disjoint cases, e.g., a PAULI_CHANNEL_1 without Y errors, as independent error mechanisms, with
+            approximate_disjoint_errors=True, which only changes the probabilities of the error mechanisms).
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
@@ -4968,7 +4990,10 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Required input (at least one matrix/model specification):
   fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file.
-                        Automatically constructs parity check H and logical L matrices.
+                        Automatically constructs parity check H and logical L matrices.  An error
+                        channel which stim cannot write as independent errors (e.g., PAULI_CHANNEL_1
+                        without Y errors) is converted with approximate_disjoint_errors=True (only the
+                        probabilities change).
   finH=FILE             Parity check matrix file in Matrix Market (.mmx / .mtx) format.
                         For classical codes, this is check matrix H. For CSS codes, Hx.
   finG=FILE             Generator / Hz matrix for quantum CSS codes in Matrix Market format.

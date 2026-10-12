@@ -612,7 +612,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.13.0" in captured.out
+    assert "0.13.1" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -623,7 +623,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.13.0" in captured.out
+    assert "0.13.1" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -642,7 +642,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.13.0" in older_warn
+    assert "expected >= 0.13.1" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1794,6 +1794,35 @@ def test_dem_drop_minority_detectors(tmp_path, capsys):
         assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", f"drop={drop_file}", "method=2", "wmax=5",
                                "threads=2", "--no-cache"]) == 0
         assert "# Warning: drop=: only used with fdem= (a DEM or Stim circuit); ignored" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_stim_pauli_channel_circuit(tmp_path, capsys):
+    # an error channel with disjoint cases which stim cannot write as independent errors (here: PAULI_CHANNEL_1 with X
+    # and Z, but no Y) needs approximate_disjoint_errors=True in stim
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated("surface_code:rotated_memory_z", rounds=3, distance=3,
+                                  before_round_data_depolarization=0.001, before_measure_flip_probability=0.001)
+    circ = stim.Circuit(str(circ).replace("DEPOLARIZE1(0.001)", "PAULI_CHANNEL_1(0.0005, 0, 0.0005)"))
+    assert "PAULI_CHANNEL_1" in str(circ) and dist_m4ri.has_noise(circ)
+    with pytest.raises(ValueError):
+        circ.detector_error_model(decompose_errors=False)  # (without the approximation)
+    dem, decomp, approx = dist_m4ri._circuit_dem(circ)
+    assert approx is True and dem.num_errors > 0
+    dist_m4ri.disable_distance_cache()
+    try:
+        assert dist_m4ri.compute_dem_distance(circuit=circ, method=2, wmax=3, threads=2) == (3, [3, 3, 0])
+        stim_file = tmp_path / "pc.stim"
+        circ.to_file(str(stim_file))
+        assert dist_m4ri.main([str(stim_file), "method=2", "wmax=3", "threads=2", "--no-cache", "-v"]) == 0
+        out = capsys.readouterr().out
+        assert "approximate_disjoint_errors=True" in out and "3 3 0 (exact)" in out
+        # a circuit without such channels is converted as before
+        assert dist_m4ri._circuit_dem(stim.Circuit.generated("surface_code:rotated_memory_z", rounds=2, distance=3,
+                                                             after_clifford_depolarization=0.001))[2] is False
     finally:
         dist_m4ri.enable_distance_cache()
 

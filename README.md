@@ -505,7 +505,7 @@ replaced by them (with a warning on `stderr`), while `fin` after them is an erro
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.13.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.13.1): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -653,7 +653,9 @@ interoperability without manual threading overhead.
 - `compute_dem_distance(dem=None, circuit=None, basis=None, rounds=None, out_dir=None, out_dem=None, out_stim=None,`
   `p_noise=0.001, drop=None, ...)`:
   Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file
-  (noise of strength `p_noise` is added to a noiseless circuit, see `add_noise()` below; the DEM has all detectors):
+  (noise of strength `p_noise` is added to a noiseless circuit, see `add_noise()` below; the DEM has all detectors; an
+  error channel which stim cannot write as independent error mechanisms, e.g., a `PAULI_CHANNEL_1` without $Y$ errors,
+  is converted with stim's `approximate_disjoint_errors=True`, which only changes the probabilities of the errors):
   - Always performs **ancilla and data basis tracking** (`classify_qubits_thorough`) across virtual SWAP permutations
     and Clifford gates to identify data qubits, $X$-sector and $Z$-sector ancillas, routing qubits, and local data basis
     rotations (automatically recognizing both standard CSS codes and locally basis-rotated CSS codes such as **XZZX**).
