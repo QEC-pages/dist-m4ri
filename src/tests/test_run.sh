@@ -124,7 +124,7 @@ TEMP_CWS1=$(mktemp --suffix=.nz)
 TEMP_CWS2=$(mktemp --suffix=.nz)
 
 # Step 1: Run and save
-assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 outC=$TEMP_CWS1 debug=0" 0 "^3$" ""
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 outC=$TEMP_CWS1 debug=0" 0 "^3$" ""
 
 # Step 2: Verify file 1 is not empty
 if [ ! -s "$TEMP_CWS1" ]; then
@@ -133,7 +133,7 @@ if [ ! -s "$TEMP_CWS1" ]; then
 fi
 
 # Step 3: Run again loading file 1 and saving to file 2, check for read message
-assert_output "$BIN debug=33 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$TEMP_CWS1 outC=$TEMP_CWS2" \
+assert_output "$BIN debug=33 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 finC=$TEMP_CWS1 outC=$TEMP_CWS2" \
     0 "" "read 128 codewords from"
 
 # Step 4: Verify files are identical
@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.13.1" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.0" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.13.1" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.14.0" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -372,7 +372,7 @@ assert_output "$BIN method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 wi
     0 "^3$" ""
 
 # Test 54: dist_m4ri ksub automatic fallback warning when m < nu (2m < n)
-assert_output "$BIN_FORK debug=1 method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 threads=4" \
+assert_output "$BIN_FORK debug=1 method=1 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 steps=200 ksub=32 threads=4" \
     0 "^1 3 [0-9]+$" "Warning: ksub=32 requested, but m=24 < n-m=197 \(<= nu\); falling back to full-matrix RW"
 
 # Test 55: dist_m4ri method=3 with min_hits stops only RW workers and lets CC finish exact proof
@@ -535,7 +535,7 @@ rm -f "$REP78" "$OUT78" "$ERR78"
 
 # Test 79: method=3 with outC (dW=0) exports all minimum-weight codewords, as method=2 (CC round w=d after dmin=dmax)
 CWS79=$(mktemp --suffix=.nz)
-assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem outC=$CWS79 debug=1 threads=4" \
+assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 outC=$CWS79 debug=1 threads=4" \
     0 "^3 3 [0-9]+$" "exported 128 codewords"
 if [ "$(grep -c '^3 ' "$CWS79")" != "128" ]; then
     echo "  [FAIL] Test 79: expected 128 codewords of weight 3 in the exported file"
@@ -627,7 +627,7 @@ fi
 rm -f "$OUT84" "$ERR84"
 
 # Test 85: code parameters (debug=16): ranks of H and L (or G), and k
-assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=16" 0 "^3 3 0$" \
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 threads=2 debug=16" 0 "^3 3 0$" \
     "^# code parameters: n=221, rank\(H\)=24, dim ker\(H\)=197, rank\(L\)=1, k=rank\(\[H;L\]\)-rank\(H\)=1 "
 assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx wmax=2 threads=2 debug=16" \
     0 "^3 0 0$" "rank\(H\)=59, dim ker\(H\)=91, rank\(G\)=59, k=n-rank\(H\)-rank\(G\)=32 "
@@ -842,7 +842,7 @@ for bin in "$BIN_FORK" "$BIN"; do
         FAILED=1
     fi
 done
-assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 merge=0 outC=$CWS102 threads=1 debug=1" 0 "^3 3 0$" \
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 merge=0 drop=0 outC=$CWS102 threads=1 debug=1" 0 "^3 3 0$" \
     "^#   H: 3 x 7 \(detectors\), 9 nonzeros"
 if [ "$(grep -c -v '^%' "$CWS102")" != 4 ]; then
     echo "  [FAIL] Test 102: expected 4 codewords in outC with merge=0, got: $(grep -v '^%' "$CWS102")"
@@ -933,6 +933,53 @@ if [ "$(printf '%s\n' "$GOT104" | head -1)" != "Debug output bitmap (debug=[int]
     echo "  [FAIL] Got: $GOT104"
     FAILED=1
 fi
+
+# Test 105: drop=auto (the default for a DEM; also drop=1) finds the detectors which can be dropped exactly from the
+# DEM alone: the 8 X-type (minority-basis) detectors of the surface code (outD=FILE writes them); drop=0 keeps all
+# detectors; a group which cannot be dropped is kept, and another one is dropped (here D4); nothing to drop; errors
+OUT105=$(mktemp --suffix=.txt)
+DEM105=$(mktemp --suffix=.dem)
+for drop in "" "drop=auto" "drop=1"; do
+    assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem $drop wmax=3 outD=$OUT105 threads=2 debug=1" 0 \
+        "^3 3 0$" "^#   dropped 8 of 24 detectors \(drop=auto\), exact: the 166 columns touching them have twins"
+    if [ "$(grep -v '^#' "$OUT105")" != "5 7 8 10 13 15 16 18" ] || \
+       [ "$(head -1 "$OUT105")" != "# 8 of 24 detectors dropped (drop=auto), 0-based" ]; then
+        echo "  [FAIL] Test 105: outD: $(cat "$OUT105")"
+        FAILED=1
+    fi
+done
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 debug=1" 0 "^3$" "dropped 8 of 24 detectors"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 outD=$OUT105 threads=2 debug=1" 0 \
+    "^3 3 0$" "^#   H: 24 x 221 \(detectors\)"
+if [ "$(cat "$OUT105")" != "# 0 of 24 detectors dropped (drop=0), 0-based" ]; then
+    echo "  [FAIL] Test 105: outD with drop=0: $(cat "$OUT105")"
+    FAILED=1
+fi
+printf 'error(0.1) D0 D1\nerror(0.1) D0 D2 D3\nerror(0.1) D2\nerror(0.1) D3 L0\nerror(0.1) D3 D5\nerror(0.1) D5\n' \
+    > "$DEM105"
+printf 'error(0.1) D4\nerror(0.1) D3 D4 L0\n' >> "$DEM105"
+assert_output "$BIN_FORK method=2 fdem=$DEM105 wmax=4 outD=$OUT105 threads=1 debug=41" 0 "^3 3 0$" \
+    "^# drop=auto: 1 of 6 detectors found \(4 groups to try: 1 dropped, 3 kept, 0 not verified;"
+assert_output "$BIN_FORK method=2 fdem=$DEM105 wmax=4 threads=1 debug=33" 0 "^3 3 0$" \
+    "CC codeword of weight 3 \(1-based columns\): 4 5 6$"
+if [ "$(grep -v '^#' "$OUT105")" != "4" ]; then
+    echo "  [FAIL] Test 105: outD: $(cat "$OUT105")"
+    FAILED=1
+fi
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM105"
+assert_output "$BIN_FORK method=2 fdem=$DEM105 wmax=3 threads=1 debug=1" 0 "^3 3 0$" \
+    "^#   drop=auto: no detector can be dropped exactly \(the full DEM is used\)$"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem classical=1 wmax=3 debug=1" 0 "^3 3 0$" \
+    "^#   H: 24 x 221 \(detectors\)"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=$DEM105.none wmax=3" 255 "" \
+    "cannot read this file .*; use drop=0, drop=1 or drop=auto, or a file"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx drop=auto wmax=3" 255 "" \
+    "drop can only be used when fdem is specified"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx outD=$OUT105 wmax=3" 255 "" \
+    "outD can only be used when fdem is specified"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx drop=0 wmax=5" 0 \
+    "^5 5 0$" ""
+rm -f "$OUT105" "$DEM105"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

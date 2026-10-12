@@ -101,6 +101,12 @@ typedef struct{
   int *col_class;  /* original column -> column (-1: dropped, see dem_drop_detectors(); NULL: not changed) */
   int nvar_merged; /* number of columns after merging the equal columns of a DEM (0: not merged) */
   char *fdrop;     /* file with the detectors to drop from a DEM if this is exact, see dem_drop_detectors() */
+  int drop_mode;   /* drop=0: keep all detectors, drop=1 or drop=auto (default): find the detectors to drop
+                      (dem_drop_auto()), 2: drop=FILE (fdrop) */
+  int drop_set;    /* 1: drop= given explicitly */
+  int drop_none;   /* 1: drop=auto found no detector which can be dropped exactly */
+  int *drop_list;  /* the detectors dropped (0-based, increasing; ndrop of them), for outD */
+  char *outD;      /* file to write the detectors dropped from a DEM to (outD=FILE) */
   int ndrop;       /* number of detectors dropped (0: none, or not verified) */
   int ndrop_rows;  /* number of detectors (rows of H) before dropping */
   int ndrop_cols;  /* number of columns which touch the dropped detectors (replaced by their twins) */
@@ -403,7 +409,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.13.1"
+#define DIST_M4RI_VERSION "0.14.0"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -416,7 +422,7 @@ void print_short_help(const char *prog);
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
-  "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, classical, css,\n" \
+  "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start,\n" \
   "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, min_hits, cov_cws, refresh,\n" \
@@ -441,7 +447,8 @@ void print_short_help(const char *prog);
   "  fdem=[file]        Stim detector error model (DEM) file\n" \
   "  pmin=[float]       Minimum error probability threshold to keep for DEM (0.0)\n" \
   "  merge=[0|1]        Merge equal DEM columns (exact; codewords use the first one) (1)\n" \
-  "  drop=[file]        DEM detectors to drop if verified exact (e.g., minority basis)\n" \
+  "  drop=[auto|file]   DEM detectors to drop if exact: auto=1 (default), 0 (none), or a file\n" \
+  "  outD=[file]        Write the DEM detectors dropped (0-based) to file\n" \
   "  classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)\n\n" \
   "Distance bounds and guidance:\n" \
   "  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)\n" \
@@ -527,21 +534,32 @@ void print_short_help(const char *prog);
   "                     found use the first one of each set of equal columns (use\n" \
   "                     merge=0 to enumerate the codewords with each of them, or\n" \
   "                     expand=1 of dist_m4ri.py to expand the list found).\n" \
-  "  drop=[file]        Detectors of a DEM to drop, e.g., the minority-basis ones\n" \
-  "                     of a CSS circuit (0-based, separated by white space or\n" \
-  "                     commas; lines starting with '#' or '%%' are comments), if\n" \
-  "                     this is verified to be exact: every column touching them\n" \
-  "                     has a twin, a column with the same other detectors which\n" \
-  "                     touches none of them (no column if it has no other\n" \
-  "                     detector), with observables L + A H for one matrix A.\n" \
-  "                     Then the twins replace the columns touching the dropped\n" \
-  "                     detectors in any codeword, without increasing its weight,\n" \
-  "                     and the search runs on the other detectors and the columns\n" \
-  "                     which touch none of them: every codeword found (outC) is a\n" \
-  "                     codeword of the full DEM (using only these columns), and\n" \
-  "                     the distance is exact. finC codewords are mapped to the\n" \
-  "                     twins. Otherwise, a note is printed and the full DEM is\n" \
-  "                     used. Only valid with fdem.\n" \
+  "  drop=[auto|file]   Detectors of a DEM to drop if this is verified to be exact\n" \
+  "                     (default: auto; also drop=1; drop=0 keeps all detectors;\n" \
+  "                     only with fdem; not with classical=1): every column\n" \
+  "                     touching them has a twin, a column with the same other\n" \
+  "                     detectors which touches none of them (no column if it has\n" \
+  "                     no other detector), with observables L + A H for one\n" \
+  "                     matrix A.  Then the twins replace the columns touching the\n" \
+  "                     dropped detectors in any codeword, without increasing its\n" \
+  "                     weight, and the search runs on the other detectors and the\n" \
+  "                     columns which touch none of them: every codeword found\n" \
+  "                     (outC) is a codeword of the full DEM (using only these\n" \
+  "                     columns), and the distance is exact.  finC codewords are\n" \
+  "                     mapped to the twins.\n" \
+  "                     auto: a search for the largest such set (with A = 0) in the\n" \
+  "                     DEM, e.g., the minority-basis detectors of a CSS circuit\n" \
+  "                     (with the usual noise): a column which contains no other\n" \
+  "                     column with the same observables is dropped all or nothing,\n" \
+  "                     and the detectors of the other columns follow by propagation\n" \
+  "                     (see README.md).\n" \
+  "                     file: the detectors listed (0-based, k for Dk, separated by\n" \
+  "                     white space or commas; lines starting with '#' or '%%' are\n" \
+  "                     comments; write ./1 for a file named 1); if dropping them is\n" \
+  "                     not exact, a note is printed and the full DEM is used.\n" \
+  "  outD=[file]        Write the detectors dropped from the DEM (0-based, in the\n" \
+  "                     format of a drop file; only the comment line if none) to\n" \
+  "                     file.  Only valid with fdem.\n" \
   "  classical=[0|1]    Code type override:\n" \
   "                     1: Treat as a classical linear code (Hx only; ignores\n" \
   "                        or discards logical matrix L).\n" \

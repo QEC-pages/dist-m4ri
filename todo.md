@@ -284,11 +284,20 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     Python passes the minority-basis detectors with `--full` (`drop=1`, the default). mitten_270 full: 70254 -> 8910
     columns, RW finds weight 9 (custom) and 7 (hef) in 3.5 s; mitten_90 full: exact $d = 5, 4$ by CC in 0.1 s.
   - Since 0.13.0, the Python options `--simple` and `--full` (`simple=`, `full=`) are disabled (ignored with a
-    warning): the DEM of a Stim circuit always has all detectors, and `drop=1` (the minority-basis detectors of a CSS
-    circuit) is the default. Open: `drop=auto` in the binary for DEMs without a circuit (the DEM has no basis labels):
-    e.g., connect the detectors of the columns which are not the disjoint sum of two other columns (in a CSS circuit,
-    these are pure X or pure Z errors), take the components whose columns flip no observable as the minority detectors,
-    and verify as for `drop=FILE`.
+    warning): the DEM of a Stim circuit always has all detectors.
+  - Done in 0.14.0: `drop=auto` in the binary (the default, also `drop=1`; `drop=0` keeps all detectors) finds the
+    largest set of detectors which can be dropped with $A = 0$ from the DEM alone (sub-columns with the same
+    observables, groups of the O-minimal columns, seeds with propagation, see the README), and verifies it as for
+    `drop=FILE`; it finds exactly the minority-basis detectors for all CSS circuits tested (bb_756: 12474 of 25704
+    detectors in 1.3 s). `outD=FILE` writes the detectors dropped; Python: `drop=css` (the classification of the
+    circuit; for a DEM, `drop=auto` with a warning) and `--out-reduced [PREFIX]` (the reduced DEM `PREFIX_red.dem` and
+    its maps `PREFIX_red.json`).
+  - Open: a second pass allowing $A \neq 0$ (observables which include detectors of the dropped set).
+- [x] **Uniform noise model** (0.14.0): `add_noise()` classifies the gates with `stim.gate_data()` (all one- and
+  two-qubit gates get depolarizing noise, a classically controlled gate `DEPOLARIZE1(p/10)` on its qubit; no noise for
+  `MPP`, `MXX`, `MYY`, `MZZ`, `SPP`); `strip_noise()` (stim's `without_noise()`); `has_noise()` also detects noisy
+  measurements such as `M(0.001)`; CLI `--p-noise P` (as in `tmp/distance.py`; 0: none added) and `--force-noise`
+  (replace the noise of a circuit, e.g., to compare circuits with the same noise model; with `--p-noise 0`, remove it).
 - [ ] **Extended CSS distance as a seed** (`tmp/distance.py`, code-capacity matrices with one column per hook error):
   not guaranteed to relate to the DEM distances for every CSS circuit. Its lower-bound direction
   ($d_{\rm ext} \le d_{\rm simp}$, via the telescoping sum of the detectors of each check) needs every single fault's

@@ -31,21 +31,13 @@ first one of each set of equal columns (RW hit counts are those of the merged co
 `finC` codeword cancel; `merge=0` keeps all columns (e.g., to enumerate the codewords with each of the equal columns;
 the Python option `expand=1` expands the list found instead, see [Codeword Export](#codeword-export-outc--finc)).
 
-With `drop=[file]`, the detectors listed in the file are dropped if this is verified to be exact (e.g., the
-minority-basis detectors of a CSS circuit; the file is a text file with the 0-based detector indices, `k` for `Dk`,
-separated by white space or commas, where lines starting with `#` or `%` are comments). This holds if every column $j$
-touching a dropped detector has a *twin*: a column with the same other (kept) detectors which touches no dropped
-detector (or no column, if $j$ has no kept detector), with the observables $L_j + A H_j$ for one binary matrix $A$
-($A = 0$ for the usual CSS circuits; found by elimination otherwise). Replacing the columns of a codeword by their twins
-then gives a codeword of the same or a smaller weight which touches no dropped detector (its observables change by
-$A H c = 0$), so the distance is that of the submatrix of the kept detectors and of the columns which touch no dropped
-detector: e.g., the full DEMs of the Mitten circuits (`mitten_270`: 1080 detectors, 70254 columns) reduce to the size
-of the simplified DEMs (648 detectors, 8910 columns), and RW finds codewords of the minimum weights (9 and 7 for the
-two circuits) in a few seconds. The codewords found are codewords of the full DEM (in its column indices; they use
-only the columns which touch no dropped detector), and `finC` codewords are mapped to the twins. Otherwise, a note is
-printed, and the full DEM is used. For a Stim circuit classified as CSS, the Python wrapper passes its minority-basis
-detectors by default (see [Python Wrapper](#python-wrapper-dist_m4ripy)); the binary itself only sees the DEM, which
-does not say which detectors belong to which basis.
+Detectors of the DEM are dropped if this is verified to be exact (`drop=auto`, the default): the distance is then found
+from the smaller DEM without these detectors and the columns touching them, and the codewords found are codewords of
+the full DEM. E.g., the full DEMs of the Mitten circuits (`mitten_270`: 1080 detectors, 70254 columns) reduce to the
+size of the simplified DEMs without the minority-basis detectors (648 detectors, 8910 columns), and RW finds codewords
+of the minimum weights (9 and 7 for the two circuits) in a few seconds. The binary finds the detectors to drop from the
+DEM alone, and `drop=[file]` gives them in a file instead (`drop=0` keeps all detectors); see
+[Dropping DEM Detectors](#dropping-dem-detectors-drop).
 
 All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthogonality conditions:
 $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
@@ -473,10 +465,98 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
   the list of `merge=0` (with `dW` of 2 or more, `merge=0` also lists lighter codewords with two equal columns added).
   The expanded list grows quickly with the weight; with `maxC > 0`, at most `maxC` codewords are written, with a
   warning if some are dropped.
+- **Dropped detectors (`drop`)**: with detectors dropped from a DEM (`drop=auto`, the default), the codewords found use
+  only the columns which touch no dropped detector (see [Dropping DEM Detectors](#dropping-dem-detectors-drop)); use
+  `drop=0` to enumerate all codewords of the DEM. (The Python wrapper returns the codewords of a cached record if it
+  has any: use `--no-cache` or another cache file to enumerate them again with other options.)
 - **`finC=[file.nz]`**: Reads initial codewords from a file to initialize $d_{\max}$ and the codeword hash table
   (codewords heavier than `wmax > 0` are skipped; for a DEM with `merge=1`, two equal columns of a codeword cancel).
 - **`dW=[int]`**: When set (e.g. `dW=1`), preserves and exports codewords of weight up to $w \le d_{\min} + \text{dW}$.
 - **`maxC=[int]`**: Limits collection to at most `maxC` unique codewords (of weight up to $w_{\min} + \text{dW}$).
+
+---
+
+## Dropping DEM Detectors (`drop`)
+
+Notation: column $j$ of a DEM (an error mechanism) flips the detectors $S_j$ and the observables $O_j$ (the column $j$
+of $H$ and $L$), and $M$ is a set of detectors to drop.
+
+### When Dropping Detectors Is Exact
+
+Dropping $M$ is exact if every column $j$ touching $M$ has a *twin*: a column $t$ with the same other (kept) detectors,
+$S_t = S_j \setminus M$, which touches no detector of $M$ (or no column, if $S_j \subseteq M$), with the observables
+$L_t = L_j + A H_{M,j}$ for one binary matrix $A$, where $H_M$ is the submatrix of the rows of $M$ ($A = 0$ for the
+usual CSS circuits; found by elimination otherwise). Replacing the columns of a codeword $c$ by their twins (two equal
+twins cancel) then gives a codeword of the same or a smaller weight which touches no detector of $M$: the kept
+detectors do not change, and the observables change by $A H_M c = 0$. So the distance is that of the submatrix of the
+kept detectors and of the columns which touch no detector of $M$ (with their observables), and the codewords found are
+codewords of the full DEM (in its column indices; they use only the columns which touch no dropped detector). `finC`
+codewords are mapped to the twins. The binary checks this for every set $M$ before dropping it (`debug=1` prints a
+summary line, e.g., `dropped 8 of 24 detectors (drop=auto), exact: ...`).
+
+- **`drop=auto`** (the default; also `drop=1`): the binary searches for the largest set $M$ (with $A = 0$) from the DEM
+  alone (it finds it in all our examples), see below.
+- **`drop=[file]`**: the detectors listed in the file (a text file with the 0-based detector indices, `k` for `Dk`,
+  separated by white space or commas, where lines starting with `#` or `%` are comments); if dropping them is not
+  exact, a note is printed, and the full DEM is used. The values `0`, `1`, and `auto` take precedence over files with
+  these names (write `./1` for a file named `1`).
+- **`drop=0`**: keep all detectors.
+- **`outD=[file]`**: writes the detectors dropped, in the format of a drop file, e.g.,
+  `# 8 of 24 detectors dropped (drop=auto), 0-based` followed by `5 7 8 10 13 15 16 18` (only the comment line if none
+  is dropped).
+
+The Python wrapper also offers `drop=css` (the minority-basis detectors of a Stim circuit classified as CSS, checked by
+the binary in the same way; otherwise, e.g., for a DEM, `drop=auto` is used, with a warning), and writes the reduced
+DEM with its maps to the full DEM (`--out-reduced`, see [Python Wrapper](#python-wrapper-dist_m4ripy)). In every case,
+the bounds found are those of the full DEM.
+
+### Selecting the Detectors to Drop (`drop=auto`)
+
+The binary only sees the DEM, which does not say which detectors belong to which basis. The search rests on four
+facts (with $A = 0$: the twin of column $j$ is the column $(S_j \setminus M, O_j)$, or none if $S_j \subseteq M$ and
+$O_j = \emptyset$):
+
+1. **The sets which can be dropped are closed under union.** If $M_1$ and $M_2$ can be dropped and $j$ touches $M_1$,
+   then its twin $t = (S_j \setminus M_1, O_j)$ is a column; if $t$ touches $M_2$, then its twin
+   $(S_j \setminus (M_1 \cup M_2), O_j)$ is a column too (the other cases are similar). So there is a unique largest
+   set $M^*$, which gives the smallest reduced DEM.
+2. **Sub-columns.** Let $\mathrm{Sub}(j)$ be the columns $t$ with $S_t \subsetneq S_j$ and $O_t = O_j$. If $j$ touches
+   $M$, then $S_j \setminus M$ is the support of a column in $\mathrm{Sub}(j)$, or it is empty (only if
+   $O_j = \emptyset$). So a column without sub-columns (*O-minimal*) has all or none of its detectors dropped, and none
+   if it flips an observable. The O-minimal columns join the detectors into groups (union-find); the groups with an
+   O-minimal column which flips an observable are kept.
+3. **Propagation.** Once some detectors of a column $j$ are dropped, its candidates are the members of $\mathrm{Sub}(j)$
+   (and the empty set, if $O_j = \emptyset$) which agree with the detectors of $j$ already dropped or kept: a detector
+   of $j$ in no candidate must be dropped, and one in every candidate must be kept. No candidate at all is a
+   contradiction: then no set which can be dropped contains the seed (with the detectors dropped before), so the seed
+   group is kept.
+4. **Seeds.** The groups which are not decided yet are tried as seeds, largest first, each followed by the
+   propagation. The detectors dropped are kept if the propagation succeeds and all detectors dropped so far pass the
+   check (the kept part of every column touching them is the support of one of its sub-columns, or empty with
+   $O_j = \emptyset$); otherwise, the propagation is undone. The final set is checked once more as above.
+
+The propagation is needed: dropping every group without an O-minimal column which flips an observable would drop 66
+of the 120 detectors of a distance-5 surface code circuit (5 rounds), which is not exact; the propagation gives the 48
+minority-basis detectors.
+
+**Why it fits CSS circuits.** In a memory experiment in the $Z$ basis, a fault splits into an $X$ part (flipping $Z$
+detectors and the observables) and a $Z$ part (flipping $X$ detectors). With depolarizing-type noise, both parts are
+faults themselves, so every column touching an $X$ detector has its $X$ part in $\mathrm{Sub}(j)$: its twin. The pure
+$Z$ faults are O-minimal, and their detectors are dropped all or nothing. For all CSS circuits we tested (rotated and
+unrotated surface codes, XZZX codes, Mitten circuits, bivariate bicycle codes up to `bb_756` with 1.04M columns, with
+`si1000` or uniform noise), `drop=auto` finds exactly the minority-basis detectors of the circuit classification of
+`dist_m4ri.py`; it finds nothing for a non-CSS color code circuit or for a repetition code.
+
+**Limitations.** A set which needs $A \neq 0$ (observables which include detectors of $M$) is not searched; use
+`drop=[file]`. With missing twins (e.g., with `pmin > 0`, or biased noise without the $X$ part), fewer detectors or
+none are dropped (still exact). Columns with more than 64 detectors keep their detectors, as do the detectors in no
+column. No more seeds are tried after a work budget (about 64 column visits per nonzero of $H$; the groups not tried
+are kept).
+
+**Performance.** The search takes 0.08 s for `gross_144` (1728 detectors, 67752 columns after merging), 0.36 s for
+`bb_360` (8640 detectors, 346680 columns), and 1.3 s for `bb_756` (25704 detectors, 1037610 columns; 5.5 s to read,
+merge, and reduce the DEM in all), and it drops about half of the detectors and 7/8 of the columns of these DEMs
+(`debug=8` prints the time).
 
 ---
 
@@ -497,15 +577,16 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
    gives the closest names on `stderr`, and the exit code `1`.
 
 `--help`, `--morehelp`, and `--version` print to `stdout`. Conflicting inputs: `fdem` together with matrix files
-(`finH`, `finG`, `finL`, `fin`), and `pmin` without `fdem`, are errors; `fin` followed by `finH`, `finG`, or `finL` is
-replaced by them (with a warning on `stderr`), while `fin` after them is an error. The Python CLI
-(`python3 dist_m4ri.py`) has the same help options (see [Python Wrapper](#python-wrapper-dist_m4ripy)).
+(`finH`, `finG`, `finL`, `fin`), `pmin`, `outD`, or `drop` (other than `drop=0`) without `fdem`, and `drop` with
+`classical=1`, are errors; `fin` followed by `finH`, `finG`, or `finL` is replaced by them (with a warning on
+`stderr`), while `fin` after them is an error. The Python CLI (`python3 dist_m4ri.py`) has the same help options (see
+[Python Wrapper](#python-wrapper-dist_m4ripy)).
 
 ### Standard Help (`dist_m4ri --help`)
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.13.1): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -522,7 +603,8 @@ Input matrices (Matrix Market .mmx/.mtx format or Stim DEM):
   fdem=[file]        Stim detector error model (DEM) file
   pmin=[float]       Minimum error probability threshold to keep for DEM (0.0)
   merge=[0|1]        Merge equal DEM columns (exact; codewords use the first one) (1)
-  drop=[file]        DEM detectors to drop if verified exact (e.g., minority basis)
+  drop=[auto|file]   DEM detectors to drop if exact: auto=1 (default), 0 (none), or a file
+  outD=[file]        Write the DEM detectors dropped (0-based) to file
   classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)
 
 Distance bounds and guidance:
@@ -651,21 +733,41 @@ interoperability without manual threading overhead.
   the quantum codes `(H=Hx, G=Hz)` ($d_Z$) and `(H=Hz, G=Hx)` ($d_X$), with `L=Lx` / `L=Lz` if given, i.e., with the
   same cache records as `compute_quantum_distance()`.
 - `compute_dem_distance(dem=None, circuit=None, basis=None, rounds=None, out_dir=None, out_dem=None, out_stim=None,`
-  `p_noise=0.001, drop=None, ...)`:
+  `p_noise=0.001, force_noise=False, drop=None, outD=None, out_reduced=None, ...)`:
   Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file
-  (noise of strength `p_noise` is added to a noiseless circuit, see `add_noise()` below; the DEM has all detectors; an
-  error channel which stim cannot write as independent error mechanisms, e.g., a `PAULI_CHANNEL_1` without $Y$ errors,
-  is converted with stim's `approximate_disjoint_errors=True`, which only changes the probabilities of the errors):
-  - Always performs **ancilla and data basis tracking** (`classify_qubits_thorough`) across virtual SWAP permutations
-    and Clifford gates to identify data qubits, $X$-sector and $Z$-sector ancillas, routing qubits, and local data basis
-    rotations (automatically recognizing both standard CSS codes and locally basis-rotated CSS codes such as **XZZX**).
-  - **`drop`** (CLI: `drop=0|1|FILE`; default: `None`, i.e., on): for a Stim circuit classified as CSS, its
-    minority-basis detectors (see `strip_minority_detectors()`; the basis other than the memory basis `basis`) are
-    passed to the binary (`drop=FILE`), which drops them if this is verified to be exact (see the `drop` option in the
-    [Overview](#overview)). Then the distance of the full DEM (with the full DEM as the cache key) is found as fast as
-    that of the DEM with only the primary-basis detectors, and the codewords found are codewords of the full DEM which
-    use only errors touching no dropped detector; otherwise, a note is printed to `stderr`, and the full DEM is used.
-    `drop=False` (`drop=0`) keeps all detectors; `drop=FILE` passes the detectors listed in `FILE`, for any DEM.
+  (the DEM has all detectors; an error channel which stim cannot write as independent error mechanisms, e.g., a
+  `PAULI_CHANNEL_1` without $Y$ errors, is converted with stim's `approximate_disjoint_errors=True`, which only changes
+  the probabilities of the errors):
+  - **`p_noise`** (CLI: `--p-noise P` or `p_noise=P`; default: `0.001`): the strength of the uniform circuit-level noise
+    added to a noiseless circuit (see `add_noise()` below; `0`: none is added, and then a noiseless circuit gives no
+    distance, with a note). A circuit with noise (a noise channel, or a noisy measurement such as `M(0.001)`, see
+    `has_noise()`) is used as is, unless **`force_noise=True`** (CLI: `--force-noise`, also `--force`): then its noise
+    is replaced by the uniform noise of strength `p_noise` (with `p_noise=0`, all noise is removed, e.g., to save the
+    noiseless circuit with `--out-stim`), e.g., to compare circuits with the same noise model.
+  - **`drop`** (CLI: `drop=auto|0|css|FILE`; default: `None`, i.e., `drop=auto`): the detectors which the binary drops
+    if this is verified to be exact (see [Dropping DEM Detectors](#dropping-dem-detectors-drop)), with the distance of
+    the full DEM (and the full DEM as the cache key), found from the reduced DEM; the codewords found are codewords of
+    the full DEM which use only errors touching no dropped detector. `None`, `True`, `1`, or `"auto"`: the binary finds
+    the detectors from the DEM (`drop=auto`). `"css"`: for a Stim circuit classified as CSS, its minority-basis
+    detectors (see `strip_minority_detectors()`; the basis other than the memory basis `basis`), passed to the binary
+    in a file (otherwise, e.g., for a DEM, `drop=auto` is used, with a warning). `False` or `0`: keep all detectors. A
+    file name: the detectors listed in the file, for any DEM. With `"css"` or a file, if dropping the detectors is not
+    exact, a note is printed to `stderr`, and the full DEM is used.
+  - **Ancilla and data basis tracking** (`classify_qubits_thorough`, with `drop="css"` or `--verbose`) across virtual
+    SWAP permutations and Clifford gates identifies data qubits, $X$-sector and $Z$-sector ancillas, routing qubits, and
+    local data basis rotations (automatically recognizing both standard CSS codes and locally basis-rotated CSS codes
+    such as **XZZX**).
+  - **`outD`** (CLI: `outD=FILE`): the binary writes the detectors dropped to `FILE` (see `read_drop_file()`); with a
+    cached result, the binary runs only for this (with `dmin = dmax`: no search).
+  - **`out_reduced`** (CLI: `--out-reduced [PREFIX]` or `out_reduced=PREFIX`): writes the reduced DEM (the errors which
+    touch no dropped detector, after the `pmin` cutoff, in the order of the flattened DEM, with the other detectors
+    numbered consecutively) to `PREFIX_red.dem`, and its maps to the full DEM to one JSON file `PREFIX_red.json`:
+    `"detectors"` (the original index of each detector of the reduced DEM, i.e., the complement of the list of `outD`),
+    `"errors"` (the original index of each error of the reduced DEM, as the column indices of `outC`), `"dropped"`,
+    `"num_detectors"`, `"num_errors"`, `"pmin"`, `"source"`, `"dem"` (the DEM file, if any), `"drop"`, and
+    `"__version__"` (default `PREFIX`: the basename of the input file without `_full`, in `--out-dir` or the directory
+    of the input file; see `write_reduced_dem()`). The reduced DEM has the same distance, and its codewords are mapped
+    to codewords of the full DEM by `"errors"`.
   - **`--simple` and `--full`** (`simple=`, `full=`): disabled since version 0.13.0 (accepted for backward
     compatibility, but ignored with a warning to `stderr`). The simplified DEM (without the minority-basis detectors)
     is replaced by `drop`, which is as fast and exact: the distance of the simplified DEM is only a lower bound on that
@@ -689,18 +791,35 @@ interoperability without manual threading overhead.
 - `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ..., mask_out=None)` /
   `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a
   list `mask_out` receives one entry per detector: `True` if it is stripped; `compute_dem_distance()` uses it for the
-  detectors to drop), and `REPEAT` block round adjustment.
-- `has_noise(circuit)` / `add_noise(circuit, p=0.001)`: Inspects a `stim.Circuit` for noise instructions, and adds
-  uniform circuit-level noise to a noiseless circuit: `DEPOLARIZE2(p)` after two-qubit gates (except classically
-  controlled ones, e.g., `CX rec[-1] 5`), `DEPOLARIZE1(p/10)` after single-qubit gates and on idle qubits in each
-  `TICK`, and bit or phase flips with probability `p` after resets and before measurements (`compute_dem_distance()`
-  does this for a noiseless circuit; for the distance, only which errors are possible matters, as long as `pmin=0`).
+  detectors to drop with `drop="css"`), and `REPEAT` block round adjustment.
+- `read_drop_file(path)` / `write_reduced_dem(dem, dropped, prefix, pmin=0.0, num_detectors=None, meta=None)`: Reads
+  a drop file (e.g., written by the binary with `outD`): the sorted 0-based detectors and the number of detectors of
+  the DEM from the comment line `# N of M detectors dropped ...` (`None` if none); writes the DEM without the detectors
+  `dropped` to `PREFIX_red.dem` and its maps to `PREFIX_red.json` (see `out_reduced` above).
+- `has_noise(circuit)` / `strip_noise(circuit)` / `add_noise(circuit, p=0.001, force=False)`: Checks a `stim.Circuit`
+  for noise (a noise channel, or a noisy measurement such as `M(0.001)`); removes all noise (stim's
+  `Circuit.without_noise()`: the noise channels are removed, the measurements lose their flip probabilities, and
+  heralded noise such as `HERALDED_ERASE` is replaced by `MPAD`, which keeps the measurement record); and adds uniform
+  circuit-level noise of strength `p` (with `force=True`, after removing the noise of the circuit; `p=0`: none), with
+  the gates classified by `stim.gate_data()`:
+  - `DEPOLARIZE2(p)` after the two-qubit gates (`CX`, `CY`, `CZ`, `XCX`, `XCY`, `XCZ`, `YCX`, `YCY`, `YCZ`, `SWAP`,
+    `ISWAP`, `SQRT_XX`, `SQRT_YY`, `SQRT_ZZ`, their `_DAG` versions, `CXSWAP`, `SWAPCX`, `CZSWAP`, and `II`); a
+    classically controlled gate (e.g., `CX rec[-1] 5` or `CZ sweep[0] 5`) gets `DEPOLARIZE1(p/10)` on its qubit;
+  - `DEPOLARIZE1(p/10)` after the one-qubit gates (`I`, `X`, `Y`, `Z`, `H`, `H_XY`, `H_YZ`, `S`, `SQRT_X`, `SQRT_Y`,
+    their `_DAG` versions, `C_XYZ`, `C_ZYX`, and the other variants), and on the qubits idle since the previous `TICK`;
+  - bit (phase) flips with probability `p` after $Z$-basis or $Y$-basis ($X$-basis) resets and before measurements,
+    both before and after the measurements with reset (`MR`, `MRX`, `MRY`);
+  - none for the multi-qubit measurements (`MPP`, `MXX`, `MYY`, `MZZ`) and the Pauli product gates (`SPP`,
+    `SPP_DAG`).
+
+  `compute_dem_distance()` adds this noise to a noiseless circuit (see `p_noise` and `force_noise` above); for the
+  distance, only which errors are possible matters, as long as `pmin=0`.
 - `read_sparse_vectors(filepath)`: Parses NZLIST files into lists of 0-based integer support indices.
 - Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`,
   `get_cached_distance(..., start=None)`, and the `cache_file` argument of the `compute_*_distance()` functions (a
   persistent JSON file with the version `"__version__"`; the CLI uses `tmp_dist_cache.json` in the working directory
   unless `--no-cache` or `cache=FILE` is given). For a Stim circuit, `get_cached_distance(circuit=...)` processes it as
-  `compute_dem_distance()` does (with the same `basis`, `rounds`, and `p_noise`), so that the same
+  `compute_dem_distance()` does (with the same `rounds`, `p_noise`, and `force_noise`), so that the same
   DEM gives the cache key. A cache file written by a newer version is ignored (with a warning) and is not overwritten.
   The CSS records written before version 0.12.0 (keys `css:...`) are converted into the two sector records: the lower
   bounds are kept, but an upper bound only if a stored codeword confirms it, or if it is smaller than that of the other
@@ -725,8 +844,9 @@ interoperability without manual threading overhead.
   `num_steps=`) raises `TypeError`, with the closest parameter name as a hint (`win=` is accepted for `kwin=`).
 - CLI (`python3 dist_m4ri.py`): `--version` also shows the version of the `dist_m4ri` binary; inputs which are ignored
   give a warning on `stderr` (the input is selected in the order `fdem`, `Hx`/`Hz`, `finH`/`finG`/`finL`/`fin`; e.g.,
-  matrices with `fdem`, `pmin`, `merge`, `expand`, or `drop` without `fdem`, `fin` with `finH`, `classical=1` with
-  `finG`), where the binary rejects some of these combinations with an error.
+  matrices with `fdem`, `pmin`, `merge`, `expand`, `drop`, `outD`, or `--out-reduced` without `fdem`, `basis`,
+  `--p-noise`, or `--force-noise` without a Stim circuit, `basis` without `drop=css`, `fin` with `finH`, `classical=1`
+  with `finG`), where the binary rejects some of these combinations with an error.
 - CLI help: `--help` (commonly used parameters, fits 80 rows) and `--morehelp` (all parameters); `--morehelp TOPIC`
   (also `--morehelp=TOPIC`, and `--help TOPIC` or `--help=TOPIC`) prints only the entries of the parameters `TOPIC`
   (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-`, `_`, and `=VALUE` are
@@ -766,6 +886,11 @@ circuit = stim.Circuit.generated(
 dist, dist_list, cws = dist_m4ri.compute_dem_distance(circuit=circuit, do_cws=True, threads=4)
 print(f"Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms")
 
+# The binary drops 8 of the 24 detectors (drop=auto, the default): save the reduced DEM and its maps to the DEM
+dist_m4ri.compute_dem_distance(circuit=circuit, out_reduced="tmp/surf_d3", outD="tmp/surf_d3_drop.txt")
+print(dist_m4ri.read_drop_file("tmp/surf_d3_drop.txt"))  # ([4, 6, 9, 11, 12, 14, 17, 19], 24): the X detectors
+dist_red, _ = dist_m4ri.compute_dem_distance(dem="tmp/surf_d3_red.dem", drop=0)  # the same distance, 3
+
 # 3. CSS Quantum Code ([[150, 32, 6]]): d = min(dX, dZ), with the bounds [dmin, dmax, rw_steps] of each sector
 dist, d_x, d_z = dist_m4ri.compute_css_distance(
     Hx="examples/QX150.mtx",
@@ -795,7 +920,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (104 tests)
+# Run full C test suite (105 tests)
 make test
 ```
 

@@ -31,11 +31,11 @@ results). This page summarizes how the program works; `README.md` describes all 
 - **DEM**: `fdem=...` gives `H` (detectors) and `L` (observables), with one column for each error mechanism; the
   distance is the minimum number of error mechanisms which trigger no detector but flip an observable. Equal columns
   (error mechanisms with the same detectors and observables) are merged by default (`merge=1`): a codeword with two
-  equal columns is not of minimum weight, since dropping both gives a lighter one. With `drop=FILE`, the detectors
-  listed (e.g., the minority-basis ones of a CSS circuit) are dropped if this is verified to be exact (every column
-  touching them has a twin which does not), so that the full DEM is reduced to the size of the simplified one. For a
-  Stim circuit classified as CSS, the Python wrapper passes its minority-basis detectors by default (its options
-  `--simple` and `--full` are disabled since version 0.13.0).
+  equal columns is not of minimum weight, since dropping both gives a lighter one. Detectors are dropped if this is
+  verified to be exact (every column touching them has a twin which does not): by default (`drop=auto`), the binary
+  searches for the largest such set from the DEM alone, e.g., the minority-basis detectors of a CSS circuit, so that the
+  full DEM is reduced to the size of the simplified one; `drop=FILE` gives the detectors in a file, and `drop=0` keeps
+  all (the Python options `--simple` and `--full` are disabled since version 0.13.0).
 
 All matrices are binary, with `n` columns, in Matrix Market format (`.mtx` or `.mmx`). For a CSS code, they obey the
 orthogonality conditions `Hx Hz^T = 0`, `Hx Lz^T = 0`, and `Lx Hz^T = 0`, and the number of encoded qubits is

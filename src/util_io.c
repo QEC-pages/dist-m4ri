@@ -25,6 +25,11 @@ params_t prm={
   .col_class=NULL,
   .nvar_merged=0,
   .fdrop=NULL,
+  .drop_mode=1,
+  .drop_set=0,
+  .drop_none=0,
+  .drop_list=NULL,
+  .outD=NULL,
   .ndrop=0,
   .ndrop_rows=0,
   .ndrop_cols=0,
@@ -195,6 +200,8 @@ static void print_matrix_summary(FILE *stream, const char name[], const csr_t * 
           note, csr_nnz(M), (M->nz == -1) ? csr_max_row_wght(M) : 0, csr_max_col_wght(M));
 }
 
+static const char * drop_label(const params_t * const p);
+
 /** @brief DBG_SUMMARY: the code type, its length n, the input files, and the input matrices */
 static void print_input_summary(FILE *stream, const params_t * const p){
   const char * const type = p->classical ? "classical code" : (p->fdem ? "detector error model" : "quantum CSS code");
@@ -217,8 +224,10 @@ static void print_input_summary(FILE *stream, const params_t * const p){
             p->nvar_orig - p->nvar_merged, p->nvar_merged, p->nvar_orig);
   if (p->ndrop > 0)
     fprintf(stream, "#   dropped %d of %d detectors (drop=%s), exact: the %d columns touching them have twins (%s), "
-            "%d columns kept\n", p->ndrop, p->ndrop_rows, p->fdrop, p->ndrop_cols,
+            "%d columns kept\n", p->ndrop, p->ndrop_rows, drop_label(p), p->ndrop_cols,
             p->drop_A ? "L + A H with A != 0" : "the same observables", p->nvar);
+  else if (p->drop_none)
+    fprintf(stream, "#   drop=auto: no detector can be dropped exactly (the full DEM is used)\n");
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
   if (p->spaL)
@@ -268,6 +277,7 @@ static void print_code_params(FILE *stream, const params_t * const p){
 
 static void dem_merge_columns(params_t * const p);
 static void dem_drop_detectors(params_t * const p);
+static void dem_write_drop_list(const params_t * const p);
 
 /* Help topics (--help TOPIC, --morehelp TOPIC): the entries of the full help text MORE_HELP for some parameters. */
 #define HELP_MAX_NAMES 8
@@ -787,9 +797,23 @@ void var_init(int argc, char **argv, params_t * const p){
 	fprintf(stderr, "# read %s, merge=%d\n",argv[i],p->merge);
     }
     else if (0==strncmp(argv[i],"drop=",5)){
-      p->fdrop = file_arg_value(argc, argv, &i, 5);
+      char * const val = file_arg_value(argc, argv, &i, 5);
+      p->drop_set = 1;
+      if (strcmp(val, "0") == 0)
+        p->drop_mode = 0;
+      else if ((strcmp(val, "1") == 0) || (strcmp(val, "auto") == 0))
+        p->drop_mode = 1;
+      else {
+        p->drop_mode = 2;
+        p->fdrop = val;
+      }
       if (p->debug & DBG_ARGS)
-	fprintf(stderr, "# read %s, drop=%s\n",argv[i],p->fdrop);
+	fprintf(stderr, "# read %s, drop=%s\n",argv[i],val);
+    }
+    else if (0==strncmp(argv[i],"outD=",5)){
+      p->outD = file_arg_value(argc, argv, &i, 5);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, outD=%s\n",argv[i],p->outD);
     }
     else if (0==strncmp(argv[i],"finC=",5)){
       p->finC = file_arg_value(argc, argv, &i, 5);
@@ -917,11 +941,18 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->pmin != 0.0 && !p->fdem) {
     ERROR("pmin can only be used when fdem is specified");
   }
-  if (p->fdrop && !p->fdem) {
+  if (p->drop_set && (p->drop_mode != 0) && !p->fdem) {
     ERROR("drop can only be used when fdem is specified");
   }
-  if (p->fdrop && p->classical == 1) {
+  if (p->outD && !p->fdem) {
+    ERROR("outD can only be used when fdem is specified");
+  }
+  if (p->drop_set && (p->drop_mode != 0) && (p->classical == 1)) {
     ERROR("drop cannot be combined with classical=1 (the observables are needed)");
+  }
+  if ((p->drop_mode == 2) && (access(p->fdrop, R_OK) != 0)) {
+    ERROR("drop=%s: cannot read this file (%s); use drop=0, drop=1 or drop=auto, or a file", p->fdrop,
+          strerror(errno));
   }
 
   if (p->dmin < 0) {
@@ -1003,8 +1034,10 @@ void var_init(int argc, char **argv, params_t * const p){
     read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
     if (p->merge)
       dem_merge_columns(p);
-    if (p->fdrop)
+    if ((p->drop_mode != 0) && (p->classical != 1))
       dem_drop_detectors(p);
+    if (p->outD)
+      dem_write_drop_list(p);
     if (p->classical == -1) p->classical = 0;
     p->nvar = p->spaH->cols;
     p->n0 = p->nvar;
@@ -1101,7 +1134,7 @@ void var_init(int argc, char **argv, params_t * const p){
         p->start_list[num++] = c;
     }
     if (num == 0)
-      ERROR("no start column left: the columns listed touch only dropped detectors (drop=%s)\n", p->fdrop);
+      ERROR("no start column left: the columns listed touch only dropped detectors (drop=%s)\n", drop_label(p));
     p->start_num = num;
     qsort(p->start_list, p->start_num, sizeof(int), cmp_int);
     num = 1;
@@ -1214,6 +1247,8 @@ void var_kill(params_t * const p){
   free(p->col_orig);
   free(p->col_class);
   p->col_orig = p->col_class = NULL;
+  free(p->drop_list);
+  p->drop_list = NULL;
   if(p->spaL)
     csr_free(p->spaL);
   p->maskL = colmask_free(p->maskL);
@@ -1660,8 +1695,312 @@ static int dem_read_drop_list(const char fnam[], const int m, char * const inM) 
   return num;
 }
 
-/* Drop the detectors (a set M) listed in the file p->fdrop from a DEM (e.g., the minority-basis detectors of a CSS
- * circuit) if this is verified to be exact.  Every column j touching M needs a twin: a column t touching no detector
+/* The drop= setting, for messages: "auto", "0", or the file name */
+static const char * drop_label(const params_t * const p) {
+  return (p->drop_mode == 1) ? "auto" : ((p->drop_mode == 2) ? p->fdrop : "0");
+}
+
+enum { DROP_UNK = 0, DROP_YES = 1, DROP_NO = 2 };
+
+static double drop_wall_time(void) { /* seconds (monotonic clock) */
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
+}
+
+/* The columns of the DEM to (re)examine in the propagation of dem_drop_auto(): a queue without duplicates */
+typedef struct {
+  int *q;       /* the columns, a circular buffer of size n */
+  char *in;     /* in[j]: column j is in the queue */
+  int n, head, len;
+} drop_queue_t;
+
+static void drop_queue_push(drop_queue_t * const Q, const int j) {
+  if (Q->in[j]) return;
+  Q->in[j] = 1;
+  Q->q[(Q->head + Q->len++) % Q->n] = j;
+}
+
+static int drop_queue_pop(drop_queue_t * const Q) {
+  const int j = Q->q[Q->head];
+  Q->head = (Q->head + 1) % Q->n;
+  Q->len--;
+  Q->in[j] = 0;
+  return j;
+}
+
+static int drop_find(int * const parent, int x) { /* union-find with path halving */
+  while (parent[x] != x) {
+    parent[x] = parent[parent[x]];
+    x = parent[x];
+  }
+  return x;
+}
+
+typedef struct { /* a group of detectors (dropped all or none), see dem_drop_auto() */
+  int root, size;
+} drop_group_t;
+
+static int drop_group_cmp(const void *a, const void *b) { /* the largest groups first, then by their root */
+  const drop_group_t *x = a, *y = b;
+  if (x->size != y->size) return (x->size < y->size) ? 1 : -1;
+  return (x->root > y->root) - (x->root < y->root);
+}
+
+/* drop=auto: find a set M of detectors of the DEM which can be dropped exactly with A = 0 (every column j touching M
+ * has a twin with the same other detectors and the same observables, or none if L(j) = 0 and j has no other detector,
+ * see dem_drop_detectors()), from the DEM alone.  Sets inM[r] = 1 for the detectors of M and returns |M|.
+ * - The droppable sets are closed under union, so that there is a largest one, which gives the smallest problem.
+ * - Sub(j): the columns t with the same observables whose detectors are a proper subset of those of j.  If j touches
+ *   M, its detectors outside M are those of one t in Sub(j) (or none, if L(j) = 0).  So a column with Sub(j) empty
+ *   (O-minimal) is dropped all or nothing (its detectors form a group), and not at all if L(j) != 0.
+ * - Seeds: the groups not kept, the largest first.  Once a detector of j is dropped, the candidates (the elements of
+ *   Sub(j), and none if L(j) = 0, consistent with the detectors of j already dropped or kept) force the others: a
+ *   detector in no candidate is dropped, one in all of them is kept (bit masks of the positions in j).  Without any
+ *   candidate, no droppable set contains the seed group, which is kept.  Otherwise, the detectors dropped are kept in M
+ *   if every column touching them has the mask of its other detectors in Sub(j).
+ * A column with more than 64 detectors keeps its detectors (still exact).  The result is verified again in
+ * dem_drop_detectors(), which also allows A != 0 (drop=FILE). */
+static int dem_drop_auto(const params_t * const p, char * const inM) {
+  const csr_t * const H = p->spaH; /* row r: the columns with detector r */
+  const int m = H->rows, n = H->cols;
+  const double t0 = (p->debug & DBG_TIMING) ? drop_wall_time() : 0.0;
+  csr_t * const HT = csr_transpose(NULL, p->spaH); /* row j: the detectors of column j (sorted) */
+  csr_t * const LT = csr_transpose(NULL, p->spaL); /* row j: the observables of column j (sorted) */
+  int * const fp = calloc((size_t)m + 2, sizeof(int)); /* the columns by their first (smallest) detector */
+  int * const fi = malloc(((size_t)n + 1) * sizeof(int));
+  int * const stamp = calloc((size_t)m + 1, sizeof(int)); /* stamp[r] = j + 1: detector r is in column j */
+  char * const posv = malloc((size_t)m + 1); /* the position of detector r in column j */
+  int * const sp = malloc(((size_t)n + 1) * sizeof(int)); /* Sub(j): entries sp[j] .. sp[j + 1] - 1 */
+  char * const big = calloc((size_t)n + 1, 1); /* column j has more than 64 detectors */
+  if (!fp || !fi || !stamp || !posv || !sp || !big) ERROR("memory allocation");
+  for (int j = 0; j < n; j++)
+    if (HT->p[j + 1] > HT->p[j]) fp[HT->i[HT->p[j]] + 1]++;
+  for (int r = 0; r < m; r++) fp[r + 1] += fp[r];
+  for (int j = 0, *cnt = fp; j < n; j++) /* (fp[r] counts up to the end of the list of r, restored below) */
+    if (HT->p[j + 1] > HT->p[j]) fi[cnt[HT->i[HT->p[j]]]++] = j;
+  for (int r = m; r > 0; r--) fp[r] = fp[r - 1];
+  fp[0] = 0;
+  size_t cap = (size_t)n + 16, ns = 0;
+  int *st = malloc(cap * sizeof(int));           /* Sub(j): the column t */
+  uint64_t *sm = malloc(cap * sizeof(uint64_t)); /* Sub(j): the mask of the positions of the detectors of t in j */
+  if (!st || !sm) ERROR("memory allocation");
+  for (int j = 0; j < n; j++) {
+    sp[j] = (int)ns;
+    const int b = HT->p[j], w = HT->p[j + 1] - b;
+    if (w > 64) big[j] = 1;
+    if ((w < 2) || (w > 64)) continue;
+    for (int u = 0; u < w; u++) {
+      stamp[HT->i[b + u]] = j + 1;
+      posv[HT->i[b + u]] = (char)u;
+    }
+    for (int u = 0; u < w; u++) { /* the columns t whose first detector is in j */
+      const int r = HT->i[b + u];
+      for (int s = fp[r]; s < fp[r + 1]; s++) {
+        const int t = fi[s], bt = HT->p[t], wt = HT->p[t + 1] - bt;
+        if ((wt >= w) || (stamp[HT->i[bt + wt - 1]] != j + 1) || !csr_rows_equal(LT, j, t)) continue;
+        uint64_t mask = 0;
+        int v = 0;
+        for (; (v < wt) && (stamp[HT->i[bt + v]] == j + 1); v++) mask |= 1ULL << posv[HT->i[bt + v]];
+        if (v < wt) continue;
+        if (ns == cap) {
+          cap *= 2;
+          st = realloc(st, cap * sizeof(int));
+          sm = realloc(sm, cap * sizeof(uint64_t));
+          if (!st || !sm) ERROR("memory allocation");
+        }
+        st[ns] = t;
+        sm[ns++] = mask;
+      }
+    }
+  }
+  sp[n] = (int)ns;
+  free(posv);
+  free(stamp);
+  free(fi);
+  free(fp);
+  /* the groups of the O-minimal columns (all or nothing); kept: those with observables, and big columns */
+  int * const parent = malloc(((size_t)m + 1) * sizeof(int));
+  char * const state = calloc((size_t)m + 1, 1);
+  char * const keepg = calloc((size_t)m + 1, 1); /* keepg[root]: the group is kept */
+  if (!parent || !state || !keepg) ERROR("memory allocation");
+  for (int r = 0; r < m; r++) parent[r] = r;
+  for (int j = 0; j < n; j++) {
+    const int b = HT->p[j], w = HT->p[j + 1] - b;
+    if ((w == 0) || big[j] || (sp[j + 1] > sp[j])) continue;
+    const int r0 = drop_find(parent, HT->i[b]);
+    for (int u = 1; u < w; u++) {
+      const int r = drop_find(parent, HT->i[b + u]);
+      if (r != r0) parent[r] = r0;
+    }
+  }
+  for (int j = 0; j < n; j++) {
+    const int b = HT->p[j], w = HT->p[j + 1] - b;
+    if (w == 0) continue;
+    if (big[j]) {
+      for (int u = 0; u < w; u++) keepg[drop_find(parent, HT->i[b + u])] = 1;
+    } else if ((sp[j + 1] == sp[j]) && (LT->p[j + 1] > LT->p[j])) {
+      keepg[drop_find(parent, HT->i[b])] = 1;
+    }
+  }
+  int * const gsize = calloc((size_t)m + 1, sizeof(int));
+  if (!gsize) ERROR("memory allocation");
+  for (int r = 0; r < m; r++) /* (then parent[r] is the root of r for all r) */
+    parent[r] = drop_find(parent, r);
+  for (int r = 0; r < m; r++)
+    if (H->p[r + 1] == H->p[r]) keepg[r] = 1; /* (a detector in no column is kept: an empty row of H) */
+  for (int r = 0; r < m; r++) {
+    const int g = parent[r];
+    gsize[g]++;
+    if (keepg[g]) state[r] = DROP_NO;
+  }
+  int ng = 0;
+  for (int r = 0; r < m; r++) ng += (parent[r] == r) && !keepg[r];
+  drop_group_t * const grp = malloc(((size_t)ng + 1) * sizeof(drop_group_t));
+  int * const gp = calloc((size_t)m + 2, sizeof(int)); /* the detectors by group */
+  int * const gi = malloc(((size_t)m + 1) * sizeof(int));
+  if (!grp || !gp || !gi) ERROR("memory allocation");
+  for (int r = 0, g = 0; r < m; r++)
+    if ((parent[r] == r) && !keepg[r]) grp[g++] = (drop_group_t){.root = r, .size = gsize[r]};
+  qsort(grp, ng, sizeof(drop_group_t), drop_group_cmp);
+  for (int r = 0; r < m; r++) gp[parent[r] + 1]++;
+  for (int r = 0; r < m; r++) gp[r + 1] += gp[r];
+  for (int r = 0, *cnt = gsize; r < m; r++) cnt[r] = gp[r];
+  for (int r = 0; r < m; r++) gi[gsize[parent[r]]++] = r;
+  /* the seeds: propagation, with an undo log */
+  drop_queue_t Q = {.q = malloc(((size_t)n + 1) * sizeof(int)), .in = calloc((size_t)n + 1, 1), .n = n + 1};
+  int * const ulog = malloc(((size_t)m + 1) * sizeof(int));
+  if (!Q.q || !Q.in || !ulog) ERROR("memory allocation");
+  int n_ok = 0, n_fail = 0, n_unver = 0;
+  long long int work = 0;
+  const long long int work_max = 64LL * (HT->p[n] + n) + 1000000LL; /* (seeds are skipped beyond this budget) */
+  for (int g = 0; g < ng; g++) {
+    const int g0 = gp[grp[g].root], g1 = gp[grp[g].root + 1];
+    int unk = (g0 < g1);
+    for (int s = g0; (s < g1) && unk; s++) unk = (state[gi[s]] == DROP_UNK);
+    if (!unk) continue; /* (already dropped or kept) */
+    if (work > work_max) break;
+    int nlog = 0, fail = 0;
+    for (int s = g0; s < g1; s++) {
+      const int r = gi[s];
+      state[r] = DROP_YES;
+      ulog[nlog++] = r;
+      for (int t = H->p[r]; t < H->p[r + 1]; t++) drop_queue_push(&Q, H->i[t]);
+    }
+    while (Q.len > 0) {
+      const int j = drop_queue_pop(&Q);
+      if (fail) continue; /* (empties the queue) */
+      work++;
+      const int b = HT->p[j], w = HT->p[j + 1] - b;
+      if (big[j]) continue; /* (its detectors are kept) */
+      uint64_t md = 0, mk = 0, mu = 0;
+      for (int u = 0; u < w; u++) {
+        const char s = state[HT->i[b + u]];
+        if (s == DROP_YES) md |= 1ULL << u;
+        else if (s == DROP_NO) mk |= 1ULL << u;
+        else mu |= 1ULL << u;
+      }
+      if (!md) continue;
+      uint64_t any = 0, all = ~0ULL;
+      int nc = 0;
+      for (int s = sp[j]; s < sp[j + 1]; s++) {
+        if ((sm[s] & md) || ((sm[s] & mk) != mk)) continue;
+        any |= sm[s];
+        all &= sm[s];
+        nc++;
+      }
+      if ((LT->p[j + 1] == LT->p[j]) && !mk) { /* none: all detectors of j dropped */
+        all = 0;
+        nc++;
+      }
+      if (nc == 0) {
+        fail = 1;
+        continue;
+      }
+      const uint64_t fd = mu & ~any, fk = mu & all;
+      for (int u = 0; u < w; u++) {
+        if (!((fd | fk) & (1ULL << u))) continue;
+        const int r = HT->i[b + u];
+        state[r] = (fd & (1ULL << u)) ? DROP_YES : DROP_NO;
+        ulog[nlog++] = r;
+        for (int t = H->p[r]; t < H->p[r + 1]; t++) drop_queue_push(&Q, H->i[t]);
+      }
+    }
+    if (!fail) { /* the check: the other detectors of every column touching a detector dropped here */
+      for (int l = 0; (l < nlog) && !fail; l++) {
+        const int r = ulog[l];
+        if (state[r] != DROP_YES) continue;
+        for (int t = H->p[r]; (t < H->p[r + 1]) && !fail; t++) {
+          const int j = H->i[t], b = HT->p[j], w = HT->p[j + 1] - b;
+          uint64_t mo = 0; /* the positions of the detectors of j not dropped */
+          for (int u = 0; u < w; u++)
+            if (state[HT->i[b + u]] != DROP_YES) mo |= 1ULL << u;
+          int ok = (mo == 0) && (LT->p[j + 1] == LT->p[j]);
+          for (int s = sp[j]; (s < sp[j + 1]) && !ok; s++) ok = (sm[s] == mo);
+          if (!ok) fail = 2;
+        }
+      }
+    }
+    if (fail) { /* undo; a contradiction (fail = 1): no droppable set contains the group, which is kept */
+      for (int l = 0; l < nlog; l++) state[ulog[l]] = DROP_UNK;
+      if (fail == 1) {
+        for (int s = g0; s < g1; s++) state[gi[s]] = DROP_NO;
+        n_fail++;
+      } else {
+        n_unver++;
+      }
+    } else {
+      n_ok++;
+    }
+  }
+  int num = 0;
+  for (int r = 0; r < m; r++)
+    if (state[r] == DROP_YES) {
+      inM[r] = 1;
+      num++;
+    }
+  if (p->debug & DBG_TIMING)
+    fprintf(stderr, "# drop=auto: %d of %d detectors found (%d groups to try: %d dropped, %d kept, %d not verified%s; "
+            "%zu sub-columns), %.3f s\n", num, m, ng, n_ok, n_fail, n_unver,
+            (work > work_max) ? ", work limit reached" : "", ns, drop_wall_time() - t0);
+  free(ulog);
+  free(Q.in);
+  free(Q.q);
+  free(gi);
+  free(gp);
+  free(grp);
+  free(gsize);
+  free(keepg);
+  free(state);
+  free(parent);
+  free(sm);
+  free(st);
+  free(big);
+  free(sp);
+  csr_free(LT);
+  csr_free(HT);
+  return num;
+}
+
+/* Write the detectors dropped from the DEM (0-based, increasing, see dem_drop_detectors()) to the file p->outD, as a
+ * drop file (also when none is dropped: then only the comment line). */
+static void dem_write_drop_list(const params_t * const p) {
+  FILE * const f = fopen(p->outD, "w");
+  if (!f)
+    ERROR("can't open the file outD='%s' for writing: %s", p->outD, strerror(errno));
+  const int m = (p->ndrop > 0) ? p->ndrop_rows : p->spaH->rows;
+  fprintf(f, "# %d of %d detectors dropped (drop=%s%s), 0-based\n", p->ndrop, m,
+          (p->classical == 1) ? "0, classical=1" : drop_label(p), p->drop_none ? ": none can be dropped exactly" : "");
+  for (int i = 0; i < p->ndrop; i++)
+    fprintf(f, "%d%c", p->drop_list[i], ((i % 16 == 15) || (i == p->ndrop - 1)) ? '\n' : ' ');
+  fclose(f);
+  if (p->debug & DBG_ARGS)
+    fprintf(stderr, "# wrote the %d detectors dropped to '%s'\n", p->ndrop, p->outD);
+}
+
+/* Drop the detectors (a set M) from a DEM if this is verified to be exact: those found by dem_drop_auto() (drop=auto,
+ * the default), or those listed in the file p->fdrop (e.g., the minority-basis detectors of a CSS circuit).  Every
+ * column j touching M needs a twin: a column t touching no detector
  * of M with the same other (kept) detectors, or no column if j has no kept detector, such that L(t) = L(j) + A H_M(j)
  * for one binary matrix A (A = 0 for the usual CSS circuits; found by elimination otherwise).  Replacing the columns
  * of a codeword c by their twins (two equal twins cancel) gives a codeword of weight at most |c| without the detectors
@@ -1669,14 +2008,18 @@ static int dem_read_drop_list(const char fnam[], const int m, char * const inM) 
  * submatrix of the kept detectors and the columns touching no detector of M (with L), and its codewords are codewords
  * of the DEM.  Otherwise, a note is printed and the DEM is not changed.  The column maps p->col_orig and p->col_class
  * (see dem_merge_columns()) refer to the original columns; a column with no kept detector maps to -1 (it is dropped
- * from a finC codeword). */
+ * from a finC codeword).  The detectors dropped are kept in p->drop_list (for outD). */
 static void dem_drop_detectors(params_t * const p) {
   const int m = p->spaH->rows, n = p->spaH->cols, k = p->spaL->rows;
   char * const inM = calloc((size_t)m + 1, 1);
   if (!inM) ERROR("memory allocation");
-  const int num = dem_read_drop_list(p->fdrop, m, inM);
+  const char * const label = drop_label(p);
+  const int num = (p->drop_mode == 1) ? dem_drop_auto(p, inM) : dem_read_drop_list(p->fdrop, m, inM);
   if (num == 0) {
-    fprintf(stderr, "# Note: drop=%s: none of the listed detectors is in the DEM, nothing dropped\n", p->fdrop);
+    if (p->drop_mode == 1)
+      p->drop_none = 1;
+    else
+      fprintf(stderr, "# Note: drop=%s: none of the listed detectors is in the DEM, nothing dropped\n", label);
     free(inM);
     return;
   }
@@ -1776,9 +2119,9 @@ static void dem_drop_detectors(params_t * const p) {
   if (fail >= 0) {
     if (fail < n)
       fprintf(stderr, "# Note: drop=%s not used: column %d (1-based) touches a dropped detector, but %s; using the "
-              "full DEM\n", p->fdrop, 1 + col_orig_index(p, fail), why);
+              "full DEM\n", label, 1 + col_orig_index(p, fail), why);
     else
-      fprintf(stderr, "# Note: drop=%s not used: %s; using the full DEM\n", p->fdrop, why);
+      fprintf(stderr, "# Note: drop=%s not used: %s; using the full DEM\n", label, why);
   } else { /* the submatrix of the kept detectors and of the columns not touching M */
     int * const keepcol = malloc(((size_t)n + 1) * sizeof(int));
     int * const keeprow = malloc(((size_t)m + 1) * sizeof(int));
@@ -1813,6 +2156,10 @@ static void dem_drop_detectors(params_t * const p) {
     p->ndrop_rows = m;
     p->ndrop_cols = nj;
     p->drop_A = need_A;
+    p->drop_list = malloc(((size_t)num + 1) * sizeof(int));
+    if (!p->drop_list) ERROR("memory allocation");
+    for (int r = 0, c = 0; r < m; r++)
+      if (inM[r]) p->drop_list[c++] = r;
     free(keepcol);
     free(keeprow);
   }
