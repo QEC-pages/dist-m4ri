@@ -23,6 +23,12 @@ params_t prm={
   .nvar_orig=0,
   .col_orig=NULL,
   .col_class=NULL,
+  .nvar_merged=0,
+  .fdrop=NULL,
+  .ndrop=0,
+  .ndrop_rows=0,
+  .ndrop_cols=0,
+  .drop_A=0,
   .start_list=NULL,
   .start_num=0,
   .cbeg=-1,
@@ -206,9 +212,13 @@ static void print_input_summary(FILE *stream, const params_t * const p){
   }
   fprintf(stream, ")\n");
   print_matrix_summary(stream, "H", p->spaH, p->fdem ? " (detectors)" : "");
-  if (p->nvar_orig > 0)
+  if (p->nvar_merged > 0)
     fprintf(stream, "#   merged %d equal columns of the DEM: %d of %d columns kept (merge=0 to keep all)\n",
-            p->nvar_orig - p->nvar, p->nvar, p->nvar_orig);
+            p->nvar_orig - p->nvar_merged, p->nvar_merged, p->nvar_orig);
+  if (p->ndrop > 0)
+    fprintf(stream, "#   dropped %d of %d detectors (drop=%s), exact: the %d columns touching them have twins (%s), "
+            "%d columns kept\n", p->ndrop, p->ndrop_rows, p->fdrop, p->ndrop_cols,
+            p->drop_A ? "L + A H with A != 0" : "the same observables", p->nvar);
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
   if (p->spaL)
@@ -257,6 +267,335 @@ static void print_code_params(FILE *stream, const params_t * const p){
 }
 
 static void dem_merge_columns(params_t * const p);
+static void dem_drop_detectors(params_t * const p);
+
+/* Help topics (--help TOPIC, --morehelp TOPIC): the entries of the full help text MORE_HELP for some parameters. */
+#define HELP_MAX_NAMES 8
+#define HELP_NAME_LEN 32
+
+typedef struct {
+  int sec;                                  /* the line of its section header, or -1 */
+  int beg, end;                             /* its lines beg..end-1 */
+  int is_sec;                               /* 1 for a whole section (its header is the line beg) */
+  int nnames;
+  char key[HELP_MAX_NAMES][HELP_NAME_LEN];  /* the normalized names, see help_key() */
+  char name[HELP_MAX_NAMES][HELP_NAME_LEN]; /* the names as written */
+} help_entry_t;
+
+/* The normalized form key of the name s (its first n characters, up to '='): lowercase, without '-', '_', and white
+ * space (at most HELP_NAME_LEN - 1 characters). */
+static void help_key(char * const key, const char * const s, const size_t n) {
+  size_t k = 0;
+  for (size_t i = 0; (i < n) && s[i] && (s[i] != '=') && (k + 1 < HELP_NAME_LEN); i++)
+    if ((s[i] != '-') && (s[i] != '_') && !isspace((unsigned char)s[i]))
+      key[k++] = (char)tolower((unsigned char)s[i]);
+  key[k] = '\0';
+}
+
+/* Adds the name s (its first n characters) to the entry e, unless it is already there. */
+static void help_add_name(help_entry_t * const e, const char * const s, size_t n) {
+  char key[HELP_NAME_LEN];
+  help_key(key, s, n);
+  if (!key[0] || (e->nnames >= HELP_MAX_NAMES))
+    return;
+  for (int i = 0; i < e->nnames; i++)
+    if (strcmp(e->key[i], key) == 0)
+      return;
+  if (n >= HELP_NAME_LEN)
+    n = HELP_NAME_LEN - 1;
+  memcpy(e->name[e->nnames], s, n);
+  e->name[e->nnames][n] = '\0';
+  strcpy(e->key[e->nnames++], key);
+}
+
+/* The length of the name at s, -{0,2}[A-Za-z][A-Za-z0-9_-]*, or 0 if there is none. */
+static size_t help_name_len(const char * const s) {
+  size_t i = 0;
+  while ((i < 2) && (s[i] == '-'))
+    i++;
+  if (!isalpha((unsigned char)s[i]))
+    return 0;
+  while (isalnum((unsigned char)s[i]) || (s[i] == '_') || (s[i] == '-'))
+    i++;
+  return i;
+}
+
+/* Reads the names in the first column of a help line s (after its indentation of 2 spaces) into the entry e: names
+ * separated by ", " or "/", each optionally followed by "=VALUE" or " [VALUE]", up to 2 spaces or the end of the line
+ * (e.g., "method=[int]" or "-h, --help").  Returns 0 if s does not start with such a list (e.g., a line of text). */
+static int help_read_names(help_entry_t * const e, const char *s) {
+  e->nnames = 0;
+  for (;;) {
+    const size_t n = help_name_len(s);
+    if (!n)
+      return 0;
+    help_add_name(e, s, n);
+    s += n;
+    if (*s == '=')                                             /* =VALUE */
+      while (*s && (*s != ' ') && (*s != ','))
+        s++;
+    if ((s[0] == ' ') && (s[1] == '[')) {                      /* [VALUE] */
+      const char * const t = strchr(s, ']');
+      if (!t)
+        return 0;
+      s = t + 1;
+    }
+    if ((*s == '\0') || ((s[0] == ' ') && (s[1] == ' ')))      /* the end of the first column */
+      return 1;
+    if ((s[0] == ',') && (s[1] == ' '))
+      s += 2;
+    else if (*s == '/')
+      s++;
+    else
+      return 0;
+  }
+}
+
+/* Whether s starts with the lowercase string prefix, ignoring the case of s. */
+static int help_has_prefix(const char *s, const char *prefix) {
+  for (; *prefix; s++, prefix++)
+    if (tolower((unsigned char)*s) != *prefix)
+      return 0;
+  return 1;
+}
+
+/* Adds the aliases in the help line s to the entry e: the names after "alias:" or "aliases:" (in any case), separated
+ * by commas, e.g., "(alias: dest)", "Alias: batch=[int].", or "Aliases: --no-throttle, -no-throttle, nothrottle." */
+static void help_read_aliases(help_entry_t * const e, const char * const s) {
+  for (const char *p = s; *p; p++) {
+    const char *q;
+    if (help_has_prefix(p, "aliases:"))
+      q = p + 8;
+    else if (help_has_prefix(p, "alias:"))
+      q = p + 6;
+    else
+      continue;
+    for (;;) {
+      while (*q == ' ')
+        q++;
+      const size_t n = help_name_len(q);
+      if (!n)
+        break;
+      help_add_name(e, q, n);
+      q += n;
+      if (*q == '=')                                           /* =VALUE, e.g., =[int] */
+        while (*q && (*q != ',') && (*q != ' ') && (*q != ')'))
+          q++;
+      if (*q != ',')
+        break;
+      q++;
+    }
+  }
+}
+
+/* Splits the help text into lines (the line ends are replaced by '\0'; *lines: the line starts, *nlines) and returns
+ * the number of its entries (*ent, to be freed with *lines).  A section header is a line without indentation which ends
+ * with ':'.  An entry starts with a line indented by 2 spaces with the names (see help_read_names()), and continues
+ * with the lines indented by more; a section header with "(NAME=[", e.g., "Debug output bitmap (debug=[int], ...):",
+ * starts an entry NAME with the whole section.  The names of an entry include its aliases (see help_read_aliases()). */
+static int help_entries(char * const text, char *** const lines, int * const nlines, help_entry_t ** const ent) {
+  int nl = 0, cap = 256;
+  char **ln = malloc((size_t)cap * sizeof(char *));
+  if (!ln)
+    ERROR("memory allocation");
+  for (char *s = text; *s; ) {
+    if (nl == cap) {
+      cap *= 2;
+      ln = realloc(ln, (size_t)cap * sizeof(char *));
+      if (!ln)
+        ERROR("memory allocation");
+    }
+    ln[nl++] = s;
+    char * const t = strchr(s, '\n');
+    if (!t)
+      break;
+    *t = '\0';
+    s = t + 1;
+  }
+  help_entry_t * const en = calloc((size_t)nl + 1, sizeof(help_entry_t));
+  if (!en)
+    ERROR("memory allocation");
+  int ne = 0, sec = -1;
+  help_entry_t *cur = NULL;                    /* the entry continued by the following lines, if any */
+  for (int i = 0; i < nl; i++) {
+    const char * const s = ln[i];
+    const size_t len = strlen(s);
+    if (len && !isspace((unsigned char)s[0]) && (s[len - 1] == ':')) {      /* a section header */
+      sec = i;
+      cur = NULL;
+      const char * const p = strchr(s, '(');
+      const size_t n = p ? help_name_len(p + 1) : 0;
+      if (n && (p[1 + n] == '=') && (p[2 + n] == '[')) {                    /* a whole section, e.g., debug */
+        cur = &en[ne++];
+        *cur = (help_entry_t){.sec = i, .beg = i, .end = i + 1, .is_sec = 1};
+        help_add_name(cur, p + 1, n);
+      }
+    }
+    else if (cur && cur->is_sec) {                                           /* within a whole section */
+      if (len)
+        cur->end = i + 1;
+      help_read_aliases(cur, s);
+    }
+    else if ((s[0] == ' ') && (s[1] == ' ') && s[2] && (s[2] != ' ') && help_read_names(&en[ne], s + 2)) {
+      cur = &en[ne++];                                                       /* a new entry */
+      cur->sec = sec;
+      cur->beg = i;
+      cur->end = i + 1;
+      help_read_aliases(cur, s);
+    }
+    else if (cur && (s[0] == ' ') && (s[1] == ' ') && (s[2] == ' ')) {      /* a continuation line */
+      cur->end = i + 1;
+      help_read_aliases(cur, s);
+    }
+    else
+      cur = NULL;
+  }
+  *lines = ln;
+  *nlines = nl;
+  *ent = en;
+  return ne;
+}
+
+/* The edit (Levenshtein) distance of the strings a and b (each of at most HELP_NAME_LEN - 1 characters). */
+static int help_edit_distance(const char * const a, const char * const b) {
+  const size_t la = strlen(a), lb = strlen(b);
+  int d[HELP_NAME_LEN];                        /* one row of the table: d[j] for b[0..j-1] */
+  for (size_t j = 0; j <= lb; j++)
+    d[j] = (int)j;
+  for (size_t i = 1; i <= la; i++) {
+    int diag = d[0];
+    d[0] = (int)i;
+    for (size_t j = 1; j <= lb; j++) {
+      const int up = d[j];
+      int best = diag + (a[i - 1] != b[j - 1]);
+      if (up + 1 < best)
+        best = up + 1;
+      if (d[j - 1] + 1 < best)
+        best = d[j - 1] + 1;
+      d[j] = best;
+      diag = up;
+    }
+  }
+  return d[lb];
+}
+
+/* Writes to stderr that the topic s (n characters, normalized: key) has no help entry, with up to 5 of the closest
+ * names (by the edit distance of the normalized names: at most (len + 2) / 3, and at least 1, for a key of length
+ * len), the closest first. */
+static void help_no_entry(const char * const prog, const char * const s, const int n, const char * const key,
+                          const help_entry_t * const ent, const int ne) {
+  const int maxd = ((int)strlen(key) + 2) / 3 > 1 ? ((int)strlen(key) + 2) / 3 : 1;
+  const char *best[5];
+  int bestd[5], nb = 0;
+  for (int i = 0; i < ne; i++)
+    for (int j = 0; j < ent[i].nnames; j++) {
+      const int d = help_edit_distance(key, ent[i].key[j]);
+      int pos = nb;
+      if (d > maxd)
+        continue;
+      while ((pos > 0) && (bestd[pos - 1] > d))
+        pos--;
+      if (pos >= 5)
+        continue;
+      if (nb < 5)
+        nb++;
+      for (int k = nb - 1; k > pos; k--) {
+        best[k] = best[k - 1];
+        bestd[k] = bestd[k - 1];
+      }
+      best[pos] = ent[i].name[j];
+      bestd[pos] = d;
+    }
+  fprintf(stderr, "%s: no help entry for '%.*s'", prog, n, s);
+  for (int k = 0; k < nb; k++)
+    fprintf(stderr, "%s%s", k ? ", " : "; did you mean ", best[k]);
+  fprintf(stderr, "%s (--morehelp lists all parameters)\n", nb ? "?" : "");
+}
+
+/* Prints the entries of the full help (MORE_HELP) for the ntopics topics (--help TOPIC, --morehelp TOPIC): each is
+ * one or more names separated by commas, compared without case, '-', '_', and '=VALUE' with the names of the entries
+ * and their aliases (see help_entries()).  The entries are printed in the order of the full help, under their section
+ * headers.  Returns 0, 1 if some topic has no entry (then the closest names are suggested on stderr), or -1 if there
+ * is no topic (e.g., --help=), and nothing is printed. */
+static int print_help_topics(const char * const prog, const int ntopics, const char * const topics[]) {
+  const int len = snprintf(NULL, 0, MORE_HELP, prog, DIST_M4RI_VERSION, prog);
+  char * const text = malloc((size_t)len + 1);
+  if (!text)
+    ERROR("memory allocation");
+  snprintf(text, (size_t)len + 1, MORE_HELP, prog, DIST_M4RI_VERSION, prog);
+  char **lines;
+  int nlines;
+  help_entry_t *ent;
+  const int ne = help_entries(text, &lines, &nlines, &ent);
+  char * const chosen = calloc((size_t)ne + 1, 1);
+  if (!chosen)
+    ERROR("memory allocation");
+  int status = 0, nkeys = 0;
+  for (int t = 0; t < ntopics; t++)
+    for (const char *s = topics[t]; *s; ) {
+      const char * const comma = strchr(s, ',');
+      int n = comma ? (int)(comma - s) : (int)strlen(s);
+      const char * const next = comma ? comma + 1 : s + n;
+      while ((n > 0) && isspace((unsigned char)*s)) {
+        s++;
+        n--;
+      }
+      while ((n > 0) && isspace((unsigned char)s[n - 1]))
+        n--;
+      char key[HELP_NAME_LEN];
+      help_key(key, s, (size_t)n);
+      if (key[0]) {
+        int found = 0;
+        nkeys++;
+        for (int i = 0; i < ne; i++)
+          for (int j = 0; j < ent[i].nnames; j++)
+            if (strcmp(ent[i].key[j], key) == 0)
+              chosen[i] = found = 1;
+        if (!found) {
+          help_no_entry(prog, s, n, key, ent, ne);
+          status = 1;
+        }
+      }
+      s = next;
+    }
+  int sec = -2, any = 0;
+  for (int i = 0; i < ne; i++) {
+    if (!chosen[i])
+      continue;
+    if (ent[i].sec != sec) {                   /* the section header, once (a whole section: its first line) */
+      if (any)
+        printf("\n");
+      if ((ent[i].sec >= 0) && !ent[i].is_sec)
+        printf("%s\n", lines[ent[i].sec]);
+      sec = ent[i].sec;
+    }
+    for (int k = ent[i].beg; k < ent[i].end; k++)
+      printf("%s\n", lines[k]);
+    any = 1;
+  }
+  free(chosen);
+  free(ent);
+  free(lines);
+  free(text);
+  return nkeys ? status : -1;
+}
+
+/* The kind of the help option arg: 2 for --morehelp (also -morehelp, --more-help, -more-help), 1 for --help (also
+ * -help, -h, -?), or 0; *topic is set to the text after '=' (e.g., --help=maxC), or to NULL. */
+static int help_option(const char * const arg, const char ** const topic) {
+  static const char * const opts[] = {"--morehelp", "-morehelp", "--more-help", "-more-help",
+                                      "--help", "-help", "-h", "-?", NULL};
+  *topic = NULL;
+  for (int k = 0; opts[k]; k++) {
+    const size_t len = strlen(opts[k]);
+    if ((strncmp(arg, opts[k], len) == 0) && ((arg[len] == '\0') || (arg[len] == '='))) {
+      if (arg[len] == '=')
+        *topic = arg + len + 1;
+      return k < 4 ? 2 : 1;
+    }
+  }
+  return 0;
+}
 
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
@@ -270,19 +609,37 @@ void var_init(int argc, char **argv, params_t * const p){
       exit(0);
     }
 
-  for (int i = 1; i < argc; i++) /* scan arguments for full help message */
-    if ((strcmp(argv[i], "--morehelp") == 0) || (strcmp(argv[i], "-morehelp") == 0)
-        || (strcmp(argv[i], "--more-help") == 0) || (strcmp(argv[i], "-more-help") == 0)) {
-      printf(MORE_HELP, argv[0], DIST_M4RI_VERSION, argv[0]);
-      exit(0);
+  /* scan arguments for the help options: --morehelp (full help) or --help (commonly used parameters); with a TOPIC (the
+   * next argument if it does not start with '-' and has no '=', or --help=TOPIC), both print only the entries of the
+   * full help for TOPIC (see print_help_topics()) */
+  int help_kind = 0, ntopics = 0;
+  const char ** const topics = calloc((size_t)argc + 1, sizeof(char *));
+  if (!topics)
+    ERROR("memory allocation");
+  for (int i = 1; i < argc; i++) {
+    const char *topic;
+    const int kind = help_option(argv[i], &topic);
+    if (!kind)
+      continue;
+    if (kind > help_kind)
+      help_kind = kind;
+    if (!topic && (i + 1 < argc) && (argv[i + 1][0] != '-') && !strchr(argv[i + 1], '='))
+      topic = argv[++i];
+    if (topic)
+      topics[ntopics++] = topic;
+  }
+  if (help_kind) {
+    const int status = ntopics ? print_help_topics(argv[0], ntopics, topics) : -1;
+    if (status < 0) {
+      if (help_kind == 2)
+        printf(MORE_HELP, argv[0], DIST_M4RI_VERSION, argv[0]);
+      else
+        printf(USAGE, argv[0], DIST_M4RI_VERSION, argv[0]);
     }
-
-  for (int i = 1; i < argc; i++) /* scan arguments for standard help message */
-    if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)
-        || (strcmp(argv[i], "-?") == 0)) {
-      printf(USAGE, argv[0], DIST_M4RI_VERSION, argv[0]);
-      exit(0);
-    }
+    free(topics);
+    exit(status > 0 ? 1 : 0);
+  }
+  free(topics);
 
   if (argc <= 1) {
     fprintf(stderr, "%s: no command-line arguments given\n\n", argv[0]);
@@ -429,6 +786,11 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, merge=%d\n",argv[i],p->merge);
     }
+    else if (0==strncmp(argv[i],"drop=",5)){
+      p->fdrop = file_arg_value(argc, argv, &i, 5);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, drop=%s\n",argv[i],p->fdrop);
+    }
     else if (0==strncmp(argv[i],"finC=",5)){
       p->finC = file_arg_value(argc, argv, &i, 5);
       if (p->debug & DBG_ARGS)
@@ -555,6 +917,12 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->pmin != 0.0 && !p->fdem) {
     ERROR("pmin can only be used when fdem is specified");
   }
+  if (p->fdrop && !p->fdem) {
+    ERROR("drop can only be used when fdem is specified");
+  }
+  if (p->fdrop && p->classical == 1) {
+    ERROR("drop cannot be combined with classical=1 (the observables are needed)");
+  }
 
   if (p->dmin < 0) {
     ERROR("parameter dmin=%d cannot be negative\n", p->dmin);
@@ -635,6 +1003,8 @@ void var_init(int argc, char **argv, params_t * const p){
     read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
     if (p->merge)
       dem_merge_columns(p);
+    if (p->fdrop)
+      dem_drop_detectors(p);
     if (p->classical == -1) p->classical = 0;
     p->nvar = p->spaH->cols;
     p->n0 = p->nvar;
@@ -713,7 +1083,7 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->css!=1)
     ERROR("Non-CSS codes are currently not supported, css=%d",p->css);
 
-  /* start, cbeg, and cend refer to the original columns (before merging the equal columns of a DEM) */
+  /* start, cbeg, and cend refer to the original columns (before merging the equal columns of a DEM, and dropping) */
   const int n_orig = (p->nvar_orig > 0) ? p->nvar_orig : p->nvar;
   if (p->cbeg >= n_orig) {
     ERROR("cbeg=%d cannot be larger than nvar-1=%d\n", p->cbeg, n_orig-1);
@@ -722,14 +1092,19 @@ void var_init(int argc, char **argv, params_t * const p){
     ERROR("cend=%d cannot be larger than nvar-1=%d\n", p->cend, n_orig-1);
   }
   if (p->start_num > 0) { /* range check, map to the merged columns, sort, and remove duplicates */
+    int num = 0;
     for (int k = 0; k < p->start_num; k++) {
       if (p->start_list[k] >= n_orig)
         ERROR("start column %d cannot be larger than nvar-1=%d\n", p->start_list[k], n_orig-1);
-      if (p->col_class)
-        p->start_list[k] = p->col_class[p->start_list[k]];
+      const int c = p->col_class ? p->col_class[p->start_list[k]] : p->start_list[k];
+      if (c >= 0) /* (-1: a dropped column without a twin, see drop) */
+        p->start_list[num++] = c;
     }
+    if (num == 0)
+      ERROR("no start column left: the columns listed touch only dropped detectors (drop=%s)\n", p->fdrop);
+    p->start_num = num;
     qsort(p->start_list, p->start_num, sizeof(int), cmp_int);
-    int num = 1;
+    num = 1;
     for (int k = 1; k < p->start_num; k++)
       if (p->start_list[k] != p->start_list[num-1])
         p->start_list[num++] = p->start_list[k];
@@ -1211,10 +1586,243 @@ static void dem_merge_columns(params_t * const p) {
   p->spaH = H2;
   p->spaL = L2;
   p->nvar_orig = n;
+  p->nvar_merged = nclass;
   p->col_orig = col_orig;
   p->col_class = col_class;
   free(keep);
   free(rep);
+}
+
+/* Are rows a and b of the CSR matrix M (sorted) equal? */
+static int csr_rows_equal(const csr_t * const M, const int a, const int b) {
+  const int w = M->p[a + 1] - M->p[a];
+  return (w == M->p[b + 1] - M->p[b]) && (memcmp(M->i + M->p[a], M->i + M->p[b], (size_t)w * sizeof(int)) == 0);
+}
+
+/* Are the kept detectors (inM[r] == 0) of column j the detectors of column t (rows of HT, sorted; t has no dropped
+ * detector)? */
+static int dem_kept_equal(const csr_t * const HT, const char * const inM, const int j, const int t) {
+  int s = HT->p[t];
+  for (int u = HT->p[j]; u < HT->p[j + 1]; u++) {
+    if (inM[HT->i[u]]) continue;
+    if (s >= HT->p[t + 1] || HT->i[s] != HT->i[u]) return 0;
+    s++;
+  }
+  return s == HT->p[t + 1];
+}
+
+/* The rows of the CSR matrix M with keep[r] >= 0, renumbered to keep[r] (increasing in r) */
+static csr_t * csr_keep_rows(const csr_t * const M, const int * const keep, const int nrows) {
+  int nz = 0;
+  for (int r = 0; r < M->rows; r++)
+    if (keep[r] >= 0) nz += M->p[r + 1] - M->p[r];
+  csr_t * const R = csr_init(NULL, nrows, M->cols, nz > 0 ? nz : 1);
+  int t2 = 0, r2 = 0;
+  for (int r = 0; r < M->rows; r++) {
+    if (keep[r] < 0) continue;
+    R->p[r2++] = t2;
+    for (int t = M->p[r]; t < M->p[r + 1]; t++) R->i[t2++] = M->i[t];
+  }
+  R->p[nrows] = t2;
+  R->nz = -1; /* compressed form */
+  return R;
+}
+
+/* Read the detectors to drop from the file fnam (see dem_drop_detectors()): 0-based indices separated by white space or
+ * commas, lines starting with '#' or '%' are comments.  Sets inM[r] = 1 for the detectors r < m (a larger index is
+ * ignored: no error mechanism has this detector) and returns their number. */
+static int dem_read_drop_list(const char fnam[], const int m, char * const inM) {
+  FILE * const f = fopen(fnam, "r");
+  if (!f)
+    ERROR("can't open the drop file '%s' for reading: %s", fnam, strerror(errno));
+  char *line = NULL;
+  size_t cap = 0;
+  int num = 0, lineno = 0;
+  while (getline(&line, &cap, f) != -1) {
+    lineno++;
+    char *s = line;
+    while (isspace((unsigned char)*s)) s++;
+    if (*s == '#' || *s == '%') continue;
+    for (char *tok = strtok(s, " \t\r\n,"); tok; tok = strtok(NULL, " \t\r\n,")) {
+      char *end;
+      errno = 0;
+      const long v = strtol(tok, &end, 10);
+      if ((*end != '\0') || errno || (v < 0) || (v > INT_MAX))
+        ERROR("drop file '%s', line %d: invalid entry '%s' (expected 0-based detector indices)", fnam, lineno, tok);
+      if ((v < m) && !inM[v]) {
+        inM[v] = 1;
+        num++;
+      }
+    }
+  }
+  free(line);
+  fclose(f);
+  return num;
+}
+
+/* Drop the detectors (a set M) listed in the file p->fdrop from a DEM (e.g., the minority-basis detectors of a CSS
+ * circuit) if this is verified to be exact.  Every column j touching M needs a twin: a column t touching no detector
+ * of M with the same other (kept) detectors, or no column if j has no kept detector, such that L(t) = L(j) + A H_M(j)
+ * for one binary matrix A (A = 0 for the usual CSS circuits; found by elimination otherwise).  Replacing the columns
+ * of a codeword c by their twins (two equal twins cancel) gives a codeword of weight at most |c| without the detectors
+ * M: the kept detectors do not change, and L changes by A H_M c = 0.  So the distance of the DEM is that of the
+ * submatrix of the kept detectors and the columns touching no detector of M (with L), and its codewords are codewords
+ * of the DEM.  Otherwise, a note is printed and the DEM is not changed.  The column maps p->col_orig and p->col_class
+ * (see dem_merge_columns()) refer to the original columns; a column with no kept detector maps to -1 (it is dropped
+ * from a finC codeword). */
+static void dem_drop_detectors(params_t * const p) {
+  const int m = p->spaH->rows, n = p->spaH->cols, k = p->spaL->rows;
+  char * const inM = calloc((size_t)m + 1, 1);
+  if (!inM) ERROR("memory allocation");
+  const int num = dem_read_drop_list(p->fdrop, m, inM);
+  if (num == 0) {
+    fprintf(stderr, "# Note: drop=%s: none of the listed detectors is in the DEM, nothing dropped\n", p->fdrop);
+    free(inM);
+    return;
+  }
+  csr_t * const HT = csr_transpose(NULL, p->spaH);
+  csr_t * const LT = csr_transpose(NULL, p->spaL);
+  char * const touch = calloc((size_t)n + 1, 1);             /* column j touches a detector of M */
+  uint64_t * const hk = malloc(((size_t)n + 1) * sizeof(uint64_t)); /* hash of the kept detectors of a column */
+  dem_col_hash_t * const hs = malloc(((size_t)n + 1) * sizeof(dem_col_hash_t)); /* the columns not touching M */
+  int * const twin = malloc(((size_t)n + 1) * sizeof(int));   /* the twin of a column (itself if it does not touch M) */
+  if (!touch || !hk || !hs || !twin) ERROR("memory allocation");
+  int ns = 0, nj = 0;
+  for (int j = 0; j < n; j++) {
+    uint64_t h = 0;
+    for (int t = HT->p[j]; t < HT->p[j + 1]; t++) {
+      if (inM[HT->i[t]]) touch[j] = 1;
+      else h ^= dem_hash64((uint64_t)HT->i[t] + 1);
+    }
+    hk[j] = h;
+    if (touch[j]) {
+      nj++;
+    } else {
+      hs[ns].h = h;
+      hs[ns].j = j;
+      ns++;
+    }
+  }
+  qsort(hs, ns, sizeof(dem_col_hash_t), dem_col_hash_cmp);
+  int fail = -1, need_A = 0;
+  const char *why = NULL;
+  for (int j = 0; (j < n) && (fail < 0); j++) {
+    if (!touch[j]) {
+      twin[j] = j;
+      continue;
+    }
+    int nk = 0; /* the number of kept detectors of column j */
+    for (int t = HT->p[j]; t < HT->p[j + 1]; t++) nk += !inM[HT->i[t]];
+    if (nk == 0) { /* no column needed: L(j) = A H_M(j) */
+      twin[j] = -1;
+      if (LT->p[j + 1] > LT->p[j]) need_A = 1;
+      continue;
+    }
+    int lo = 0, hi = ns; /* the first column not touching M with the hash of the kept detectors of j */
+    while (lo < hi) {
+      const int mid = lo + (hi - lo) / 2;
+      if (hs[mid].h < hk[j]) lo = mid + 1;
+      else hi = mid;
+    }
+    int tw = -1;
+    for (int s = lo; (s < ns) && (hs[s].h == hk[j]); s++) {
+      const int t = hs[s].j;
+      if (!dem_kept_equal(HT, inM, j, t)) continue;
+      if (tw < 0) {
+        tw = t;
+      } else if (!csr_rows_equal(LT, tw, t)) { /* (then the two columns are a codeword of weight 2) */
+        fail = j;
+        why = "it has two twins with different observables";
+        break;
+      }
+    }
+    if (fail >= 0) break;
+    if (tw < 0) {
+      fail = j;
+      why = "no column with the same other detectors touches none of the dropped ones";
+      break;
+    }
+    twin[j] = tw;
+    if (!csr_rows_equal(LT, j, tw)) need_A = 1;
+  }
+  if ((fail < 0) && need_A) {
+    /* a matrix A with A H_M(j) = L(j) + L(twin(j)) for all columns j touching M exists iff no row of the row echelon
+     * form of the rows [H_M(j) | L(j) + L(twin(j))] has its leading entry in the L part */
+    int * const mind = malloc(((size_t)m + 1) * sizeof(int)); /* the index of a detector of M among them */
+    if (!mind) ERROR("memory allocation");
+    for (int r = 0, c = 0; r < m; r++) mind[r] = inM[r] ? c++ : -1;
+    mzd_t * const E = mzd_init(nj, num + k);
+    for (int j = 0, row = 0; j < n; j++) {
+      if (!touch[j]) continue;
+      for (int t = HT->p[j]; t < HT->p[j + 1]; t++)
+        if (inM[HT->i[t]]) mzd_write_bit(E, row, mind[HT->i[t]], 1);
+      for (int t = LT->p[j]; t < LT->p[j + 1]; t++) mzd_flip_bit(E, row, num + LT->i[t]);
+      if (twin[j] >= 0)
+        for (int t = LT->p[twin[j]]; t < LT->p[twin[j] + 1]; t++) mzd_flip_bit(E, row, num + LT->i[t]);
+      row++;
+    }
+    const int rank = mzd_echelonize(E, 0);
+    for (int r = 0; (r < rank) && (fail < 0); r++) {
+      int c = 0;
+      while ((c < num) && !mzd_read_bit(E, r, c)) c++;
+      if (c >= num) {
+        fail = n; /* (not a single column) */
+        why = "the observables of the twins are not L + A H for any matrix A";
+      }
+    }
+    mzd_free(E);
+    free(mind);
+  }
+  if (fail >= 0) {
+    if (fail < n)
+      fprintf(stderr, "# Note: drop=%s not used: column %d (1-based) touches a dropped detector, but %s; using the "
+              "full DEM\n", p->fdrop, 1 + col_orig_index(p, fail), why);
+    else
+      fprintf(stderr, "# Note: drop=%s not used: %s; using the full DEM\n", p->fdrop, why);
+  } else { /* the submatrix of the kept detectors and of the columns not touching M */
+    int * const keepcol = malloc(((size_t)n + 1) * sizeof(int));
+    int * const keeprow = malloc(((size_t)m + 1) * sizeof(int));
+    if (!keepcol || !keeprow) ERROR("memory allocation");
+    int n2 = 0, m2 = 0;
+    for (int j = 0; j < n; j++) keepcol[j] = touch[j] ? -1 : n2++;
+    for (int r = 0; r < m; r++) keeprow[r] = inM[r] ? -1 : m2++;
+    const int n_orig = (p->nvar_orig > 0) ? p->nvar_orig : n;
+    int * const col_orig = malloc(((size_t)n2 + 1) * sizeof(int));
+    int * const col_class = malloc(((size_t)n_orig + 1) * sizeof(int));
+    if (!col_orig || !col_class) ERROR("memory allocation");
+    for (int j = 0; j < n; j++)
+      if (keepcol[j] >= 0) col_orig[keepcol[j]] = col_orig_index(p, j); /* (increasing) */
+    for (int o = 0; o < n_orig; o++) {
+      const int c = p->col_class ? p->col_class[o] : o;
+      col_class[o] = (twin[c] >= 0) ? keepcol[twin[c]] : -1;
+    }
+    csr_t * const H1 = csr_keep_columns(p->spaH, keepcol, n2);
+    csr_t * const H2 = csr_keep_rows(H1, keeprow, m2);
+    csr_t * const L2 = csr_keep_columns(p->spaL, keepcol, n2);
+    csr_free(H1);
+    csr_free(p->spaH);
+    csr_free(p->spaL);
+    p->spaH = H2;
+    p->spaL = L2;
+    free(p->col_orig);
+    free(p->col_class);
+    p->col_orig = col_orig;
+    p->col_class = col_class;
+    p->nvar_orig = n_orig;
+    p->ndrop = num;
+    p->ndrop_rows = m;
+    p->ndrop_cols = nj;
+    p->drop_A = need_A;
+    free(keepcol);
+    free(keeprow);
+  }
+  free(twin);
+  free(hs);
+  free(hk);
+  free(touch);
+  csr_free(LT);
+  csr_free(HT);
+  free(inM);
 }
 
 FILE * nzlist_w_new(const char fnam[], const char comment[]){
@@ -1730,12 +2338,17 @@ long long int nzlist_read(const char fnam[], params_t *p){
       break;
     }
     int valid = (entry->weight > 0) && (entry->arr[entry->weight - 1] < n_orig); /* column indices in range */
-    if (valid && p->col_class) { /* the merged columns of a DEM: two equal columns cancel */
-      for (int i = 0; i < entry->weight; i++) entry->arr[i] = p->col_class[entry->arr[i]];
-      qsort(entry->arr, entry->weight, sizeof(int), cmp_int);
+    if (valid && p->col_class) { /* the merged (dropped) columns of a DEM: two equal columns (twins) cancel */
       int w = 0;
-      for (int i = 0; i < entry->weight;) {
-        if (i + 1 < entry->weight && entry->arr[i] == entry->arr[i + 1]) {
+      for (int i = 0; i < entry->weight; i++) { /* (a column with no kept detector is dropped, see drop) */
+        const int c = p->col_class[entry->arr[i]];
+        if (c >= 0) entry->arr[w++] = c;
+      }
+      qsort(entry->arr, w, sizeof(int), cmp_int);
+      const int w0 = w;
+      w = 0;
+      for (int i = 0; i < w0;) {
+        if (i + 1 < w0 && entry->arr[i] == entry->arr[i + 1]) {
           i += 2;
         } else {
           entry->arr[w++] = entry->arr[i++];

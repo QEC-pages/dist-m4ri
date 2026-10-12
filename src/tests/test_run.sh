@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.4" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.13.0" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.12.4" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.13.0" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -855,6 +855,84 @@ assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 finC=$CWS102 threads=1 deb
     "^# finC: lightest codeword of weight 3 \(1-based columns\): 1 2 3$"
 assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 merge=2" 255 "" "invalid 'merge=2': merge should be 0 or 1"
 rm -f "$DEM102" "$CWS102"
+
+# Test 103: drop=FILE drops the listed detectors (here D2, of the other basis) if this is exact: every column touching
+# them has a twin with the same other detectors and no dropped one (1-based columns 4 -> 1 and 6 -> 3; column 5 has no
+# other detector), with the same observables (first DEM) or L + A H (second DEM: A maps D2 to L0). The codewords found
+# (outC) are those of the full DEM, and finC codewords are mapped to the twins. Otherwise, a note is printed and the
+# full DEM is used (third DEM: column 7 has no twin; fourth DEM: the observables are not L + A H)
+DEM103=$(mktemp --suffix=.dem)
+DROP103=$(mktemp --suffix=.txt)
+CWS103=$(mktemp --suffix=.nz)
+printf '# the other basis\n2\n' > "$DROP103"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2 L0\nerror(0.1) D2\nerror(0.1) D1 D2\n' >> "$DEM103"
+for bin in "$BIN_FORK" "$BIN"; do
+    assert_output "$bin method=2 fdem=$DEM103 drop=$DROP103 wmax=3 outC=$CWS103 threads=1 debug=1" 0 "^3( 3 0)?$" \
+        "^#   dropped 1 of 3 detectors \(drop=.*\), exact: the 3 columns touching them have twins \(the same observ"
+    if [ "$(grep -v '^%' "$CWS103" | tr -s ' ')" != "3 1 2 3" ]; then
+        echo "  [FAIL] Test 103: expected the single codeword '3 1 2 3' in outC, got: $(grep -v '^%' "$CWS103")"
+        FAILED=1
+    fi
+done
+printf '%%%% NZLIST\n3 2 4 6\n4 2 3 4 5\n' > "$CWS103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 finC=$CWS103 threads=1 debug=33" 0 "^3 3 0$" \
+    "^# read 1 codewords from .*, total 1, min weight 3$"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 start=4 threads=1" 255 "" "no start column left"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx drop=$DROP103 wmax=3" 255 "" \
+    "drop can only be used when fdem is specified"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2\nerror(0.1) D2 L0\nerror(0.1) D1 D2 L0\n' >> "$DEM103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 debug=1" 0 "^3 3 0$" \
+    "twins \(L \+ A H with A != 0\), 3 columns kept$"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2 L0\nerror(0.1) D2\nerror(0.1) D1 D2\nerror(0.1) D2 D3\n' >> "$DEM103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 debug=0" 0 "^3 3 0$" \
+    "^# Note: drop=.* not used: column 7 \(1-based\) touches a dropped detector, but no column with the same other"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2\nerror(0.1) D2\nerror(0.1) D1 D2\n' >> "$DEM103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 debug=0" 0 "^3 3 0$" \
+    "^# Note: drop=.* not used: the observables of the twins are not L \+ A H for any matrix A; using the full DEM$"
+rm -f "$DEM103" "$DROP103" "$CWS103"
+
+# Test 104: --help TOPIC and --morehelp TOPIC print only the entries of the full help for TOPIC (names and aliases,
+# without case, '-', '_', and '=VALUE'), in the order of the full help under their section headers (each once); an
+# unknown topic gives the closest names on stderr and exit code 1; an argument with '=' is not a topic
+assert_output "$BIN_FORK --help maxC" 0 "^  maxC=\[int\] " ""
+assert_output "$BIN_FORK --morehelp=dest" 0 "^  dexp=\[int\] " ""
+assert_output "$BIN_FORK --help no-throttle" 0 "^  nothrottle=\[0\|1\] " ""
+assert_output "$BIN_FORK -h Batch" 0 "^  chunk_size=\[int\] " ""
+assert_output "$BIN_FORK --morehelp debug" 0 "^    2048 : No size cutoff" ""
+assert_output "$BIN_FORK --help mthod" 1 "" "no help entry for 'mthod'; did you mean method\?"
+assert_output "$BIN_FORK --help maxC,xyz" 1 "^  maxC=\[int\] " "no help entry for 'xyz' \(--morehelp lists all"
+assert_output "$BIN_FORK --help finH=x.mtx" 0 "^Extra parameters" ""
+assert_output "$BIN --help maxC" 0 "^  maxC=\[int\] " ""
+help_outline() {  # the section headers, the first words of the entries, and '-' for a blank line
+    awk '/^$/ {print "-"; next} /^[^ ]/ {print; next} /^  [^ ]/ {print $1}'
+}
+GOT104=$("$BIN_FORK" --help maxC,dW,DEXP | help_outline)
+EXP104=$(printf '%s\n' "Distance bounds and search guidance:" "dexp=[int]" "-" "Codeword collection and export:" \
+    "maxC=[int]" "dW=[int]")
+echo "Running: $BIN_FORK --help maxC,dW,DEXP (entries in the order of the full help)"
+if [ "$GOT104" != "$EXP104" ]; then
+    echo "  [FAIL] Expected: $EXP104"
+    echo "         Got: $GOT104"
+    FAILED=1
+fi
+GOT104=$("$BIN_FORK" --help maxC | help_outline)
+echo "Running: $BIN_FORK --help maxC (only the maxC entry)"
+if [ "$GOT104" != "$(printf 'Codeword collection and export:\nmaxC=[int]')" ]; then
+    echo "  [FAIL] Got: $GOT104"
+    FAILED=1
+fi
+GOT104=$("$BIN_FORK" --morehelp debug)
+echo "Running: $BIN_FORK --morehelp debug (the whole debug section)"
+if [ "$(printf '%s\n' "$GOT104" | head -1)" != "Debug output bitmap (debug=[int], default: 3):" ] || \
+   [ "$(printf '%s\n' "$GOT104" | tail -1)" != "  the thread allocation and timing." ] || \
+   [ "$(printf '%s\n' "$GOT104" | grep -c '^[^ ]')" != "1" ]; then
+    echo "  [FAIL] Got: $GOT104"
+    FAILED=1
+fi
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

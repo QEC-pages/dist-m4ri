@@ -96,9 +96,15 @@ typedef struct{
   char *fdem;
   double pmin;
   int merge;       /* 1: merge the equal columns of a DEM (same detectors and observables), see dem_merge_columns() */
-  int nvar_orig;   /* number of columns before merging (0: not merged) */
-  int *col_orig;   /* column -> its original column (the first one of its class; NULL: not merged) */
-  int *col_class;  /* original column -> column (NULL: not merged) */
+  int nvar_orig;   /* number of columns before merging (and dropping) the columns of a DEM (0: not changed) */
+  int *col_orig;   /* column -> its original column (the first one of its class; NULL: not changed) */
+  int *col_class;  /* original column -> column (-1: dropped, see dem_drop_detectors(); NULL: not changed) */
+  int nvar_merged; /* number of columns after merging the equal columns of a DEM (0: not merged) */
+  char *fdrop;     /* file with the detectors to drop from a DEM if this is exact, see dem_drop_detectors() */
+  int ndrop;       /* number of detectors dropped (0: none, or not verified) */
+  int ndrop_rows;  /* number of detectors (rows of H) before dropping */
+  int ndrop_cols;  /* number of columns which touch the dropped detectors (replaced by their twins) */
+  int drop_A;      /* 1: the twins have other observables (L(twin) = L + A H with A != 0) */
   char *finH;
   char *finG;
   char *finL;
@@ -397,7 +403,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.12.4"
+#define DIST_M4RI_VERSION "0.13.0"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -410,14 +416,14 @@ void print_short_help(const char *prog);
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
-  "  method, finH, finG, finL, fin, fdem, pmin, merge, classical, css,\n" \
+  "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, classical, css,\n" \
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start,\n" \
   "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, min_hits, cov_cws, refresh,\n" \
   "  finC, outC, maxC, dW, seed, debug\n\n" \
   "Help options:\n" \
-  "  -h, --help    : display help for commonly used parameters (fits 80 rows)\n" \
-  "  --morehelp    : display full help for all available parameters\n"
+  "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
+  "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
 
 #define USAGE \
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
@@ -435,6 +441,7 @@ void print_short_help(const char *prog);
   "  fdem=[file]        Stim detector error model (DEM) file\n" \
   "  pmin=[float]       Minimum error probability threshold to keep for DEM (0.0)\n" \
   "  merge=[0|1]        Merge equal DEM columns (exact; codewords use the first one) (1)\n" \
+  "  drop=[file]        DEM detectors to drop if verified exact (e.g., minority basis)\n" \
   "  classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)\n\n" \
   "Distance bounds and guidance:\n" \
   "  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)\n" \
@@ -469,8 +476,8 @@ void print_short_help(const char *prog);
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
   "  debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)\n\n" \
   "Help options:\n" \
-  "  -h, --help         Display this help message (commonly used parameters)\n" \
-  "  --morehelp         Display full help with all parameter descriptions\n" \
+  "  -h, --help         Display this help message (--help TOPIC: the same as --morehelp TOPIC)\n" \
+  "  --morehelp         Display full help for all parameters (--morehelp TOPIC: only TOPIC, e.g., maxC)\n" \
   "  --version          Display program version\n"
 
 #define MORE_HELP \
@@ -520,6 +527,21 @@ void print_short_help(const char *prog);
   "                     found use the first one of each set of equal columns (use\n" \
   "                     merge=0 to enumerate the codewords with each of them, or\n" \
   "                     expand=1 of dist_m4ri.py to expand the list found).\n" \
+  "  drop=[file]        Detectors of a DEM to drop, e.g., the minority-basis ones\n" \
+  "                     of a CSS circuit (0-based, separated by white space or\n" \
+  "                     commas; lines starting with '#' or '%%' are comments), if\n" \
+  "                     this is verified to be exact: every column touching them\n" \
+  "                     has a twin, a column with the same other detectors which\n" \
+  "                     touches none of them (no column if it has no other\n" \
+  "                     detector), with observables L + A H for one matrix A.\n" \
+  "                     Then the twins replace the columns touching the dropped\n" \
+  "                     detectors in any codeword, without increasing its weight,\n" \
+  "                     and the search runs on the other detectors and the columns\n" \
+  "                     which touch none of them: every codeword found (outC) is a\n" \
+  "                     codeword of the full DEM (using only these columns), and\n" \
+  "                     the distance is exact. finC codewords are mapped to the\n" \
+  "                     twins. Otherwise, a note is printed and the full DEM is\n" \
+  "                     used. Only valid with fdem.\n" \
   "  classical=[0|1]    Code type override:\n" \
   "                     1: Treat as a classical linear code (Hx only; ignores\n" \
   "                        or discards logical matrix L).\n" \
@@ -702,8 +724,16 @@ void print_short_help(const char *prog);
   "               finC), or the supplied dmax if smaller (0 if none).\n" \
   "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n\n" \
   "Help options:\n" \
-  "  -h, --help         Display help for commonly used parameters (fits 80 rows)\n" \
-  "  --morehelp         Display this full help message listing all parameters\n" \
+  "  -h, --help         Display help for commonly used parameters (fits 80 rows);\n" \
+  "                     --help TOPIC is the same as --morehelp TOPIC.\n" \
+  "  --morehelp         Display this full help message listing all parameters;\n" \
+  "                     --morehelp TOPIC (also --morehelp=TOPIC) displays only the\n" \
+  "                     entries of TOPIC, e.g., --morehelp maxC: one or more names\n" \
+  "                     separated by commas (e.g., maxC,dW), case-insensitive,\n" \
+  "                     without '-', '_', or '=VALUE', including aliases such as\n" \
+  "                     dest or batch (and debug for the debug output bitmap); an\n" \
+  "                     unknown name gives the closest names on stderr, and the\n" \
+  "                     exit code 1.\n" \
   "  --version          Display program version\n"
 
 #define BRIEF_HELP \

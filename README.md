@@ -31,6 +31,22 @@ first one of each set of equal columns (RW hit counts are those of the merged co
 `finC` codeword cancel; `merge=0` keeps all columns (e.g., to enumerate the codewords with each of the equal columns;
 the Python option `expand=1` expands the list found instead, see [Codeword Export](#codeword-export-outc--finc)).
 
+With `drop=[file]`, the detectors listed in the file are dropped if this is verified to be exact (e.g., the
+minority-basis detectors of a CSS circuit; the file is a text file with the 0-based detector indices, `k` for `Dk`,
+separated by white space or commas, where lines starting with `#` or `%` are comments). This holds if every column $j$
+touching a dropped detector has a *twin*: a column with the same other (kept) detectors which touches no dropped
+detector (or no column, if $j$ has no kept detector), with the observables $L_j + A H_j$ for one binary matrix $A$
+($A = 0$ for the usual CSS circuits; found by elimination otherwise). Replacing the columns of a codeword by their twins
+then gives a codeword of the same or a smaller weight which touches no dropped detector (its observables change by
+$A H c = 0$), so the distance is that of the submatrix of the kept detectors and of the columns which touch no dropped
+detector: e.g., the full DEMs of the Mitten circuits (`mitten_270`: 1080 detectors, 70254 columns) reduce to the size
+of the simplified DEMs (648 detectors, 8910 columns), and RW finds codewords of the minimum weights (9 and 7 for the
+two circuits) in a few seconds. The codewords found are codewords of the full DEM (in its column indices; they use
+only the columns which touch no dropped detector), and `finC` codewords are mapped to the twins. Otherwise, a note is
+printed, and the full DEM is used. For a Stim circuit classified as CSS, the Python wrapper passes its minority-basis
+detectors by default (see [Python Wrapper](#python-wrapper-dist_m4ripy)); the binary itself only sees the DEM, which
+does not say which detectors belong to which basis.
+
 All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthogonality conditions:
 $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
 The last condition is not required: it is sufficient that $L_X$, $L_Z$, and $L_X L_Z^T$ have the same full row rank
@@ -466,7 +482,7 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 
 ## Command-Line Usage and Help System
 
-`dist_m4ri` provides a three-tier help system:
+`dist_m4ri` provides a four-tier help system:
 
 1. **Short help on error**: Printed to `stderr` when invoked without arguments or with an unrecognized parameter,
    listing all allowed parameters concisely.
@@ -474,16 +490,22 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
    extra available parameters at the bottom, and points to `--morehelp`.
 3. **Full `--morehelp`**: Displays complete, detailed descriptions of all command-line parameters, debug bitmask flags,
    and output formats.
+4. **Help on some parameters, `--morehelp TOPIC`** (also `--morehelp=TOPIC`, `--help TOPIC`, or `--help=TOPIC`):
+   Displays only the entries of the full help for the parameters `TOPIC`, under their section headers, e.g.,
+   `dist_m4ri --help maxC,dW` (several names separated by commas; the names are case-insensitive, `-`, `_`, and
+   `=VALUE` are ignored, aliases such as `dest` or `batch` work, and `debug` gives the debug bitmap). An unknown name
+   gives the closest names on `stderr`, and the exit code `1`.
 
 `--help`, `--morehelp`, and `--version` print to `stdout`. Conflicting inputs: `fdem` together with matrix files
 (`finH`, `finG`, `finL`, `fin`), and `pmin` without `fdem`, are errors; `fin` followed by `finH`, `finG`, or `finL` is
-replaced by them (with a warning on `stderr`), while `fin` after them is an error.
+replaced by them (with a warning on `stderr`), while `fin` after them is an error. The Python CLI
+(`python3 dist_m4ri.py`) has the same help options (see [Python Wrapper](#python-wrapper-dist_m4ripy)).
 
 ### Standard Help (`dist_m4ri --help`)
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.12.4): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.13.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -500,6 +522,7 @@ Input matrices (Matrix Market .mmx/.mtx format or Stim DEM):
   fdem=[file]        Stim detector error model (DEM) file
   pmin=[float]       Minimum error probability threshold to keep for DEM (0.0)
   merge=[0|1]        Merge equal DEM columns (exact; codewords use the first one) (1)
+  drop=[file]        DEM detectors to drop if verified exact (e.g., minority basis)
   classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)
 
 Distance bounds and guidance:
@@ -540,8 +563,8 @@ Extra parameters (see --morehelp for details):
   debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)
 
 Help options:
-  -h, --help         Display this help message (commonly used parameters)
-  --morehelp         Display full help with all parameter descriptions
+  -h, --help         Display this help message (--help TOPIC: the same as --morehelp TOPIC)
+  --morehelp         Display full help for all parameters (--morehelp TOPIC: only TOPIC, e.g., maxC)
   --version          Display program version
 ```
 
@@ -627,25 +650,33 @@ interoperability without manual threading overhead.
   `dstop` (and it is not stored in the cache), and the returned $d$ is at most `dmax`. The two sectors are cached as
   the quantum codes `(H=Hx, G=Hz)` ($d_Z$) and `(H=Hz, G=Hx)` ($d_X$), with `L=Lx` / `L=Lz` if given, i.e., with the
   same cache records as `compute_quantum_distance()`.
-- `compute_dem_distance(dem=None, circuit=None, simple=None, full=False, basis=None, rounds=None, out_dir=None,`:
-  `out_dem=None, out_stim=None, p_noise=0.001, ...)`:
+- `compute_dem_distance(dem=None, circuit=None, basis=None, rounds=None, out_dir=None, out_dem=None, out_stim=None,`
+  `p_noise=0.001, drop=None, ...)`:
   Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file
-  (noise of strength `p_noise` is added to a noiseless circuit, see `add_noise()` below):
+  (noise of strength `p_noise` is added to a noiseless circuit, see `add_noise()` below; the DEM has all detectors):
   - Always performs **ancilla and data basis tracking** (`classify_qubits_thorough`) across virtual SWAP permutations
     and Clifford gates to identify data qubits, $X$-sector and $Z$-sector ancillas, routing qubits, and local data basis
     rotations (automatically recognizing both standard CSS codes and locally basis-rotated CSS codes such as **XZZX**).
-  - **`--simple` vs `--full`**: For CSS and locally rotated CSS `.stim` circuits, `--simple` (`simple=True`) is enabled
-    by default, stripping minority-basis detectors (`strip_minority_detectors`) to keep only primary-basis detectors and
-    produce a smaller, simpler DEM. Pass `--full` (`full=True`) to retain all detectors.
+  - **`drop`** (CLI: `drop=0|1|FILE`; default: `None`, i.e., on): for a Stim circuit classified as CSS, its
+    minority-basis detectors (see `strip_minority_detectors()`; the basis other than the memory basis `basis`) are
+    passed to the binary (`drop=FILE`), which drops them if this is verified to be exact (see the `drop` option in the
+    [Overview](#overview)). Then the distance of the full DEM (with the full DEM as the cache key) is found as fast as
+    that of the DEM with only the primary-basis detectors, and the codewords found are codewords of the full DEM which
+    use only errors touching no dropped detector; otherwise, a note is printed to `stderr`, and the full DEM is used.
+    `drop=False` (`drop=0`) keeps all detectors; `drop=FILE` passes the detectors listed in `FILE`, for any DEM.
+  - **`--simple` and `--full`** (`simple=`, `full=`): disabled since version 0.13.0 (accepted for backward
+    compatibility, but ignored with a warning to `stderr`). The simplified DEM (without the minority-basis detectors)
+    is replaced by `drop`, which is as fast and exact: the distance of the simplified DEM is only a lower bound on that
+    of the full DEM when dropping the detectors is not exact. To compute it anyway, pass the circuit stripped with
+    `strip_minority_detectors()`.
   - **`--rounds [N]`**: Constructs the DEM with `N` repetitions in the circuit's `REPEAT` block (`rounds=2` by default
     when `--rounds` is passed without a number). If the `.stim` circuit does not contain a `REPEAT` block, issues a
     warning to `stderr` and continues with the original circuit.
   - **`--out-dir DIR`, `--out-dem [FILE]`, `--out-stim [FILE]`**: Optionally saves the constructed DEM and/or the
-    processed (noisy, round-adjusted, detector-filtered) `.stim` circuit. When `--out-dem` or `--out-stim` is passed
-    without a filename (or `out_dem=True` / `out_stim=True`), filenames default to `<basename>_simp.dem` /
-    `<basename>_full.dem` and `<basename>_simp.stim` / `<basename>_full.stim`. By default, `--out-dir` defaults to the
-    directory of the input file. To use codewords (`outC`) later, save the DEM in the same run: a DEM generated again
-    from the saved circuit may differ with another version of `stim` (see
+    processed (noisy, round-adjusted) `.stim` circuit. When `--out-dem` or `--out-stim` is passed without a filename
+    (or `out_dem=True` / `out_stim=True`), filenames default to `<basename>_full.dem` and `<basename>_full.stim`. By
+    default, `--out-dir` defaults to the directory of the input file. To use codewords (`outC`) later, save the DEM in
+    the same run: a DEM generated again from the saved circuit may differ with another version of `stim` (see
     [Codeword Export](#codeword-export-outc--finc)).
   - **`merge`** (CLI: `merge=0|1`; default: `True`): the binary merges the equal columns of the DEM (see the DEM input
     in the [Overview](#overview)). This is exact, and the cache key does not depend on it; `merge=False` keeps all
@@ -653,9 +684,10 @@ interoperability without manual threading overhead.
   - **`expand`** (CLI: `expand=0|1`; default: `False`): the codewords returned and written to `outC` are expanded over
     the choices among equal columns (see [Codeword Export](#codeword-export-outc--finc)); `maxC > 0` limits the
     expanded list (with a warning if some codewords are dropped).
-- `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ...)` /
-  `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping, and
-  `REPEAT` block round adjustment.
+- `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ..., mask_out=None)` /
+  `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a
+  list `mask_out` receives one entry per detector: `True` if it is stripped; `compute_dem_distance()` uses it for the
+  detectors to drop), and `REPEAT` block round adjustment.
 - `has_noise(circuit)` / `add_noise(circuit, p=0.001)`: Inspects a `stim.Circuit` for noise instructions, and adds
   uniform circuit-level noise to a noiseless circuit: `DEPOLARIZE2(p)` after two-qubit gates (except classically
   controlled ones, e.g., `CX rec[-1] 5`), `DEPOLARIZE1(p/10)` after single-qubit gates and on idle qubits in each
@@ -666,7 +698,7 @@ interoperability without manual threading overhead.
   `get_cached_distance(..., start=None)`, and the `cache_file` argument of the `compute_*_distance()` functions (a
   persistent JSON file with the version `"__version__"`; the CLI uses `tmp_dist_cache.json` in the working directory
   unless `--no-cache` or `cache=FILE` is given). For a Stim circuit, `get_cached_distance(circuit=...)` processes it as
-  `compute_dem_distance()` does (with the same `simple`, `full`, `basis`, `rounds`, and `p_noise`), so that the same
+  `compute_dem_distance()` does (with the same `basis`, `rounds`, and `p_noise`), so that the same
   DEM gives the cache key. A cache file written by a newer version is ignored (with a warning) and is not overwritten.
   The CSS records written before version 0.12.0 (keys `css:...`) are converted into the two sector records: the lower
   bounds are kept, but an upper bound only if a stored codeword confirms it, or if it is smaller than that of the other
@@ -691,8 +723,13 @@ interoperability without manual threading overhead.
   `num_steps=`) raises `TypeError`, with the closest parameter name as a hint (`win=` is accepted for `kwin=`).
 - CLI (`python3 dist_m4ri.py`): `--version` also shows the version of the `dist_m4ri` binary; inputs which are ignored
   give a warning on `stderr` (the input is selected in the order `fdem`, `Hx`/`Hz`, `finH`/`finG`/`finL`/`fin`; e.g.,
-  matrices with `fdem`, `pmin`, `merge`, or `expand` without `fdem`, `fin` with `finH`, `classical=1` with `finG`), where
-  the binary rejects some of these combinations with an error.
+  matrices with `fdem`, `pmin`, `merge`, `expand`, or `drop` without `fdem`, `fin` with `finH`, `classical=1` with
+  `finG`), where the binary rejects some of these combinations with an error.
+- CLI help: `--help` (commonly used parameters, fits 80 rows) and `--morehelp` (all parameters); `--morehelp TOPIC`
+  (also `--morehelp=TOPIC`, and `--help TOPIC` or `--help=TOPIC`) prints only the entries of the parameters `TOPIC`
+  (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-`, `_`, and `=VALUE` are
+  ignored, and aliases such as `dest` or `batch` work). An unknown name gives the closest names on `stderr`, and the
+  exit code `1`. The binary has the same help options.
 - Optional solver backend: `solver="codedistance"` (uses the `codedistance` library if installed).
 - Debug output: `debug=N` (default: 0) is a bitmap, where the bits `1` to `32768` are passed to the binary (see
   [Debug Output](#debug-output-debugint); its `stderr` is then printed), and the higher bits are used by the wrapper:
@@ -756,7 +793,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (96 tests)
+# Run full C test suite (104 tests)
 make test
 ```
 
@@ -770,7 +807,7 @@ pytest tests/test_dist_m4ri.py -v
 
 The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes ($d \in [6, 36]$) and Stim circuits
 (Gross code, Mitten codes, honeycomb/color codes, bivariate bicycle codes) along with instructions for generating full
-and stripped DEMs via `dist_m4ri.add_noise`.
+DEMs via `dist_m4ri.add_noise` (and the stripped DEMs of the earlier versions via `dist_m4ri.strip_minority_detectors`).
 
 ---
 

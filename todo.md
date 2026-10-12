@@ -262,7 +262,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - C: done, the binary merges the equal columns on reading a DEM (`merge=1`, the default), with a map back to the
     original columns (`outC`, `finC`, `start`, `cbeg`, `cend`); bb72 DEM: 2664 -> 2232 columns, CC `wmax=6` in 0.06 s
     instead of 0.21 s.
-- [ ] **Full DEM from the simplified DEM** (`--full` mode of CSS circuits): the simplified DEM is the full DEM with the
+- [x] **Full DEM from the simplified DEM** (`--full` mode of CSS circuits): the simplified DEM is the full DEM with the
   minority-basis detector rows deleted (equal columns merged, empty columns dropped; they never flip an observable), so
   $d_{\rm simp} \le d_{\rm full}$, and $d_{\rm full} = d_{\rm simp}$ iff some minimum-weight simplified codeword lifts
   (one full error per column, with the deleted detectors cancelling too). Sufficient and checked column by column:
@@ -278,6 +278,17 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     checks (no full error projects to an observable-only column; every simplified error used has a clean preimage),
     and every lifted codeword re-verified in the full DEM (`finC` validation). The lower bound
     $d_{\rm simp} \le d_{\rm full}$ alone holds for any set of deleted detectors. An option disables it (for tests).
+  - Done differently (exact reduction in the binary, `drop=FILE`): every full column touching a deleted detector needs
+    a twin (same kept detectors, no deleted one, observables $L + A H$, $A$ by elimination); then the binary runs on
+    the kept detectors and the columns touching no deleted detector, and its codewords are full codewords (no lifting).
+    Python passes the minority-basis detectors with `--full` (`drop=1`, the default). mitten_270 full: 70254 -> 8910
+    columns, RW finds weight 9 (custom) and 7 (hef) in 3.5 s; mitten_90 full: exact $d = 5, 4$ by CC in 0.1 s.
+  - Since 0.13.0, the Python options `--simple` and `--full` (`simple=`, `full=`) are disabled (ignored with a
+    warning): the DEM of a Stim circuit always has all detectors, and `drop=1` (the minority-basis detectors of a CSS
+    circuit) is the default. Open: `drop=auto` in the binary for DEMs without a circuit (the DEM has no basis labels):
+    e.g., connect the detectors of the columns which are not the disjoint sum of two other columns (in a CSS circuit,
+    these are pure X or pure Z errors), take the components whose columns flip no observable as the minority detectors,
+    and verify as for `drop=FILE`.
 - [ ] **Extended CSS distance as a seed** (`tmp/distance.py`, code-capacity matrices with one column per hook error):
   not guaranteed to relate to the DEM distances for every CSS circuit. Its lower-bound direction
   ($d_{\rm ext} \le d_{\rm simp}$, via the telescoping sum of the detectors of each check) needs every single fault's

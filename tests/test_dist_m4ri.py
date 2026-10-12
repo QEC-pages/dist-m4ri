@@ -560,6 +560,46 @@ def test_cli_morehelp(capsys):
     assert "nothrottle=1" in captured.out
 
 
+def test_cli_morehelp_topic(capsys):
+    def entries(out):  # (section headers, the first words of the entries)
+        lines = out.splitlines()
+        return ([s for s in lines if s and not s[0].isspace()],
+                [s.split()[0] for s in lines if s.startswith("  ") and not s.startswith("   ")])
+
+    # --morehelp TOPIC: only the entries of TOPIC, under their section header
+    assert dist_m4ri.main(["--morehelp", "maxC"]) == 0
+    assert entries(capsys.readouterr().out) == (["Codeword collection and export:"], ["maxC=N"])
+    # several topics (case-insensitive, aliases): in the order of the full help, each section header once
+    assert dist_m4ri.main(["--morehelp=dW,MAXC,dest"]) == 0
+    assert entries(capsys.readouterr().out) == (["Distance bounds and guidance:", "Codeword collection and export:"],
+                                                ["dexp=N", "maxC=N", "dW=N"])
+    # '-', '_', and '=VALUE' are ignored; aliases in the descriptions ('Alias: batch=N', 'also trust_start=1')
+    for topic, first in (("no-cache", "--no-cache"), ("--rounds=3", "--rounds"), ("batch", "chunk_size=N"),
+                         ("trust_start", "--trust-start"), ("v", "--verbose"), ("out_dem=1", "--out-dem")):
+        assert dist_m4ri.main([f"--morehelp={topic}"]) == 0
+        assert entries(capsys.readouterr().out)[1] == [first], topic
+    # an unknown topic: the closest names on stderr, exit code 1 (the known topics are still printed)
+    assert dist_m4ri.main(["--morehelp", "mthod"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no help entry for 'mthod'; did you mean method?" in captured.err
+    assert dist_m4ri.main(["--morehelp", "maxC,xyz"]) == 1
+    captured = capsys.readouterr()
+    assert entries(captured.out)[1] == ["maxC=N"]
+    assert "no help entry for 'xyz'" in captured.err
+    # an option after --morehelp is not a topic: the full help
+    assert dist_m4ri.main(["--morehelp", "--verbose"]) == 0
+    assert "Calculation method:" in capsys.readouterr().out
+    # --help TOPIC (also -h TOPIC, --help=TOPIC, help=TOPIC): the same as --morehelp TOPIC; topics are collected
+    assert dist_m4ri.main(["--morehelp", "maxC,dest"]) == 0
+    expected = capsys.readouterr().out
+    assert entries(expected)[1] == ["dexp=N", "maxC=N"]
+    for argv in (["--help", "maxC,dest"], ["-h", "maxC,dest"], ["--help=maxC,dest"], ["help=maxC,dest"],
+                 ["--help", "maxC", "--morehelp", "dest"]):
+        assert dist_m4ri.main(argv) == 0
+        assert capsys.readouterr().out == expected, argv
+
+
 def test_cli_no_args_error(capsys):
     ret = dist_m4ri.main([])
     assert ret == 255
@@ -572,7 +612,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.12.4" in captured.out
+    assert "0.13.0" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -583,7 +623,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.12.4" in captured.out
+    assert "0.13.0" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -602,7 +642,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.12.4" in older_warn
+    assert "expected >= 0.13.0" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -799,26 +839,28 @@ def test_stim_simple_vs_full_and_basis_tracking(tmp_path, capsys):
     dist_m4ri.clear_distance_cache()
     dist_m4ri.disable_distance_cache()
     try:
-        # Default for CSS .stim is --simple
+        # The DEM has all 24 detectors; the binary drops the 8 minority-basis detectors (drop=1, the default)
         ret = dist_m4ri.main([str(stim_file), "-v", "--no-cache", "threads=2"])
         assert ret == 0
-        out_simple = capsys.readouterr().out
-        assert "mode: simple" in out_simple
-        assert "kept=16, stripped=8" in out_simple
+        captured = capsys.readouterr()
+        assert "Circuit detectors: 24, minority-basis=8" in captured.out
+        assert "dropped 8 of 24 detectors" in captured.out  # (the binary's summary, printed with -v)
+        assert "3 3 0 (exact)" in captured.out
 
-        # Explicit --full keeps all 24 detectors
-        ret = dist_m4ri.main(
-            [str(stim_file), "--full", "-v", "--no-cache", "threads=2"]
-        )
-        assert ret == 0
-        out_full = capsys.readouterr().out
-        assert "mode: full" in out_full
-        assert "kept=24, stripped=0" in out_full
+        # --simple and --full are disabled (since 0.13.0): ignored with a warning, the same DEM
+        for opt in ("--simple", "--full", "full=1", "simple=0"):
+            ret = dist_m4ri.main([str(stim_file), opt, "-v", "--no-cache", "threads=2"])
+            assert ret == 0
+            captured = capsys.readouterr()
+            name = "--" + opt.split("=")[0].lstrip("-")
+            assert f"# Warning: {name}: disabled since version 0.13.0, ignored" in captured.err
+            assert "Circuit detectors: 24, minority-basis=8" in captured.out
+            assert "3 3 0 (exact)" in captured.out
     finally:
         dist_m4ri.enable_distance_cache()
 
 
-def test_stim_xzzx_rotated_css(tmp_path):
+def test_stim_xzzx_rotated_css(tmp_path, capsys):
     if not dist_m4ri._HAS_STIM:
         pytest.skip("stim is not installed")
 
@@ -848,18 +890,18 @@ def test_stim_xzzx_rotated_css(tmp_path):
         xzzx_circ.to_file(str(stim_path))
 
         dist_m4ri.clear_distance_cache()
-        d_simp, info_simp = dist_m4ri.compute_dem_distance(
-            dem=str(stim_path), simple=True, threads=2
-        )
-        assert d_simp == 3
-        assert info_simp[0] == 3 and info_simp[1] == 3
-
-        dist_m4ri.clear_distance_cache()
-        d_full, info_full = dist_m4ri.compute_dem_distance(
-            dem=str(stim_path), full=True, threads=2
-        )
+        d_full, info_full = dist_m4ri.compute_dem_distance(dem=str(stim_path), threads=2, debug=1)
         assert d_full == 3
         assert info_full[0] == 3 and info_full[1] == 3
+        captured = capsys.readouterr()
+        assert "dropped 8 of 24 detectors" in captured.out  # (the minority-basis detectors: drop=1, the default)
+
+        # simple= and full= are disabled (since 0.13.0): ignored with a warning to stderr
+        for kw in ({"simple": True}, {"full": True}):
+            dist_m4ri.clear_distance_cache()
+            d, info = dist_m4ri.compute_dem_distance(dem=str(stim_path), threads=2, **kw)
+            assert (d, info[0], info[1]) == (3, 3, 3)
+            assert f"# Warning: {next(iter(kw))}=: disabled since version 0.13.0" in capsys.readouterr().err
 
 
 def test_stim_rounds_option(tmp_path, capsys):
@@ -878,7 +920,7 @@ def test_stim_rounds_option(tmp_path, capsys):
     stim_with_repeat = tmp_path / "surf_r5_Z.stim"
     circuit.to_file(str(stim_with_repeat))
 
-    # CLI argument parsing checks for --rounds, --simple, --full
+    # CLI argument parsing checks for --rounds, --simple, --full (the last two are disabled, parsed for the warning)
     args1 = dist_m4ri.parse_cli_args(["--rounds", str(stim_with_repeat)])
     assert args1["rounds"] == 2
     assert args1["fdem"] == str(stim_with_repeat)
@@ -886,26 +928,26 @@ def test_stim_rounds_option(tmp_path, capsys):
     args2 = dist_m4ri.parse_cli_args(["--rounds", "4", "--simple", str(stim_with_repeat)])
     assert args2["rounds"] == 4
     assert args2["simple"] is True
-    assert args2["full"] is False
+    assert args2["full"] is None
     assert args2["fdem"] == str(stim_with_repeat)
 
     args3 = dist_m4ri.parse_cli_args(["rounds=3", "--full", "basis=X", str(stim_with_repeat)])
     assert args3["rounds"] == 3
     assert args3["full"] is True
-    assert args3["simple"] is False
+    assert args3["simple"] is None
     assert args3["basis"] == "X"
 
     dist_m4ri.clear_distance_cache()
     dist_m4ri.disable_distance_cache()
     try:
-        # Bare --rounds sets rounds=2 (REPEAT 2 block -> 16 Z-detectors kept, 8 X-detectors stripped)
+        # Bare --rounds sets rounds=2 (REPEAT 2 block -> 24 detectors, of which 8 X-detectors are dropped)
         ret = dist_m4ri.main(
             [str(stim_with_repeat), "--rounds", "-v", "--no-cache", "threads=2"]
         )
         assert ret == 0
         out = capsys.readouterr().out
         assert "rounds=2" in out
-        assert "kept=16, stripped=8" in out
+        assert "Circuit detectors: 24, minority-basis=8" in out
 
         # Flattened circuit has no REPEAT block -> issues a warning and continues
         flat_stim = tmp_path / "surf_flat_Z.stim"
@@ -968,28 +1010,27 @@ def test_stim_out_dem_out_stim_out_dir(tmp_path):
     dist_m4ri.clear_distance_cache()
     dist_m4ri.disable_distance_cache()
     try:
-        # 2. Bare --out-dem and --out-stim (default --simple, default out-dir = input file dir)
+        # 2. Bare --out-dem and --out-stim (all detectors, default out-dir = input file dir)
         ret = dist_m4ri.main(
             [str(stim_file), "--rounds", "2", "--out-dem", "--out-stim", "--no-cache", "threads=2"]
         )
         assert ret == 0
-        exp_simp_dem = in_dir / "surf_d3_Z_simp.dem"
-        exp_simp_stim = in_dir / "surf_d3_Z_simp.stim"
-        assert exp_simp_dem.exists()
-        assert exp_simp_stim.exists()
+        exp_dem = in_dir / "surf_d3_Z_full.dem"
+        exp_stim = in_dir / "surf_d3_Z_full.stim"
+        assert exp_dem.exists()
+        assert exp_stim.exists()
 
-        saved_simp_circ = stim.Circuit.from_file(str(exp_simp_stim))
-        assert dist_m4ri.has_noise(saved_simp_circ)
-        assert saved_simp_circ.num_detectors == 16
-        saved_simp_dem = stim.DetectorErrorModel.from_file(str(exp_simp_dem))
-        assert saved_simp_dem.num_detectors == 16
+        saved_circ = stim.Circuit.from_file(str(exp_stim))
+        assert dist_m4ri.has_noise(saved_circ)
+        assert saved_circ.num_detectors == 24
+        saved_dem = stim.DetectorErrorModel.from_file(str(exp_dem))
+        assert saved_dem.num_detectors == 24
 
-        # 3. Bare --out-dem and --out-stim with --full and explicit --out-dir
+        # 3. Bare --out-dem and --out-stim with explicit --out-dir
         custom_dir = tmp_path / "custom_out"
         ret_full = dist_m4ri.main(
             [
                 str(stim_file),
-                "--full",
                 "--rounds",
                 "2",
                 "--out-dir",
@@ -1528,7 +1569,7 @@ def test_cli_conflict_warnings(capsys):
         assert ret == 0
         captured = capsys.readouterr()
         assert f"# Warning: fdem={SURF_D3_DEM} given: ignoring finH=" in captured.err
-        assert "# Warning: --simple: only used for a Stim circuit (.stim); ignored" in captured.err
+        assert "# Warning: --simple: disabled since version 0.13.0, ignored" in captured.err
         assert captured.out.rstrip().endswith("3 3 0 (exact)")
 
         ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", f"Lx={S5_L}", "pmin=0.01", "classical=1", "method=2",
@@ -1573,7 +1614,7 @@ def test_cli_outc_keeps_finc_codewords(tmp_path, capsys):
         dist_m4ri.clear_distance_cache()
 
 
-def test_dem_cache_merged_bounds_and_circuit_key(tmp_path):
+def test_dem_cache_merged_bounds_and_circuit_key(tmp_path, capsys):
     if not dist_m4ri._HAS_STIM:
         pytest.skip("stim is not installed")
     import stim
@@ -1588,9 +1629,12 @@ def test_dem_cache_merged_bounds_and_circuit_key(tmp_path):
     try:
         assert dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file) is None
         assert dist_m4ri.compute_dem_distance(circuit=circ, dstop=2, **kw) == (2, [2, 0, 0])
-        # get_cached_distance(circuit=...) finds the record of the processed (here: stripped) DEM
+        # get_cached_distance(circuit=...) finds the record of the processed DEM (with all detectors)
         assert dist_m4ri.get_cached_distance(circuit=circ, cache_file=cache_file)["d_info"] == [2, 0, 0]
-        assert dist_m4ri.get_cached_distance(circuit=circ, full=True, cache_file=cache_file) is None
+        assert dist_m4ri.get_cached_distance(circuit=circ, rounds=4, cache_file=cache_file) is None
+        # full= is disabled (ignored with a warning): the same record
+        assert dist_m4ri.get_cached_distance(circuit=circ, full=True, cache_file=cache_file)["d_info"] == [2, 0, 0]
+        assert "# Warning: full=: disabled since version 0.13.0" in capsys.readouterr().err
         # the exact distance from the cached lower bound; the cached dist is that of the merged bounds
         d, info, cws = dist_m4ri.compute_dem_distance(circuit=circ, wmax=3, do_cws=True, **kw)
         assert d == 3 and info == [3, 3, 0] and len(cws) > 0
@@ -1696,6 +1740,60 @@ def test_dem_circuit_outc_without_out_dem_warning(tmp_path, capsys):
             capsys.readouterr().err
         assert dist_m4ri.compute_dem_distance(out_dem=str(tmp_path / "c.dem"), **kw)[0] == 3
         assert "the codewords index the error lines" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_dem_drop_minority_detectors(tmp_path, capsys):
+    # drop (default for a CSS circuit): the binary drops the minority-basis detectors of the DEM if this is exact (all
+    # errors touching them have twins), with the distance and codewords of the full DEM
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated(
+        "surface_code:rotated_memory_z", rounds=3, distance=3, after_clifford_depolarization=0.001,
+        before_measure_flip_probability=0.001, after_reset_flip_probability=0.001,
+    )
+    drop = []
+    dem, _, _ = dist_m4ri._dem_from_input(None, circ, drop_out=drop)
+    assert len(drop) == 8 and dem.num_detectors == 24  # the X detectors of rounds 2 and 3 (4 each)
+    dist_m4ri.disable_distance_cache()
+    try:
+        kw = dict(circuit=circ, method=2, wmax=3, threads=1, do_cws=True)
+        d, info, cws = dist_m4ri.compute_dem_distance(debug=1, **kw)
+        out = capsys.readouterr().out
+        assert (d, info) == (3, [3, 3, 0]) and len(cws) > 0
+        assert re.search(r"dropped 8 of 24 detectors \(drop=.*\), exact: the \d+ columns touching them have twins "
+                         r"\(the same observables\)", out)
+        cols = dist_m4ri._dem_error_columns(dem)
+        for cw in cws:  # codewords of the full DEM
+            dets, obs = set(), set()
+            for j in cw:
+                dets ^= cols[j][0]
+                obs ^= cols[j][1]
+            assert not dets and obs
+        assert dist_m4ri.compute_dem_distance(drop=False, debug=1, **kw)[:2] == (3, [3, 3, 0])
+        assert "dropped" not in capsys.readouterr().out
+        # a DEM file with the detectors to drop in a file: A != 0 (exact), and a column without a twin (a note)
+        dem_file, drop_file = tmp_path / "a.dem", tmp_path / "drop.txt"
+        drop_file.write_text("# the other basis\n2\n")
+        dem_file.write_text("error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\nerror(0.1) D0 D2\nerror(0.1) D2 L0\n"
+                            "error(0.1) D1 D2 L0\n")
+        kw = dict(dem=str(dem_file), drop=str(drop_file), method=2, wmax=3, threads=1)
+        assert dist_m4ri.compute_dem_distance(**kw) == (3, [3, 3, 0])
+        assert "# Note: dropping" not in capsys.readouterr().err
+        with open(dem_file, "a") as f:
+            f.write("error(0.1) D2 D3\n")
+        assert dist_m4ri.compute_dem_distance(**kw) == (3, [3, 3, 0])
+        assert (f"# Note: dropping the detectors in {drop_file} is not exact for this DEM (column 7 (1-based) "
+                f"touches a dropped detector") in capsys.readouterr().err
+        # CLI: drop=1 for a DEM file (nothing to drop), drop= without fdem
+        assert dist_m4ri.main([f"fdem={dem_file}", "drop=1", "method=2", "wmax=3", "threads=1", "--no-cache"]) == 0
+        assert "# Warning: drop=1: the detectors to drop are only known for a CSS Stim circuit" in \
+            capsys.readouterr().err
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", f"drop={drop_file}", "method=2", "wmax=5",
+                               "threads=2", "--no-cache"]) == 0
+        assert "# Warning: drop=: only used with fdem= (a DEM or Stim circuit); ignored" in capsys.readouterr().err
     finally:
         dist_m4ri.enable_distance_cache()
 
