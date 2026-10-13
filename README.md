@@ -932,9 +932,16 @@ pytest tests/test_dist_m4ri.py -v
 
 ### Benchmark Suite (`benchmark/`)
 
-The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes ($d \in [6, 36]$) and Stim circuits
-(Gross code, Mitten codes, honeycomb/color codes, bivariate bicycle codes) along with instructions for generating full
-DEMs via `dist_m4ri.add_noise` (and the stripped DEMs of the earlier versions via `dist_m4ri.strip_minority_detectors`).
+The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes ($d = 4$ to $\le 34$) and Stim circuits
+(bivariate bicycle codes including the gross and double-gross codes, Mitten codes, and 2D-local torus BB circuits),
+their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on
+a 128-thread server: the scaling with the number of threads, and a comparison of the versions 0.14.0, 0.12.2, and
+0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight in at most 1.4 s,
+while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of the
+`mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
+detectors stripped, whose distance is only a lower bound).
+
+![Time to a minimum-weight codeword in the full DEMs of the benchmark circuits](benchmark/figures/fulldem_time.png)
 
 ---
 
