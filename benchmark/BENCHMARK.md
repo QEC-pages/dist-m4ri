@@ -11,8 +11,9 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 > are not always correct; the file names are kept unchanged. The distances computed with `dist_m4ri` are listed in the
 > tables below: an exact value is certified (by CC), and $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the
 > timeout. The values of the Mitten codes and circuits and of the full DEMs of the $X$-basis BB circuits are from the
-> overnight benchmark of `dist_m4ri` 0.14.0 (128 threads, Section 5); the values marked "(s)" are from shorter runs of
-> earlier versions on the stripped DEMs, and they are provisional.
+> overnight benchmark of `dist_m4ri` 0.14.0 (128 threads, Section 5), and the brackets of the double-gross and `bb_360`
+> circuits from the follow-up runs of 0.14.1 (Section 6); the values marked "(s)" are from shorter runs of earlier
+> versions on the stripped DEMs, and they are provisional.
 
 ## Directory Structure
 
@@ -181,12 +182,12 @@ The circuit-level distance is the minimum number of faults (error mechanisms of 
 logical error, i.e., the distance of the full DEM (all detectors).
 - Values without a mark: the full DEM, computed by `dist_m4ri` 0.14.0 in the overnight benchmark (Section 5;
   `method=3`, 128 threads), which drops the minority-basis detectors exactly (Section 3). An exact value is certified
-  by CC: in under 6 s, except 179 s for `gross` and 182 s for `mitten_270 custom`; the bracket of `double_gross` is
-  from a 2.8 h run.
+  by CC: in under 6 s, except 179 s for `gross` and 182 s for `mitten_270 custom`.
+- The brackets of `double_gross` and `bb_360` are from Section 6: the lower bounds are certified with a code-sized model
+  of the circuit (Section 6.3), and the upper bounds are codewords of the full DEM found by RW (Sections 6.1, 6.2).
 - (s): the stripped DEM (minority-basis detectors removed), computed by earlier versions in 30 s `method=3` runs on 16
   threads. The stripped DEM keeps a subset of the detectors, so its distance is a lower bound on the circuit distance
-  (for a bracket, only its lower end applies to the circuit). For `bb_360`, the upper bound 25 is from a codeword of
-  the full DEM found by RW in 180 s (0.14.0, Section 5.4).
+  (for a bracket, only its lower end applies to the circuit).
 - For the noiseless torus templates, the noise of `add_noise(p=0.001)` is added; the circuit distance depends on the
   noise model (which faults are included), but not on $p$. Since 0.14.0, `add_noise` also adds `DEPOLARIZE2` after
   `CZSWAP`, which these circuits use for routing: the values marked "old noise" are for the noise of the earlier
@@ -200,8 +201,8 @@ logical error, i.e., the distance of the full DEM (all detectors).
 | `bb_90_8_10_si1000_r10` | 8 | – |
 | `bb_108_8_10_si1000_r10` | 8 | – |
 | `gross_144_12_12_si1000_r12` | 10 | – |
-| `double_gross_288_12_18_si1000_r18` | [11, 19] | – |
-| `bb_360_12_24_si1000_r24` | [4 (s), 25] | – |
+| `double_gross_288_12_18_si1000_r18` | [12, 18] | – |
+| `bb_360_12_24_si1000_r24` | [12, 23] | – |
 | `bb_756_16_34_si1000_r34` | – | – |
 | `bb_72_12_6_uniform_r6` | 6 (s) | n/a |
 | `gross_144_12_12_uniform_r12` | [7, 11] (s) | n/a |
@@ -383,7 +384,8 @@ Section 4.
   bracket $[9, 10]$ in 2.8 h).
 - The double-gross circuit: CC certified $d_{\min} = 11$ (all rounds up to $w = 10$) and RW found a codeword of weight
   19; the run ended at 2.8 h, since the CC round $w = 11$ was predicted not to finish in the time left. The earlier
-  brackets were $[4, 24]$ for the stripped DEM and $[4, 53]$ for the full one.
+  brackets were $[4, 24]$ for the stripped DEM and $[4, 53]$ for the full one. Section 6 improves the bracket to
+  $[12, 18]$.
 
 ### 5.2 Full DEMs: time to a codeword of the minimum weight
 
@@ -462,10 +464,11 @@ faster in CC, and 12–100 times faster on the full DEM.
 - On the gross circuit, a RW step of 0.14.0 is 67 times faster, and all 128 threads are used (the dense RW working
   memory of the full matrix limits 0.12.2 to 32 threads): 270 times more steps in 180 s, and a codeword of the minimum
   weight 10.
-- For `bb_360`, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.4).
+- For `bb_360`, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.4); Section 6.1 found
+  one of weight 23.
 - For `bb_756`, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the
   reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, `nothrottle=1` would run
-  128 threads (about 55 GB).
+  128 threads (about 55 GB). With 32–64 RW threads, RW runs 6.7–7.4 times more steps per second (Section 6.1).
 
 ### 5.5 Where the speedups come from
 
@@ -499,3 +502,85 @@ faster in CC, and 12–100 times faster on the full DEM.
 The legacy `dist_m4ri_old` (one thread, built from the 0.14.0 sources) took, for the RW runs of Section 4, 66.5 s
 (`QX150`), 47.7 s (`c204H`), 203 s (`bb_72` stripped), 20.5 s (`bb_72` full, reduced), 69 s (gross), 92 s (double
 gross), 71 s (LDPC), and 85 s (double-gross DEM).
+
+---
+
+## 6. Follow-up Runs of 0.14.1 (2026-10-14)
+
+`dist_m4ri` 0.14.1 (commit `68e5e02`), on the server of Section 4, with the full DEMs of Section 5. RW runs use the
+reduced DEMs (`drop=auto`, the default) and `min_hits=0`.
+
+### 6.1 RW threads for the largest DEMs
+
+RW steps per second against the number of RW threads (`method=1`, timeout 90 s for `bb_360` and 150 s for `bb_756`,
+`nothrottle=1 threads=N`; "default": the throttled run).
+
+| DEM | searched | dense RW memory per thread | RW threads | RW steps/s | s/step/thread |
+| :--- | :--- | ---: | :--- | :--- | :--- |
+| `bb_360_12_24_si1000_r24_X` | 4500 x 43560 | 49 MB | default (32) | 45.2 | 0.70 |
+| | | | 8 / 16 / 32 | 14.9 / 31.1 / 45.3 | 0.54 / 0.51 / 0.70 |
+| | | | 64 / 128 | 42.1 / 33.9 | 1.50 / 3.58 |
+| `bb_756_16_34_si1000_r34_Z` | 13230 x 129276 | 0.43 GB | default (3) | 0.23 | 12.2 |
+| | | | 8 / 16 / 32 | 0.63 / 1.12 / 1.57 | 12.0 / 13.4 / 18.8 |
+| | | | 64 / 128 | 1.72 / 1.57 | 31.0 / 49.4 |
+
+- The throughput peaks at 32 RW threads for `bb_360`, the number the throttle allows, and at 32–64 threads for
+  `bb_756`, where the throttle allows only 3: the memory bus saturates at 32–64 threads whatever the size of the matrix.
+- The run of `bb_360` on 16 threads found a codeword of weight **23** (seed 20261014); a second run with the same
+  arguments (150 s) found weight 23 again. The upper bound was 25.
+
+### 6.2 RW windows on the gross and double-gross DEMs
+
+RW with the column permutations of each step from:
+- **hybrid**: the default (`kwin=0`), an index window of $\min(512, 3n/4)$ columns on every other step;
+- **uniform**: uniform permutations only (`kwin` at least $n$);
+- **idx1**, **idx2**: an index window of about one or two rounds of columns on every step (`kwin=1456` or `kwin=2912`
+  for double gross, 732 or 1464 for gross, with `win_mode=1`);
+- **bfs1**: a Tanner-graph ball of about one round on every step (`win_mode=0`).
+
+| case | hybrid | uniform | idx1 | idx2 | bfs1 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| gross: steps to weight 10 | 2.6k, 4.1k, 7.9k | 12k, 20k, 26k | 0.7k, 2.0k, 6.6k | 4.2k, 4.6k, 17k | 4.6k, 5.2k, 14k |
+| double gross: lightest in 120 s | 20, **18** | 36, 31 | **18**, **18** | **18**, **18** | 24, 26 |
+
+- gross: three seeds, 128 threads; double gross: two seeds, 32 RW threads (the default).
+- On gross, every configuration finds a codeword of the minimum weight 10 in under 3 s; the window steps need 4–10
+  times fewer steps than uniform ones.
+- On double gross, uniform steps are hopeless, index windows of one or two rounds found weight **18** in all four runs
+  (the upper bound was 19), the default hybrid in one of two, and Tanner-graph balls are much worse than the index
+  windows (time slabs).
+- A run with `kwin=1456 win_mode=1` for 180 s found three distinct codewords of weight 18. They consist of errors of the
+  final data measurements (the last error mechanisms of the DEM), i.e., a logical operator of the code (distance 18) at
+  the time boundary.
+
+### 6.3 Certified lower bounds from a code-sized model
+
+For a memory circuit, a certified lower bound needs no CC on the DEM:
+1. The checks of the measured basis are read from the detectors after the final data measurement: the final data
+   measurements in such a detector give the support of a check.
+2. One observable per check is added to the circuit: the parity of the final data measurements on its support. It is
+   deterministic, and it is flipped by an error mechanism iff the net effect of the error on the data anticommutes with
+   the check.
+3. The rows $O$ of these observables in the DEM are verified to lie in the row space of the detector matrix $H$:
+   $\mathrm{rank}([H; O]) = \mathrm{rank}(H)$. Then every codeword $x$ of the DEM ($Hx = 0$, $Lx \neq 0$) gives a
+   codeword of the model $(O, L)$ (equal columns merged) of weight at most $|x|$.
+4. The distance of the model, computed by CC with the binary, is therefore a lower bound on the circuit distance.
+
+The model has one column per net effect of a single error on the checks and the observables: about $2.5 n$ columns (the
+data qubits and the hook errors), with 3–6 nonzeros each. The verification held for all circuits below ($X$ basis).
+
+| Circuit | model | model distance | CC on the model | circuit distance |
+| :--- | :--- | :---: | :--- | :--- |
+| `bb_72_12_6_si1000_r6_X` | 36 x 180 | 5 | < 0.1 s | 6 |
+| `bb_90_8_10_si1000_r10_X` | 45 x 225 | 7 | < 0.1 s | 8 |
+| `bb_108_8_10_si1000_r10_X` | 54 x 270 | 6 | < 0.1 s | 8 |
+| `gross_144_12_12_si1000_r12_X` | 72 x 360 | 8 | 0.1 s | 10 |
+| `double_gross_288_12_18_si1000_r18_X` | 144 x 720 | 12 | $w \le 11$: 550 s; $w = 12$: 467 s | [12, 18] |
+| `bb_360_12_24_si1000_r24_X` | 180 x 900 | $\ge 12$ | $w \le 11$: 966 s | [12, 23] |
+
+- The CC runs on the double-gross and `bb_360` models used 32 threads, and 96 for the round $w = 12$ of double gross.
+- For these schedules, the model is 1–2 below the circuit distance: its lightest codewords do not lift to codewords of
+  the DEM of the same weight. It is still a certified bound, and CC on the model reaches weights which CC on the DEM
+  cannot: CC on the DEM of the double-gross circuit took 2.8 h on 128 threads to certify 11 (Section 5.1).
+- With the gaps of the smaller circuits, the true distances of the double-gross and `bb_360` circuits may be well below
+  the upper bounds 18 and 23.
