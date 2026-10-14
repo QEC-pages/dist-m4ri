@@ -1,4 +1,29 @@
 var searchData=
 [
-  ['outc_0',['outC',['../structparams__t.html#a3c694ec3b7732cb8729753162401ce94',1,'params_t']]]
+  ['n_0',['n',['../structcw__class__stats__t.html#a61a078a96d90c1aa7a7f3daa297cf1d6',1,'cw_class_stats_t::n'],['../structdrop__queue__t.html#aa92bc9ca5899efcf115ba7c8f25442a2',1,'drop_queue_t::n']]],
+  ['n0_1',['n0',['../structparams__t.html#a25f587c153f763af776bd21f89f4d029',1,'params_t']]],
+  ['name_2',['name',['../structhelp__entry__t.html#a208ab5858a0b7587af403aeac17c6880',1,'help_entry_t']]],
+  ['nchk_3',['nchk',['../structparams__t.html#a2a380c61241b18a605719b406c1435fb',1,'params_t']]],
+  ['ncols_4',['ncols',['../structcc__hash__t.html#af33492eb47a77c071f803a3a6ec650cb',1,'cc_hash_t']]],
+  ['ndrop_5',['ndrop',['../structparams__t.html#a187a58fe11371157a98a81d0bb6802fc',1,'params_t']]],
+  ['ndrop_5fcols_6',['ndrop_cols',['../structparams__t.html#ad9aa81944fd8e5e5132c9dd5e0b73d48',1,'params_t']]],
+  ['ndrop_5frows_7',['ndrop_rows',['../structparams__t.html#a3284b66b1db62186d4ab4c285776f07d',1,'params_t']]],
+  ['next_8',['next',['../structUT__hash__handle.html#a93bc88ffe97f85ea0d9e0056b7118942',1,'UT_hash_handle']]],
+  ['nfix_9',['nfix',['../structcc__walk__t.html#a2b087ee3131b77ee392c7c0ff402b776',1,'cc_walk_t']]],
+  ['nkeys_10',['nkeys',['../structcc__hash__t.html#af27a784283abcb3fca26159ab0f4a2c3',1,'cc_hash_t']]],
+  ['nnames_11',['nnames',['../structhelp__entry__t.html#a3f660b2fa696ab61cc2b441013c5b88d',1,'help_entry_t']]],
+  ['noexpand_12',['noexpand',['../structUT__hash__table.html#a635661789933752e7b83dac84430eae1',1,'UT_hash_table']]],
+  ['nonideal_5fitems_13',['nonideal_items',['../structUT__hash__table.html#a8cb66cfb259a204cda59a815e4db664f',1,'UT_hash_table']]],
+  ['noscan_14',['noscan',['../structparams__t.html#a39ef65e6585579451fc51f21c3e8e8f2',1,'params_t']]],
+  ['nothrottle_15',['nothrottle',['../structparams__t.html#af2e4bf6c1e707d864851dfeec3608cd8',1,'params_t']]],
+  ['nt_16',['nt',['../structrw__elim__t.html#ad65997492aeda10da17f679fab217de7',1,'rw_elim_t']]],
+  ['num_5fbuckets_17',['num_buckets',['../structUT__hash__table.html#a3ed04b6233facaedf910672578d86339',1,'UT_hash_table']]],
+  ['num_5fcws_18',['num_cws',['../structparams__t.html#ad0b54b0b218ae5b48134fe0550e74d19',1,'params_t']]],
+  ['num_5fitems_19',['num_items',['../structUT__hash__table.html#a74534cc14f080c96f94d8f5da83d9d76',1,'UT_hash_table']]],
+  ['num_5fthreads_20',['num_threads',['../structdistfork__ctx__t.html#a1b6899841bc45046c3c2df8d861706ed',1,'distfork_ctx_t']]],
+  ['nvar_21',['nvar',['../structparams__t.html#a691cc572781a2b35351e846ebcb8e6ba',1,'params_t']]],
+  ['nvar_5fmerged_22',['nvar_merged',['../structparams__t.html#a81c7c5338e69e4a999a5aa5aaa68270c',1,'params_t']]],
+  ['nvar_5forig_23',['nvar_orig',['../structparams__t.html#a091f8c008e38863c34413b620ed1221c',1,'params_t']]],
+  ['nz_24',['nz',['../structcsr__t.html#a8165d5f059150d9602c5329ebe415197',1,'csr_t::nz'],['../namespacegen__segfault__matrix.html#a9bbc9e2285562f99b126c189f27491cf',1,'gen_segfault_matrix.nz']]],
+  ['nzmax_25',['nzmax',['../structcsr__t.html#a91d6a7baf1505544be123a48d2400291',1,'csr_t']]]
 ];

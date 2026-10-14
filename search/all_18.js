@@ -1,8 +1,27 @@
 var searchData=
 [
-  ['qdistrnd_20tt_20convergence_20style_0',['Task 4: Hit-Count Stopping Criterion (&lt;tt&gt;QDistRnd&lt;/tt&gt; Convergence Style)',['../md_todo.html#autotoc_md79',1,'']]],
-  ['quantum_20css_20code_1',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
-  ['quick_5fsort_2',['quick_sort',['../sort_8h.html#aa7f4611c74a204a26c3a540f97ce988b',1,'QUICK_SORT:&#160;sort.h'],['../sort_8h.html#a2ea4458175eeea6bb85e327e4dd57fec',1,'QUICK_SORT(SORT_TYPE *dst, const size_t size):&#160;sort.h']]],
-  ['quick_5fsort_5fpartition_3',['QUICK_SORT_PARTITION',['../sort_8h.html#a6f94899a800b377d4baa4b22097a4688',1,'sort.h']]],
-  ['quick_5fsort_5frecursive_4',['QUICK_SORT_RECURSIVE',['../sort_8h.html#a40e17666aebd147e4f714019fbc36eff',1,'sort.h']]]
+  ['oct_202026_0',['4. Large DEMs, Simplified DEMs, and Symmetry (discussion, Oct 2026)',['../md_todo.html#autotoc_md104',1,'']]],
+  ['of_20_24n_24_1',['Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$',['../md_todo.html#autotoc_md88',1,'']]],
+  ['of_200_2014_200_202026_2010_2011_2',['5. Overnight Benchmark of 0.14.0 (2026-10-11)',['../md_benchmark_2BENCHMARK.html#autotoc_md22',1,'']]],
+  ['of_20a_20classical_20or_20quantum_20css_20code_3',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
+  ['of_20rw_4',['Convergence of RW',['../index.html#autotoc_md36',1,'']]],
+  ['of_20the_20minimum_20weight_5',['5.2 Full DEMs: time to a codeword of the minimum weight',['../md_benchmark_2BENCHMARK.html#autotoc_md24',1,'']]],
+  ['of_20threads_20tt_20benchmark_20figures_20tt_6',['4. Scaling with the Number of Threads (&lt;tt&gt;benchmark/figures/&lt;/tt&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md20',1,'']]],
+  ['of_20tt_20dexp_20tt_20_3a_7',['Dynamic Thread Allocation &amp; Role of &lt;tt&gt;dexp&lt;/tt&gt;:',['../md_README.html#autotoc_md51',1,'']]],
+  ['on_20no_20tt_20taskset_20tt_8',['5.3 Default parameters (no &lt;tt&gt;threads=&lt;/tt&gt;, throttling on, no &lt;tt&gt;taskset&lt;/tt&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md25',1,'']]],
+  ['one_5fvec_5fprint_9',['one_vec_print',['../util__hash_8h.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c'],['../dist__cc_8c.html#a2b2c5bddd99de4744a30a91c803c885e',1,'one_vec_print(const one_vec_t *const pvec):&#160;dist_cc.c']]],
+  ['one_5fvec_5ft_10',['one_vec_t',['../util__hash_8h.html#a6fec6ff254fd408f8f9cd7288562927e',1,'one_vec_t:&#160;util_hash.h'],['../structONE__VEC__T.html',1,'ONE_VEC_T']]],
+  ['operational_20modes_20reference_11',['3. Operational Modes Reference',['../md_todo.html#autotoc_md98',1,'']]],
+  ['options_12',['Restricting the CC Search (Expert Options)',['../md_README.html#autotoc_md49',1,'']]],
+  ['or_20quantum_20css_20code_13',['dist-m4ri - Distance of a Classical or Quantum CSS Code',['../md_README.html',1,'']]],
+  ['origins_20and_20references_14',['Origins and References',['../md_benchmark_2BENCHMARK.html#autotoc_md8',1,'']]],
+  ['outc_15',['outC',['../structparams__t.html#a3c694ec3b7732cb8729753162401ce94',1,'params_t']]],
+  ['outc_20tt_20tt_20finc_20tt_16',['Codeword Export (&lt;tt&gt;outC&lt;/tt&gt; / &lt;tt&gt;finC&lt;/tt&gt;)',['../md_README.html#autotoc_md57',1,'']]],
+  ['outd_17',['outD',['../structparams__t.html#a9cd4fa32464319f157d30d9de23e18f4',1,'params_t']]],
+  ['output_18',['Output',['../index.html#autotoc_md37',1,'']]],
+  ['output_20format_20stream_20separation_19',['Output Format &amp; Stream Separation',['../md_README.html#autotoc_md44',1,'']]],
+  ['output_20tt_20debug_20int_20tt_20',['Debug Output (&lt;tt&gt;debug=[int]&lt;/tt&gt;)',['../md_README.html#autotoc_md66',1,'']]],
+  ['overhaul_21',['1. High-Priority Roadmap: High-Performance RW Overhaul',['../md_todo.html#autotoc_md81',1,'']]],
+  ['overnight_20benchmark_20of_200_2014_200_202026_2010_2011_22',['5. Overnight Benchmark of 0.14.0 (2026-10-11)',['../md_benchmark_2BENCHMARK.html#autotoc_md22',1,'']]],
+  ['overview_23',['overview',['../md_README.html#autotoc_md42',1,'Overview'],['../index.html#autotoc_md31',1,'Overview']]]
 ];

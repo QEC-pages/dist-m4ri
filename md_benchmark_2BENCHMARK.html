@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.12.4</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.14.1</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -80,9 +80,9 @@ $(function() {
   <div class="headertitle"><div class="title">Benchmark Suite for &lt;tt&gt;dist-m4ri&lt;/tt&gt;</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md5"></a> This directory contains quantum LDPC CSS parity-check matrices (<code>.mtx</code>) and Stim circuit-level fault-tolerance files (<code>.stim</code>) spanning code distances $d = 4$ to $d \le 34$. Detector Error Models (<code>.dem</code>)—both full <code>DEPOLARIZE2</code> DEMs and simplified DEMs with minority-basis detectors stripped—can be generated on the fly from the <code>.stim</code> circuits using <code>add_noise</code> in <code><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></code> (or <code>distance.py</code>).</p>
+<div class="textblock"><p><a class="anchor" id="autotoc_md5"></a> This directory contains quantum LDPC CSS parity-check matrices (<code>.mtx</code>) and Stim circuit-level fault-tolerance files (<code>.stim</code>) spanning code distances $d = 4$ to $d \le 34$. Detector Error Models (<code>.dem</code>) can be generated on the fly from the <code>.stim</code> circuits with <code><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></code> (noise is added to the noiseless templates with <code>add_noise</code>); since version 0.14.0, the binary reduces the full DEM of a circuit exactly (Section 3), so that its distance, the circuit-level distance, is found as fast as that of the DEM with the minority-basis detectors stripped.</p>
 <blockquote class="doxtable">
-<p>&zwj;[!NOTE] The distances in the file names (and in the source patterns below) are the nominal values of the sources, and they are not always correct; the file names are kept unchanged. The distances computed with <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> are listed in the tables below: an exact value is certified (by CC), and $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the timeout. The values of the Mitten codes and circuits are from a longer benchmark (<code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> 0.12.1, 128 threads, up to 2.8 h per run); the other values are from <code>method=3</code> runs on 16 threads (30–60 s per run), and they are provisional. </p>
+<p>&zwj;[!NOTE] The distances in the file names (and in the source patterns below) are the nominal values of the sources, and they are not always correct; the file names are kept unchanged. The distances computed with <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> are listed in the tables below: an exact value is certified (by CC), and $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the timeout. The values of the Mitten codes and circuits and of the full DEMs of the $X$-basis BB circuits are from the overnight benchmark of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> 0.14.0 (128 threads, Section 5); the values marked "(s)" are from shorter runs of earlier versions on the stripped DEMs, and they are provisional. </p>
 </blockquote>
 <h1><a class="anchor" id="autotoc_md6"></a>
 Directory Structure</h1>
@@ -91,7 +91,7 @@ Directory Structure</h1>
 <li><code>stim_bb/</code>: Unmodified Bivariate Bicycle (BB), Gross, and Double-Gross <code>.stim</code> circuits from external repositories.</li>
 <li><code>stim_mitten/</code>: Mitten code <code>.stim</code> circuits generated via <code>quits</code> with <code>CircuitBuildOptions(get_all_detectors=True)</code>.</li>
 <li><code>stim_torus/</code>: 2D local torus Bivariate Bicycle <code>.stim</code> circuits (<code>d = 14</code> to <code>17</code>, noiseless templates).</li>
-<li><code>figures/</code>: scaling of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> with the number of threads on some of these codes and circuits (Section 4).</li>
+<li><code>figures/</code>: scaling of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> with the number of threads on some of these codes and circuits (Section 4), and the time to a minimum-weight codeword in the full DEMs of the circuits (Section 5).</li>
 </ul>
 <hr  />
 <h1><a class="anchor" id="autotoc_md8"></a>
@@ -114,7 +114,7 @@ Origins and References</h1>
 </ul>
 </li>
 <li><b>2D Local Torus Bivariate Bicycle Stim Circuits</b><ul>
-<li>Copied unmodified from <code>tmp/*.stim</code>. These are noiseless syndrome-extraction templates on a 2D torus with Swap/CNOT routing (<code>L3_torus</code>) for codes with the nominal parameters $[[60, 8, 14]]$, $[[120, 8, 15]]$, $[[200, 16, 16]]$, and $[[200, 8, 17]]$ (from the file names; the code distances have not been verified) in both $X$ and $Z$ bases. When passed to <code><a class="el" href="namespacedist__m4ri.html#a41d4411d5df28a2edda1e52f8c16610d">dist_m4ri.compute_dem_distance</a>(circuit=...)</code> or <code><a class="el" href="namespacedist__m4ri.html#ae80e8ff8942093d705adb7a89d875386">dist_m4ri.add_noise</a>(circuit, p=0.001)</code>, standard circuit-level depolarizing noise (<code>DEPOLARIZE1</code>, <code>DEPOLARIZE2</code>, <code>X_ERROR</code>/<code>Z_ERROR</code>) is added on the fly.</li>
+<li>Copied unmodified from <code>tmp/*.stim</code>. These are noiseless syndrome-extraction templates on a 2D torus with Swap/CNOT routing (<code>L3_torus</code>, with <code>CZSWAP</code> gates) for codes with the nominal parameters $[[60, 8, 14]]$, $[[120, 8, 15]]$, $[[200, 16, 16]]$, and $[[200, 8, 17]]$ (from the file names; the code distances have not been verified) in both $X$ and $Z$ bases. When passed to <code><a class="el" href="namespacedist__m4ri.html#a680946d0b6434e971b5f50bc7b76183f">dist_m4ri.compute_dem_distance</a>(circuit=...)</code> or <code><a class="el" href="namespacedist__m4ri.html#a4ad4f2c24687c529959396fbbdd5bddc">dist_m4ri.add_noise</a>(circuit, p=0.001)</code>, uniform circuit-level noise is added on the fly (<code>DEPOLARIZE2</code> after the two-qubit gates, including <code>CZSWAP</code> since 0.14.0, <code>DEPOLARIZE1</code> after the one-qubit gates and on idle qubits, and <code>X_ERROR</code>/<code>Z_ERROR</code> at resets and measurements; see the README).</li>
 </ul>
 </li>
 </ol>
@@ -174,7 +174,7 @@ Origins and References</h1>
 <li>For the BB codes, $d_X = d_Z$ by the symmetry exchanging the two sectors, so one sector suffices.</li>
 <li><code>mitten_330_66_6_C11xS3</code> has distance <b>4</b>, not 6: $d_X = 4$ (132 $X$-type logical operators of weight 4 were found, and those checked independently over GF(2) are valid), while $d_Z = 6$.</li>
 <li><code>mitten_210_42_8_C7xS3</code> has distance <b>6</b>, not 8: $d_X = 6$, while $d_Z = 8$.</li>
-<li>The Mitten distances are certified by CC (under 0.5 s per sector on 128 threads), and the lightest logical operator found in each run passed an independent check over GF(2). Numbers of minimum-weight logical operators ($X$ / $Z$, enumerated by CC): 66 / 90 (<code>mitten_90</code>), 180 / 120 (<code>mitten_150</code>), 84 / 42 (<code>mitten_210</code>), 216 / 648 (<code>mitten_270</code>), and 132 / 132 (<code>mitten_330</code>).</li>
+<li>The Mitten distances are certified by CC (0.14.0: under 0.04 s per sector on 128 threads), and the lightest logical operator found in each run of the 0.12.1 benchmark passed an independent check over GF(2). Numbers of minimum-weight logical operators ($X$ / $Z$, enumerated by CC): 66 / 90 (<code>mitten_90</code>), 180 / 120 (<code>mitten_150</code>), 84 / 42 (<code>mitten_210</code>), 216 / 648 (<code>mitten_270</code>), and 132 / 132 (<code>mitten_330</code>).</li>
 <li>For <code>bb_360</code> and <code>bb_756</code>, the published distances are upper bounds (the codewords found by <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> have the same weights), and the lower bounds are from 60 s runs.</li>
 </ul>
 <hr  />
@@ -273,150 +273,353 @@ Origins and References</h1>
 <p>The nominal code parameters are taken from the file names; the code distances of the torus codes have not been verified yet (no check matrices are included).</p>
 <h2><a class="anchor" id="autotoc_md16"></a>
 2.4 Circuit-Level Distances</h2>
-<p>The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable logical error.</p><ul>
-<li>It is computed for the stripped DEM (minority-basis detectors removed), which is the default of <code><a class="el" href="namespacedist__m4ri.html#a41d4411d5df28a2edda1e52f8c16610d">dist_m4ri.compute_dem_distance</a>(circuit=...)</code>, with 30 s <code>method=3</code> runs on 16 threads (Mitten circuits: up to 2.1 h on 128 threads).</li>
-<li>In parentheses: the distance of the full DEM, where it was computed. The stripped DEM keeps a subset of the detectors of the full DEM, so its distance is a lower bound on the full-DEM distance. †: lower bound from the stripped DEM, upper bound from a codeword of the full DEM (Mitten circuits: found by RW on the full DEM in 240 s on 128 threads; CC on the full DEMs of <code>mitten_270</code>, for 2.8 h, did not close the brackets).</li>
+<p>The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable logical error, i.e., the distance of the full DEM (all detectors).</p><ul>
+<li>Values without a mark: the full DEM, computed by <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> 0.14.0 in the overnight benchmark (Section 5; <code>method=3</code>, 128 threads), which drops the minority-basis detectors exactly (Section 3). An exact value is certified by CC: in under 6 s, except 179 s for <code>gross</code> and 182 s for <code>mitten_270 custom</code>; the bracket of <code>double_gross</code> is from a 2.8 h run.</li>
+<li>(s): the stripped DEM (minority-basis detectors removed), computed by earlier versions in 30 s <code>method=3</code> runs on 16 threads. The stripped DEM keeps a subset of the detectors, so its distance is a lower bound on the circuit distance (for a bracket, only its lower end applies to the circuit). For <code>bb_360</code>, the upper bound 25 is from a codeword of the full DEM found by RW in 180 s (0.14.0, Section 5.4).</li>
+<li>For the noiseless torus templates, the noise of <code>add_noise(p=0.001)</code> is added; the circuit distance depends on the noise model (which faults are included), but not on $p$. Since 0.14.0, <code>add_noise</code> also adds <code>DEPOLARIZE2</code> after <code>CZSWAP</code>, which these circuits use for routing: the values marked "old noise" are for the noise of the earlier versions (no noise after <code>CZSWAP</code>), and the distance with the current noise can be lower (it is the same, 6, for <code>n60</code> in the $X$ basis).</li>
 <li>"–": not computed yet; "n/a": no circuit for this basis.</li>
-<li>For the noiseless torus templates, the noise of <code>add_noise(p=0.001)</code> is added. The circuit distance depends on the noise model (which faults are included), but not on $p$.</li>
 </ul>
 <table class="markdownTable">
 <tr class="markdownTableHead">
 <th class="markdownTableHeadLeft">Circuit (<code>.stim</code> file name without <code>_X</code>/<code>_Z</code>)   </th><th class="markdownTableHeadLeft">$X$ basis   </th><th class="markdownTableHeadLeft">$Z$ basis    </th></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6</code>   </td><td class="markdownTableBodyLeft">6 (full: 6†)   </td><td class="markdownTableBodyLeft">6    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6</code>   </td><td class="markdownTableBodyLeft">6   </td><td class="markdownTableBodyLeft">6 (s)    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10</code>   </td><td class="markdownTableBodyLeft">[7, 8]   </td><td class="markdownTableBodyLeft">–    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10</code>   </td><td class="markdownTableBodyLeft">8   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10</code>   </td><td class="markdownTableBodyLeft">[7, 8]   </td><td class="markdownTableBodyLeft">–    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10</code>   </td><td class="markdownTableBodyLeft">8   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12</code>   </td><td class="markdownTableBodyLeft">[7, 10]   </td><td class="markdownTableBodyLeft">–    </td></tr>
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12</code>   </td><td class="markdownTableBodyLeft">10   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_si1000_r18</code>   </td><td class="markdownTableBodyLeft">[4, 24] (full: [4, 53]†)   </td><td class="markdownTableBodyLeft">–    </td></tr>
+<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_si1000_r18</code>   </td><td class="markdownTableBodyLeft">[11, 19]   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24</code>   </td><td class="markdownTableBodyLeft">[4, 29]   </td><td class="markdownTableBodyLeft">–    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24</code>   </td><td class="markdownTableBodyLeft">[4 (s), 25]   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowOdd">
 <td class="markdownTableBodyLeft"><code>bb_756_16_34_si1000_r34</code>   </td><td class="markdownTableBodyLeft">–   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>bb_72_12_6_uniform_r6</code>   </td><td class="markdownTableBodyLeft">6   </td><td class="markdownTableBodyLeft">n/a    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_uniform_r6</code>   </td><td class="markdownTableBodyLeft">6 (s)   </td><td class="markdownTableBodyLeft">n/a    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>gross_144_12_12_uniform_r12</code>   </td><td class="markdownTableBodyLeft">[7, 11]   </td><td class="markdownTableBodyLeft">n/a    </td></tr>
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_uniform_r12</code>   </td><td class="markdownTableBodyLeft">[7, 11] (s)   </td><td class="markdownTableBodyLeft">n/a    </td></tr>
 <tr class="markdownTableRowEven">
 <td class="markdownTableBodyLeft"><code>double_gross_288_12_18_uniform_r18</code>   </td><td class="markdownTableBodyLeft">–   </td><td class="markdownTableBodyLeft">n/a    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">5 (full: 5)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">5    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">4 (full: 4)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">4    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">7 (full: 7†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">7    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">5 (full: 5†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">5    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">6 (full: 6†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">6    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">5 (full: 5†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">5    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">9 (full: [9, 10]†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">9    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">7 (full: [7, 8]†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">7    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">4 (full: 4†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">4    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">4 (full: 4†)    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4</code>   </td><td class="markdownTableBodyLeft">n/a   </td><td class="markdownTableBodyLeft">4    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_L3_torus_..._n60_k8_d14</code>   </td><td class="markdownTableBodyLeft">6 (full: 6†)   </td><td class="markdownTableBodyLeft">6    </td></tr>
+<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_L3_torus_..._n60_k8_d14</code>   </td><td class="markdownTableBodyLeft">6   </td><td class="markdownTableBodyLeft">6 (s, old noise)    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_..._n120_k8_d15</code>   </td><td class="markdownTableBodyLeft">6   </td><td class="markdownTableBodyLeft">–    </td></tr>
+<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_..._n120_k8_d15</code>   </td><td class="markdownTableBodyLeft">6 (s, old noise)   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_..._n200_k16_d16</code>   </td><td class="markdownTableBodyLeft">[6, 8]   </td><td class="markdownTableBodyLeft">–    </td></tr>
+<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_..._n200_k16_d16</code>   </td><td class="markdownTableBodyLeft">[6, 8] (s, old noise)   </td><td class="markdownTableBodyLeft">–    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>ENENESESENENE_L3_torus_..._n200_k8_d17</code>   </td><td class="markdownTableBodyLeft">[6, 8]   </td><td class="markdownTableBodyLeft">–   </td></tr>
+<td class="markdownTableBodyLeft"><code>ENENESESENENE_L3_torus_..._n200_k8_d17</code>   </td><td class="markdownTableBodyLeft">[6, 8] (s, old noise)   </td><td class="markdownTableBodyLeft">–   </td></tr>
 </table>
-<p>The circuit-level distances are often below the code distances in the file names. For example, the gross-code circuit has distance at most 10, consistent with the circuit-level distance $\le 10$ reported for the IBM syndrome-extraction circuit. For the Mitten codes, the "hook-error-free" schedule has a lower circuit-level distance than the <code>custom</code> schedule (4 vs 5, 5 vs 7, 5 vs 6, and 7 vs 9 for <code>mitten_90</code>, <code>mitten_150</code>, <code>mitten_210</code>, and <code>mitten_270</code>; 4 with both schedules for <code>mitten_330</code>). The <code>custom</code> schedule reaches the code's $d_X$ for <code>mitten_210</code> (6) and <code>mitten_330</code> (4), and $d_X - 1$ for <code>mitten_90</code>, <code>mitten_150</code>, and <code>mitten_270</code> (unless the full DEM of <code>mitten_270</code> has distance 10).</p>
+<p>The circuit-level distances are often below the code distances in the file names. For example, the gross-code circuit has distance 10, consistent with the circuit-level distance $\le 10$ reported for the IBM syndrome-extraction circuit, and the BB circuits with $d = 10$ have distance 8. For the Mitten codes, the "hook-error-free" schedule has a lower circuit-level distance than the <code>custom</code> schedule (4 vs 5, 5 vs 7, 5 vs 6, and 7 vs 9 for <code>mitten_90</code>, <code>mitten_150</code>, <code>mitten_210</code>, and <code>mitten_270</code>; 4 with both schedules for <code>mitten_330</code>). The <code>custom</code> schedule reaches the code's $d_X$ for <code>mitten_210</code> (6) and <code>mitten_330</code> (4), and $d_X - 1$ for <code>mitten_90</code>, <code>mitten_150</code>, and <code>mitten_270</code>.</p>
 <hr  />
 <h1><a class="anchor" id="autotoc_md18"></a>
-3. Generating Full vs. Minority-Detector-Stripped DEMs on the Fly</h1>
-<p>In circuit-level noise models using <code>DEPOLARIZE2(p)</code>, cross-term two-qubit Pauli errors (such as $X \otimes Z$, $Y \otimes X$, $Y \otimes Z$, $Y \otimes Y$) occur with probability $p/15 = O(p)$, the same order as single-type errors ($X \otimes X$ or $Z \otimes Z$). Consequently, the full DEM (<code>circuit.detector_error_model(decompose_errors=False)</code>) couples $X$-detectors and $Z$-detectors into a single large parity-check matrix with up to $\sim 7\times$ more unique error columns than a single-basis projection.</p>
-<p>To avoid storing 41 MB of pre-generated <code>.dem</code> files in the repository, DEMs can be generated on the fly from the <code>.stim</code> files using <code><a class="el" href="namespacedist__m4ri.html#ae80e8ff8942093d705adb7a89d875386">dist_m4ri.add_noise</a></code> (for noiseless circuits) and <code>strip_minority_detectors</code> (in <code>distance.py</code>): </p><div class="fragment"><div class="line"><span class="keyword">import</span> stim</div>
-<div class="line"><span class="keyword">import</span> dist_m4ri</div>
+3. Full DEMs and Their Exact Reduction</h1>
+<p>In circuit-level noise models using <code>DEPOLARIZE2(p)</code>, cross-term two-qubit Pauli errors (such as $X \otimes Z$, $Y \otimes X$, $Y \otimes Z$, $Y \otimes Y$) occur with probability $p/15 = O(p)$, the same order as single-type errors ($X \otimes X$ or $Z \otimes Z$). Consequently, the full DEM couples $X$-detectors and $Z$-detectors into a single large parity-check matrix with 6–8 times more distinct error columns than a single-basis projection. Since version 0.14.0, <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> merges the equal columns of a DEM and drops detectors when this is verified to be exact (<code>drop=auto</code>, the default; see "Dropping DEM Detectors" in the README): for every circuit below, it finds exactly the minority-basis detectors, and the matrix searched is the stripped DEM with its equal columns merged (the search for the detectors to drop takes 0.02–0.4 s, and 1.2 s for <code>bb_756</code>). Hence the distance of the full DEM, the circuit-level distance, is found as fast as that of the stripped DEM, which is only a lower bound on it.</p>
+<p>To avoid storing large pre-generated <code>.dem</code> files in the repository, DEMs can be generated on the fly from the <code>.stim</code> files (noise of strength <code>p_noise=0.001</code> is added to the noiseless templates; <code>--force-noise</code> replaces the noise of a circuit by this uniform noise): </p><div class="fragment"><div class="line"><span class="keyword">import</span> dist_m4ri</div>
 <div class="line"> </div>
-<div class="line">circ = stim.Circuit.from_file(<span class="stringliteral">&quot;benchmark/stim_torus/NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim&quot;</span>)</div>
-<div class="line"><span class="keywordflow">if</span> <span class="keywordflow">not</span> <a class="code hl_function" href="namespacedist__m4ri.html#af6da541fc8054f730c34f7f85f32d7f0">dist_m4ri.has_noise</a>(circ):</div>
-<div class="line">    circ = <a class="code hl_function" href="namespacedist__m4ri.html#ae80e8ff8942093d705adb7a89d875386">dist_m4ri.add_noise</a>(circ, p=0.001)</div>
-<div class="line">dem_full = circ.detector_error_model(decompose_errors=<span class="keyword">False</span>)</div>
-<div class="line">dist, bounds = <a class="code hl_function" href="namespacedist__m4ri.html#a41d4411d5df28a2edda1e52f8c16610d">dist_m4ri.compute_dem_distance</a>(dem=dem_full)</div>
-<div class="ttc" id="anamespacedist__m4ri_html_a41d4411d5df28a2edda1e52f8c16610d"><div class="ttname"><a href="namespacedist__m4ri.html#a41d4411d5df28a2edda1e52f8c16610d">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, Optional[bool] simple=None, bool full=False, Optional[str] basis=None, Optional[int] rounds=None, Optional[Union[str, Path]] out_dir=None, Optional[Union[bool, str, Path]] out_dem=None, Optional[Union[bool, str, Path]] out_stim=None, float p_noise=0.001, bool trust_start=False, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l04038">dist_m4ri.py:4090</a></div></div>
-<div class="ttc" id="anamespacedist__m4ri_html_ae80e8ff8942093d705adb7a89d875386"><div class="ttname"><a href="namespacedist__m4ri.html#ae80e8ff8942093d705adb7a89d875386">dist_m4ri.add_noise</a></div><div class="ttdeci">Any add_noise(Any circuit, float p=0.001)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l01619">dist_m4ri.py:1619</a></div></div>
-<div class="ttc" id="anamespacedist__m4ri_html_af6da541fc8054f730c34f7f85f32d7f0"><div class="ttname"><a href="namespacedist__m4ri.html#af6da541fc8054f730c34f7f85f32d7f0">dist_m4ri.has_noise</a></div><div class="ttdeci">bool has_noise(Any circuit)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l01516">dist_m4ri.py:1516</a></div></div>
+<div class="line"><span class="comment"># the full DEM of the circuit, reduced exactly by the binary; also save the reduced DEM and its maps to the full one</span></div>
+<div class="line">dist, bounds = <a class="code hl_function" href="namespacedist__m4ri.html#a680946d0b6434e971b5f50bc7b76183f">dist_m4ri.compute_dem_distance</a>(</div>
+<div class="line">    circuit=<span class="stringliteral">&quot;benchmark/stim_torus/NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim&quot;</span>,</div>
+<div class="line">    out_dem=<span class="stringliteral">&quot;tmp/torus_n60_X_full.dem&quot;</span>, out_reduced=<span class="stringliteral">&quot;tmp/torus_n60_X&quot;</span>)  <span class="comment"># tmp/torus_n60_X_red.dem, _red.json</span></div>
+<div class="ttc" id="anamespacedist__m4ri_html_a680946d0b6434e971b5f50bc7b76183f"><div class="ttname"><a href="namespacedist__m4ri.html#a680946d0b6434e971b5f50bc7b76183f">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, bool merge=True, bool expand=False, Optional[Union[bool, int, str, Path]] drop=None, Optional[Union[str, Path]] outD=None, Optional[Union[bool, str, Path]] out_reduced=None, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, Optional[bool] simple=None, Optional[bool] full=None, Optional[str] basis=None, Optional[int] rounds=None, Optional[Union[str, Path]] out_dir=None, Optional[Union[bool, str, Path]] out_dem=None, Optional[Union[bool, str, Path]] out_stim=None, float p_noise=0.001, bool force_noise=False, bool trust_start=False, Optional[bool] sort_rows=None, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l04426">dist_m4ri.py:4485</a></div></div>
 </div><!-- fragment --><table class="markdownTable">
 <tr class="markdownTableHead">
-<th class="markdownTableHeadLeft">Stim Circuit (<code>.stim</code> -&gt; <code>.dem</code>)   </th><th class="markdownTableHeadLeft">Basis   </th><th class="markdownTableHeadLeft">Full (<code>dets x errs</code>)   </th><th class="markdownTableHeadLeft">Stripped (<code>dets x errs</code>)   </th><th class="markdownTableHeadLeft">$k$    </th></tr>
+<th class="markdownTableHeadLeft">Stim circuit   </th><th class="markdownTableHeadLeft">Basis   </th><th class="markdownTableHeadLeft">Full (dets x errs)   </th><th class="markdownTableHeadLeft">Stripped   </th><th class="markdownTableHeadLeft">Searched (0.14.0)   </th><th class="markdownTableHeadLeft">$k$    </th></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$360 \times 23,394$   </td><td class="markdownTableBodyLeft">$216 \times 3,330$   </td><td class="markdownTableBodyLeft">18    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">360 x 23,394   </td><td class="markdownTableBodyLeft">216 x 3,330   </td><td class="markdownTableBodyLeft">216 x 2,970   </td><td class="markdownTableBodyLeft">18    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$360 \times 22,410$   </td><td class="markdownTableBodyLeft">$216 \times 3,330$   </td><td class="markdownTableBodyLeft">18    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">360 x 22,410   </td><td class="markdownTableBodyLeft">216 x 3,330   </td><td class="markdownTableBodyLeft">216 x 2,970   </td><td class="markdownTableBodyLeft">18    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$720 \times 47,700$   </td><td class="markdownTableBodyLeft">$420 \times 6,660$   </td><td class="markdownTableBodyLeft">30    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">720 x 47,700   </td><td class="markdownTableBodyLeft">420 x 6,660   </td><td class="markdownTableBodyLeft">420 x 5,910   </td><td class="markdownTableBodyLeft">30    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$720 \times 46,130$   </td><td class="markdownTableBodyLeft">$420 \times 6,660$   </td><td class="markdownTableBodyLeft">30    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">720 x 46,130   </td><td class="markdownTableBodyLeft">420 x 6,660   </td><td class="markdownTableBodyLeft">420 x 5,910   </td><td class="markdownTableBodyLeft">30    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$840 \times 54,726$   </td><td class="markdownTableBodyLeft">$504 \times 7,770$   </td><td class="markdownTableBodyLeft">42    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">840 x 54,726   </td><td class="markdownTableBodyLeft">504 x 7,770   </td><td class="markdownTableBodyLeft">504 x 6,930   </td><td class="markdownTableBodyLeft">42    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$840 \times 52,437$   </td><td class="markdownTableBodyLeft">$504 \times 7,665$   </td><td class="markdownTableBodyLeft">42    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">840 x 52,437   </td><td class="markdownTableBodyLeft">504 x 7,665   </td><td class="markdownTableBodyLeft">504 x 6,825   </td><td class="markdownTableBodyLeft">42    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$1,080 \times 70,254$   </td><td class="markdownTableBodyLeft">$648 \times 9,990$   </td><td class="markdownTableBodyLeft">54    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">1,080 x 70,254   </td><td class="markdownTableBodyLeft">648 x 9,990   </td><td class="markdownTableBodyLeft">648 x 8,910   </td><td class="markdownTableBodyLeft">54    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$1,080 \times 67,482$   </td><td class="markdownTableBodyLeft">$648 \times 9,990$   </td><td class="markdownTableBodyLeft">54    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">1,080 x 67,482   </td><td class="markdownTableBodyLeft">648 x 9,990   </td><td class="markdownTableBodyLeft">648 x 8,910   </td><td class="markdownTableBodyLeft">54    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$1,320 \times 85,932$   </td><td class="markdownTableBodyLeft">$792 \times 12,210$   </td><td class="markdownTableBodyLeft">66    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">1,320 x 85,932   </td><td class="markdownTableBodyLeft">792 x 12,210   </td><td class="markdownTableBodyLeft">792 x 10,890   </td><td class="markdownTableBodyLeft">66    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$1,320 \times 81,642$   </td><td class="markdownTableBodyLeft">$792 \times 11,880$   </td><td class="markdownTableBodyLeft">66    </td></tr>
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">1,320 x 81,642   </td><td class="markdownTableBodyLeft">792 x 11,880   </td><td class="markdownTableBodyLeft">792 x 10,560   </td><td class="markdownTableBodyLeft">66    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$432 \times 17,280$   </td><td class="markdownTableBodyLeft">$252 \times 2,664$   </td><td class="markdownTableBodyLeft">12    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">432 x 17,280   </td><td class="markdownTableBodyLeft">252 x 2,664   </td><td class="markdownTableBodyLeft">252 x 2,232   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>bb_72_12_6_uniform_r6_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$432 \times 16,200$   </td><td class="markdownTableBodyLeft">$252 \times 2,232$   </td><td class="markdownTableBodyLeft">12    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">432 x 17,244   </td><td class="markdownTableBodyLeft">252 x 2,664   </td><td class="markdownTableBodyLeft">252 x 2,232   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$900 \times 37,440$   </td><td class="markdownTableBodyLeft">$495 \times 5,490$   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">900 x 37,440   </td><td class="markdownTableBodyLeft">495 x 5,490   </td><td class="markdownTableBodyLeft">495 x 4,590   </td><td class="markdownTableBodyLeft">8    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$1,080 \times 44,928$   </td><td class="markdownTableBodyLeft">$594 \times 6,588$   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">900 x 37,395   </td><td class="markdownTableBodyLeft">495 x 5,490   </td><td class="markdownTableBodyLeft">495 x 4,590   </td><td class="markdownTableBodyLeft">8    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$1,728 \times 72,576$   </td><td class="markdownTableBodyLeft">$936 \times 10,512$   </td><td class="markdownTableBodyLeft">12    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">1,080 x 44,928   </td><td class="markdownTableBodyLeft">594 x 6,588   </td><td class="markdownTableBodyLeft">594 x 5,508   </td><td class="markdownTableBodyLeft">8    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>gross_144_12_12_uniform_r12_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$1,728 \times 67,824$   </td><td class="markdownTableBodyLeft">$936 \times 8,784$   </td><td class="markdownTableBodyLeft">12    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">1,080 x 44,874   </td><td class="markdownTableBodyLeft">594 x 6,588   </td><td class="markdownTableBodyLeft">594 x 5,508   </td><td class="markdownTableBodyLeft">8    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_si1000_r18_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$5,184 \times 221,184$   </td><td class="markdownTableBodyLeft">$2,736 \times 31,392$   </td><td class="markdownTableBodyLeft">12    </td></tr>
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">1,728 x 72,576   </td><td class="markdownTableBodyLeft">936 x 10,512   </td><td class="markdownTableBodyLeft">936 x 8,784   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_uniform_r18_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$5,184 \times 206,496$   </td><td class="markdownTableBodyLeft">$2,736 \times 26,208$   </td><td class="markdownTableBodyLeft">12    </td></tr>
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">1,728 x 72,504   </td><td class="markdownTableBodyLeft">936 x 10,512   </td><td class="markdownTableBodyLeft">936 x 8,784   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$8,640 \times 371,520$   </td><td class="markdownTableBodyLeft">$4,500 \times 52,200$   </td><td class="markdownTableBodyLeft">12    </td></tr>
+<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_si1000_r18_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">5,184 x 221,184   </td><td class="markdownTableBodyLeft">2,736 x 31,392   </td><td class="markdownTableBodyLeft">2,736 x 26,208   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>bb_756_16_34_si1000_r34_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$25,704 \times 1,112,832$   </td><td class="markdownTableBodyLeft">$13,230 \times 154,980$   </td><td class="markdownTableBodyLeft">16    </td></tr>
+<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_si1000_r18_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">5,184 x 221,040   </td><td class="markdownTableBodyLeft">2,736 x 31,392   </td><td class="markdownTableBodyLeft">2,736 x 26,208   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$120 \times 4,830$   </td><td class="markdownTableBodyLeft">$90 \times 1,500$   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">8,640 x 371,520   </td><td class="markdownTableBodyLeft">4,500 x 52,200   </td><td class="markdownTableBodyLeft">4,500 x 43,560   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$120 \times 4,830$   </td><td class="markdownTableBodyLeft">$90 \times 1,500$   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">8,640 x 371,340   </td><td class="markdownTableBodyLeft">4,500 x 52,200   </td><td class="markdownTableBodyLeft">4,500 x 43,560   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w12p_n120_k8_d15_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$240 \times 9,600$   </td><td class="markdownTableBodyLeft">$180 \times 3,000$   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_756_16_34_si1000_r34_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">25,704 x 1,112,832   </td><td class="markdownTableBodyLeft">13,230 x 154,980   </td><td class="markdownTableBodyLeft">13,230 x 129,276   </td><td class="markdownTableBodyLeft">16    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w12p_n120_k8_d15_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$240 \times 9,600$   </td><td class="markdownTableBodyLeft">$180 \times 3,000$   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_756_16_34_si1000_r34_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">25,704 x 1,112,454   </td><td class="markdownTableBodyLeft">13,230 x 154,980   </td><td class="markdownTableBodyLeft">13,230 x 129,276   </td><td class="markdownTableBodyLeft">16    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$400\times 16,000$   </td><td class="markdownTableBodyLeft">$300\times 5,000$   </td><td class="markdownTableBodyLeft">16    </td></tr>
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_uniform_r6_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">432 x 16,200   </td><td class="markdownTableBodyLeft">252 x 2,232   </td><td class="markdownTableBodyLeft">252 x 2,232   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$400\times 16,000$   </td><td class="markdownTableBodyLeft">$300\times 5,000$   </td><td class="markdownTableBodyLeft">16    </td></tr>
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_uniform_r12_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">1,728 x 67,824   </td><td class="markdownTableBodyLeft">936 x 8,784   </td><td class="markdownTableBodyLeft">936 x 8,784   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyLeft"><code>ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_X.dem</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">$400 \times 14,800$   </td><td class="markdownTableBodyLeft">$300 \times 4,800$   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_uniform_r18_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">5,184 x 206,496   </td><td class="markdownTableBodyLeft">2,736 x 26,208   </td><td class="markdownTableBodyLeft">2,736 x 26,208   </td><td class="markdownTableBodyLeft">12    </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyLeft"><code>ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_Z.dem</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">$400 \times 14,800$   </td><td class="markdownTableBodyLeft">$300 \times 4,800$   </td><td class="markdownTableBodyLeft">8   </td></tr>
+<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_..._n60_k8_d14_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">120 x 10,710   </td><td class="markdownTableBodyLeft">90 x 1,500   </td><td class="markdownTableBodyLeft">90 x 1,500   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_..._n60_k8_d14_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">120 x 10,710   </td><td class="markdownTableBodyLeft">90 x 1,500   </td><td class="markdownTableBodyLeft">90 x 1,500   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_..._n120_k8_d15_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">240 x 21,120   </td><td class="markdownTableBodyLeft">180 x 3,000   </td><td class="markdownTableBodyLeft">180 x 3,000   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_..._n120_k8_d15_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">240 x 21,120   </td><td class="markdownTableBodyLeft">180 x 3,000   </td><td class="markdownTableBodyLeft">180 x 3,000   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_..._n200_k16_d16_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">400 x 35,200   </td><td class="markdownTableBodyLeft">300 x 5,000   </td><td class="markdownTableBodyLeft">300 x 5,000   </td><td class="markdownTableBodyLeft">16    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_..._n200_k16_d16_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">400 x 35,200   </td><td class="markdownTableBodyLeft">300 x 5,000   </td><td class="markdownTableBodyLeft">300 x 5,000   </td><td class="markdownTableBodyLeft">16    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>ENENESESENENE_..._n200_k8_d17_X</code>   </td><td class="markdownTableBodyLeft"><code>X</code>   </td><td class="markdownTableBodyLeft">400 x 29,200   </td><td class="markdownTableBodyLeft">300 x 4,800   </td><td class="markdownTableBodyLeft">300 x 4,800   </td><td class="markdownTableBodyLeft">8    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>ENENESESENENE_..._n200_k8_d17_Z</code>   </td><td class="markdownTableBodyLeft"><code>Z</code>   </td><td class="markdownTableBodyLeft">400 x 29,200   </td><td class="markdownTableBodyLeft">300 x 4,800   </td><td class="markdownTableBodyLeft">300 x 4,800   </td><td class="markdownTableBodyLeft">8   </td></tr>
 </table>
+<p>The sizes are those of the DEMs generated by <code><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></code> 0.14.0 (stim 1.16; the torus templates with the noise of <code>add_noise</code>, which since 0.14.0 includes <code>DEPOLARIZE2</code> after <code>CZSWAP</code>: their full DEMs have about twice as many columns as with the noise of the earlier versions, and the same stripped DEMs). The full DEMs of the <code>si1000</code> and Mitten circuits have 5–7% equal columns, and their stripped DEMs 11–16% (merged by the binary); the DEMs of the uniform-noise circuits and of the torus templates have none.</p>
 <hr  />
 <h1><a class="anchor" id="autotoc_md20"></a>
 4. Scaling with the Number of Threads (&lt;tt&gt;benchmark/figures/&lt;/tt&gt;)</h1>
-<p>Wall time and speedup $T(1)/T(p)$ of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> for $p = 1, \dots, 128$ threads on a two-socket AMD EPYC 7B13 server (2 x 32 cores, 128 logical CPUs with SMT), with <code>nothrottle=1</code>, <code>threads=p</code>, and <code>taskset</code> to the logical CPUs $0..p-1$ (socket 0 first, then socket 1, then the SMT siblings for $p &gt; 64$; the gray line marks $p = 64$, one thread per physical core). Each run does a fixed amount of work: <code>method=1</code> a fixed number of RW <code>steps</code> with <code>min_hits=0</code>, <code>method=2</code> all CC rounds up to <code>wmax</code>, and <code>method=3</code> both (or, with the default parameters, the search for the exact distance). Versions: 0.12.2 (<code>method=1</code> only for $p = 16, 64, 128$: its RW kernel is that of 0.12.1), 0.12.1, the master branch (0.9.0), and the legacy single-threaded <code>dist_m4ri_old</code> (one thread). The times include reading the input (median of repeated runs for the fast cases).</p>
+<p>Wall time and speedup $T(1)/T(p)$ of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> for $p = 1, \dots, 128$ threads on a two-socket AMD EPYC 7B13 server (2 x 32 cores, 128 logical CPUs with SMT, 236 GB of memory), with <code>nothrottle=1</code>, <code>threads=p</code>, and <code>taskset</code> to the logical CPUs $0..p-1$ (socket 0 first, then socket 1, then the SMT siblings for $p &gt; 64$; the gray line marks $p = 64$, one thread per physical core). Each run does a fixed amount of work: <code>method=1</code> a fixed number of RW <code>steps</code> with <code>min_hits=0</code>, <code>method=2</code> all CC rounds up to <code>wmax</code>, and <code>method=3</code> both (or, with the default parameters, the search for the exact distance). Versions (Section 5): 0.14.0, 0.12.2, 0.9.0 (pull request #26), and the legacy single-threaded <code>dist_m4ri_old</code> (one thread; built from the 0.14.0 sources, so that it shares the input stage, e.g., the merging of equal columns and the dropping of detectors of a DEM). The runs of 0.9.0 were limited to 600 s per case and method (both older versions: 400 s on the full DEM), from many threads to few, so that some of the runs with few threads are missing; an open marker is a run stopped at the wall-clock limit. The times include reading the input (median of repeated runs for the fast cases).</p>
 <p><img src="figures/scaling_gross_css.png" alt="Scaling for the gross code" class="inline"/></p>
-<p><b>gross</b> $[[144, 12, 12]]$, one sector (<code>css/gross_144_12_12_Hx.mtx</code> with <code>_Hz.mtx</code>; <code>method=1</code>: <code>steps=3000000</code>, <code>method=2</code>: <code>wmax=11</code>, <code>method=3</code>: default parameters). RW scales almost linearly up to 64 threads (58x), and the SMT siblings add another 40% (82x at 128 threads). CC up to $w = 11$ takes only 0.22 s on one thread: beyond 8–16 threads, the run (25–45 ms) is limited by the start-up of the threads. Compared with master, RW is 1.9x faster, and CC 21x (one thread).</p>
+<p><b>gross</b> $[[144, 12, 12]]$, one sector (<code>css/gross_144_12_12_Hx.mtx</code> with <code>_Hz.mtx</code>; <code>method=1</code>: <code>steps=3000000</code>, <code>method=2</code>: <code>wmax=11</code>, <code>method=3</code>: default parameters). RW takes 50 s on one thread (as in 0.12.2; 0.9.0: 96 s) and scales almost linearly up to 64 threads (58x); the SMT siblings add another 40% (80x at 128 threads). CC up to $w = 11$ takes 0.067 s on one thread, 3.3x less than 0.12.2 and 75x less than 0.9.0; beyond 8–16 threads, the run (15–25 ms) is limited by the start-up of the threads.</p>
 <p><img src="figures/scaling_dgross_css.png" alt="Scaling for the double-gross code" class="inline"/></p>
-<p><b>double-gross</b> $[[288, 12, 18]]$, one sector (<code>steps=1000000</code>; <code>wmax=15</code>; <code>steps=500000 wmax=15</code>). RW scales to 90x at 128 threads. In 0.12.1, CC stops at a speedup of 16: a CC round hands out start columns, and the clusters from the first start column, which can grow to all larger columns, are about $w/n \approx 5%$ of the round. With the CC work units of 0.12.2 (start columns split into pieces), CC up to $w = 15$ takes 0.44 s on 128 threads (speedup 89) instead of 3.1 s, and <code>method=3</code> 0.75 s instead of 3.2 s; master needs 485 s for this CC run on 128 threads.</p>
+<p><b>double-gross</b> $[[288, 12, 18]]$, one sector (<code>steps=1000000</code>; <code>wmax=15</code>; <code>steps=500000 wmax=15</code>). RW scales to 80x at 128 threads (55 s on one thread; 0.9.0: 127 s). CC up to $w = 15$ takes 10 s on one thread, 3.9x less than 0.12.2 (the last cluster extension is now looked up in a hash table), and 0.16 s on 128 threads (speedup 62); 0.9.0 needs 472 s for this CC run on 128 threads. <code>method=3</code>: 0.46 s on 128 threads (0.12.2: 0.75 s; 0.9.0: 551 s).</p>
 <p><img src="figures/scaling_dgross_dem.png" alt="Scaling for the double-gross circuit DEM" class="inline"/></p>
-<p><b>double-gross circuit</b> (<code>stim_bb/double_gross_288_12_18_si1000_r18_X.stim</code>, stripped DEM $2736 \times 31392$; <code>steps=300</code>; <code>wmax=5</code>; <code>steps=150 wmax=5</code>). RW on this large matrix is limited by the memory bandwidth (dense copies of $H$ and $H^T$, about 21 MB per thread): at most about 20x, at 64 threads on both sockets. Pinned to one socket, 16 and 32 threads take the same time, and the SMT siblings make RW slower; with the default parameters (no pinning), the memory throttle limits RW to 32 threads on this DEM. CC scales well (48x at 128 threads) and is 20–30x faster than master. </p>
+<p><b>double-gross circuit</b> (<code>stim_bb/double_gross_288_12_18_si1000_r18_X.stim</code>, stripped DEM $2736 \times 31392$, merged to 26208 columns by 0.14.0; <code>steps=300</code>; <code>wmax=5</code>; <code>steps=150 wmax=5</code>). RW takes 20.7 s on one thread, 2.8x less than 0.12.2 (1.2x from merging the equal columns, 2.3x from the faster RW elimination on large matrices); on this large matrix it is limited by the memory bandwidth (dense copies of $H$ and $H^T$ per thread), at most about 15–20x, at 64 threads on both sockets, and the SMT siblings of socket 0 ($p = 96$) make it slower. CC up to $w = 5$ takes 0.61 s on one thread, 21x less than 0.12.2 (1.8x from merging, 11x from the faster CC), and 0.12–0.15 s from 16 threads on.</p>
+<p><img src="figures/scaling_bb_dem_full.png" alt="Scaling for the full DEM of the bb_72 circuit" class="inline"/></p>
+<p><b>bb_72 circuit, full DEM</b> (<code>stim_bb/bb_72_12_6_si1000_r6_X.stim</code>, $432 \times 17280$; <code>steps=20000</code>; <code>wmax=5</code>; default parameters, i.e., the exact distance 6). 0.14.0 reduces the full DEM exactly to $252 \times 2232$ (the stripped DEM, merged): RW takes 5.6 s on one thread instead of 99 s (0.12.2) and 163 s (0.9.0, two threads), and 0.18 s on 128 threads instead of 2.1 s and 7.2 s. CC up to $w = 5$ takes 0.11 s on one thread, against 176 s for 0.12.2 on four threads and more than 400 s for 0.9.0 on 128 threads; on 128 threads, 0.088 s against 9.8 s for 0.12.2 (112x). The reduced problem is so small that more threads hardly help CC (0.08–0.11 s); the exact distance takes 0.09–0.24 s.</p>
+<hr  />
+<h1><a class="anchor" id="autotoc_md22"></a>
+5. Overnight Benchmark of 0.14.0 (2026-10-11)</h1>
+<p>Versions: 0.14.0 (commit <code>40faf58</code>), 0.12.2 (<code>528f35f</code>, the version of the previous benchmark), and 0.9.0 (<code>1f46277</code>, pull request #26, 2026-09-18), on the server of Section 4. All versions read the same DEM files (the components of decomposed errors summed mod 2, so that the older DEM readers read the same matrices), identical to the inputs of the previous benchmark of 0.12.1; 1547 runs in 7 h, plus 40 runs of the ablation (Section 5.5). The scaling runs are in Section 4.</p>
+<h2><a class="anchor" id="autotoc_md23"></a>
+5.1 Certified circuit distances (0.14.0, full DEMs, &lt;tt&gt;method=3&lt;/tt&gt;, 128 threads)</h2>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">Circuit   </th><th class="markdownTableHeadLeft">full DEM   </th><th class="markdownTableHeadLeft">searched   </th><th class="markdownTableHeadCenter">$d$   </th><th class="markdownTableHeadRight">time (s)   </th><th class="markdownTableHeadLeft">0.12.1: stripped DEM    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">360 x 23394   </td><td class="markdownTableBodyLeft">216 x 2970   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.18   </td><td class="markdownTableBodyLeft">5 in 0.06 s    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">360 x 22410   </td><td class="markdownTableBodyLeft">216 x 2970   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.18   </td><td class="markdownTableBodyLeft">4 in 0.05 s    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z</code>   </td><td class="markdownTableBodyLeft">720 x 47700   </td><td class="markdownTableBodyLeft">420 x 5910   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">0.56   </td><td class="markdownTableBodyLeft">7 in 8.0 s    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5_Z</code>   </td><td class="markdownTableBodyLeft">720 x 46130   </td><td class="markdownTableBodyLeft">420 x 5910   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.40   </td><td class="markdownTableBodyLeft">5 in 0.15 s    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">840 x 54726   </td><td class="markdownTableBodyLeft">504 x 6930   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.48   </td><td class="markdownTableBodyLeft">6 in 0.48 s    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">840 x 52437   </td><td class="markdownTableBodyLeft">504 x 6825   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.50   </td><td class="markdownTableBodyLeft">5 in 0.17 s    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">1080 x 70254   </td><td class="markdownTableBodyLeft">648 x 8910   </td><td class="markdownTableBodyCenter">9   </td><td class="markdownTableBodyRight">182   </td><td class="markdownTableBodyLeft">9 in 7700 s    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">1080 x 67482   </td><td class="markdownTableBodyLeft">648 x 8910   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">5.8   </td><td class="markdownTableBodyLeft">7 in 184 s    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">1320 x 85932   </td><td class="markdownTableBodyLeft">792 x 10890   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.70   </td><td class="markdownTableBodyLeft">4 in 0.22 s    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">1320 x 81642   </td><td class="markdownTableBodyLeft">792 x 10560   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.76   </td><td class="markdownTableBodyLeft">4 in 0.21 s    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6_X</code>   </td><td class="markdownTableBodyLeft">432 x 17280   </td><td class="markdownTableBodyLeft">252 x 2232   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.11   </td><td class="markdownTableBodyLeft"></td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyLeft">900 x 37440   </td><td class="markdownTableBodyLeft">495 x 4590   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">0.68   </td><td class="markdownTableBodyLeft"></td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyLeft">1080 x 44928   </td><td class="markdownTableBodyLeft">594 x 5508   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">0.71   </td><td class="markdownTableBodyLeft"></td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X</code>   </td><td class="markdownTableBodyLeft">1728 x 72576   </td><td class="markdownTableBodyLeft">936 x 8784   </td><td class="markdownTableBodyCenter">10   </td><td class="markdownTableBodyRight">179   </td><td class="markdownTableBodyLeft"></td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>double_gross_288_12_18_si1000_r18_X</code>   </td><td class="markdownTableBodyLeft">5184 x 221184   </td><td class="markdownTableBodyLeft">2736 x 26208   </td><td class="markdownTableBodyCenter">[11, 19]   </td><td class="markdownTableBodyRight">10211   </td><td class="markdownTableBodyLeft"></td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_..._n60_k8_d14_X</code>   </td><td class="markdownTableBodyLeft">120 x 10710   </td><td class="markdownTableBodyLeft">90 x 1500   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.15   </td><td class="markdownTableBodyLeft"></td></tr>
+</table>
+<ul>
+<li>All ten Mitten distances are now certified on the full DEMs. <code>mitten_270 custom</code> took 182 s, against 7700 s for the stripped DEM with 0.12.1, when its full DEM could not be certified at all (CC on its 70254 columns did not close the bracket $[9, 10]$ in 2.8 h).</li>
+<li>The double-gross circuit: CC certified $d_{\min} = 11$ (all rounds up to $w = 10$) and RW found a codeword of weight 19; the run ended at 2.8 h, since the CC round $w = 11$ was predicted not to finish in the time left. The earlier brackets were $[4, 24]$ for the stripped DEM and $[4, 53]$ for the full one.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md24"></a>
+5.2 Full DEMs: time to a codeword of the minimum weight</h2>
+<p>The time of RW (<code>method=1</code>, <code>wmin=d</code>: the run stops at the first codeword of weight at most $d$; 128 threads, <code>nothrottle=1</code>, timeout 300 s) on the full DEMs: 0.14.0 reduces them exactly, the older versions work on the full matrices. "&gt; 300 (w)": no codeword of weight $d$ found, $w$ is the lightest weight found.</p>
+<p><img src="figures/fulldem_time.png" alt="Time to a minimum-weight codeword in the full DEMs" class="inline"/></p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">Circuit   </th><th class="markdownTableHeadCenter">$d$   </th><th class="markdownTableHeadLeft">full DEM   </th><th class="markdownTableHeadRight">0.14.0   </th><th class="markdownTableHeadRight">0.12.2   </th><th class="markdownTableHeadRight">0.9.0    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6_X</code>   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyLeft">432 x 17280   </td><td class="markdownTableBodyRight">0.089   </td><td class="markdownTableBodyRight">0.13   </td><td class="markdownTableBodyRight">0.32    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyLeft">360 x 23394   </td><td class="markdownTableBodyRight">0.16   </td><td class="markdownTableBodyRight">0.21   </td><td class="markdownTableBodyRight">0.44    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyLeft">360 x 22410   </td><td class="markdownTableBodyRight">0.17   </td><td class="markdownTableBodyRight">0.23   </td><td class="markdownTableBodyRight">0.44    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z</code>   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyLeft">720 x 47700   </td><td class="markdownTableBodyRight">0.36   </td><td class="markdownTableBodyRight">52.3   </td><td class="markdownTableBodyRight">&gt; 300 (13)    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5_Z</code>   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyLeft">720 x 46130   </td><td class="markdownTableBodyRight">0.39   </td><td class="markdownTableBodyRight">0.84   </td><td class="markdownTableBodyRight">44.8    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyLeft">840 x 54726   </td><td class="markdownTableBodyRight">0.42   </td><td class="markdownTableBodyRight">0.84   </td><td class="markdownTableBodyRight">37.2    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyLeft">840 x 52437   </td><td class="markdownTableBodyRight">0.47   </td><td class="markdownTableBodyRight">6.77   </td><td class="markdownTableBodyRight">8.60    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">9   </td><td class="markdownTableBodyLeft">1080 x 70254   </td><td class="markdownTableBodyRight">1.36   </td><td class="markdownTableBodyRight">&gt; 300 (10)   </td><td class="markdownTableBodyRight">&gt; 300 (307)    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyLeft">1080 x 67482   </td><td class="markdownTableBodyRight">1.12   </td><td class="markdownTableBodyRight">&gt; 300 (8)   </td><td class="markdownTableBodyRight">&gt; 300 (197)    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyLeft">1320 x 85932   </td><td class="markdownTableBodyRight">0.73   </td><td class="markdownTableBodyRight">2.11   </td><td class="markdownTableBodyRight">2.31    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyLeft">1320 x 81642   </td><td class="markdownTableBodyRight">0.73   </td><td class="markdownTableBodyRight">2.15   </td><td class="markdownTableBodyRight">2.10   </td></tr>
+</table>
+<p>0.14.0 finds a minimum-weight codeword in at most 1.4 s for all eleven circuits (including reading the DEM and the reduction); 0.12.2 needs up to 52 s and finds none for the two <code>mitten_270</code> circuits in 300 s, and 0.9.0 misses three. The reduction makes each RW step cheaper (about 8 times fewer columns, and lighter ones) and much more likely to find a codeword of weight $w$: the probability that an information set contains one scales roughly as $(r/n)^{w-1}$ (rank $r$, $n$ columns).</p>
+<h2><a class="anchor" id="autotoc_md25"></a>
+5.3 Default parameters (no &lt;tt&gt;threads=&lt;/tt&gt;, throttling on, no &lt;tt&gt;taskset&lt;/tt&gt;)</h2>
+<p>Wall time in s (median of the repeated runs for the fast cases); the arguments are those of the scaling runs (Section 4).</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">case   </th><th class="markdownTableHeadCenter">method   </th><th class="markdownTableHeadRight">0.14.0   </th><th class="markdownTableHeadRight">0.12.2   </th><th class="markdownTableHeadRight">0.9.0    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>QX150</code> $[[150,32,6]]$, one sector   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">0.54   </td><td class="markdownTableBodyRight">0.53   </td><td class="markdownTableBodyRight">21.3    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.006   </td><td class="markdownTableBodyRight">0.006   </td><td class="markdownTableBodyRight">0.006    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">0.017   </td><td class="markdownTableBodyRight">0.017   </td><td class="markdownTableBodyRight">0.012    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>c204H</code> $[204,102,8]$   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">0.49   </td><td class="markdownTableBodyRight">0.46   </td><td class="markdownTableBodyRight">18.8    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.007   </td><td class="markdownTableBodyRight">0.009   </td><td class="markdownTableBodyRight">0.039    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">0.018   </td><td class="markdownTableBodyRight">0.018   </td><td class="markdownTableBodyRight">0.034    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72</code> circuit, stripped DEM   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">0.85   </td><td class="markdownTableBodyRight">0.92   </td><td class="markdownTableBodyRight">7.40    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.025   </td><td class="markdownTableBodyRight">0.039   </td><td class="markdownTableBodyRight">0.29    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">0.053   </td><td class="markdownTableBodyRight">0.092   </td><td class="markdownTableBodyRight">0.38    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_72</code> circuit, full DEM   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">0.19   </td><td class="markdownTableBodyRight">2.21   </td><td class="markdownTableBodyRight">6.69    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.095   </td><td class="markdownTableBodyRight">9.57   </td><td class="markdownTableBodyRight">&gt; 400    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">0.12   </td><td class="markdownTableBodyRight">10.3   </td><td class="markdownTableBodyRight">&gt; 400    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">gross, one sector   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">0.66   </td><td class="markdownTableBodyRight">0.65   </td><td class="markdownTableBodyRight">23.9    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.028   </td><td class="markdownTableBodyRight">0.033   </td><td class="markdownTableBodyRight">1.15    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">0.031   </td><td class="markdownTableBodyRight">0.038   </td><td class="markdownTableBodyRight">1.17    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft">double gross, one sector   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">0.76   </td><td class="markdownTableBodyRight">0.76   </td><td class="markdownTableBodyRight">31.9    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.16   </td><td class="markdownTableBodyRight">0.48   </td><td class="markdownTableBodyRight">1021    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">0.47   </td><td class="markdownTableBodyRight">0.76   </td><td class="markdownTableBodyRight">1051    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">random LDPC, $n = 3000$   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">0.49   </td><td class="markdownTableBodyRight">1.13   </td><td class="markdownTableBodyRight">1.66    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.13   </td><td class="markdownTableBodyRight">0.29   </td><td class="markdownTableBodyRight">16.2    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">0.40   </td><td class="markdownTableBodyRight">0.88   </td><td class="markdownTableBodyRight">4.34    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft">double-gross circuit, stripped DEM   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">1.49   </td><td class="markdownTableBodyRight">3.65   </td><td class="markdownTableBodyRight">7.54    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">0.15   </td><td class="markdownTableBodyRight">0.28   </td><td class="markdownTableBodyRight">11.9    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyRight">1.45   </td><td class="markdownTableBodyRight">2.87   </td><td class="markdownTableBodyRight">30.3   </td></tr>
+</table>
+<p>With the default parameters, 0.9.0 uses at most four threads for the small codes (hence the slow RW), and its CC is up to 6000 times slower (double gross: 17 min instead of 0.16 s). Compared with 0.12.2, 0.14.0 has the same RW speed on the small matrices, and it is 2.3–2.5 times faster on the large ones (the LDPC code, the double-gross DEM), 1.2–3 times faster in CC, and 12–100 times faster on the full DEM.</p>
+<h2><a class="anchor" id="autotoc_md26"></a>
+5.4 Large full DEMs (RW for 180 s, default parameters)</h2>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">DEM   </th><th class="markdownTableHeadLeft">version   </th><th class="markdownTableHeadLeft">read   </th><th class="markdownTableHeadLeft">searched   </th><th class="markdownTableHeadRight">drop=auto (s)   </th><th class="markdownTableHeadRight">RW threads   </th><th class="markdownTableHeadRight">s/step/thread   </th><th class="markdownTableHeadRight">RW steps   </th><th class="markdownTableHeadRight">lightest    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X</code>   </td><td class="markdownTableBodyLeft">0.14.0   </td><td class="markdownTableBodyLeft">1728 x 72576   </td><td class="markdownTableBodyLeft">936 x 8784   </td><td class="markdownTableBodyRight">0.07   </td><td class="markdownTableBodyRight">128   </td><td class="markdownTableBodyRight">0.010   </td><td class="markdownTableBodyRight">2,216,685   </td><td class="markdownTableBodyRight">10    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X</code>   </td><td class="markdownTableBodyLeft">0.12.2   </td><td class="markdownTableBodyLeft">1728 x 72576   </td><td class="markdownTableBodyLeft">1728 x 72576   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">32   </td><td class="markdownTableBodyRight">0.70   </td><td class="markdownTableBodyRight">8,223   </td><td class="markdownTableBodyRight">11    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24_X</code>   </td><td class="markdownTableBodyLeft">0.14.0   </td><td class="markdownTableBodyLeft">8640 x 371520   </td><td class="markdownTableBodyLeft">4500 x 43560   </td><td class="markdownTableBodyRight">0.44   </td><td class="markdownTableBodyRight">32   </td><td class="markdownTableBodyRight">0.80   </td><td class="markdownTableBodyRight">7,179   </td><td class="markdownTableBodyRight">25    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_756_16_34_si1000_r34_Z</code>   </td><td class="markdownTableBodyLeft">0.14.0   </td><td class="markdownTableBodyLeft">25704 x 1112454   </td><td class="markdownTableBodyLeft">13230 x 129276   </td><td class="markdownTableBodyRight">1.75   </td><td class="markdownTableBodyRight">3   </td><td class="markdownTableBodyRight">11.3   </td><td class="markdownTableBodyRight">46   </td><td class="markdownTableBodyRight">58   </td></tr>
+</table>
+<ul>
+<li>On the gross circuit, a RW step of 0.14.0 is 67 times faster, and all 128 threads are used (the dense RW working memory of the full matrix limits 0.12.2 to 32 threads): 270 times more steps in 180 s, and a codeword of the minimum weight 10.</li>
+<li>For <code>bb_360</code>, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.4).</li>
+<li>For <code>bb_756</code>, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, <code>nothrottle=1</code> would run 128 threads (about 55 GB).</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md27"></a>
+5.5 Where the speedups come from</h2>
+<p>0.14.0 with <code>merge=0 drop=0</code> (neither merging nor dropping) and with <code>drop=0</code> (merging only), against its default (both) and 0.12.2, on the DEM cases of Section 4 (wall time in s; "–": not run, from the budget of 0.12.2, which took 176 s on four threads).</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">case   </th><th class="markdownTableHeadCenter">method   </th><th class="markdownTableHeadRight">$p$   </th><th class="markdownTableHeadRight"><code>merge=0 drop=0</code>   </th><th class="markdownTableHeadRight"><code>drop=0</code>   </th><th class="markdownTableHeadRight">default   </th><th class="markdownTableHeadRight">0.12.2    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72</code> circuit, stripped DEM   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">61.2   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">59.9   </td><td class="markdownTableBodyRight">58.2    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">128   </td><td class="markdownTableBodyRight">0.99   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">0.89   </td><td class="markdownTableBodyRight">0.93    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">0.094   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">0.051   </td><td class="markdownTableBodyRight">1.12    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">128   </td><td class="markdownTableBodyRight">0.027   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">0.026   </td><td class="markdownTableBodyRight">0.042    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72</code> circuit, full DEM   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">48.8   </td><td class="markdownTableBodyRight">45.7   </td><td class="markdownTableBodyRight">5.56   </td><td class="markdownTableBodyRight">98.9    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">128   </td><td class="markdownTableBodyRight">1.21   </td><td class="markdownTableBodyRight">1.20   </td><td class="markdownTableBodyRight">0.18   </td><td class="markdownTableBodyRight">2.14    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">28.8   </td><td class="markdownTableBodyRight">21.7   </td><td class="markdownTableBodyRight">0.11   </td><td class="markdownTableBodyRight">–    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">128   </td><td class="markdownTableBodyRight">0.38   </td><td class="markdownTableBodyRight">0.32   </td><td class="markdownTableBodyRight">0.088   </td><td class="markdownTableBodyRight">9.84    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">double-gross circuit, stripped DEM   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">25.5   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">20.7   </td><td class="markdownTableBodyRight">58.9    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyRight">128   </td><td class="markdownTableBodyRight">1.61   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">1.40   </td><td class="markdownTableBodyRight">3.27    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">1.13   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">0.61   </td><td class="markdownTableBodyRight">12.7    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter">2   </td><td class="markdownTableBodyRight">128   </td><td class="markdownTableBodyRight">0.14   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">0.15   </td><td class="markdownTableBodyRight">0.27   </td></tr>
+</table>
+<ul>
+<li>The faster CC of 0.12.3 (the last cluster extension is looked up in a hash table): 3.3–3.9 times on the CSS codes and the LDPC code, 11–12 times on the stripped DEMs, and about 25 times on the full <code>bb_72</code> DEM (estimated from the four-thread run of 0.12.2); one thread.</li>
+<li>The faster RW of 0.12.3 on large matrices: 2.0–2.3 times (the LDPC code, the double-gross DEM, the full <code>bb_72</code> DEM); unchanged on small matrices.</li>
+<li>Merging the equal columns (0.12.4): 1.0–1.2 times for RW, and 1.3–1.9 times for CC.</li>
+<li>Dropping detectors (<code>drop=auto</code>, 0.14.0): 8 times for RW and 190 times for CC on the full <code>bb_72</code> DEM (one thread).</li>
+</ul>
+<p>The legacy <code>dist_m4ri_old</code> (one thread, built from the 0.14.0 sources) took, for the RW runs of Section 4, 66.5 s (<code>QX150</code>), 47.7 s (<code>c204H</code>), 203 s (<code>bb_72</code> stripped), 20.5 s (<code>bb_72</code> full, reduced), 69 s (gross), 92 s (double gross), 71 s (LDPC), and 85 s (double-gross DEM). </p>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
 <!-- start footer part -->

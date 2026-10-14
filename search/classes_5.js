@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['rw_5felim_5ft_0',['rw_elim_t',['../structrw__elim__t.html',1,'']]]
+  ['params_5ft_0',['params_t',['../structparams__t.html',1,'']]]
 ];

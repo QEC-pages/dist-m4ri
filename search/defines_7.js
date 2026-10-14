@@ -71,5 +71,7 @@ var searchData=
   ['heap_5fsift_5fdown_68',['HEAP_SIFT_DOWN',['../sort_8h.html#a7a053bafc9dd3f66aed1ea64dd0b6edf',1,'sort.h']]],
   ['heap_5fsort_69',['HEAP_SORT',['../sort_8h.html#af509460cea216b08a9c7c0f876368676',1,'sort.h']]],
   ['heapify_70',['HEAPIFY',['../sort_8h.html#aafea7ad8faaaa508977133a8adaa0d67',1,'sort.h']]],
-  ['hh_5ffrom_5felmt_71',['HH_FROM_ELMT',['../uthash_8h.html#a46261e43585c404cccf8ab0f5c6d271e',1,'uthash.h']]]
+  ['help_5fmax_5fnames_71',['HELP_MAX_NAMES',['../util__io_8c.html#a1845d6d04f3b33cb6534fdf0079c9368',1,'util_io.c']]],
+  ['help_5fname_5flen_72',['HELP_NAME_LEN',['../util__io_8c.html#a312c07ce8495c6a676d6f10b5ba29505',1,'util_io.c']]],
+  ['hh_5ffrom_5felmt_73',['HH_FROM_ELMT',['../uthash_8h.html#a46261e43585c404cccf8ab0f5c6d271e',1,'uthash.h']]]
 ];
