@@ -899,32 +899,53 @@ assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 de
 rm -f "$DEM103" "$DROP103" "$CWS103"
 
 # Test 104: --help TOPIC and --morehelp TOPIC print only the entries of the full help for TOPIC (names and aliases,
-# without case, '-', '_', and '=VALUE'), in the order of the full help under their section headers (each once); an
-# unknown topic gives the closest names on stderr and exit code 1; an argument with '=' is not a topic
+# without case, '-', '_', and '=VALUE'), in the order of the full help under their section headers (each once); a
+# group of the section "Option groups" (also as singular or plural) gives all its entries, and a parameter of a group
+# also the other entries of its group and the group (see also); an unknown topic gives the closest names on stderr
+# and exit code 1; an argument with '=' is not a topic
 assert_output "$BIN_FORK --help maxC" 0 "^  maxC=\[int\] " ""
 assert_output "$BIN_FORK --morehelp=dest" 0 "^  dexp=\[int\] " ""
 assert_output "$BIN_FORK --help no-throttle" 0 "^  nothrottle=\[0\|1\] " ""
 assert_output "$BIN_FORK -h Batch" 0 "^  chunk_size=\[int\] " ""
 assert_output "$BIN_FORK --morehelp debug" 0 "^    2048 : No size cutoff" ""
 assert_output "$BIN_FORK --help mthod" 1 "" "no help entry for 'mthod'; did you mean method\?"
+assert_output "$BIN_FORK --help windos" 1 "" "no help entry for 'windos'; did you mean windows"
 assert_output "$BIN_FORK --help maxC,xyz" 1 "^  maxC=\[int\] " "no help entry for 'xyz' \(--morehelp lists all"
 assert_output "$BIN_FORK --help finH=x.mtx" 0 "^Extra parameters" ""
 assert_output "$BIN --help maxC" 0 "^  maxC=\[int\] " ""
 help_outline() {  # the section headers, the first words of the entries, and '-' for a blank line
     awk '/^$/ {print "-"; next} /^[^ ]/ {print; next} /^  [^ ]/ {print $1}'
 }
-GOT104=$("$BIN_FORK" --help maxC,dW,DEXP | help_outline)
-EXP104=$(printf '%s\n' "Distance bounds and search guidance:" "dexp=[int]" "-" "Codeword collection and export:" \
-    "maxC=[int]" "dW=[int]")
-echo "Running: $BIN_FORK --help maxC,dW,DEXP (entries in the order of the full help)"
+GROUPS104="Option groups (--help GROUP prints all entries of GROUP):"
+GOT104=$("$BIN_FORK" --help method,SEED | help_outline)
+EXP104=$(printf '%s\n' "Calculation method:" "method=[int]" "-" "Execution, multithreading, and timing:" "seed=[int]")
+echo "Running: $BIN_FORK --help method,SEED (entries in the order of the full help)"
 if [ "$GOT104" != "$EXP104" ]; then
     echo "  [FAIL] Expected: $EXP104"
     echo "         Got: $GOT104"
     FAILED=1
 fi
 GOT104=$("$BIN_FORK" --help maxC | help_outline)
-echo "Running: $BIN_FORK --help maxC (only the maxC entry)"
-if [ "$GOT104" != "$(printf 'Codeword collection and export:\nmaxC=[int]')" ]; then
+EXP104=$(printf '%s\n' "Codeword collection and export:" "outC=[file]" "finC=[file]" "maxC=[int]" "dW=[int]" "-" \
+    "$GROUPS104" "codewords")
+echo "Running: $BIN_FORK --help maxC (the codewords group)"
+if [ "$GOT104" != "$EXP104" ]; then
+    echo "  [FAIL] Got: $GOT104"
+    FAILED=1
+fi
+EXP104=$(printf '%s\n' "Execution, multithreading, and timing:" "kwin=[int]" "win_mode=[0|1]" "win_hyb=[int]" "-" \
+    "$GROUPS104" "windows")
+for topic in windows window WIN_HYB kwin; do
+    echo "Running: $BIN_FORK -h $topic (the windows group)"
+    if [ "$("$BIN_FORK" -h $topic | help_outline)" != "$EXP104" ]; then
+        echo "  [FAIL] Got: $("$BIN_FORK" -h $topic | help_outline)"
+        FAILED=1
+    fi
+done
+GOT104=$("$BIN_FORK" --help experimental | help_outline)
+echo "Running: $BIN_FORK --help experimental"
+if [ "$GOT104" != "$(printf '%s\n' "Execution, multithreading, and timing:" "ksub=[int]" "refresh=[int]" "-" \
+    "$GROUPS104" "experimental")" ]; then
     echo "  [FAIL] Got: $GOT104"
     FAILED=1
 fi

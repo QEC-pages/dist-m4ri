@@ -521,7 +521,7 @@ void print_short_help(const char *prog);
   "  debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)\n\n" \
   "Help options:\n" \
   "  -h, --help         Display this help message (--help TOPIC: the same as --morehelp TOPIC)\n" \
-  "  --morehelp         Display full help for all parameters (--morehelp TOPIC: only TOPIC, e.g., maxC)\n" \
+  "  --morehelp         Display full help for all parameters (--morehelp TOPIC: only TOPIC, e.g., maxC or windows)\n" \
   "  --version          Display program version\n"
 
 #define MORE_HELP \
@@ -806,6 +806,16 @@ void print_short_help(const char *prog);
   "    dmax     : Smallest weight of a codeword found (by RW or CC, or read with\n" \
   "               finC), or the supplied dmax if smaller (0 if none).\n" \
   "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n\n" \
+  "Option groups (--help GROUP prints all entries of GROUP):\n" \
+  "  windows            kwin, win_mode, win_hyb\n" \
+  "  stopping, stop     steps, wmin, timeout, min_hits, cov_cws\n" \
+  "  bounds             dmin, dmax, dstop, dexp, wmax\n" \
+  "  dem                fdem, pmin, merge, drop, outD\n" \
+  "  matrices, matrix   finH, finG, finL, fin, classical\n" \
+  "  codewords          outC, finC, maxC, dW\n" \
+  "  threading          threads, nothrottle, chunk_size\n" \
+  "  expert             noscan, start, cbeg, cend\n" \
+  "  experimental       ksub, refresh\n\n" \
   "Help options:\n" \
   "  -h, --help         Display help for commonly used parameters (fits 80 rows);\n" \
   "                     --help TOPIC is the same as --morehelp TOPIC.\n" \
@@ -816,7 +826,10 @@ void print_short_help(const char *prog);
   "                     without '-', '_', or '=VALUE', including aliases such as\n" \
   "                     dest or batch (and debug for the debug output bitmap); an\n" \
   "                     unknown name gives the closest names on stderr, and the\n" \
-  "                     exit code 1.\n" \
+  "                     exit code 1.  A group name (see Option groups, also as\n" \
+  "                     singular or plural, e.g., window) gives all entries of the\n" \
+  "                     group, and a parameter of a group also the other entries\n" \
+  "                     of its group (see also).\n" \
   "  --version          Display program version\n"
 
 #define BRIEF_HELP \

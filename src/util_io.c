@@ -362,6 +362,7 @@ static void dem_round_estimate(params_t * const p);
 /* Help topics (--help TOPIC, --morehelp TOPIC): the entries of the full help text MORE_HELP for some parameters. */
 #define HELP_MAX_NAMES 8
 #define HELP_NAME_LEN 32
+#define HELP_MAX_MEMBERS 16
 
 typedef struct {
   int sec;                                  /* the line of its section header, or -1 */
@@ -370,6 +371,8 @@ typedef struct {
   int nnames;
   char key[HELP_MAX_NAMES][HELP_NAME_LEN];  /* the normalized names, see help_key() */
   char name[HELP_MAX_NAMES][HELP_NAME_LEN]; /* the names as written */
+  int nmembers;                             /* a group (section "Option groups"): the number of its members, or 0 */
+  char member[HELP_MAX_MEMBERS][HELP_NAME_LEN]; /* the normalized names of its members */
 } help_entry_t;
 
 /* The normalized form key of the name s (its first n characters, up to '='): lowercase, without '-', '_', and white
@@ -478,11 +481,48 @@ static void help_read_aliases(help_entry_t * const e, const char * const s) {
   }
 }
 
+/* Adds the members of a group listed at s to the entry e: names separated by commas and white space (see the section
+ * "Option groups" of MORE_HELP). */
+static void help_read_members(help_entry_t * const e, const char *s) {
+  for (;;) {
+    while ((*s == ' ') || (*s == ','))
+      s++;
+    const size_t n = help_name_len(s);
+    if (!n)
+      return;
+    if (e->nmembers < HELP_MAX_MEMBERS)
+      help_key(e->member[e->nmembers++], s, n);
+    s += n;
+  }
+}
+
+/* Whether the entry e is a member of the group g (one of its names is listed by g). */
+static int help_is_member(const help_entry_t * const g, const help_entry_t * const e) {
+  for (int i = 0; i < g->nmembers; i++)
+    for (int j = 0; j < e->nnames; j++)
+      if (strcmp(g->member[i], e->key[j]) == 0)
+        return 1;
+  return 0;
+}
+
+/* Whether the topic key matches the name key of a group, also as singular or plural with a trailing 's' (e.g.,
+ * window and windows). */
+static int help_group_key_match(const char * const gkey, const char * const key) {
+  const size_t lg = strlen(gkey), lk = strlen(key);
+  if (strcmp(gkey, key) == 0)
+    return 1;
+  if ((lg == lk + 1) && (gkey[lk] == 's') && (strncmp(gkey, key, lk) == 0))
+    return 1;
+  return (lk == lg + 1) && (key[lg] == 's') && (strncmp(gkey, key, lg) == 0);
+}
+
 /* Splits the help text into lines (the line ends are replaced by '\0'; *lines: the line starts, *nlines) and returns
  * the number of its entries (*ent, to be freed with *lines).  A section header is a line without indentation which ends
  * with ':'.  An entry starts with a line indented by 2 spaces with the names (see help_read_names()), and continues
  * with the lines indented by more; a section header with "(NAME=[", e.g., "Debug output bitmap (debug=[int], ...):",
- * starts an entry NAME with the whole section.  The names of an entry include its aliases (see help_read_aliases()). */
+ * starts an entry NAME with the whole section.  The names of an entry include its aliases (see help_read_aliases()).
+ * The entries of the section "Option groups" are groups: the description lists their members (see
+ * help_read_members()). */
 static int help_entries(char * const text, char *** const lines, int * const nlines, help_entry_t ** const ent) {
   int nl = 0, cap = 256;
   char **ln = malloc((size_t)cap * sizeof(char *));
@@ -505,7 +545,7 @@ static int help_entries(char * const text, char *** const lines, int * const nli
   help_entry_t * const en = calloc((size_t)nl + 1, sizeof(help_entry_t));
   if (!en)
     ERROR("memory allocation");
-  int ne = 0, sec = -1;
+  int ne = 0, sec = -1, groups = 0;
   help_entry_t *cur = NULL;                    /* the entry continued by the following lines, if any */
   for (int i = 0; i < nl; i++) {
     const char * const s = ln[i];
@@ -513,6 +553,7 @@ static int help_entries(char * const text, char *** const lines, int * const nli
     if (len && !isspace((unsigned char)s[0]) && (s[len - 1] == ':')) {      /* a section header */
       sec = i;
       cur = NULL;
+      groups = (strncmp(s, "Option groups", 13) == 0);
       const char * const p = strchr(s, '(');
       const size_t n = p ? help_name_len(p + 1) : 0;
       if (n && (p[1 + n] == '=') && (p[2 + n] == '[')) {                    /* a whole section, e.g., debug */
@@ -531,11 +572,20 @@ static int help_entries(char * const text, char *** const lines, int * const nli
       cur->sec = sec;
       cur->beg = i;
       cur->end = i + 1;
-      help_read_aliases(cur, s);
+      if (groups) {                                    /* a group: its members after the first column */
+        const char * const d = strstr(s + 2, "  ");
+        if (d)
+          help_read_members(cur, d);
+      }
+      else
+        help_read_aliases(cur, s);
     }
     else if (cur && (s[0] == ' ') && (s[1] == ' ') && (s[2] == ' ')) {      /* a continuation line */
       cur->end = i + 1;
-      help_read_aliases(cur, s);
+      if (cur->nmembers > 0)
+        help_read_members(cur, s);
+      else
+        help_read_aliases(cur, s);
     }
     else
       cur = NULL;
@@ -604,9 +654,11 @@ static void help_no_entry(const char * const prog, const char * const s, const i
 
 /* Prints the entries of the full help (MORE_HELP) for the ntopics topics (--help TOPIC, --morehelp TOPIC): each is
  * one or more names separated by commas, compared without case, '-', '_', and '=VALUE' with the names of the entries
- * and their aliases (see help_entries()).  The entries are printed in the order of the full help, under their section
- * headers.  Returns 0, 1 if some topic has no entry (then the closest names are suggested on stderr), or -1 if there
- * is no topic (e.g., --help=), and nothing is printed. */
+ * and their aliases (see help_entries()), and with the names of the groups (section "Option groups", also as singular
+ * or plural).  A group gives all its members, and an entry also the other members of its groups and these groups (one
+ * level: "see also").  The entries are printed in the order of the full help, under their section headers.  Returns
+ * 0, 1 if some topic has no entry (then the closest names are suggested on stderr), or -1 if there is no topic (e.g.,
+ * --help=), and nothing is printed. */
 static int print_help_topics(const char * const prog, const int ntopics, const char * const topics[]) {
   const int len = snprintf(NULL, 0, MORE_HELP, prog, DIST_M4RI_VERSION, prog);
   char * const text = malloc((size_t)len + 1);
@@ -618,7 +670,8 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
   help_entry_t *ent;
   const int ne = help_entries(text, &lines, &nlines, &ent);
   char * const chosen = calloc((size_t)ne + 1, 1);
-  if (!chosen)
+  char * const asked = calloc((size_t)ne + 1, 1);
+  if (!chosen || !asked)
     ERROR("memory allocation");
   int status = 0, nkeys = 0;
   for (int t = 0; t < ntopics; t++)
@@ -639,8 +692,8 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
         nkeys++;
         for (int i = 0; i < ne; i++)
           for (int j = 0; j < ent[i].nnames; j++)
-            if (strcmp(ent[i].key[j], key) == 0)
-              chosen[i] = found = 1;
+            if ((ent[i].nmembers > 0) ? help_group_key_match(ent[i].key[j], key) : (strcmp(ent[i].key[j], key) == 0))
+              asked[i] = found = 1;
         if (!found) {
           help_no_entry(prog, s, n, key, ent, ne);
           status = 1;
@@ -648,6 +701,21 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
       }
       s = next;
     }
+  for (int g = 0; g < ne; g++) { /* the groups asked for or with a member asked for: the group and all its members */
+    if (ent[g].nmembers <= 0)
+      continue;
+    int use = asked[g];
+    for (int i = 0; (i < ne) && !use; i++)
+      use = asked[i] && (ent[i].nmembers == 0) && help_is_member(&ent[g], &ent[i]);
+    if (!use)
+      continue;
+    chosen[g] = 1;
+    for (int i = 0; i < ne; i++)
+      if ((ent[i].nmembers == 0) && help_is_member(&ent[g], &ent[i]))
+        chosen[i] = 1;
+  }
+  for (int i = 0; i < ne; i++)
+    chosen[i] |= asked[i];
   int sec = -2, any = 0;
   for (int i = 0; i < ne; i++) {
     if (!chosen[i])
@@ -663,6 +731,7 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
       printf("%s\n", lines[k]);
     any = 1;
   }
+  free(asked);
   free(chosen);
   free(ent);
   free(lines);

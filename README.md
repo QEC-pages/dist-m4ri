@@ -606,7 +606,12 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
    Displays only the entries of the full help for the parameters `TOPIC`, under their section headers, e.g.,
    `dist_m4ri --help maxC,dW` (several names separated by commas; the names are case-insensitive, `-`, `_`, and
    `=VALUE` are ignored, aliases such as `dest` or `batch` work, and `debug` gives the debug bitmap). An unknown name
-   gives the closest names on `stderr`, and the exit code `1`.
+   gives the closest names on `stderr`, and the exit code `1`. The section "Option groups" of the full help lists
+   groups of related parameters: `windows` (`kwin`, `win_mode`, `win_hyb`), `stopping`, `bounds`, `dem`, `matrices`,
+   `codewords`, `threading`, `expert` (the CC options whose results rely on assumptions: `noscan`, `start`, `cbeg`,
+   `cend`), and `experimental` (`ksub`, `refresh`). A group name, also as singular or plural (e.g.,
+   `dist_m4ri -h window`), gives all entries of the group, and a parameter of a group also the other entries of its
+   group, as "see also" (e.g., `--help kwin` gives the three window entries).
 
 `--help`, `--morehelp`, and `--version` print to `stdout`. Conflicting inputs: `fdem` together with matrix files
 (`finH`, `finG`, `finL`, `fin`), `pmin`, `outD`, or `drop` (other than `drop=0`) without `fdem`, and `drop` with
@@ -680,7 +685,7 @@ Extra parameters (see --morehelp for details):
 
 Help options:
   -h, --help         Display this help message (--help TOPIC: the same as --morehelp TOPIC)
-  --morehelp         Display full help for all parameters (--morehelp TOPIC: only TOPIC, e.g., maxC)
+  --morehelp         Display full help for all parameters (--morehelp TOPIC: only TOPIC, e.g., maxC or windows)
   --version          Display program version
 ```
 
@@ -898,7 +903,9 @@ interoperability without manual threading overhead.
   (also `--morehelp=TOPIC`, and `--help TOPIC` or `--help=TOPIC`) prints only the entries of the parameters `TOPIC`
   (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-`, `_`, and `=VALUE` are
   ignored, and aliases such as `dest` or `batch` work). An unknown name gives the closest names on `stderr`, and the
-  exit code `1`. The binary has the same help options.
+  exit code `1`. As in the binary, the option groups (also `stim` and `cache` in the Python CLI) give all their entries
+  (e.g., `-h window`), and a parameter of a group also the other entries of its group. The binary has the same help
+  options.
 - Optional solver backend: `solver="codedistance"` (uses the `codedistance` library if installed).
 - Debug output: `debug=N` (default: 0) is a bitmap, where the bits `1` to `32768` are passed to the binary (see
   [Debug Output](#debug-output-debugint); its `stderr` is then printed), and the higher bits are used by the wrapper:

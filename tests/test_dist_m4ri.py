@@ -581,18 +581,31 @@ def test_cli_morehelp_topic(capsys):
         return ([s for s in lines if s and not s[0].isspace()],
                 [s.split()[0] for s in lines if s.startswith("  ") and not s.startswith("   ")])
 
-    # --morehelp TOPIC: only the entries of TOPIC, under their section header
+    # --morehelp TOPIC: the entries of TOPIC, under their section header, with the other entries of its group (see
+    # also) and the group (section 'Option groups')
+    groups = "Option groups (--help GROUP prints all entries of GROUP):"
     assert dist_m4ri.main(["--morehelp", "maxC"]) == 0
-    assert entries(capsys.readouterr().out) == (["Codeword collection and export:"], ["maxC=N"])
+    assert entries(capsys.readouterr().out) == (
+        ["Codeword collection and export:", groups],
+        ["--cws", "outC=FILE", "finC=FILE", "maxC=N", "dW=N", "expand=0|1", "codewords"])
     # several topics (case-insensitive, aliases): in the order of the full help, each section header once
-    assert dist_m4ri.main(["--morehelp=dW,MAXC,dest"]) == 0
-    assert entries(capsys.readouterr().out) == (["Distance bounds and guidance:", "Codeword collection and export:"],
-                                                ["dexp=N", "maxC=N", "dW=N"])
+    assert dist_m4ri.main(["--morehelp=SEED,method,v"]) == 0
+    assert entries(capsys.readouterr().out) == (["Calculation method:", "General options:"],
+                                                ["method=1|2|3", "--verbose", "seed=N"])
     # '-', '_', and '=VALUE' are ignored; aliases in the descriptions ('Alias: batch=N', 'also trust_start=1')
     for topic, first in (("no-cache", "--no-cache"), ("--rounds=3", "--rounds"), ("batch", "chunk_size=N"),
                          ("trust_start", "--trust-start"), ("v", "--verbose"), ("out_dem=1", "--out-dem")):
         assert dist_m4ri.main([f"--morehelp={topic}"]) == 0
-        assert entries(capsys.readouterr().out)[1] == [first], topic
+        assert first in entries(capsys.readouterr().out)[1], topic
+    # a group (also singular or plural): all its entries; a parameter of a group gives the whole group
+    for topic in ("windows", "window", "kwin", "WIN_HYB"):
+        assert dist_m4ri.main(["-h", topic]) == 0
+        assert entries(capsys.readouterr().out) == (["Multithreading & throttling:", groups],
+                                                    ["kwin=N", "win_mode=0|1", "win_hyb=N", "windows"]), topic
+    assert dist_m4ri.main(["--help", "experimental"]) == 0
+    assert entries(capsys.readouterr().out)[1] == ["ksub=N", "refresh=N", "experimental"]
+    assert dist_m4ri.main(["--help", "windos"]) == 1
+    assert "no help entry for 'windos'; did you mean windows" in capsys.readouterr().err
     # an unknown topic: the closest names on stderr, exit code 1 (the known topics are still printed)
     assert dist_m4ri.main(["--morehelp", "mthod"]) == 1
     captured = capsys.readouterr()
@@ -600,7 +613,7 @@ def test_cli_morehelp_topic(capsys):
     assert "no help entry for 'mthod'; did you mean method?" in captured.err
     assert dist_m4ri.main(["--morehelp", "maxC,xyz"]) == 1
     captured = capsys.readouterr()
-    assert entries(captured.out)[1] == ["maxC=N"]
+    assert "maxC=N" in entries(captured.out)[1]
     assert "no help entry for 'xyz'" in captured.err
     # an option after --morehelp is not a topic: the full help
     assert dist_m4ri.main(["--morehelp", "--verbose"]) == 0
@@ -608,7 +621,7 @@ def test_cli_morehelp_topic(capsys):
     # --help TOPIC (also -h TOPIC, --help=TOPIC, help=TOPIC): the same as --morehelp TOPIC; topics are collected
     assert dist_m4ri.main(["--morehelp", "maxC,dest"]) == 0
     expected = capsys.readouterr().out
-    assert entries(expected)[1] == ["dexp=N", "maxC=N"]
+    assert {"dexp=N", "maxC=N", "bounds", "codewords"} <= set(entries(expected)[1])
     for argv in (["--help", "maxC,dest"], ["-h", "maxC,dest"], ["--help=maxC,dest"], ["help=maxC,dest"],
                  ["--help", "maxC", "--morehelp", "dest"]):
         assert dist_m4ri.main(argv) == 0

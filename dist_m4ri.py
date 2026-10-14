@@ -5376,7 +5376,7 @@ Extra parameters (see --morehelp for details):
 
 Help options:
   -h, --help [TOPIC]    Display this help message (with TOPIC: the same as --morehelp TOPIC)
-  --morehelp [TOPIC]    Display full help for all parameters (or only for TOPIC, e.g., maxC)
+  --morehelp [TOPIC]    Display full help for all parameters (or only for TOPIC, e.g., maxC or windows)
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary
 """
     print(help_text, file=file)
@@ -5704,6 +5704,20 @@ General options:
                           262144: Stim circuit to DEM conversion details,
                           524288: keep (and list) the temporary files.
 
+Option groups (--help GROUP prints all entries of GROUP):
+  windows               kwin, win_mode, win_hyb
+  stopping, stop        steps, wmin, timeout, min_hits, cov_cws
+  bounds                dmin, dmax, dstop, dexp, wmax
+  dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand
+  stim                  fdem, basis, --rounds, --out-dir, --out-dem, --out-stim, --p-noise,
+                        --force-noise
+  matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical
+  codewords             --cws, outC, finC, maxC, dW, expand
+  threading             threads, nothrottle, chunk_size
+  cache                 cache, --no-cache, --trust-start
+  expert                start, --trust-start, noscan
+  experimental          ksub, refresh
+
 Help options:
   -h, --help [TOPIC]    Display summary help message (fits 80 rows); with TOPIC, the same as
                         --morehelp TOPIC (also --help=TOPIC).
@@ -5711,7 +5725,10 @@ Help options:
                         TOPIC, e.g., --morehelp maxC (also --morehelp=TOPIC; several topics separated
                         by commas, e.g., maxC,dW; the names are case-insensitive, without '-', '_', or
                         '=VALUE', and include aliases such as dest or batch; an unknown name gives the
-                        closest names on stderr, and the exit code 1).
+                        closest names on stderr, and the exit code 1).  A group name (see Option
+                        groups, also as singular or plural, e.g., window) gives all entries of the
+                        group, and a parameter of a group also the other entries of its group (see
+                        also).
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary.
 """
 
@@ -5757,11 +5774,33 @@ def _help_name_key(name: str) -> str:
     return name.lower().replace("-", "").replace("_", "")
 
 
+def _help_group_members(entry: Tuple[str, List[str], Dict[str, str]]) -> Optional[Set[str]]:
+    """
+    The normalized names of the members of a group (an entry of the section 'Option groups' of the full help: the
+    names listed after its first column), or None for another entry.
+    """
+    import re
+    section, lines, _ = entry
+    if not section.startswith("Option groups"):
+        return None
+    m = re.match(r"^  \S.*?(?:\s{2,}|$)", lines[0])
+    text = " ".join([lines[0][m.end():] if m else ""] + [s.strip() for s in lines[1:]])
+    return {_help_name_key(t) for t in re.split(r"[,\s]+", text) if t.strip("-")}
+
+
+def _help_group_key_match(gkey: str, key: str) -> bool:
+    """Whether the topic key matches the name gkey of a group, also as singular or plural (e.g., window, windows)."""
+    return key in (gkey, gkey + "s") or (gkey.endswith("s") and key == gkey[:-1])
+
+
 def print_cli_morehelp(file: Optional[Any] = None, topic: Optional[str] = None) -> int:
     """
     Prints the full help of the CLI (--morehelp), or with `topic` (one or more names separated by commas, see
     _help_entries()) only the entries of these parameters, in the order of the full help under their section headers.
-    Returns 0, or 1 if some topic has no entry (then the closest names are suggested on stderr).
+    A topic may also be a group of the section 'Option groups' (also as singular or plural, e.g., window): then all
+    its members are printed; and an entry of a group also gives the other members of its groups and these groups
+    (one level: 'see also').  Returns 0, or 1 if some topic has no entry (then the closest names are suggested on
+    stderr).
     """
     import difflib
     text = _cli_morehelp_text()
@@ -5771,17 +5810,27 @@ def print_cli_morehelp(file: Optional[Any] = None, topic: Optional[str] = None) 
         print(text, file=file)
         return 0
     entries = _help_entries(text)
+    members = [_help_group_members(e) for e in entries]
     status = 0
-    chosen: Set[int] = set()
+    asked: Set[int] = set()
     for t, key in keys:
-        found = [i for i, e in enumerate(entries) if key in e[2]]
+        found = [i for i, e in enumerate(entries)
+                 if (key in e[2] if members[i] is None else any(_help_group_key_match(g, key) for g in e[2]))]
         if not found:
             names = {k: v for e in entries for k, v in e[2].items()}
             close = [names[k] for k in difflib.get_close_matches(key, list(names), n=5, cutoff=0.6)]
             hint = f"; did you mean {', '.join(close)}?" if close else ""
             sys.stderr.write(f"dist_m4ri.py: no help entry for '{t}'{hint} (--morehelp lists all parameters)\n")
             status = 1
-        chosen.update(found)
+        asked.update(found)
+    chosen: Set[int] = set(asked)
+    for g, mem in enumerate(members):  # the groups asked for or with a member asked for: the group and its members
+        if mem is None:
+            continue
+        in_group = [i for i, e in enumerate(entries) if members[i] is None and mem & set(e[2])]
+        if g in asked or asked & set(in_group):
+            chosen.add(g)
+            chosen.update(in_group)
     out: List[str] = []
     section = None
     for i in sorted(chosen):  # in the order of the full help, under their section headers
