@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.0" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.1" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.14.0" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.14.1" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -805,11 +805,14 @@ assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
 
 # Test 100: CC with bitset syndromes and a hash lookup for the last column of a cluster (smax=0, the default) finds the
 # same codewords with the same hit counts as the recursion on sorted syndrome lists (smax>0), also with duplicate
-# columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a codeword of weight 5 is found up to 5 times)
+# columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a codeword of weight 5 is found up to 5 times), with
+# the rows of H in the input order (sort_rows=0) and sorted by weight (the default for matrices: other hit counts)
 CWS100=$(mktemp --suffix=.nz)
 for sm in 0 3; do
+    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 sort_rows=0 debug=1" 0 \
+        "^5 5 0$" "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
     assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 debug=1" 0 "^5 5 0$" \
-        "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
+        "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18063,"
 done
 assert_output "$BIN_FORK method=2 $S5 wmax=3 threads=2 debug=8" 0 "^4 0 0$" \
     "^# CC: bitset syndromes, hash of 1958 nonzero columns \(1679 distinct\) for the last two levels"
@@ -980,6 +983,50 @@ assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx outD=$OUT105 
 assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx drop=0 wmax=5" 0 \
     "^5 5 0$" ""
 rm -f "$OUT105" "$DEM105"
+
+# Test 106: sort_rows (default: 1 for matrices, 0 for a DEM) sorts the rows of H by increasing weight (stable) for CC;
+# the input summary notes it.  The distance, the codewords enumerated (outC), and RW with the same seed do not depend
+# on the order of the rows; rows of equal weight are left as they are (QX150); sort_rows=1 also sorts the detectors of
+# a DEM; invalid values are an error
+S5="finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx"
+SORTED106="^#   rows of H sorted by increasing weight for CC \(sort_rows=1; sort_rows=0 keeps their order\)$"
+CWS106A=$(mktemp --suffix=.nz)
+CWS106B=$(mktemp --suffix=.nz)
+for bin in "$BIN_FORK" "$BIN"; do
+    assert_output "$bin method=2 $S5 wmax=5 threads=2 debug=1" 0 "^5( 5 0)?$" "$SORTED106"
+    if $bin method=2 $S5 wmax=5 sort_rows=0 threads=2 debug=1 2>&1 | grep -q "rows of H sorted"; then
+        echo "  [FAIL] Test 106: rows sorted with sort_rows=0 ($bin)"
+        FAILED=1
+    fi
+done
+assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS106A threads=2 debug=0" 0 "^5 5 0$" ""
+assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS106B sort_rows=0 threads=2 debug=0" 0 "^5 5 0$" ""
+if [ "$(grep -v '^%' "$CWS106A" | sort)" != "$(grep -v '^%' "$CWS106B" | sort)" ] || \
+   [ "$(grep -c -v '^%' "$CWS106A")" -lt 2 ]; then
+    echo "  [FAIL] Test 106: different CC codewords with sort_rows=0 and 1:"
+    echo "         $(grep -v '^%' "$CWS106A" | sort | tr '\n' ';')"
+    echo "         $(grep -v '^%' "$CWS106B" | sort | tr '\n' ';')"
+    FAILED=1
+fi
+RW106A=$($BIN_FORK method=1 $S5 steps=3000 min_hits=0 seed=7 threads=1 outC=$CWS106A debug=0 2>/dev/null)
+RW106B=$($BIN_FORK method=1 $S5 steps=3000 min_hits=0 seed=7 threads=1 outC=$CWS106B sort_rows=0 debug=0 2>/dev/null)
+if [ "$RW106A" != "$RW106B" ] || [ "$(cat "$CWS106A")" != "$(cat "$CWS106B")" ]; then
+    echo "  [FAIL] Test 106: RW results differ with sort_rows=0 and 1: '$RW106A' vs '$RW106B'"
+    FAILED=1
+fi
+if $BIN_FORK method=2 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx wmax=3 debug=1 2>&1 | \
+   grep -q "rows of H sorted"; then
+    echo "  [FAIL] Test 106: rows of equal weight reported as sorted (QX150)"
+    FAILED=1
+fi
+if $BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=1 2>&1 | grep -q "rows of H sorted"; then
+    echo "  [FAIL] Test 106: the detectors of a DEM sorted by default"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 sort_rows=1 threads=2 debug=1" 0 "^3 3 0$" \
+    "$SORTED106"
+assert_output "$BIN_FORK method=2 $S5 wmax=3 sort_rows=2" 255 "" "invalid 'sort_rows=2': sort_rows should be 0 or 1"
+rm -f "$CWS106A" "$CWS106B"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

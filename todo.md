@@ -178,6 +178,16 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     same RW steps (times include reading the input): `bb72_si1000_X.dem` RW 3.6 s $\to$ 0.63 s, CC (`wmax=6`)
     2.4 s $\to$ 1.1 s, `method=3` 3.2 s $\to$ 1.2 s; `gross_uniform_X.dem` 3.3 s $\to$ 1.5 s; `QX900` 0.68 s $\to$
     0.23 s; `surf_d5` 0.77 s $\to$ 0.51 s.
+- [x] **CC row order** (`sort_rows`, 0.14.1): CC extends a cluster by the columns of the first unsatisfied row (in
+  row order), so the binary sorts the rows of $H$ by increasing weight (stable) for matrices (`sort_rows=1`, the
+  default; `sort_rows=0` for a DEM, whose detectors are in time order).
+  - Extended CSS matrices with hook columns (`tmp/distance.py`; rows of weight 5–103): 1.2–2.3x to certify the
+    distance, 1.7–4.2x to enumerate all codewords of a weight.
+  - DEMs, and matrices exported from DEMs: 1.3–4x slower when sorted, since the first detector in time order has most
+    of its columns before the start column of the cluster.
+  - RW is unchanged (the same codewords with the same seed).
+  - Choosing the row with the fewest admissible columns dynamically gave 2–23% fewer CC loop iterations on DEMs in a
+    model, about as much as its per-node cost (`scratch/rowsort/`).
 - [x] **RW Step Profile** (Oct 2026, one thread, after the faster logical check): the Gaussian elimination takes
   70–95% of a RW step for DEMs (`bb72_si1000_X.dem`: 215 of $\sim$310 µs; `gross_uniform_X.dem`: 6.8 of 7.8 ms), the
   transposition 7–15%, the extraction of the candidates the rest. Faster elimination (Task 5, or M4RI on a

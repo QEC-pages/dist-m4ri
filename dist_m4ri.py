@@ -30,7 +30,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.0"
+__version__ = "0.14.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -1353,6 +1353,7 @@ def run_dist_m4ri(
     merge: bool = True,
     drop: Optional[str] = None,
     outD: Optional[str] = None,
+    sort_rows: Optional[bool] = None,
     outC: Optional[str] = None,
     seed: int = 0,
     debug: int = 0,
@@ -1384,6 +1385,14 @@ def run_dist_m4ri(
             and prints a note, see _parse_stderr_stats()).  Ignored without fdem.
         outD: File to which the binary writes the detectors dropped from the DEM fdem (0-based; only the comment line
             '# N of M detectors dropped ...' if none, see read_drop_file()).  Ignored without fdem.
+
+    Row order:
+        sort_rows: Passed as sort_rows=1 (True) or sort_rows=0 (False); None (default): the binary's default, i.e.,
+            1 for matrices and 0 for a DEM.  With sort_rows=1, the binary sorts the rows of H by increasing weight
+            (stable), which reduces the CC work for matrices with very different row weights (e.g., 1.7-4x with the
+            hook columns of an extended CSS distance); the detectors of a DEM are in time order, which is better for
+            CC (use sort_rows=False also for matrices exported from a DEM).  The distance and RW do not depend on the
+            order of the rows; CC enumerates the same codewords, possibly in another order and with other hit counts.
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -1470,6 +1479,7 @@ def run_dist_m4ri(
     if fdem and not merge: cmd.append("merge=0")
     if fdem and drop: cmd.append(f"drop={drop}")
     if fdem and outD: cmd.append(f"outD={outD}")
+    if sort_rows is not None: cmd.append(f"sort_rows={1 if sort_rows else 0}")
     if outC: cmd.append(f"outC={outC}")
     if seed != 0: cmd.append(f"seed={seed}")
     if nothrottle: cmd.append("nothrottle=1")
@@ -3406,14 +3416,16 @@ def _cached_code_distance(
     key_fn: Optional[Callable[[], str]] = None,
     cws_out_fn: Optional[Callable[[List[List[int]]], List[List[int]]]] = None,
     fdrop: Optional[Union[str, Path, List[int]]] = None,
-    outD: Optional[str] = None
+    outD: Optional[str] = None,
+    sort_rows: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
     file, with the probability cutoff pmin, merge, the detectors to drop fdrop ("auto", "0", a file, or a list), and
     the file outD for the detectors dropped: see run_dist_m4ri()) with the dist_m4ri binary, using the distance cache
     shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
-    compute_dem_distance() (the warnings for the expert options are issued by the callers).
+    compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
+    (see run_dist_m4ri()) does not change the result, nor the cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -3558,6 +3570,7 @@ def _cached_code_distance(
             merge=merge,
             drop=file_drop,
             outD=outD if fdem is not None else None,
+            sort_rows=sort_rows,
             dW=dW,
             maxC=maxC,
             outC=outC_file,
@@ -3646,6 +3659,7 @@ def compute_classical_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Any:
     """
@@ -3681,6 +3695,10 @@ def compute_classical_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3739,7 +3757,8 @@ def compute_classical_distance(
         smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
+        sort_rows=sort_rows
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -3791,6 +3810,7 @@ def compute_quantum_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Any:
     """
@@ -3829,6 +3849,10 @@ def compute_quantum_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3903,7 +3927,8 @@ def compute_quantum_distance(
         smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
+        sort_rows=sort_rows
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -3986,6 +4011,7 @@ def compute_css_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -4023,6 +4049,10 @@ def compute_css_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4129,7 +4159,7 @@ def compute_css_distance(
             outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
             seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows
         )
         _last_css_stats[s] = dict(_last_run_stats)
 
@@ -4450,6 +4480,7 @@ def compute_dem_distance(
     p_noise: float = 0.001,
     force_noise: bool = False,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -4484,6 +4515,10 @@ def compute_dem_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4659,7 +4694,8 @@ def compute_dem_distance(
             nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
             cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
-            merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file
+            merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file,
+            sort_rows=sort_rows
         )
         ran = not res["cached"]
         drop_stats = _last_run_stats if ran else {}
@@ -4750,6 +4786,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "drop": None,
         "outD": None,
         "out_reduced": None,
+        "sort_rows": None,
         "noscan": 0,
         "classical": -1,
         "seed": 0,
@@ -5054,6 +5091,13 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                     args[key_lower] = False
                 else:
                     raise ValueError(f"invalid '{arg}': {key_lower} should be 0 or 1")
+            elif key_lower in ("sort_rows", "sort-rows", "sortrows"):
+                if val.lower() in ("1", "true", "yes", "on"):
+                    args["sort_rows"] = True
+                elif val.lower() in ("0", "false", "no", "off"):
+                    args["sort_rows"] = False
+                else:
+                    raise ValueError(f"invalid '{arg}': sort_rows should be 0 or 1")
             elif key_lower == "drop":  # (the values take precedence over files with these names, as in the binary)
                 if val.lower() in ("1", "true", "yes", "on", "auto"):
                     args["drop"] = True  # drop=auto
@@ -5179,7 +5223,7 @@ Allowed parameters:
   dexp (dest), steps, wmin, wmax, timeout, threads, nothrottle, chunk_size
   (batch), ksub, kwin (win), win_mode, min_hits, cov_cws, refresh, smax, noscan,
   start, cbeg, cend, finC, outC, maxC, expand, dW, seed, debug, solver, cache,
-  --no-cache, --verbose, --cws, --trust-start
+  --no-cache, --verbose, --cws, --trust-start, sort_rows
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5247,6 +5291,7 @@ Extra parameters (see --morehelp for details):
   start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
   noscan, cbeg, cend    Disabled in Python (ignored with a warning); use the dist_m4ri binary
+  sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
   --simple, --full      Disabled (ignored with a warning): the DEM has all detectors (see drop)
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500, alias: batch)
@@ -5488,6 +5533,15 @@ Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 0).
                         When smax > 0, tracks minimum syndrome weights for each error weight.
                         When smax=0, confinement is not computed.
+  sort_rows=0|1         Sort the rows of H by increasing weight (stable) in the dist_m4ri binary
+                        (default: the binary's, 1 for matrices and 0 for a DEM).  CC extends a
+                        cluster by the columns of the first row of its syndrome (in row order), so
+                        that light rows first reduce the CC work for matrices with very different
+                        row weights (e.g., 1.7-4x with the hook columns of an extended CSS
+                        distance).  The detectors of a DEM are in time order, which is better for
+                        CC: use sort_rows=0 also for matrices exported from a DEM.  The distance, RW,
+                        and the cache key do not depend on the order of the rows; CC enumerates the
+                        same codewords (outC), possibly in another order and with other hit counts.
   start=LIST            Expert option: comma-separated list of CC start columns (0-based), e.g.,
                         start=0,48,96 (default: -1 = all columns; start=N is a one-element list).
                         CC clusters are grown only from the listed columns, and they are NOT
@@ -5815,6 +5869,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -5879,6 +5934,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -5961,6 +6017,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -6012,6 +6069,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],

@@ -111,6 +111,9 @@ typedef struct{
   int ndrop_rows;  /* number of detectors (rows of H) before dropping */
   int ndrop_cols;  /* number of columns which touch the dropped detectors (replaced by their twins) */
   int drop_A;      /* 1: the twins have other observables (L(twin) = L + A H with A != 0) */
+  int sort_rows;   /* 1: sort the rows of H by increasing weight (stable) for CC, see csr_sort_rows_by_weight();
+                      -1 (default): 1 for matrices, 0 for a DEM */
+  int rows_sorted; /* 1: sort_rows changed the order of the rows of H */
   char *finH;
   char *finG;
   char *finL;
@@ -409,7 +412,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.14.0"
+#define DIST_M4RI_VERSION "0.14.1"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -423,7 +426,7 @@ void print_short_help(const char *prog);
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
   "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
-  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start,\n" \
+  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, sort_rows,\n" \
   "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, min_hits, cov_cws, refresh,\n" \
   "  finC, outC, maxC, dW, seed, debug\n\n" \
@@ -475,6 +478,7 @@ void print_short_help(const char *prog);
   "  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)\n" \
   "  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48\n" \
   "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
+  "  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
@@ -605,6 +609,18 @@ void print_short_help(const char *prog);
   "  smax=[int]         Maximum syndrome weight for confinement profile (default: 0).\n" \
   "                     When smax > 0, tracks minimum syndrome weights for each\n" \
   "                     error weight. When smax=0, confinement is not computed.\n" \
+  "  sort_rows=[0|1]    Sort the rows of H by increasing weight (stable) after\n" \
+  "                     reading the input (default: 1 for matrices, finH or fin;\n" \
+  "                     0 for a DEM, fdem).  CC extends a cluster by the columns of\n" \
+  "                     the first row of its syndrome (in row order), so that light\n" \
+  "                     rows first reduce the CC work for matrices with very\n" \
+  "                     different row weights, e.g., 1.7-4x with the hook columns\n" \
+  "                     of an extended CSS distance.  The detectors of a DEM are in\n" \
+  "                     time order, which is better for CC (sorting them made CC\n" \
+  "                     1.3-4x slower): use sort_rows=0 also for matrices exported\n" \
+  "                     from a DEM.  The distance and RW do not depend on the order\n" \
+  "                     of the rows; CC enumerates the same codewords (outC), but\n" \
+  "                     possibly in another order and with other hit counts.\n" \
   "  noscan=[0|1]       Expert option: 1: run CC only at weight w = wmax, skipping\n" \
   "                     the scan over weights w < wmax (default: 0). Only valid for\n" \
   "                     method=2. WARNING: lower weights are not checked, so a\n" \

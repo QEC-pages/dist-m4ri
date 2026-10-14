@@ -627,7 +627,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.0" in captured.out
+    assert "0.14.1" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -638,7 +638,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.0" in captured.out
+    assert "0.14.1" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -657,7 +657,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.0" in older_warn
+    assert "expected >= 0.14.1" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1149,6 +1149,46 @@ def test_run_dist_m4ri_start_list_and_disabled_options(capsys):
     for opt in ("noscan=1", "cbeg=3", "cend=7"):
         assert f"{opt} is disabled in the Python interface" in captured.err
     assert "WARNING: start=0,41 (expert option)" in captured.err
+
+
+def test_sort_rows_option(tmp_path, capsys):
+    # sort_rows=None leaves the binary's default (rows of H sorted by weight for matrices, not for a DEM); True / False
+    # pass sort_rows=1 / sort_rows=0; the distance and the codewords enumerated (outC) do not depend on the row order
+    cws = {}
+    for val, opt in ((None, None), (True, "sort_rows=1"), (False, "sort_rows=0")):
+        out = str(tmp_path / f"cws_{opt}.nz")
+        res = dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, threads=2, outC=out, sort_rows=val,
+                                      verbose=True)
+        assert tuple(res) == (5, 5, 0)
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        if opt is None:
+            assert "sort_rows=" not in run_line
+        else:
+            assert opt in run_line
+        sorted_note = "rows of H sorted by increasing weight for CC" in captured.out + captured.err
+        assert sorted_note == (val is not False)
+        cws[opt] = sorted(tuple(cw) for cw in dist_m4ri.read_sparse_vectors(out))
+    assert len(cws[None]) > 1 and cws[None] == cws["sort_rows=1"] == cws["sort_rows=0"]
+    # the compute_*_distance() functions and the CLI pass it on (the cache key does not depend on it)
+    dist_m4ri.clear_distance_cache()
+    try:
+        for val in (True, False):
+            assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=2, wmax=5, threads=2, sort_rows=val,
+                                                      debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) == 5
+            assert f"sort_rows={int(val)}" in capsys.readouterr().out
+            dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["sort_rows=0"])["sort_rows"] is False
+        assert dist_m4ri.parse_cli_args(["sort_rows=1"])["sort_rows"] is True
+        assert dist_m4ri.parse_cli_args([])["sort_rows"] is None
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=5", "threads=2", "sort_rows=0",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "sort_rows=0" in capsys.readouterr().out
+        assert dist_m4ri.main([f"finH={S5_H}", "sort_rows=2", "--no-cache"]) == 1
+        assert "invalid 'sort_rows=2': sort_rows should be 0 or 1" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
 
 
 def test_start_list_cache_records(tmp_path, monkeypatch, capsys):

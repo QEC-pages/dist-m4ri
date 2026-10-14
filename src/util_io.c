@@ -34,6 +34,8 @@ params_t prm={
   .ndrop_rows=0,
   .ndrop_cols=0,
   .drop_A=0,
+  .sort_rows=-1, /* (auto: 1 for matrices, 0 for a DEM) */
+  .rows_sorted=0,
   .start_list=NULL,
   .start_num=0,
   .cbeg=-1,
@@ -228,6 +230,8 @@ static void print_input_summary(FILE *stream, const params_t * const p){
             p->drop_A ? "L + A H with A != 0" : "the same observables", p->nvar);
   else if (p->drop_none)
     fprintf(stream, "#   drop=auto: no detector can be dropped exactly (the full DEM is used)\n");
+  if (p->rows_sorted)
+    fprintf(stream, "#   rows of H sorted by increasing weight for CC (sort_rows=1; sort_rows=0 keeps their order)\n");
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
   if (p->spaL)
@@ -273,6 +277,53 @@ static void print_code_params(FILE *stream, const params_t * const p){
           (double)(t1.tv_sec - t0.tv_sec) + 1e-9 * (double)(t1.tv_nsec - t0.tv_nsec));
   if (k <= 0)
     fprintf(stream, "# Warning: k=%d, there are no non-trivial codewords\n", k);
+}
+
+/** @brief Sort the rows of the CSR matrix M by increasing weight, keeping the order of the rows of equal weight (a
+ *  stable counting sort), for `sort_rows=1`: CC extends a cluster by the columns of the first row (in row order) of its
+ *  syndrome, so that light rows first reduce its work.  Each row keeps its (sorted) columns.  Returns 1 if the order of
+ *  the rows changed (M is changed in place), 0 if the rows were already sorted. */
+static int csr_sort_rows_by_weight(csr_t * const M){
+  if (M->nz != -1)
+    csr_compress(M);
+  const int m = M->rows, nnz = M->p[m];
+  int wmax = 0, sorted = 1;
+  for (int r = 0; r < m; r++) {
+    const int w = M->p[r + 1] - M->p[r];
+    if (w > wmax)
+      wmax = w;
+    if ((r > 0) && (w < M->p[r] - M->p[r - 1]))
+      sorted = 0;
+  }
+  if (sorted)
+    return 0;
+  int * const pos = calloc((size_t)wmax + 2, sizeof(int)); /* the first new row of each weight */
+  int * const order = malloc((size_t)m * sizeof(int));     /* new row -> old row */
+  int * const p2 = malloc(((size_t)m + 1) * sizeof(int));
+  int * const i2 = malloc(((size_t)nnz + 1) * sizeof(int));
+  if (!pos || !order || !p2 || !i2)
+    ERROR("memory allocation");
+  for (int r = 0; r < m; r++)
+    pos[M->p[r + 1] - M->p[r] + 1]++;
+  for (int w = 0; w <= wmax; w++)
+    pos[w + 1] += pos[w];
+  for (int r = 0; r < m; r++)
+    order[pos[M->p[r + 1] - M->p[r]]++] = r;
+  int j = 0;
+  for (int k = 0; k < m; k++) {
+    const int r = order[k];
+    p2[k] = j;
+    for (int t = M->p[r]; t < M->p[r + 1]; t++)
+      i2[j++] = M->i[t];
+  }
+  p2[m] = j;
+  memcpy(M->p, p2, ((size_t)m + 1) * sizeof(int));
+  memcpy(M->i, i2, (size_t)nnz * sizeof(int));
+  free(i2);
+  free(p2);
+  free(order);
+  free(pos);
+  return 1;
 }
 
 static void dem_merge_columns(params_t * const p);
@@ -796,6 +847,13 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, merge=%d\n",argv[i],p->merge);
     }
+    else if (sscanf(argv[i],"sort_rows=%d",&dbg)==1){
+      if ((dbg != 0) && (dbg != 1))
+        ERROR("invalid '%s': sort_rows should be 0 or 1\n", argv[i]);
+      p->sort_rows=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, sort_rows=%d\n",argv[i],p->sort_rows);
+    }
     else if (0==strncmp(argv[i],"drop=",5)){
       char * const val = file_arg_value(argc, argv, &i, 5);
       p->drop_set = 1;
@@ -1171,6 +1229,16 @@ void var_init(int argc, char **argv, params_t * const p){
     /* column masks of L: the check L c != 0 of a candidate codeword c takes O(|c|) operations (for up to 64 rows
      * of L) instead of O(nnz(L)) */
     p->maskL = colmask_from_csr(p->spaL);
+  }
+
+  /* sort_rows: the rows of H by increasing weight (default: for matrices, not for a DEM, whose detectors are in time
+   * order), once L is known; the distance, the codewords, and RW do not depend on the order of the rows of H */
+  if (p->sort_rows < 0)
+    p->sort_rows = p->fdem ? 0 : 1;
+  if (p->sort_rows) {
+    p->rows_sorted = csr_sort_rows_by_weight(p->spaH);
+    if (p->rows_sorted)
+      csr_dump(stderr, p->spaH, "H (rows sorted by weight)", p->debug);
   }
 
   if ((p->method <= 0) || (p->method > 3)){

@@ -142,6 +142,18 @@ With `smax=0` (default), the syndrome of a cluster is kept as a bitset (a column
 the last column of a cluster is found by a hash lookup: the syndrome left after the next-to-last column must equal a
 column of $H$ (instead of a scan of the candidate columns). The clusters and the codewords found (with their hit
 counts) are the same as with `smax>0`, only faster (about 3-5 times for CSS codes, and 5-20 times for circuit DEMs).
+A cluster is extended by the columns of the first row of its syndrome, in the order of the rows of $H$ (every codeword
+which contains the cluster has a column in that row). With `sort_rows=1`, the default for matrices (`finH` or `fin`),
+the rows of $H$ are sorted by increasing weight (stable) after reading the input, so that light rows come first: this
+reduces the CC work for matrices with very different row weights, e.g., 1.7-4.2 times for the matrices with hook
+columns of an extended CSS distance (rows of weight 5 to 103), while codes with rows of equal weight are not changed.
+For a DEM (`fdem`), the default is `sort_rows=0`: its detectors are in time order, and the first unsatisfied detector
+of a cluster then has most of its columns before the start column (these are not used), which is better than a light
+row; sorting the rows made CC 1.3-1.6 times slower for the matrices `surf_d5_H.mmx` and `surf_d7_H.mmx` exported from
+DEMs in [`examples/`](examples/) (use `sort_rows=0` for such matrices), and up to about 4 times (estimated) for the
+reduced DEMs of the Mitten circuits. The distance and RW do not depend on the order of the rows (with the same seed, RW
+finds the same codewords); CC enumerates the same codewords (e.g., with `outC`), possibly in another order and with
+other hit counts. With `debug=1`, the input summary notes that the rows were sorted.
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
 $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
 soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`). A stop target `dstop=U` ends the scan
@@ -158,6 +170,8 @@ Relevant parameters:
   required for `method=2`).
 - `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning
   and the bitset syndromes with hash lookups above; set e.g. `smax=5` to compute confinement).
+- `sort_rows=[0|1]`: Sort the rows of $H$ by increasing weight for CC (default: 1 for matrices, 0 for a DEM; see
+  above).
 
 Expert parameters (each prints a `# WARNING:` to `stderr`; see
 [Restricting the CC Search](#restricting-the-cc-search-expert-options) below):
@@ -586,7 +600,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.1): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -636,6 +650,7 @@ Extra parameters (see --morehelp for details):
   noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)
   start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48
   cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs
+  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
@@ -833,6 +848,9 @@ interoperability without manual threading overhead.
   `dmin >= dstop`, unless a lighter codeword is found (see [Bracketing Mode](#3-bracketing-mode-method3-default));
   the bounds are then `[dmin, w, rw_steps]` with `dmin >= dstop` and the weight `w` of the lightest codeword found
   (`0` if none). A cached lower bound `dmin >= dstop` answers the request without a calculation.
+- Row order `sort_rows` of all `compute_*_distance()` functions (CLI: `sort_rows=0|1`; default: `None`, the binary's
+  default, i.e., sorted rows for matrices and the detectors of a DEM in time order): passed to the binary (see
+  [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it.
 - Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
   separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
   results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are

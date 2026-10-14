@@ -75,7 +75,10 @@ minimum-weight codeword has a non-zero syndrome (otherwise, the subset or the re
 codeword), and the support of its first unsatisfied check contains another position of the codeword [DKP17]. The work
 of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`. With `smax=0` (default),
 the syndrome of a cluster is kept as a bitset, and the last column of a cluster is found by a hash lookup: the syndrome
-left after the next-to-last column must be that of a single column of `H`.
+left after the next-to-last column must be that of a single column of `H`. The first unsatisfied check is taken in the
+order of the rows of `H`: for matrices, the rows are sorted by increasing weight (`sort_rows=1`, the default), which
+reduces the work when the row weights are very different; the detectors of a DEM are kept in time order (`sort_rows=0`,
+the default with `fdem`), which is better there.
 
 The expert options `start`, `cbeg`/`cend`, and `noscan` restrict the search; each of them prints a warning, since the
 reported `dmin` is then not necessarily a lower bound (`dmax` is always valid). With `smax > 0`, CC also computes the
