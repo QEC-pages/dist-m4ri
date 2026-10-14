@@ -627,7 +627,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.2" in captured.out
+    assert "0.14.3" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -638,7 +638,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.2" in captured.out
+    assert "0.14.3" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -657,7 +657,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.2" in older_warn
+    assert "expected >= 0.14.3" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1186,6 +1186,48 @@ def test_sort_rows_option(tmp_path, capsys):
         assert "sort_rows=0" in capsys.readouterr().out
         assert dist_m4ri.main([f"finH={S5_H}", "sort_rows=2", "--no-cache"]) == 1
         assert "invalid 'sort_rows=2': sort_rows should be 0 or 1" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_win_hyb_option(capsys):
+    # win_hyb (window size of the hybrid RW steps, n >= 500; 0, the default: 256 columns for a DEM, 512 for matrices)
+    # is passed to the binary if nonzero by run_dist_m4ri(), the compute_*_distance() functions, and the CLI; the
+    # input summary (debug&1) reports the windows, and the codewords found by the uniform and by the window steps are
+    # parsed (_last_run_stats["rw_step_types"]), as the rounds of a DEM (_last_run_stats["rounds"])
+    for val, note in ((0, "512 columns on every other step, uniform permutations on the others (win_hyb=0: 256 for a "
+                          "DEM, 512 for matrices)"),
+                      (100, "100 columns on every other step, uniform permutations on the others (win_hyb=100)")):
+        res = dist_m4ri.run_dist_m4ri(method=1, finH=S5_H, finL=S5_L, steps=200, threads=2, win_hyb=val, verbose=True)
+        assert res[2] > 1
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        assert ("win_hyb=" in run_line) == (val != 0)
+        windows = [ln for ln in (captured.out + captured.err).splitlines() if "RW windows:" in ln]
+        assert len(windows) == 1 and windows[0].endswith(note)
+        types = dist_m4ri._last_run_stats["rw_step_types"]
+        assert types and all(t["uniform_cws"] + t["window_cws"] - t["both_cws"] == t["cws"] for t in types.values())
+        assert "rounds" not in dist_m4ri._last_run_stats  # (a matrix)
+        assert "by RW step type" in dist_m4ri.explain_bounds(list(res), method=1, stats=dist_m4ri._last_run_stats)
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, threads=2, debug=1)
+    capsys.readouterr()
+    rounds = dist_m4ri._last_run_stats["rounds"]
+    assert set(rounds) == {"D", "L", "score"} and 0.0 <= rounds["score"] <= 1.0
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=1, num_steps=20, min_hits=0, threads=2,
+                                                  win_hyb=300, debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) > 0
+        assert "win_hyb=300" in capsys.readouterr().out
+        dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["win_hyb=200"])["win_hyb"] == 200
+        assert dist_m4ri.parse_cli_args([])["win_hyb"] == 0
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=1", "steps=20", "threads=2", "win_hyb=100",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "win_hyb=100" in capsys.readouterr().out
+        assert dist_m4ri.main([f"finH={S5_H}", "method=1", "win_hyb=-1", "--no-cache"]) == 1
+        assert "invalid 'win_hyb=-1'" in capsys.readouterr().err
     finally:
         dist_m4ri.enable_distance_cache()
         dist_m4ri.clear_distance_cache()

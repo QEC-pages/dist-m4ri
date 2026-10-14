@@ -55,7 +55,11 @@ with at least 128 rows, the elimination processes 20 or 24 pivots per pass over 
 Russians", with tables of combinations of the pivot rows), which gives the same result about twice as fast for large
 matrices.
 
-Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default).
+Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default,
+with windows of `win_hyb` consecutive columns: 256 for a DEM, whose errors are in time order, and 512 for matrices).
+The window columns come first in the elimination order, so that a codeword with most of its columns in the window is
+found far more often; a window much larger than the minimum-weight codewords, e.g., one round of a DEM, has many
+columns which cannot be pivots and helps little.
 With `ksub > 0` (**experimental, should not be used**; a warning is printed), each step reduces the span of `ksub`
 rows of a fixed basis of `ker(H)` (cache-resident elimination): a few codewords are then found much more often than
 others, so that the hit-count criterion `min_hits` may end RW early.

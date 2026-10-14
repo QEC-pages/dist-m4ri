@@ -109,11 +109,27 @@ Relevant parameters:
   (all with `cov_cws=0`). For codes with fewer than `cov_cws` minimum-weight codewords, a smaller `cov_cws` may stop
   RW earlier.
 - `kwin=[int]` (alias: `win=[int]`): Localized column permutation window size $W$: the random column order starts with
-  $W$ columns near a random column, which are thus preferred as pivots (default: 0; for $n \ge 500$, every other RW
-  step then uses $W = \min(512, 3n/4)$ consecutive columns, as with `win_mode=1`, and the other steps use uniform
-  random permutations).
+  $W$ columns near a random column, which are thus preferred as pivots, in every RW step (default: 0; for $n \ge 500$,
+  every other RW step then uses an index window of `win_hyb` consecutive columns, as with `win_mode=1`, and the other
+  steps use uniform random permutations, also for codewords which are not local in the column order).
 - `win_mode=[0|1]`: Window construction mode when `kwin > 0`: `0` for Tanner graph BFS neighborhood, `1` for contiguous
   column index window (default: 0).
+- `win_hyb=[int]`: Window size of the hybrid RW steps (with `kwin=0` and $n \ge 500$; at most $3n/4$). Default: 0, i.e.,
+  256 columns for a DEM and 512 for matrices. A RW step finds a codeword if all but one of its columns are pivots;
+  the window columns come first in the elimination order, so that they are pivots unless they depend on earlier window
+  columns. In a DEM, whose errors are in time order (stim), a window of $W$ consecutive columns is a slab of errors
+  close in time, which touch only so many detectors: a window of one round of columns ($L \approx 10D$ columns for
+  $D$ detectors per round) has rank about $2D$, so that most of its columns cannot be pivots. The minimum-weight
+  codewords of circuit DEMs are compact in this order (e.g., the weight-18 codewords of the double-gross circuit are
+  final data measurement errors within 177 columns), and windows of 192-256 columns find them 2-10 times faster than
+  512 for the reduced DEMs of the gross, double-gross, `bb_360`, and mitten circuits (the double-gross DEM: about 10
+  distinct codewords of weight 18 per $2 \cdot 10^4$ steps with 256 columns, 0-2 with 512 or with one round), while
+  matrices of codes gain nothing from 256. With `debug&1`, the binary prints the rounds of a DEM in the input summary
+  (estimated from the time translation of its errors: the number $D$ of detectors per round is the most frequent
+  distance of the two detectors of an error, as of measurement errors, which maps most errors to other errors when
+  their detectors are shifted by $D$; $L = n D / m$ columns per round; none, e.g., for circuits with SWAP routing),
+  and at the end of RW the codewords of the three lowest weights found by the uniform steps and by the window steps
+  (e.g., to see codewords which are not local in the column order).
 - `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
   without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
   full-matrix RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$, e.g., for DEMs
@@ -324,10 +340,12 @@ By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid ov
   threads started (or once a round has run for 5 ms): tiny runs avoid the start-up of many threads, longer runs use
   all of them.
 - **Large-Matrix Memory Throttling (RW threads only)**: For massive matrices (e.g. circuit DEMs with
-  $n > 20,000, m > 5,000$), the number of RW threads is automatically limited so that their total dense working memory
-  (copies of $H$ and $H^T$ per RW thread, or the `ksub` $\times n$ subspace matrix with `ksub>0`) stays under ~1.5 GB,
-  avoiding DRAM bus and CPU cache thrashing: above 15 MB per RW thread (about $m \cdot n > 6 \cdot 10^7$ for
-  full-matrix RW), at most 1.5 GB divided by the memory per thread, but at least 2 and at most 32 threads run RW. CC
+  $n > 20,000, m > 5,000$), RW is limited by the memory bandwidth: above 15 MB of dense working memory per RW thread
+  (copies of $H$ and $H^T$, or the `ksub` $\times n$ subspace matrix with `ksub>0`; about $m \cdot n > 6 \cdot 10^7$
+  for full-matrix RW), the RW throughput peaks at 32-64 threads whatever the matrix size, so that at most 32 threads
+  run RW, with their total dense working memory within a quarter of the physical memory (at least 2 threads; 1.5 GB if
+  the physical memory is not known). E.g., the reduced DEM of the $[[756,16,34]]$ code ($m = 13230$, $n = 129276$,
+  0.43 GB per thread) runs 32 RW threads, 1.5 RW steps/s against 0.23 with the 3 threads of the former 1.5 GB limit. CC
   needs no dense matrices: `method=2` is not limited, and in `method=3` only the RW share is limited, while CC rounds
   can use all threads.
 - **Small Step Counts (RW threads only)**: At most $\lceil \text{steps} / 10 \rceil$ threads run RW (all threads in
@@ -600,7 +618,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.2): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.3): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -654,6 +672,7 @@ Extra parameters (see --morehelp for details):
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
+  win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)
   cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
   refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]
@@ -679,10 +698,12 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
 
 - `0`: silent, except for errors, warnings on the validity of the result (expert options, the experimental `ksub`,
   invalid `finC` codewords), and the confinement profile with `smax>0`.
-- `1` (default) **summary**: input matrices (sizes, numbers of nonzeros, maximum row and column weights), warnings,
-  the reason why the run ended (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`, `timeout=60s
-  reached during CC round w=9 (37.5% of start columns claimed)`, or `RW convergence reached`), codeword and hit
-  statistics, RW information sets, codeword export.
+- `1` (default) **summary**: input matrices (sizes, numbers of nonzeros, maximum row and column weights; for a DEM also
+  its rounds, `#   rounds of the DEM: D=... detectors and L=... columns per round`, and for the hybrid RW the window
+  size), warnings, the reason why the run ended (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`,
+  `timeout=60s reached during CC round w=9 (37.5% of start columns claimed)`, or `RW convergence reached`), codeword
+  and hit statistics, RW information sets and the codewords of the three lowest weights found by the uniform and by
+  the window steps (`# RW step types, w=...`), codeword export.
 - `2` (default) **progress**: the run plan (method, threads, RW steps, CC weights, timeout, rng seed), finished CC
   rounds, new upper bounds, RW convergence.
 - `4` **periodic status** after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate,
@@ -694,7 +715,8 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
 - `32` **codewords**: the support (1-based columns) of each new lightest codeword (RW, CC, `finC`).
 - `64` **arguments**: the command-line arguments, the rng seed, and the files read.
 - `128` **matrices** $H$, $G$, $L$ (for $n < 150$, unless bit `2048` is set).
-- `256` **codeword dump**: all codewords in the hash table with their hit counts (at the end).
+- `256` **codeword dump**: all codewords in the hash table with their hit counts (at the end), also those of the RW
+  steps with uniform permutations (`u`) and with windows (`w`).
 - `2048`: no size cutoff for matrices, codeword supports, and per-weight codeword statistics.
 - `4096`: `dist_m4ri_old` only, CC recursion and confinement hash traces.
 
@@ -851,6 +873,13 @@ interoperability without manual threading overhead.
 - Row order `sort_rows` of all `compute_*_distance()` functions (CLI: `sort_rows=0|1`; default: `None`, the binary's
   default, i.e., sorted rows for matrices and the detectors of a DEM in time order): passed to the binary (see
   [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it.
+- RW window size `win_hyb` of all `compute_*_distance()` functions (CLI: `win_hyb=N`; default: 0, i.e., 256 columns
+  for a DEM and 512 for matrices): passed to the binary if nonzero (see
+  [RW Algorithm](#1-multithreaded-rw-algorithm-method1)); the cache key does not depend on it. With `verbose=True`
+  (CLI: `--verbose`), the binary's summary shows the rounds of a DEM, and the explanation of the bounds the codewords
+  found by the uniform and by the window steps; `_last_run_stats` holds them as `"rounds"` (`D`, `L`, `score`) and
+  `"rw_step_types"` (per weight: the distinct codewords and hits of each kind of step), and the model check of the
+  information-set estimate uses the hits of the uniform steps only.
 - Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
   separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
   results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are

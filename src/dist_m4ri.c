@@ -34,8 +34,9 @@
  * analyzed (flag `cc_exact`).
  *
  * Threads (default: all logical CPUs available to the process): every worker can run CC rounds, while RW runs only on
- * workers 0..rw_threads-1.  Thread throttling (unless nothrottle=1) limits the RW workers by the memory of their dense
- * matrices and by the step count; in method=3 this limits only the RW share, and CC rounds can use all workers.
+ * workers 0..rw_threads-1.  Thread throttling (unless nothrottle=1) limits the RW workers for large dense matrices (at
+ * most 32, within a quarter of the physical memory, see rw_thread_cap()) and by the step count; in method=3 this limits
+ * only the RW share, and CC rounds can use all workers.
  * A worker without RW work (RW steps all claimed, RW stopped by min_hits) joins the current CC round.  A CC round hands
  * out work units: start columns, or pieces of them if there are few start columns per thread (see `cc_pack()`).
  * Method 2 starts only a few workers, and the others once a CC round takes longer (see CC_SPAWN_INITIAL).
@@ -379,7 +380,7 @@ static __attribute__((noinline)) bool cc_record(distfork_ctx_t * const ctx, cons
   params_t * const p = ctx->p;
   bool stop = false;
   pthread_mutex_lock(&ctx->cw_mutex);
-  p->codewords = codeword_add_maybe(p, err->vec, err->wei);
+  p->codewords = codeword_add_maybe(p, err->vec, err->wei, CW_SRC_OTHER);
   ctx_update_feed_limit(ctx);
   int cur_d = atomic_load(&ctx->dmax);
   if (p->min_w < cur_d || cur_d == 0) {
@@ -756,6 +757,12 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   return 0;
 }
 
+/* The window of a hybrid RW step (kwin=0, n >= 500: an index window on every other global step), see
+ * rw_hybrid_window() in util_io.h */
+static inline int hybrid_window(const params_t * const p, const int nvar) {
+  return rw_hybrid_window(p, nvar);
+}
+
 /* Add the thread time `*acc_t` of `*acc_n` completed RW steps to the totals of the RW timing model, and reset them */
 static inline void rw_time_publish(distfork_ctx_t *ctx, double *acc_t, int *acc_n) {
   if (*acc_n > 0) {
@@ -782,16 +789,17 @@ static inline int rw_cw_limit(distfork_ctx_t * const ctx) {
                            atomic_load_explicit(&ctx->cw_feed_limit, memory_order_relaxed));
 }
 
-/* Record the RW codeword `ee` of weight `cnt` (sorted indices): add it to the hash (or count one more hit), update
+/* Record the RW codeword `ee` of weight `cnt` (sorted indices) found in a step with a uniform random permutation or
+ * with a window (`src`: CW_SRC_RW_UNIFORM or CW_SRC_RW_WINDOW): add it to the hash (or count one more hit), update
  * the upper bound dmax and the stop flags (`ksub` > 0 only for the message) */
 static void rw_record_codeword(distfork_ctx_t * const ctx, const rci_t * const ee, const int cnt, const int tid,
-                               const int ksub) {
+                               const int ksub, const int src) {
   params_t * const p = ctx->p;
   /* with outC or maxC, codewords are collected: RW does not end the run when the bounds coincide or on wmin (in
    * method 3, the coordinator then runs the CC rounds which enumerate the codewords) */
   const bool collecting = (p->outC != NULL) || (p->maxC > 0);
   pthread_mutex_lock(&ctx->cw_mutex);
-  p->codewords = codeword_add_maybe(p, ee, cnt);
+  p->codewords = codeword_add_maybe(p, ee, cnt, src);
   ctx_update_feed_limit(ctx);
   const int best = p->min_w; /* a codeword lighter than min_w is always added */
   const int old_dmax = atomic_load(&ctx->dmax);
@@ -1016,7 +1024,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
     int eff_kwin = kwin;
     int eff_win_mode = win_mode;
     if (eff_kwin == 0 && nvar >= 500 && ((step0 + step) & 1) == 1) { /* hybrid: every other global step */
-      eff_kwin = minint(512, (nvar * 3) / 4);
+      eff_kwin = hybrid_window(p, nvar);
       eff_win_mode = 1;
     }
     const bool uniform = !(eff_kwin > 0 && eff_kwin < nvar);
@@ -1101,7 +1109,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
       /* the check L c != 0 needs no sorted support: only the codewords recorded are sorted (hash key) */
       if (classical || colmask_syndrome_non_zero(maskL, cnt, ee)) {
         rci_quick_sort(ee, cnt);
-        rw_record_codeword(ctx, ee, cnt, tid, 0);
+        rw_record_codeword(ctx, ee, cnt, tid, 0, uniform ? CW_SRC_RW_UNIFORM : CW_SRC_RW_WINDOW);
       }
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
@@ -1176,7 +1184,7 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
     int eff_kwin = kwin;
     int eff_win_mode = win_mode;
     if (eff_kwin == 0 && nvar >= 500 && ((step0 + step) & 1) == 1) { /* hybrid: every other global step */
-      eff_kwin = minint(512, (nvar * 3) / 4);
+      eff_kwin = hybrid_window(p, nvar);
       eff_win_mode = 1;
     }
 
@@ -1229,7 +1237,8 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
       }
 
       if (cnt > 0 && cnt < limit && (classical || colmask_syndrome_non_zero(maskL, cnt, ee))) {
-        rw_record_codeword(ctx, ee, cnt, tid, ksub);
+        rw_record_codeword(ctx, ee, cnt, tid, ksub,
+                           (eff_kwin > 0 && eff_kwin < nvar) ? CW_SRC_RW_WINDOW : CW_SRC_RW_UNIFORM);
       }
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
@@ -1431,7 +1440,7 @@ static void *worker_thread_func(void *arg) {
                 if (nz) {
                   params_t * const p = ctx->p;
                   pthread_mutex_lock(&ctx->cw_mutex);
-                  p->codewords = codeword_add_maybe(p, err->vec, 1);
+                  p->codewords = codeword_add_maybe(p, err->vec, 1, CW_SRC_OTHER);
                   ctx_update_feed_limit(ctx);
                   if ((p->debug & DBG_CODEWORDS) && atomic_load(&ctx->dmax) != 1) {
                     char prefix[48];
@@ -2327,10 +2336,21 @@ static int available_cpus(void) {
   return (nprocs > 0) ? (int)nprocs : 4;
 }
 
+/* The physical memory in bytes (0 if not known) */
+static unsigned long long physical_memory_bytes(void) {
+#if defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+  const long pages = sysconf(_SC_PHYS_PAGES), psize = sysconf(_SC_PAGESIZE);
+  if (pages > 0 && psize > 0) return (unsigned long long)pages * (unsigned long long)psize;
+#endif
+  return 0;
+}
+
 /* Maximum number of RW workers for thread throttling (all workers in method 1, the RW share in method 3):
  * - dense memory: a full-matrix RW worker holds dense copies of H (m x n) and of its transpose (n x m), a worker
- *   with ksub > 0 only the sampled subspace matrix (ksub x n).  Above 15 MB per worker, the total is kept at
- *   ~1.5 GB (2 to 32 workers) to prevent DRAM bus and L3 cache thrashing;
+ *   with ksub > 0 only the sampled subspace matrix (ksub x n).  Above 15 MB per worker, RW is limited by the memory
+ *   bandwidth: the throughput peaks at 32-64 RW workers whatever the matrix size (e.g., 32 with 49 MB per worker,
+ *   32-64 with 0.43 GB).  Then at most 32 workers run RW, with their dense matrices in a quarter of the physical memory
+ *   (but at least 2 workers; 1.5 GB if the physical memory is not known);
  * - small step counts: at most ceil(steps/10) RW workers. */
 static int rw_thread_cap(const params_t * const p) {
   int cap = INT_MAX;
@@ -2345,10 +2365,10 @@ static int rw_thread_cap(const params_t * const p) {
       dense_bytes_per_thread = (size_t)nrows * words_n * 8 + (size_t)nvar * (((size_t)nrows + 63) / 64) * 8;
     }
     if (dense_bytes_per_thread > 15ULL * 1024 * 1024) {
-      int max_mem_threads = (int)((1536ULL * 1024 * 1024) / dense_bytes_per_thread);
-      if (max_mem_threads < 2) max_mem_threads = 2;
-      if (max_mem_threads > 32) max_mem_threads = 32;
-      cap = max_mem_threads;
+      const unsigned long long ram = physical_memory_bytes();
+      const unsigned long long budget = ram ? ram / 4 : 1536ULL * 1024 * 1024;
+      const unsigned long long max_mem_threads = budget / dense_bytes_per_thread;
+      cap = (max_mem_threads < 2) ? 2 : ((max_mem_threads > 32) ? 32 : (int)max_mem_threads);
     }
   }
   if (p->steps > 0) {
@@ -2871,6 +2891,8 @@ int main(int argc, char **argv) {
       fprintf(stderr, "# RW information sets: n=%d, rank(H)=%d, steps=%ld (uniform permutations: %ld), ksub=%d, "
               "%.3g s/step per thread, %d RW threads\n", p->nvar, rw_rank, rw_done, rw_unif, p->ksub, t_step,
               ctx.rw_threads);
+      if (rw_unif > 0 && rw_unif < rw_done) /* the codewords found by the uniform and by the window steps */
+        print_rw_step_stats(stderr, p);
     }
     /* the RW upper bound is not certified: warn if the hit counts suggest that some codewords are much harder to
      * find than others of the same weight (one pass over the codewords in hash), and then also print the
@@ -2899,11 +2921,12 @@ int main(int argc, char **argv) {
 
   if (p->debug & DBG_CWDUMP) {
     cw_vec_t *cw;
-    fprintf(stderr, "# all %lld codewords in hash (1-based columns, cnt: number of hits):\n", p->num_cws);
+    fprintf(stderr, "# all %lld codewords in hash (1-based columns, cnt: number of hits, of which u in RW steps with "
+            "uniform permutations and w in RW steps with windows):\n", p->num_cws);
     for (cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)) {
       fprintf(stderr, "# cw: [ ");
       for (int i = 0; i < cw->weight; i++) fprintf(stderr, "%d ", 1 + col_orig_index(p, cw->arr[i]));
-      fprintf(stderr, "] cnt=%d\n", cw->cnt);
+      fprintf(stderr, "] cnt=%d (u=%d, w=%d)\n", cw->cnt, cw->cnt_u, cw->cnt_w);
     }
   }
 

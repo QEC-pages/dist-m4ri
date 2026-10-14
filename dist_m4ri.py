@@ -30,7 +30,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.2"
+__version__ = "0.14.3"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -404,6 +404,23 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 stats["rw_step_time"] = float(m_rw.group(6))
                 stats["rw_threads"] = int(m_rw.group(7))
             continue
+        if line_s.startswith("# RW step types, w="):  # the codewords found by the uniform and by the window steps
+            m_st = re.search(r"w=(\d+): uniform steps: cws=(\d+), hits=(\d+); window steps: cws=(\d+), hits=(\d+); "
+                             r"both: cws=(\d+) \(of (\d+) cws\)", line_s)
+            if m_st:
+                v = [int(x) for x in m_st.groups()]
+                stats.setdefault("rw_step_types", {})[v[0]] = {
+                    "uniform_cws": v[1], "uniform_hits": v[2], "window_cws": v[3], "window_hits": v[4],
+                    "both_cws": v[5], "cws": v[6]}
+            continue
+        if line_s.startswith("#   rounds of the DEM:"):  # the input summary (debug & 1, a DEM)
+            m_r = re.search(r"D=(\d+) detectors and L=(\d+) columns per round \(estimated: score ([0-9.]+)\)", line_s)
+            m_n = re.search(r"best score ([0-9.]+)", line_s)
+            if m_r:
+                stats["rounds"] = {"D": int(m_r.group(1)), "L": int(m_r.group(2)), "score": float(m_r.group(3))}
+            elif m_n:
+                stats["rounds"] = {"D": 0, "L": 0, "score": float(m_n.group(1))}
+            continue
         if "RW convergence reached" in line_s:  # progress line (debug & 2) or the stop reason (debug & 1)
             stats["rw_converged"] = True
         if line_s.startswith("# codewords accumulated: total=0"):
@@ -536,6 +553,13 @@ def explain_bounds(
                     f"max = {ew['hits_max']}, avg = {ew['hits_avg']:.2f}, "
                     f"stdev = {ew['hits_stdev']:.2f}."
                 )
+            n_all, n_unif = stats.get("rw_steps", 0), stats.get("rw_steps_uniform", 0)
+            for w, st in sorted(stats.get("rw_step_types", {}).items()):
+                lines.append(
+                    f"  {prefix}Codewords (w = {w}) by RW step type: {st['uniform_cws']} found in the {n_unif} uniform "
+                    f"steps ({st['uniform_hits']} hits), {st['window_cws']} in the {n_all - n_unif} window steps "
+                    f"({st['window_hits']} hits), {st['both_cws']} in both (of {st['cws']} codewords)."
+                )
             for hw in stats.get("hit_warnings", []):
                 lines.append(f"  {prefix}WARNING: {hw}")
         else:
@@ -575,14 +599,20 @@ def explain_bounds(
                 )
                 if stats.get("min_w") == dmax and "hits_avg" in stats:
                     n_all = stats.get("rw_steps", n_unif)
-                    exp_hits = n_all * rw_infoset_find_prob(n_cols, rank, dmax)
-                    verdict = ("the uniform model is conservative here" if stats["hits_avg"] >= exp_hits else
+                    p1 = rw_infoset_find_prob(n_cols, rank, dmax)
+                    st = stats.get("rw_step_types", {}).get(dmax)
+                    if st is not None and st["cws"] > 0:  # the hits of the uniform steps only
+                        n_ref, obs, note = n_unif, st["uniform_hits"] / st["cws"], " in the uniform steps"
+                    else:
+                        n_ref, obs = n_all, stats["hits_avg"]
+                        note = "" if n_unif == n_all else ", including the steps with localized windows"
+                    exp_hits = n_ref * p1
+                    verdict = ("the uniform model is conservative here" if obs >= exp_hits else
                                "codewords are found less often than in the uniform model, the information-set "
                                "estimate may be optimistic")
-                    note = "" if n_unif == n_all else ", including the steps with localized windows"
                     lines.append(
-                        f"  {prefix}Model check: expected hits per codeword of weight {dmax} in {n_all} uniform RW "
-                        f"steps: {exp_hits:.3g}, observed average {stats['hits_avg']:.2f}{note} ({verdict})."
+                        f"  {prefix}Model check: expected hits per codeword of weight {dmax} in {n_ref} uniform RW "
+                        f"steps: {exp_hits:.3g}, observed average {obs:.2f}{note} ({verdict})."
                     )
         elif stats.get("rw_n", 0) > 0:
             lines.append(f"  {prefix}Information-set estimate: not available (ksub > 0 or kwin > 0: no uniform "
@@ -1362,6 +1392,7 @@ def run_dist_m4ri(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -1393,6 +1424,17 @@ def run_dist_m4ri(
             hook columns of an extended CSS distance); the detectors of a DEM are in time order, which is better for
             CC (use sort_rows=False also for matrices exported from a DEM).  The distance and RW do not depend on the
             order of the rows; CC enumerates the same codewords, possibly in another order and with other hit counts.
+
+    RW windows:
+        kwin / win_mode: A window of kwin columns in every RW step (win_mode=0: a Tanner graph ball, 1: an index
+            window).  kwin=0 (default): the automatic hybrid for n >= 500, an index window of win_hyb columns in every
+            other step and uniform random permutations in the others.
+        win_hyb: Window size of the hybrid RW steps, passed as win_hyb=N if nonzero; 0 (default): 256 columns for a
+            DEM, 512 for matrices (at most 3n/4).  The windows of 192-256 columns find the minimum-weight codewords of
+            circuit DEMs 2-10 times faster than 512, and windows of one round of columns are much slower.  With
+            debug & 1 (or verbose=True), the binary prints the rounds of a DEM (estimated from the time translation of
+            its errors: D detectors and L columns per round, also in _last_run_stats["rounds"]) and the codewords found
+            by the uniform and by the window steps (see _parse_stderr_stats()).
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -1487,6 +1529,7 @@ def run_dist_m4ri(
     if ksub > 0: cmd.append(f"ksub={ksub}")
     if kwin > 0: cmd.append(f"kwin={kwin}")
     if win_mode != 0: cmd.append(f"win_mode={win_mode}")
+    if win_hyb != 0: cmd.append(f"win_hyb={win_hyb}")
     if min_hits is not None and min_hits >= 0: cmd.append(f"min_hits={min_hits}")
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh > 0: cmd.append(f"refresh={refresh}")
@@ -3417,7 +3460,8 @@ def _cached_code_distance(
     cws_out_fn: Optional[Callable[[List[List[int]]], List[List[int]]]] = None,
     fdrop: Optional[Union[str, Path, List[int]]] = None,
     outD: Optional[str] = None,
-    sort_rows: Optional[bool] = None
+    sort_rows: Optional[bool] = None,
+    win_hyb: int = 0
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
@@ -3425,7 +3469,8 @@ def _cached_code_distance(
     the file outD for the detectors dropped: see run_dist_m4ri()) with the dist_m4ri binary, using the distance cache
     shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
     compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
-    (see run_dist_m4ri()) does not change the result, nor the cache key.
+    (see run_dist_m4ri()) does not change the result, nor the cache key; nor does the RW window size win_hyb change the
+    cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -3581,6 +3626,7 @@ def _cached_code_distance(
             ksub=ksub,
             kwin=kwin,
             win_mode=win_mode,
+            win_hyb=win_hyb,
             min_hits=min_hits,
             cov_cws=cov_cws,
             refresh=refresh,
@@ -3655,6 +3701,7 @@ def compute_classical_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -3699,6 +3746,9 @@ def compute_classical_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3758,7 +3808,7 @@ def compute_classical_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows
+        sort_rows=sort_rows, win_hyb=win_hyb
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -3806,6 +3856,7 @@ def compute_quantum_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -3853,6 +3904,9 @@ def compute_quantum_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3928,7 +3982,7 @@ def compute_quantum_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows
+        sort_rows=sort_rows, win_hyb=win_hyb
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -4007,6 +4061,7 @@ def compute_css_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -4053,6 +4108,9 @@ def compute_css_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4159,7 +4217,7 @@ def compute_css_distance(
             outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
             seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows
+            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb
         )
         _last_css_stats[s] = dict(_last_run_stats)
 
@@ -4467,6 +4525,7 @@ def compute_dem_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -4519,6 +4578,9 @@ def compute_dem_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4695,7 +4757,7 @@ def compute_dem_distance(
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
             cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
             merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file,
-            sort_rows=sort_rows
+            sort_rows=sort_rows, win_hyb=win_hyb
         )
         ran = not res["cached"]
         drop_stats = _last_run_stats if ran else {}
@@ -4801,6 +4863,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "ksub": 0,
         "kwin": 0,
         "win_mode": 0,
+        "win_hyb": 0,
         "min_hits": None,
         "cov_cws": 100,
         "refresh": 0,
@@ -5149,6 +5212,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["kwin"] = int(val)
             elif key_lower in ("win_mode", "winmode"):
                 args["win_mode"] = int(val)
+            elif key_lower in ("win_hyb", "winhyb"):
+                args["win_hyb"] = int(val)
+                if args["win_hyb"] < 0:
+                    raise ValueError(f"invalid '{arg}': win_hyb should be 0 (256 columns for a DEM, 512 for "
+                                     f"matrices) or positive")
             elif key_lower in ("min_hits", "minhits", "max_hits", "maxhits"):
                 args["min_hits"] = int(val)
             elif key_lower in ("cov_cws", "covcws"):
@@ -5221,9 +5289,9 @@ Allowed parameters:
   --out-reduced, classical, --simple, --full, basis, --rounds, --out-dir,
   --out-dem, --out-stim, --p-noise, --force-noise, method, dmin, dmax, dstop,
   dexp (dest), steps, wmin, wmax, timeout, threads, nothrottle, chunk_size
-  (batch), ksub, kwin (win), win_mode, min_hits, cov_cws, refresh, smax, noscan,
-  start, cbeg, cend, finC, outC, maxC, expand, dW, seed, debug, solver, cache,
-  --no-cache, --verbose, --cws, --trust-start, sort_rows
+  (batch), ksub, kwin (win), win_mode, win_hyb, min_hits, cov_cws, refresh,
+  smax, noscan, start, cbeg, cend, finC, outC, maxC, expand, dW, seed, debug,
+  solver, cache, --no-cache, --verbose, --cws, --trust-start, sort_rows
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5298,6 +5366,7 @@ Extra parameters (see --morehelp for details):
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
   kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
+  win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM, 512 for matrices)
   cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
   refresh=N (0)         Periodic N basis refresh interval in RW steps (experimental ksub only)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
@@ -5482,7 +5551,8 @@ Multithreading & throttling:
                           n < 150 or m*n < 1e5, if m*n*steps < 2e8; m: number of rows of H).
                           Method 2 starts 4 threads, and the others once a CC round takes longer
                           (predicted > 2 ms on the threads started, or running for 5 ms).
-                        - Large memory matrices (dense RW working memory capped at ~1.5 GB).
+                        - Large memory matrices (above 15 MB of dense RW working memory per thread:
+                          at most 32 RW threads, within a quarter of the physical memory).
                         - Small RW step counts (RW threads clamped to <= (steps + 9) / 10).
                         The last two limits apply to RW threads only: CC (method=2) is not
                         limited, and in method=3 CC rounds can use all threads.
@@ -5502,10 +5572,21 @@ Multithreading & throttling:
                         codewords are found much more often than others, and min_hits may end
                         RW early.
   kwin=N                Localized column permutation window size W around a random seed
-                        column j0 (default: 0 = automatic hybrid window/uniform for n>=500).
-                        Alias: win=N.
+                        column j0, used in every RW step (alias: win=N).  Default: 0 = automatic
+                        hybrid for n>=500: every other step uses an index window (win_mode=1) of
+                        win_hyb columns, and the other steps uniform random permutations (also
+                        for codewords which are not local in the column order).
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
+  win_hyb=N             Window size of the hybrid RW steps (kwin=0, n>=500; at most 3n/4).
+                        Default: 0 = 256 columns for a DEM, 512 for matrices.  The window
+                        columns come first in the elimination order; in a DEM, they are errors
+                        close in time, which touch few detectors: windows of 192-256 columns find
+                        circuit codewords 2-10 times faster than 512, and windows of one round of
+                        columns much slower.  With --verbose (or debug&1), the binary prints the
+                        rounds of a DEM (estimated from the time translation of its errors: D
+                        detectors and L columns per round) and the codewords found by the
+                        uniform and by the window steps.
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = disabled).
                         Stops RW when the average number of times <n> that RW has found each
                         codeword reaches min_hits, both for the codewords of the minimum weight
@@ -5610,7 +5691,8 @@ General options:
                         multiple debug arguments are OR-combined.  Bits 1 to 32768 are passed
                         to the dist_m4ri binary, which prints diagnostic output to stderr (see
                         its --morehelp; lower bits are more informative):
-                          1: summary (input matrices, stop reason, codeword statistics),
+                          1: summary (input matrices, rounds of a DEM, RW windows, stop reason,
+                             codeword statistics, codewords found by each kind of RW step),
                           2: progress (run plan, finished CC rounds, new upper bounds),
                           4: periodic status (after 1, 2, 4, ... s, then every 60 s),
                           8: thread allocation and timing, 16: code parameters (ranks, k),
@@ -5869,6 +5951,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -5934,6 +6017,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -6017,6 +6101,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -6069,6 +6154,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],

@@ -147,9 +147,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Hit counts can be strongly non-uniform within a weight class (`surf_d5`: some weight-5 logicals are hit 50–70
     times, others once), so that $e^{-\langle n\rangle}$ is optimistic there.
 - Possible directions:
-  - Separate hit statistics for the uniform and the windowed RW steps.
+  - [x] Separate hit statistics for the uniform and the windowed RW steps (0.14.3): with `debug&1`, the binary prints
+    the distinct codewords and hits of the three lowest weights found by each kind of step (`# RW step types, ...`),
+    and the Python model check of the information-set estimate uses the hits of the uniform steps only. Codewords
+    which violate the window model (e.g., time-like codewords with one error per round) are still found only by the
+    uniform steps, which are kept for this.
   - Empirical per-weight hit rates from the representative set, extrapolated to weights below the minimum found.
-  - Account for the small-weight trivial vectors explicitly (see **Trivial Codeword Statistics** below).
+  - Account for the small-weight trivial vectors explicitly (see **Trivial Codeword Statistics** below); this may
+    also give a more accurate round estimate (degenerate multiplicity).
   - To check: the `ksub` basis refresh (Task 3) puts found low-weight codewords into the basis $N$, which may inflate
     their hit counts and $\langle n\rangle$.
 
@@ -178,27 +183,28 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     - check the pairs in each bucket, with early exit at the weight limit;
     - record the codewords as for $p=1$;
     - count the $p=1$ and $p=2$ hits separately, and add the $p=2$ term to the information-set estimate.
-- [ ] **RW thread throttle for huge matrices** (Oct 2026, `scratch/speedup/RESULTS.md`, experiment (a)).
-  - The current rule: above 15 MB of dense RW memory per thread, the total is kept near 1.5 GB (2 to 32 RW threads).
-  - bb_360 (reduced, 49 MB per thread): the throughput peaks at 32 RW threads (45 steps/s; 42 and 34 steps/s with 64
-    and 128), so the throttle is right here.
-  - bb_756 (0.43 GB per thread): 3 threads (the throttle) give 0.23 steps/s, against 1.57 with 32 threads and 1.72
-    with 64. The memory bus saturates at 32–64 threads whatever the matrix size.
-  - Proposal: cap the RW threads at min(32, RAM/4 / dense memory per thread) instead of 1.5 GB in total (or make
-    the cap a parameter).
-- [ ] **RW windows for big DEMs** (Oct 2026, experiment (b)): on the reduced dgross DEM (120 s, 32 RW threads), the
-  lightest weight found was:
-  - 31 and 36 with uniform steps only;
-  - 18 and 20 with the default hybrid (an index window of 512 columns, about 1/3 round, on every other step);
-  - 18 in all four runs with index windows of 1 or 2 rounds of columns (`kwin=1456` or `kwin=2912`, `win_mode=1`),
-    which improves the earlier bound of 19;
-  - 24 and 26 with Tanner-graph balls of 1 round (`win_mode=0`).
-
-  On gross, every configuration finds $d = 10$ in under 3 s (window steps need 4–10x fewer steps than uniform ones).
+- [x] **RW thread throttle for huge matrices** (0.14.3; `scratch/speedup/RESULTS.md`, experiments (a) and (e)): above
+  15 MB of dense RW memory per thread, at most 32 RW threads, within a quarter of the physical memory (at least 2;
+  1.5 GB if the physical memory is not known), instead of about 1.5 GB in total. The memory bus saturates at 32-64 RW
+  threads whatever the matrix size.
+  - bb_756 (reduced, 0.43 GB per thread): 32 RW threads and 1.49 steps/s by default, against 3 threads and 0.23
+    steps/s before (6.5x).
+  - bb_360 (49 MB per thread): 32 RW threads as before (45 steps/s).
+- [x] **RW windows for big DEMs** (0.14.3; `scratch/speedup/RESULTS.md`, experiments (b), (e), (f)): the hybrid
+  windows (every other RW step) have 256 columns for a DEM, 512 for matrices (`win_hyb`).
+  - Windows of one and two rounds of columns (round estimate from the DEM) were slower than 512: a window of W
+    consecutive DEM columns touches only so many detectors, e.g., one round ($L \approx 10D$ columns) about $2D$, so
+    that most of its columns cannot be pivots.
+  - A scan of single window sizes on six reduced DEMs (gross, dgross, bb_360, three mitten circuits): the best size
+    is 192-256 columns for all of them (1.3-3.6 D), 2-10x better than 512; on dgross, about 10 distinct weight-18
+    codewords per $2 \cdot 10^4$ steps with 256 columns, 0-2 with 512 or with one round. Cycling several sizes is
+    worse than the best single size (the optimum is sharp). Matrices of codes gain nothing from 256.
+  - The round estimate (D detectors and L columns per round) is printed with `debug&1` only.
   - Next:
-    - window sizes which scale with the DEM, e.g., cycling through several sizes (512 to about $n/8$), since the round
-      length is not known without detector coordinates;
-    - fewer uniform steps for big DEMs (keeping some for the statistics);
+    - the window size for much larger codes (bb_756: not measured; the optimum did not grow with D from 60 to 180);
+    - an adaptive window size (e.g., from the light codewords found by each size), or a model of the optimum from
+      the span of the minimum-weight codewords in the column order;
+    - fewer uniform steps for big DEMs (keeping some for the statistics and for codewords which are not local);
     - window-restricted elimination (section 4).
 - [ ] **Upper bounds from code logicals**: in a memory circuit, a minimum-weight logical of the code applied as
   single-qubit data errors at one time step flips no detector, so it is a DEM codeword of weight $d_{\rm code}$ (with

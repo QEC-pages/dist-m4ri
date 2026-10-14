@@ -76,6 +76,10 @@ params_t prm={
   .ksub=0,
   .kwin=0,
   .win_mode=0,
+  .win_hyb=0, /* (auto: 256 for a DEM, 512 for matrices) */
+  .round_D=0,
+  .round_L=0,
+  .round_score=-1.0, /* (not estimated) */
   .min_hits=5,
   .cov_cws=100,
   .refresh=0
@@ -204,6 +208,26 @@ static void print_matrix_summary(FILE *stream, const char name[], const csr_t * 
 
 static const char * drop_label(const params_t * const p);
 
+/** @brief DBG_SUMMARY: the rounds of a DEM (see dem_round_estimate()) */
+static void print_round_summary(FILE *stream, const params_t * const p){
+  if (p->round_D > 0)
+    fprintf(stream, "#   rounds of the DEM: D=%d detectors and L=%d columns per round (estimated: score %.3f)\n",
+            p->round_D, p->round_L, p->round_score);
+  else
+    fprintf(stream, "#   rounds of the DEM: no round structure found (best score %.3f < 0.5)\n",
+            (p->round_score > 0.0) ? p->round_score : 0.0);
+}
+
+/** @brief DBG_SUMMARY: the index windows of the hybrid RW steps (kwin=0, n >= 500: every other step; see win_hyb) */
+static void print_window_summary(FILE *stream, const params_t * const p){
+  fprintf(stream, "#   RW windows: %d columns on every other step, uniform permutations on the others (",
+          rw_hybrid_window(p, p->nvar));
+  if (p->win_hyb > 0)
+    fprintf(stream, "win_hyb=%d)\n", p->win_hyb);
+  else
+    fprintf(stream, "win_hyb=0: 256 for a DEM, 512 for matrices)\n");
+}
+
 /** @brief DBG_SUMMARY: the code type, its length n, the input files, and the input matrices */
 static void print_input_summary(FILE *stream, const params_t * const p){
   const char * const type = p->classical ? "classical code" : (p->fdem ? "detector error model" : "quantum CSS code");
@@ -232,6 +256,10 @@ static void print_input_summary(FILE *stream, const params_t * const p){
     fprintf(stream, "#   drop=auto: no detector can be dropped exactly (the full DEM is used)\n");
   if (p->rows_sorted)
     fprintf(stream, "#   rows of H sorted by increasing weight for CC (sort_rows=1; sort_rows=0 keeps their order)\n");
+  if (p->round_score >= 0.0)
+    print_round_summary(stream, p);
+  if ((p->method & 1) && (p->kwin == 0) && (p->nvar >= 500))
+    print_window_summary(stream, p);
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
   if (p->spaL)
@@ -329,6 +357,7 @@ static int csr_sort_rows_by_weight(csr_t * const M){
 static void dem_merge_columns(params_t * const p);
 static void dem_drop_detectors(params_t * const p);
 static void dem_write_drop_list(const params_t * const p);
+static void dem_round_estimate(params_t * const p);
 
 /* Help topics (--help TOPIC, --morehelp TOPIC): the entries of the full help text MORE_HELP for some parameters. */
 #define HELP_MAX_NAMES 8
@@ -956,6 +985,13 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, win_mode=%d\n",argv[i],p->win_mode);
     }
+    else if (sscanf(argv[i],"win_hyb=%d",&dbg)==1){
+      if (dbg < 0)
+        ERROR("invalid '%s': win_hyb should be 0 (256 columns for a DEM, 512 for matrices) or positive\n", argv[i]);
+      p->win_hyb=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, win_hyb=%d\n",argv[i],p->win_hyb);
+    }
     else if (sscanf(argv[i],"min_hits=%d",&dbg)==1 || sscanf(argv[i],"max_hits=%d",&dbg)==1){
       p->min_hits=dbg;
       if (p->debug & DBG_ARGS)
@@ -1096,6 +1132,9 @@ void var_init(int argc, char **argv, params_t * const p){
       dem_drop_detectors(p);
     if (p->outD)
       dem_write_drop_list(p);
+    /* the rounds of the DEM for the input summary (in the detector order of the DEM, i.e., before sort_rows) */
+    if (p->debug & DBG_SUMMARY)
+      dem_round_estimate(p);
     if (p->classical == -1) p->classical = 0;
     p->nvar = p->spaH->cols;
     p->n0 = p->nvar;
@@ -1295,6 +1334,14 @@ void var_init(int argc, char **argv, params_t * const p){
       p->cbeg = b;
       p->cend = e;
     }
+  }
+  if ((p->win_hyb > 0) && (p->method & 1)) {
+    if (p->kwin > 0)
+      fprintf(stderr, "# WARNING: win_hyb=%d is ignored with kwin=%d (a window of kwin columns on every RW step)\n",
+              p->win_hyb, p->kwin);
+    else if (p->nvar < 500)
+      fprintf(stderr, "# WARNING: win_hyb=%d is ignored for n=%d < 500 (uniform permutations in all RW steps)\n",
+              p->win_hyb, p->nvar);
   }
   /* The experimental RW option ksub (with or without min_hits, also if it falls back to ksub=0 for m < nu) */
   if (p->ksub > 0 && (p->method & 1)) {
@@ -2240,6 +2287,95 @@ static void dem_drop_detectors(params_t * const p) {
   free(inM);
 }
 
+/* The rounds of a DEM, for the input summary (debug&1).  The detectors of the DEM of a circuit are in time order, and
+ * a measurement error flips the same check in two consecutive rounds: two detectors D apart, D the number of detectors
+ * per round.  Candidates: the 8 most frequent differences 2 <= D <= m/3 of the two detectors of the columns with two
+ * detectors.  Score: the fraction of the columns (with their detectors below m - D) whose detectors shifted by D are
+ * those of another column (a time translation by one round).  The candidate with the best score (the more frequent
+ * one for equal scores) is accepted if its score is at least 1/2: then round_D = D and round_L = n D / m columns per
+ * round (rounded); otherwise (e.g., a circuit whose rounds differ, as with SWAP routing) both stay 0.  round_score is
+ * the best score.  For the reduced DEM (after merge and drop, before sort_rows). */
+static void dem_round_estimate(params_t * const p) {
+  const int m = p->spaH->rows, n = p->spaH->cols;
+  p->round_D = p->round_L = 0;
+  p->round_score = 0.0;
+  if ((m < 6) || (n < 2)) return;
+  csr_t * const HT = csr_transpose(NULL, p->spaH); /* row j: the detectors of column j (sorted) */
+  int * const cnt = calloc((size_t)m, sizeof(int)); /* cnt[D]: the columns with two detectors D apart */
+  if (!cnt) ERROR("memory allocation");
+  for (int j = 0; j < n; j++)
+    if (HT->p[j + 1] - HT->p[j] == 2)
+      cnt[HT->i[HT->p[j] + 1] - HT->i[HT->p[j]]]++;
+  enum { NCAND = 8 };
+  int cand[NCAND], ncand = 0; /* by decreasing count, the smaller D first for equal counts */
+  for (int D = 2; D <= m / 3; D++) {
+    if ((cnt[D] == 0) || ((ncand == NCAND) && (cnt[D] <= cnt[cand[NCAND - 1]]))) continue;
+    int k = (ncand < NCAND) ? ncand++ : NCAND - 1;
+    for (; (k > 0) && (cnt[cand[k - 1]] < cnt[D]); k--)
+      cand[k] = cand[k - 1];
+    cand[k] = D;
+  }
+  free(cnt);
+  /* the hash of a set of detectors: the XOR of the keys of its detectors; the columns with detectors in a hash table
+   * (open addressing with linear probing) */
+  size_t size = 4;
+  while (size < 2 * (size_t)n) size <<= 1;
+  uint64_t * const key = malloc((size_t)m * sizeof(uint64_t));
+  uint64_t * const hcol = malloc((size_t)n * sizeof(uint64_t));
+  int * const table = malloc(size * sizeof(int));
+  if (!key || !hcol || !table) ERROR("memory allocation");
+  for (int d = 0; d < m; d++) key[d] = dem_hash64((uint64_t)d + 1);
+  for (size_t s = 0; s < size; s++) table[s] = -1;
+  for (int j = 0; j < n; j++) {
+    uint64_t h = 0;
+    for (int t = HT->p[j]; t < HT->p[j + 1]; t++) h ^= key[HT->i[t]];
+    hcol[j] = h;
+    if (HT->p[j + 1] > HT->p[j]) {
+      size_t s = (size_t)h & (size - 1);
+      while (table[s] >= 0) s = (s + 1) & (size - 1);
+      table[s] = j;
+    }
+  }
+  int best_D = 0;
+  for (int c = 0; c < ncand; c++) {
+    const int D = cand[c];
+    long tot = 0, hit = 0;
+    for (int j = 0; j < n; j++) {
+      const int * const dj = HT->i + HT->p[j];
+      const int w = HT->p[j + 1] - HT->p[j];
+      if ((w == 0) || (dj[w - 1] + D >= m)) continue;
+      tot++;
+      uint64_t h = 0;
+      for (int t = 0; t < w; t++) h ^= key[dj[t] + D];
+      for (size_t s = (size_t)h & (size - 1); table[s] >= 0; s = (s + 1) & (size - 1)) {
+        const int i = table[s];
+        const int * const di = HT->i + HT->p[i];
+        if ((hcol[i] != h) || (HT->p[i + 1] - HT->p[i] != w)) continue;
+        int t = 0;
+        while ((t < w) && (di[t] == dj[t] + D)) t++;
+        if (t == w) { /* column i: column j shifted by D */
+          hit++;
+          break;
+        }
+      }
+    }
+    const double score = (tot > 0) ? (double)hit / (double)tot : 0.0;
+    if (score > p->round_score) {
+      p->round_score = score;
+      best_D = D;
+    }
+  }
+  free(table);
+  free(hcol);
+  free(key);
+  csr_free(HT);
+  if (p->round_score >= 0.5) {
+    const long L = lround((double)n * best_D / m);
+    p->round_D = best_D;
+    p->round_L = (L > 1) ? (int)L : 1;
+  }
+}
+
 FILE * nzlist_w_new(const char fnam[], const char comment[]){
   FILE *f=fopen(fnam,"w");
   if(!f){
@@ -2411,7 +2547,7 @@ static void cw_trim(params_t * const p) {
   while (p->cw_max_w > p->min_w && p->cw_cnt_w[p->cw_max_w] == 0) p->cw_max_w--;
 }
 
-cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
+cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, int src) {
   if (weight <= 0 || weight > p->nvar) return p->codewords;
   if (!p->cw_cnt_w) { /* weight histograms, allocated on first use */
     p->cw_cnt_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
@@ -2424,6 +2560,8 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
   HASH_FIND(hh, p->codewords, arr, keylen, pvec);
   if (pvec) { /* a known codeword: one more hit */
     pvec->cnt++;
+    pvec->cnt_u += (src == CW_SRC_RW_UNIFORM);
+    pvec->cnt_w += (src == CW_SRC_RW_WINDOW);
     p->cw_hits_w[weight]++;
     return p->codewords;
   }
@@ -2446,6 +2584,8 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
   if (!entry) ERROR("memory allocation");
   entry->weight = weight;
   entry->cnt = 1;
+  entry->cnt_u = (src == CW_SRC_RW_UNIFORM);
+  entry->cnt_w = (src == CW_SRC_RW_WINDOW);
   memcpy(entry->arr, arr, keylen);
   HASH_ADD(hh, p->codewords, arr, keylen, entry);
   p->num_cws++;
@@ -2593,6 +2733,31 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
             "(each class with debug bit 2048)\n", rest_lo, rest_hi, rest_cws, rest_classes, rest_hits, rest_min,
             rest_max);
   free(cs);
+}
+
+void print_rw_step_stats(FILE *stream, const params_t * const p) {
+  if (!stream || !p || !p->codewords || p->min_w == INT_MAX) return;
+  enum { NW = 3 }; /* the weights min_w, min_w + 1, min_w + 2 */
+  long long n[NW] = {0}, cws_u[NW] = {0}, hits_u[NW] = {0}, cws_w[NW] = {0}, hits_w[NW] = {0}, cws_b[NW] = {0};
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    const int k = cw->weight - p->min_w;
+    if (k < 0 || k >= NW) continue;
+    n[k]++;
+    if (cw->cnt_u > 0) {
+      cws_u[k]++;
+      hits_u[k] += cw->cnt_u;
+    }
+    if (cw->cnt_w > 0) {
+      cws_w[k]++;
+      hits_w[k] += cw->cnt_w;
+    }
+    cws_b[k] += (cw->cnt_u > 0) && (cw->cnt_w > 0);
+  }
+  for (int k = 0; k < NW; k++)
+    if (n[k] > 0)
+      fprintf(stream, "# RW step types, w=%d: uniform steps: cws=%lld, hits=%lld; window steps: cws=%lld, hits=%lld; "
+              "both: cws=%lld (of %lld cws)\n", p->min_w + k, cws_u[k], hits_u[k], cws_w[k], hits_w[k], cws_b[k], n[k]);
 }
 
 int check_min_hits_convergence(const params_t * const p) {
@@ -2791,7 +2956,7 @@ long long int nzlist_read(const char fnam[], params_t *p){
       const size_t keylen = entry->weight * sizeof(int);
       cw_vec_t *known = NULL, *added = NULL;
       HASH_FIND(hh, p->codewords, entry->arr, keylen, known);
-      p->codewords = codeword_add_maybe(p, entry->arr, entry->weight);
+      p->codewords = codeword_add_maybe(p, entry->arr, entry->weight, CW_SRC_OTHER);
       if (!known) {
         HASH_FIND(hh, p->codewords, entry->arr, keylen, added);
         if (added) count++;

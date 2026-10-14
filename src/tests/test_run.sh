@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.2" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.3" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.14.2" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.14.3" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -654,7 +654,7 @@ $BIN_FORK method=1 finH=$REP86 steps=100 seed=3 threads=1 debug=0x1a0 > "$OUT86"
 if ! grep -q -E "^1 5 [0-9]+$" "$OUT86" || \
    ! grep -q "RW codeword of weight 5 (1-based columns): 1 2 3 4 5$" "$ERR86" || \
    ! grep -q "^# matrix H: 4 x 5, 8 nonzeros" "$ERR86" || ! grep -q "^# \.\.11\.$" "$ERR86" || \
-   ! grep -q -E "^# cw: \[ 1 2 3 4 5 \] cnt=[0-9]+$" "$ERR86"; then
+   ! grep -q -E "^# cw: \[ 1 2 3 4 5 \] cnt=([0-9]+) \(u=\1, w=0\)$" "$ERR86"; then
     echo "  [FAIL] Test 86: stdout '$(cat "$OUT86")', stderr '$(cat "$ERR86")'"
     FAILED=1
 fi
@@ -1027,6 +1027,72 @@ assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 sort_row
     "$SORTED106"
 assert_output "$BIN_FORK method=2 $S5 wmax=3 sort_rows=2" 255 "" "invalid 'sort_rows=2': sort_rows should be 0 or 1"
 rm -f "$CWS106A" "$CWS106B"
+
+# Test 107: the hybrid RW windows (kwin=0, n >= 500: a window on every other step, uniform permutations on the others):
+# win_hyb=0 (the default) gives 256 columns for a DEM and 512 for matrices, win_hyb=N the size (at most 3n/4); with
+# debug&1, the input summary gives the rounds of a DEM (here a repetition code with 50 checks in 12 rounds: measurement
+# errors flip two detectors D=50 apart, and a shift by D maps errors to errors; n=1162 columns, L = n D / m = 97
+# columns per round; no round structure for the same DEM with randomly permuted detectors; none for matrices), and the
+# end of RW the codewords found by the uniform and by the window steps; win_hyb is ignored with kwin > 0 and for
+# n < 500 (warnings); invalid values are an error
+DEM107=$(mktemp --suffix=.dem)
+DEM107P=$(mktemp --suffix=.dem)
+awk 'BEGIN { k = 50; R = 12
+  for (t = 0; t < R; t++) {
+    for (i = 0; i <= k; i++) { # data errors: qubit i flips checks i-1 and i (and L0 for i=0)
+      s = "error(0.01)"
+      if (i > 0) s = s " D" (t * k + i - 1)
+      if (i < k) s = s " D" (t * k + i)
+      if (i == 0) s = s " L0"
+      print s
+    }
+    if (t < R - 1)
+      for (i = 0; i < k; i++) # measurement errors: check i in rounds t and t+1
+        print "error(0.01) D" (t * k + i) " D" ((t + 1) * k + i)
+  }
+}' > "$DEM107"
+awk 'BEGIN { srand(1); m = 600; for (d = 0; d < m; d++) p[d] = d
+  for (d = m - 1; d > 0; d--) { j = int(rand() * (d + 1)); x = p[d]; p[d] = p[j]; p[j] = x } }
+  { s = $1; for (f = 2; f <= NF; f++) s = s " " (($f ~ /^D/) ? "D" p[substr($f, 2) + 0] : $f); print s }' \
+    "$DEM107" > "$DEM107P"
+RW107="method=1 steps=40 threads=2 debug=1"
+WIN107="columns on every other step, uniform permutations on the others"
+AUTO107="\(win_hyb=0: 256 for a DEM, 512 for matrices\)$"
+STEP107="^# RW step types, w=[0-9]+: uniform steps: cws=[0-9]+, hits=[0-9]+; window steps: cws=[0-9]+, hits=[0-9]+;"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "^1 [0-9]+ [0-9]+$" \
+    "^#   rounds of the DEM: D=50 detectors and L=97 columns per round \(estimated: score 1\.000\)$"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "" "^#   RW windows: 256 $WIN107 $AUTO107"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "" "$STEP107 both: cws=[0-9]+ \(of [0-9]+ cws\)$"
+assert_output "$BIN_FORK fdem=$DEM107P $RW107" 0 "" \
+    "^#   rounds of the DEM: no round structure found \(best score 0\.[0-4][0-9]* < 0\.5\)$"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107 win_hyb=2000" 0 "" "^#   RW windows: 871 $WIN107 \(win_hyb=2000\)$"
+assert_output "$BIN_FORK $S5 $RW107" 0 "" "^#   RW windows: 512 $WIN107 $AUTO107"
+ERR107=$($BIN_FORK fdem=$DEM107 method=2 wmax=1 threads=2 debug=1 2>&1)
+if printf '%s\n' "$ERR107" | grep -q -E "RW windows|RW step types" || \
+   ! printf '%s\n' "$ERR107" | grep -q "rounds of the DEM: D=50 detectors"; then
+    echo "  [FAIL] Test 107: CC alone: $ERR107"
+    FAILED=1
+fi
+if $BIN_FORK $S5 $RW107 2>&1 | grep -q "rounds of the DEM"; then
+    echo "  [FAIL] Test 107: rounds reported for a matrix"
+    FAILED=1
+fi
+# every codeword of RW was found by the uniform steps, the window steps, or both
+STEPS107=$($BIN_FORK fdem=$DEM107 method=1 steps=200 cov_cws=50 threads=2 debug=1 2>&1 | grep "^# RW step types")
+if [ -z "$STEPS107" ] || ! printf '%s\n' "$STEPS107" | awk '{
+      u = $0; sub(/.*uniform steps: cws=/, "", u); w = $0; sub(/.*window steps: cws=/, "", w)
+      b = $0; sub(/.*both: cws=/, "", b); t = $0; sub(/.*\(of /, "", t)
+      if ((u + 0) + (w + 0) - (b + 0) != (t + 0)) bad = 1 } END { exit bad }'; then
+    echo "  [FAIL] Test 107: RW step types do not add up: $STEPS107"
+    FAILED=1
+fi
+assert_output "$BIN_FORK fdem=$DEM107 $RW107 kwin=64 win_hyb=100" 0 "" \
+    "^# WARNING: win_hyb=100 is ignored with kwin=64 \(a window of kwin columns on every RW step\)$"
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem method=1 steps=20 win_hyb=100 threads=2 debug=0" 0 "" \
+    "^# WARNING: win_hyb=100 is ignored for n=[0-9]+ < 500 \(uniform permutations in all RW steps\)$"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107 win_hyb=-1" 255 "" \
+    "invalid 'win_hyb=-1': win_hyb should be 0 \(256 columns for a DEM, 512 for matrices\) or positive"
+rm -f "$DEM107" "$DEM107P"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
