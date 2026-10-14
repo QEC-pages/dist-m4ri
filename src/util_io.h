@@ -412,7 +412,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.14.1"
+#define DIST_M4RI_VERSION "0.14.2"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
