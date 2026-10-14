@@ -18,7 +18,7 @@ and their combination:
 The package contains the multithreaded program `dist_m4ri`, the legacy single-threaded program `dist_m4ri_old`, and
 the Python wrapper `dist_m4ri.py` (NumPy and SciPy matrices, Stim circuits and DEMs, a persistent cache of the
 results). This page summarizes how the program works; `README.md` describes all parameters (also `dist_m4ri --help` and
-`dist_m4ri --morehelp`).
+`dist_m4ri --morehelp`; `dist_m4ri --help maxC` shows the help of one parameter).
 
 ## Codes and matrices
 
@@ -29,7 +29,13 @@ results). This page summarizes how the program works; `README.md` describes all 
   constructed automatically. For the other sector, swap the roles of `Hx` and `Hz`; the CSS distance is the smaller of
   the two (the Python function `compute_css_distance()` runs both sectors).
 - **DEM**: `fdem=...` gives `H` (detectors) and `L` (observables), with one column for each error mechanism; the
-  distance is the minimum number of error mechanisms which trigger no detector but flip an observable.
+  distance is the minimum number of error mechanisms which trigger no detector but flip an observable. Equal columns
+  (error mechanisms with the same detectors and observables) are merged by default (`merge=1`): a codeword with two
+  equal columns is not of minimum weight, since dropping both gives a lighter one. Detectors are dropped if this is
+  verified to be exact (every column touching them has a twin which does not): by default (`drop=auto`), the binary
+  searches for the largest such set from the DEM alone, e.g., the minority-basis detectors of a CSS circuit, so that the
+  full DEM is reduced to the size of the simplified one; `drop=FILE` gives the detectors in a file, and `drop=0` keeps
+  all (the Python options `--simple` and `--full` are disabled since version 0.13.0).
 
 All matrices are binary, with `n` columns, in Matrix Market format (`.mtx` or `.mmx`). For a CSS code, they obey the
 orthogonality conditions `Hx Hz^T = 0`, `Hx Lz^T = 0`, and `Lx Hz^T = 0`, and the number of encoded qubits is
@@ -69,7 +75,10 @@ minimum-weight codeword has a non-zero syndrome (otherwise, the subset or the re
 codeword), and the support of its first unsatisfied check contains another position of the codeword [DKP17]. The work
 of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`. With `smax=0` (default),
 the syndrome of a cluster is kept as a bitset, and the last column of a cluster is found by a hash lookup: the syndrome
-left after the next-to-last column must be that of a single column of `H`.
+left after the next-to-last column must be that of a single column of `H`. The first unsatisfied check is taken in the
+order of the rows of `H`: for matrices, the rows are sorted by increasing weight (`sort_rows=1`, the default), which
+reduces the work when the row weights are very different; the detectors of a DEM are kept in time order (`sort_rows=0`,
+the default with `fdem`), which is better there.
 
 The expert options `start`, `cbeg`/`cend`, and `noscan` restrict the search; each of them prints a warning, since the
 reported `dmin` is then not necessarily a lower bound (`dmax` is always valid). With `smax > 0`, CC also computes the

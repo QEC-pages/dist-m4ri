@@ -124,7 +124,7 @@ TEMP_CWS1=$(mktemp --suffix=.nz)
 TEMP_CWS2=$(mktemp --suffix=.nz)
 
 # Step 1: Run and save
-assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 outC=$TEMP_CWS1 debug=0" 0 "^3$" ""
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 outC=$TEMP_CWS1 debug=0" 0 "^3$" ""
 
 # Step 2: Verify file 1 is not empty
 if [ ! -s "$TEMP_CWS1" ]; then
@@ -133,7 +133,7 @@ if [ ! -s "$TEMP_CWS1" ]; then
 fi
 
 # Step 3: Run again loading file 1 and saving to file 2, check for read message
-assert_output "$BIN debug=33 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 finC=$TEMP_CWS1 outC=$TEMP_CWS2" \
+assert_output "$BIN debug=33 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 finC=$TEMP_CWS1 outC=$TEMP_CWS2" \
     0 "" "read 128 codewords from"
 
 # Step 4: Verify files are identical
@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.12.4" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.1" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.12.4" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.14.1" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -372,7 +372,7 @@ assert_output "$BIN method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 wi
     0 "^3$" ""
 
 # Test 54: dist_m4ri ksub automatic fallback warning when m < nu (2m < n)
-assert_output "$BIN_FORK debug=1 method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 threads=4" \
+assert_output "$BIN_FORK debug=1 method=1 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 steps=200 ksub=32 threads=4" \
     0 "^1 3 [0-9]+$" "Warning: ksub=32 requested, but m=24 < n-m=197 \(<= nu\); falling back to full-matrix RW"
 
 # Test 55: dist_m4ri method=3 with min_hits stops only RW workers and lets CC finish exact proof
@@ -535,7 +535,7 @@ rm -f "$REP78" "$OUT78" "$ERR78"
 
 # Test 79: method=3 with outC (dW=0) exports all minimum-weight codewords, as method=2 (CC round w=d after dmin=dmax)
 CWS79=$(mktemp --suffix=.nz)
-assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem outC=$CWS79 debug=1 threads=4" \
+assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 outC=$CWS79 debug=1 threads=4" \
     0 "^3 3 [0-9]+$" "exported 128 codewords"
 if [ "$(grep -c '^3 ' "$CWS79")" != "128" ]; then
     echo "  [FAIL] Test 79: expected 128 codewords of weight 3 in the exported file"
@@ -627,7 +627,7 @@ fi
 rm -f "$OUT84" "$ERR84"
 
 # Test 85: code parameters (debug=16): ranks of H and L (or G), and k
-assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=16" 0 "^3 3 0$" \
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 threads=2 debug=16" 0 "^3 3 0$" \
     "^# code parameters: n=221, rank\(H\)=24, dim ker\(H\)=197, rank\(L\)=1, k=rank\(\[H;L\]\)-rank\(H\)=1 "
 assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx wmax=2 threads=2 debug=16" \
     0 "^3 0 0$" "rank\(H\)=59, dim ker\(H\)=91, rank\(G\)=59, k=n-rank\(H\)-rank\(G\)=32 "
@@ -805,11 +805,14 @@ assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
 
 # Test 100: CC with bitset syndromes and a hash lookup for the last column of a cluster (smax=0, the default) finds the
 # same codewords with the same hit counts as the recursion on sorted syndrome lists (smax>0), also with duplicate
-# columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a codeword of weight 5 is found up to 5 times)
+# columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a codeword of weight 5 is found up to 5 times), with
+# the rows of H in the input order (sort_rows=0) and sorted by weight (the default for matrices: other hit counts)
 CWS100=$(mktemp --suffix=.nz)
 for sm in 0 3; do
+    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 sort_rows=0 debug=1" 0 \
+        "^5 5 0$" "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
     assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 debug=1" 0 "^5 5 0$" \
-        "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
+        "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18063,"
 done
 assert_output "$BIN_FORK method=2 $S5 wmax=3 threads=2 debug=8" 0 "^4 0 0$" \
     "^# CC: bitset syndromes, hash of 1958 nonzero columns \(1679 distinct\) for the last two levels"
@@ -825,6 +828,205 @@ printf 'error(0.1) D0 L0 ^ D1 L0\nerror(0.1) D0 D1 L0\n' > "$DEM101"
 assert_output "$BIN_FORK method=2 fdem=$DEM101 wmax=2 threads=1 debug=1" 0 "^2 2 0$" \
     "^#   L: 1 x 2 \(observables\), 1 nonzeros, max row weight 1, max column weight 1$"
 rm -f "$DEM101"
+
+# Test 102: the equal columns of a DEM (same detectors and observables) are merged (merge=1, the default; exact): the
+# column indices (outC, finC, and the printed codewords) are those of the DEM, the codewords found use the first one of
+# each set of equal columns (here 1-based columns 1=5, 2=4, and 6=7), and two equal columns of a finC codeword cancel;
+# merge=0 keeps all columns (4 codewords of weight 3)
+DEM102=$(mktemp --suffix=.dem)
+CWS102=$(mktemp --suffix=.nz)
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\nerror(0.1) D0 D1\n' > "$DEM102"
+printf 'error(0.1) D0 L0\nerror(0.1) D2\nerror(0.1) D2\n' >> "$DEM102"
+for bin in "$BIN_FORK" "$BIN"; do
+    assert_output "$bin method=2 fdem=$DEM102 wmax=3 outC=$CWS102 threads=1 debug=1" 0 "^3( 3 0)?$" \
+        "^#   merged 3 equal columns of the DEM: 4 of 7 columns kept \(merge=0 to keep all\)$"
+    if [ "$(grep -v '^%' "$CWS102" | tr -s ' ')" != "3 1 2 3" ]; then
+        echo "  [FAIL] Test 102: expected the single codeword '3 1 2 3' in outC, got: $(grep -v '^%' "$CWS102")"
+        FAILED=1
+    fi
+done
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 merge=0 drop=0 outC=$CWS102 threads=1 debug=1" 0 "^3 3 0$" \
+    "^#   H: 3 x 7 \(detectors\), 9 nonzeros"
+if [ "$(grep -c -v '^%' "$CWS102")" != 4 ]; then
+    echo "  [FAIL] Test 102: expected 4 codewords in outC with merge=0, got: $(grep -v '^%' "$CWS102")"
+    FAILED=1
+fi
+printf '%%%% NZLIST\n3 3 4 5\n5 1 2 3 6 7\n' > "$CWS102"
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 finC=$CWS102 threads=1 debug=33" 0 "^3 3 0$" \
+    "^# read 1 codewords from .*, total 1, min weight 3$"
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 finC=$CWS102 threads=1 debug=33" 0 "^3 3 0$" \
+    "^# finC: lightest codeword of weight 3 \(1-based columns\): 1 2 3$"
+assert_output "$BIN_FORK method=2 fdem=$DEM102 wmax=3 merge=2" 255 "" "invalid 'merge=2': merge should be 0 or 1"
+rm -f "$DEM102" "$CWS102"
+
+# Test 103: drop=FILE drops the listed detectors (here D2, of the other basis) if this is exact: every column touching
+# them has a twin with the same other detectors and no dropped one (1-based columns 4 -> 1 and 6 -> 3; column 5 has no
+# other detector), with the same observables (first DEM) or L + A H (second DEM: A maps D2 to L0). The codewords found
+# (outC) are those of the full DEM, and finC codewords are mapped to the twins. Otherwise, a note is printed and the
+# full DEM is used (third DEM: column 7 has no twin; fourth DEM: the observables are not L + A H)
+DEM103=$(mktemp --suffix=.dem)
+DROP103=$(mktemp --suffix=.txt)
+CWS103=$(mktemp --suffix=.nz)
+printf '# the other basis\n2\n' > "$DROP103"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2 L0\nerror(0.1) D2\nerror(0.1) D1 D2\n' >> "$DEM103"
+for bin in "$BIN_FORK" "$BIN"; do
+    assert_output "$bin method=2 fdem=$DEM103 drop=$DROP103 wmax=3 outC=$CWS103 threads=1 debug=1" 0 "^3( 3 0)?$" \
+        "^#   dropped 1 of 3 detectors \(drop=.*\), exact: the 3 columns touching them have twins \(the same observ"
+    if [ "$(grep -v '^%' "$CWS103" | tr -s ' ')" != "3 1 2 3" ]; then
+        echo "  [FAIL] Test 103: expected the single codeword '3 1 2 3' in outC, got: $(grep -v '^%' "$CWS103")"
+        FAILED=1
+    fi
+done
+printf '%%%% NZLIST\n3 2 4 6\n4 2 3 4 5\n' > "$CWS103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 finC=$CWS103 threads=1 debug=33" 0 "^3 3 0$" \
+    "^# read 1 codewords from .*, total 1, min weight 3$"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 start=4 threads=1" 255 "" "no start column left"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx drop=$DROP103 wmax=3" 255 "" \
+    "drop can only be used when fdem is specified"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2\nerror(0.1) D2 L0\nerror(0.1) D1 D2 L0\n' >> "$DEM103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 debug=1" 0 "^3 3 0$" \
+    "twins \(L \+ A H with A != 0\), 3 columns kept$"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2 L0\nerror(0.1) D2\nerror(0.1) D1 D2\nerror(0.1) D2 D3\n' >> "$DEM103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 debug=0" 0 "^3 3 0$" \
+    "^# Note: drop=.* not used: column 7 \(1-based\) touches a dropped detector, but no column with the same other"
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM103"
+printf 'error(0.1) D0 D2\nerror(0.1) D2\nerror(0.1) D1 D2\n' >> "$DEM103"
+assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 debug=0" 0 "^3 3 0$" \
+    "^# Note: drop=.* not used: the observables of the twins are not L \+ A H for any matrix A; using the full DEM$"
+rm -f "$DEM103" "$DROP103" "$CWS103"
+
+# Test 104: --help TOPIC and --morehelp TOPIC print only the entries of the full help for TOPIC (names and aliases,
+# without case, '-', '_', and '=VALUE'), in the order of the full help under their section headers (each once); an
+# unknown topic gives the closest names on stderr and exit code 1; an argument with '=' is not a topic
+assert_output "$BIN_FORK --help maxC" 0 "^  maxC=\[int\] " ""
+assert_output "$BIN_FORK --morehelp=dest" 0 "^  dexp=\[int\] " ""
+assert_output "$BIN_FORK --help no-throttle" 0 "^  nothrottle=\[0\|1\] " ""
+assert_output "$BIN_FORK -h Batch" 0 "^  chunk_size=\[int\] " ""
+assert_output "$BIN_FORK --morehelp debug" 0 "^    2048 : No size cutoff" ""
+assert_output "$BIN_FORK --help mthod" 1 "" "no help entry for 'mthod'; did you mean method\?"
+assert_output "$BIN_FORK --help maxC,xyz" 1 "^  maxC=\[int\] " "no help entry for 'xyz' \(--morehelp lists all"
+assert_output "$BIN_FORK --help finH=x.mtx" 0 "^Extra parameters" ""
+assert_output "$BIN --help maxC" 0 "^  maxC=\[int\] " ""
+help_outline() {  # the section headers, the first words of the entries, and '-' for a blank line
+    awk '/^$/ {print "-"; next} /^[^ ]/ {print; next} /^  [^ ]/ {print $1}'
+}
+GOT104=$("$BIN_FORK" --help maxC,dW,DEXP | help_outline)
+EXP104=$(printf '%s\n' "Distance bounds and search guidance:" "dexp=[int]" "-" "Codeword collection and export:" \
+    "maxC=[int]" "dW=[int]")
+echo "Running: $BIN_FORK --help maxC,dW,DEXP (entries in the order of the full help)"
+if [ "$GOT104" != "$EXP104" ]; then
+    echo "  [FAIL] Expected: $EXP104"
+    echo "         Got: $GOT104"
+    FAILED=1
+fi
+GOT104=$("$BIN_FORK" --help maxC | help_outline)
+echo "Running: $BIN_FORK --help maxC (only the maxC entry)"
+if [ "$GOT104" != "$(printf 'Codeword collection and export:\nmaxC=[int]')" ]; then
+    echo "  [FAIL] Got: $GOT104"
+    FAILED=1
+fi
+GOT104=$("$BIN_FORK" --morehelp debug)
+echo "Running: $BIN_FORK --morehelp debug (the whole debug section)"
+if [ "$(printf '%s\n' "$GOT104" | head -1)" != "Debug output bitmap (debug=[int], default: 3):" ] || \
+   [ "$(printf '%s\n' "$GOT104" | tail -1)" != "  the thread allocation and timing." ] || \
+   [ "$(printf '%s\n' "$GOT104" | grep -c '^[^ ]')" != "1" ]; then
+    echo "  [FAIL] Got: $GOT104"
+    FAILED=1
+fi
+
+# Test 105: drop=auto (the default for a DEM; also drop=1) finds the detectors which can be dropped exactly from the
+# DEM alone: the 8 X-type (minority-basis) detectors of the surface code (outD=FILE writes them); drop=0 keeps all
+# detectors; a group which cannot be dropped is kept, and another one is dropped (here D4); nothing to drop; errors
+OUT105=$(mktemp --suffix=.txt)
+DEM105=$(mktemp --suffix=.dem)
+for drop in "" "drop=auto" "drop=1"; do
+    assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem $drop wmax=3 outD=$OUT105 threads=2 debug=1" 0 \
+        "^3 3 0$" "^#   dropped 8 of 24 detectors \(drop=auto\), exact: the 166 columns touching them have twins"
+    if [ "$(grep -v '^#' "$OUT105")" != "5 7 8 10 13 15 16 18" ] || \
+       [ "$(head -1 "$OUT105")" != "# 8 of 24 detectors dropped (drop=auto), 0-based" ]; then
+        echo "  [FAIL] Test 105: outD: $(cat "$OUT105")"
+        FAILED=1
+    fi
+done
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 debug=1" 0 "^3$" "dropped 8 of 24 detectors"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=0 wmax=3 outD=$OUT105 threads=2 debug=1" 0 \
+    "^3 3 0$" "^#   H: 24 x 221 \(detectors\)"
+if [ "$(cat "$OUT105")" != "# 0 of 24 detectors dropped (drop=0), 0-based" ]; then
+    echo "  [FAIL] Test 105: outD with drop=0: $(cat "$OUT105")"
+    FAILED=1
+fi
+printf 'error(0.1) D0 D1\nerror(0.1) D0 D2 D3\nerror(0.1) D2\nerror(0.1) D3 L0\nerror(0.1) D3 D5\nerror(0.1) D5\n' \
+    > "$DEM105"
+printf 'error(0.1) D4\nerror(0.1) D3 D4 L0\n' >> "$DEM105"
+assert_output "$BIN_FORK method=2 fdem=$DEM105 wmax=4 outD=$OUT105 threads=1 debug=41" 0 "^3 3 0$" \
+    "^# drop=auto: 1 of 6 detectors found \(4 groups to try: 1 dropped, 3 kept, 0 not verified;"
+assert_output "$BIN_FORK method=2 fdem=$DEM105 wmax=4 threads=1 debug=33" 0 "^3 3 0$" \
+    "CC codeword of weight 3 \(1-based columns\): 4 5 6$"
+if [ "$(grep -v '^#' "$OUT105")" != "4" ]; then
+    echo "  [FAIL] Test 105: outD: $(cat "$OUT105")"
+    FAILED=1
+fi
+printf 'error(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) D1\n' > "$DEM105"
+assert_output "$BIN_FORK method=2 fdem=$DEM105 wmax=3 threads=1 debug=1" 0 "^3 3 0$" \
+    "^#   drop=auto: no detector can be dropped exactly \(the full DEM is used\)$"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem classical=1 wmax=3 debug=1" 0 "^3 3 0$" \
+    "^#   H: 24 x 221 \(detectors\)"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem drop=$DEM105.none wmax=3" 255 "" \
+    "cannot read this file .*; use drop=0, drop=1 or drop=auto, or a file"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx drop=auto wmax=3" 255 "" \
+    "drop can only be used when fdem is specified"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx outD=$OUT105 wmax=3" 255 "" \
+    "outD can only be used when fdem is specified"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx drop=0 wmax=5" 0 \
+    "^5 5 0$" ""
+rm -f "$OUT105" "$DEM105"
+
+# Test 106: sort_rows (default: 1 for matrices, 0 for a DEM) sorts the rows of H by increasing weight (stable) for CC;
+# the input summary notes it.  The distance, the codewords enumerated (outC), and RW with the same seed do not depend
+# on the order of the rows; rows of equal weight are left as they are (QX150); sort_rows=1 also sorts the detectors of
+# a DEM; invalid values are an error
+S5="finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx"
+SORTED106="^#   rows of H sorted by increasing weight for CC \(sort_rows=1; sort_rows=0 keeps their order\)$"
+CWS106A=$(mktemp --suffix=.nz)
+CWS106B=$(mktemp --suffix=.nz)
+for bin in "$BIN_FORK" "$BIN"; do
+    assert_output "$bin method=2 $S5 wmax=5 threads=2 debug=1" 0 "^5( 5 0)?$" "$SORTED106"
+    if $bin method=2 $S5 wmax=5 sort_rows=0 threads=2 debug=1 2>&1 | grep -q "rows of H sorted"; then
+        echo "  [FAIL] Test 106: rows sorted with sort_rows=0 ($bin)"
+        FAILED=1
+    fi
+done
+assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS106A threads=2 debug=0" 0 "^5 5 0$" ""
+assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS106B sort_rows=0 threads=2 debug=0" 0 "^5 5 0$" ""
+if [ "$(grep -v '^%' "$CWS106A" | sort)" != "$(grep -v '^%' "$CWS106B" | sort)" ] || \
+   [ "$(grep -c -v '^%' "$CWS106A")" -lt 2 ]; then
+    echo "  [FAIL] Test 106: different CC codewords with sort_rows=0 and 1:"
+    echo "         $(grep -v '^%' "$CWS106A" | sort | tr '\n' ';')"
+    echo "         $(grep -v '^%' "$CWS106B" | sort | tr '\n' ';')"
+    FAILED=1
+fi
+RW106A=$($BIN_FORK method=1 $S5 steps=3000 min_hits=0 seed=7 threads=1 outC=$CWS106A debug=0 2>/dev/null)
+RW106B=$($BIN_FORK method=1 $S5 steps=3000 min_hits=0 seed=7 threads=1 outC=$CWS106B sort_rows=0 debug=0 2>/dev/null)
+if [ "$RW106A" != "$RW106B" ] || [ "$(cat "$CWS106A")" != "$(cat "$CWS106B")" ]; then
+    echo "  [FAIL] Test 106: RW results differ with sort_rows=0 and 1: '$RW106A' vs '$RW106B'"
+    FAILED=1
+fi
+if $BIN_FORK method=2 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx wmax=3 debug=1 2>&1 | \
+   grep -q "rows of H sorted"; then
+    echo "  [FAIL] Test 106: rows of equal weight reported as sorted (QX150)"
+    FAILED=1
+fi
+if $BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=1 2>&1 | grep -q "rows of H sorted"; then
+    echo "  [FAIL] Test 106: the detectors of a DEM sorted by default"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 sort_rows=1 threads=2 debug=1" 0 "^3 3 0$" \
+    "$SORTED106"
+assert_output "$BIN_FORK method=2 $S5 wmax=3 sort_rows=2" 255 "" "invalid 'sort_rows=2': sort_rows should be 0 or 1"
+rm -f "$CWS106A" "$CWS106B"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

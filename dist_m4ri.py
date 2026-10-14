@@ -21,6 +21,7 @@ import shutil
 import hashlib
 import numbers
 import tempfile
+import itertools
 import threading
 import subprocess
 from pathlib import Path
@@ -29,7 +30,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.12.4"
+__version__ = "0.14.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -383,6 +384,12 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
         if line_s.startswith("# Warning: non-uniform RW hit counts"):
             hit_warning = [line_s[len("# Warning: "):]]
             continue
+        if line_s.startswith("# Note: drop=") and " not used: " in line_s:  # the reduction (drop=FILE) is not exact
+            stats["drop_note"] = line_s.split(" not used: ", 1)[1].replace("; using the full DEM", "")
+            continue
+        if line_s.startswith("# Note: drop=") and "none of the listed detectors is in the DEM" in line_s:
+            stats["drop_none_listed"] = True
+            continue
         if line_s.startswith("# RW information sets:"):
             m_rw = re.search(
                 r"n=(\d+), rank\(H\)=(\d+), steps=(\d+) \(uniform permutations: (\d+)\), ksub=(\d+), "
@@ -598,10 +605,11 @@ def get_cached_distance(
     cache_file: Optional[Union[str, Path]] = None,
     start: Optional[Union[int, str, Sequence[int]]] = None,
     simple: Optional[bool] = None,
-    full: bool = False,
+    full: Optional[bool] = None,
     basis: Optional[str] = None,
     rounds: Optional[int] = None,
-    p_noise: float = 0.001
+    p_noise: float = 0.001,
+    force_noise: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Retrieves the cached distance entry (including bounds and cumulative rw_steps)
@@ -615,7 +623,8 @@ def get_cached_distance(
     dmin_X, dmax_X, rw_steps_X, dX, cws_X (the same for Z), and dist, dmin, dmax, rw_steps of d = min(dX, dZ).
 
     For a Stim circuit (circuit, or dem with a .stim file), the cache key is that of the DEM processed as in
-    compute_dem_distance(), with the same options simple, full, basis, rounds, and p_noise.
+    compute_dem_distance(), with the same options rounds, p_noise, and force_noise (simple and full are disabled since
+    version 0.13.0: ignored with a warning to stderr; basis does not change the DEM).
 
     Returns:
         dict with keys {"dist", "dmin", "dmax", "rw_steps", ...} or None if not cached.
@@ -655,8 +664,9 @@ def get_cached_distance(
         return entry
     elif dem is not None or circuit is not None:
         # the key of compute_dem_distance(): a Stim circuit is processed and converted in the same way
-        dem_obj, _, _ = _dem_from_input(dem, circuit, simple=simple, full=full, basis=basis, rounds=rounds,
-                                        p_noise=p_noise)
+        _warn_disabled_simple_full(simple, full)
+        dem_obj, _, _ = _dem_from_input(dem, circuit, basis=basis, rounds=rounds, p_noise=p_noise,
+                                        force_noise=force_noise)
         entry = _distance_cache.get(_dem_cache_key(dem_obj, pmin) + sfx)
         if entry:
             entry = dict(entry)
@@ -1340,6 +1350,10 @@ def run_dist_m4ri(
     dW: int = -1,
     maxC: int = 0,
     pmin: float = 0.0,
+    merge: bool = True,
+    drop: Optional[str] = None,
+    outD: Optional[str] = None,
+    sort_rows: Optional[bool] = None,
     outC: Optional[str] = None,
     seed: int = 0,
     debug: int = 0,
@@ -1358,6 +1372,27 @@ def run_dist_m4ri(
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
+
+    DEM input:
+        merge: If True (default), the binary merges the equal columns of the DEM fdem (error mechanisms with the
+            same detectors and observables).  Exact: dropping two equal columns of a codeword gives a lighter one,
+            so the distance does not change.  Column indices (finC, outC, start) are those of the DEM; the codewords
+            found use the first one of each set of equal columns.  merge=False passes merge=0 (all columns are
+            kept, e.g., to enumerate the codewords with each of them).  Ignored without fdem.
+        drop: The detectors of the DEM fdem to drop if this is verified to be exact, passed as drop=...: None (the
+            binary's default, drop=auto: a search for the largest such set in the DEM), "auto" or "1" (the same), "0"
+            (keep all detectors), or a file with the detectors to drop (0-based; otherwise, the binary uses the full DEM
+            and prints a note, see _parse_stderr_stats()).  Ignored without fdem.
+        outD: File to which the binary writes the detectors dropped from the DEM fdem (0-based; only the comment line
+            '# N of M detectors dropped ...' if none, see read_drop_file()).  Ignored without fdem.
+
+    Row order:
+        sort_rows: Passed as sort_rows=1 (True) or sort_rows=0 (False); None (default): the binary's default, i.e.,
+            1 for matrices and 0 for a DEM.  With sort_rows=1, the binary sorts the rows of H by increasing weight
+            (stable), which reduces the CC work for matrices with very different row weights (e.g., 1.7-4x with the
+            hook columns of an extended CSS distance); the detectors of a DEM are in time order, which is better for
+            CC (use sort_rows=False also for matrices exported from a DEM).  The distance and RW do not depend on the
+            order of the rows; CC enumerates the same codewords, possibly in another order and with other hit counts.
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -1441,6 +1476,10 @@ def run_dist_m4ri(
     if dW >= 0: cmd.append(f"dW={dW}")
     if maxC > 0: cmd.append(f"maxC={maxC}")
     if pmin > 0.0: cmd.append(f"pmin={pmin}")
+    if fdem and not merge: cmd.append("merge=0")
+    if fdem and drop: cmd.append(f"drop={drop}")
+    if fdem and outD: cmd.append(f"outD={outD}")
+    if sort_rows is not None: cmd.append(f"sort_rows={1 if sort_rows else 0}")
     if outC: cmd.append(f"outC={outC}")
     if seed != 0: cmd.append(f"seed={seed}")
     if nothrottle: cmd.append("nothrottle=1")
@@ -1514,24 +1553,35 @@ def _matrix_to_file(matrix, extension: str = ".mtx", temp_dir: str = "tmp") -> s
 
 
 def has_noise(circuit: Any) -> bool:
-    """Checks if a Stim circuit contains any noise instructions."""
+    """
+    Checks if a Stim circuit has noise: a noise channel (e.g., DEPOLARIZE1, X_ERROR, PAULI_CHANNEL_2, E, or
+    HERALDED_ERASE), or a measurement with a flip probability (e.g., M(0.001) or MPP(0.01)), i.e., if strip_noise()
+    changes it.
+    """
     try:
         stim = _get_stim()
     except ImportError:
         return False
     if not isinstance(circuit, stim.Circuit):
         return False
-    noisy_gate_names = {
-        "DEPOLARIZE1", "DEPOLARIZE2", "PAULI_CHANNEL_1", "PAULI_CHANNEL_2",
-        "X_ERROR", "Y_ERROR", "Z_ERROR", "E", "ELSE_CORRELATED_ERROR"
-    }
-    for inst in circuit:
-        if isinstance(inst, stim.CircuitRepeatBlock):
-            if has_noise(inst.body_copy()):
-                return True
-        elif inst.name in noisy_gate_names:
-            return True
-    return False
+    return circuit.without_noise() != circuit
+
+
+def strip_noise(circuit: Any) -> Any:
+    """
+    Removes all noise from a Stim circuit (stim.Circuit or a .stim file), see stim.Circuit.without_noise(): the noise
+    channels (e.g., DEPOLARIZE1, X_ERROR, PAULI_CHANNEL_2, E) are removed, the measurements lose their flip
+    probabilities (M(0.001) becomes M), and heralded noise (e.g., HERALDED_ERASE) is replaced by MPAD, so that the
+    measurement record does not change.  E.g., add_noise(strip_noise(circuit), p) (or add_noise(circuit, p,
+    force=True); CLI: --force-noise) gives circuits with the same noise model.
+
+    Returns:
+        The noiseless stim.Circuit.
+    """
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+    return circuit.without_noise()
 
 
 def _add_noise_recursive(
@@ -1539,10 +1589,8 @@ def _add_noise_recursive(
 ) -> Any:
     """Recursively adds uniform circuit-level noise to a Stim circuit (see add_noise())."""
     stim = _get_stim()
+    p1 = 0.1 * p  # one-qubit depolarizing noise (after one-qubit gates, on idle qubits)
     noisy_circuit = stim.Circuit()
-    annotations = {
-        "QUBIT_COORDS", "DETECTOR", "OBSERVABLE_INCLUDE", "TICK", "SHIFT_COORDS"
-    }
     for inst in circuit:
         if isinstance(inst, stim.CircuitRepeatBlock):
             noisy_body = _add_noise_recursive(
@@ -1551,97 +1599,95 @@ def _add_noise_recursive(
             noisy_circuit.append(
                 stim.CircuitRepeatBlock(inst.repeat_count, noisy_body)
             )
-        elif inst.name == "TICK":
+            continue
+        name = inst.name
+        if name == "TICK":
             idle_qubits = set(range(num_qubits)) - active_qubits
             if idle_qubits:
-                noisy_circuit.append(
-                    "DEPOLARIZE1", sorted(list(idle_qubits)), 0.1 * p
-                )
+                noisy_circuit.append("DEPOLARIZE1", sorted(idle_qubits), p1)
             noisy_circuit.append(inst)
             active_qubits.clear()
-        else:
-            targets = inst.targets_copy()
-            # qubit_value is None for measurement records (rec[-k]), sweep bits (sweep[k]), and combiners (*)
-            qubit_targets = [t.qubit_value for t in targets if t.qubit_value is not None]
-            if inst.name not in annotations:
-                active_qubits.update(qubit_targets)
-
-            if inst.name == "RX":
-                noisy_circuit.append(inst)
-                if qubit_targets:
-                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
-            elif inst.name in ["R", "RZ", "RY"]:
-                noisy_circuit.append(inst)
-                if qubit_targets:
-                    noisy_circuit.append("X_ERROR", qubit_targets, p)
-            elif inst.name == "MX":
-                if qubit_targets:
-                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
-                noisy_circuit.append(inst)
-            elif inst.name in ["M", "MZ", "MY"]:
-                if qubit_targets:
-                    noisy_circuit.append("X_ERROR", qubit_targets, p)
-                noisy_circuit.append(inst)
-            elif inst.name == "MRX":
-                if qubit_targets:
-                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
-                noisy_circuit.append(inst)
-                if qubit_targets:
-                    noisy_circuit.append("Z_ERROR", qubit_targets, p)
-            elif inst.name in ["MR", "MRZ", "MRY"]:
-                if qubit_targets:
-                    noisy_circuit.append("X_ERROR", qubit_targets, p)
-                noisy_circuit.append(inst)
-                if qubit_targets:
-                    noisy_circuit.append("X_ERROR", qubit_targets, p)
-            else:
-                noisy_circuit.append(inst)
-                if inst.name in [
-                    "I", "X", "Y", "Z", "H", "S", "S_DAG",
-                    "SQRT_X", "SQRT_X_DAG", "SQRT_Y", "SQRT_Y_DAG",
-                    "SQRT_Z", "SQRT_Z_DAG"
-                ]:
-                    if qubit_targets:
-                        noisy_circuit.append("DEPOLARIZE1", qubit_targets, 0.1 * p)
-                elif inst.name in [
-                    "CX", "CY", "CZ", "SWAP", "XCZ", "YCX", "YCY", "YCZ"
-                ]:
-                    # target pairs of two qubits; classically controlled pairs (e.g., CX rec[-1] 5) are skipped
-                    pair_targets = [
-                        t.qubit_value for a, b in zip(targets[::2], targets[1::2])
-                        if a.qubit_value is not None and b.qubit_value is not None for t in (a, b)
-                    ]
-                    if pair_targets:
-                        noisy_circuit.append("DEPOLARIZE2", pair_targets, p)
+            continue
+        gd = stim.gate_data(name)
+        noise_channel = gd.is_noisy_gate and (not gd.produces_measurements or 0 not in gd.num_parens_arguments_range)
+        if name == "MPAD" or noise_channel or not (gd.is_unitary or gd.is_reset or gd.produces_measurements):
+            # annotations (DETECTOR, OBSERVABLE_INCLUDE, QUBIT_COORDS, SHIFT_COORDS), MPAD (its targets are bits, not
+            # qubits), and the noise channels of a noisy circuit (also HERALDED_ERASE): no noise, not an operation
+            noisy_circuit.append(inst)
+            continue
+        targets = inst.targets_copy()
+        # qubit_value is None for measurement records (rec[-k]), sweep bits (sweep[k]), and combiners (*)
+        qubits = [t.qubit_value for t in targets if t.qubit_value is not None]
+        active_qubits.update(qubits)
+        flip = "Z_ERROR" if name.endswith("X") else "X_ERROR"  # (RX, MX, MRX: X basis; Z or Y basis otherwise)
+        if gd.produces_measurements and gd.is_single_qubit_gate:  # M, MX, MY, MR, MRX, MRY
+            if qubits:
+                noisy_circuit.append(flip, qubits, p)
+            noisy_circuit.append(inst)
+            if gd.is_reset and qubits:
+                noisy_circuit.append(flip, qubits, p)
+        elif gd.is_reset and not gd.produces_measurements:  # R, RX, RY
+            noisy_circuit.append(inst)
+            if qubits:
+                noisy_circuit.append(flip, qubits, p)
+        elif gd.is_unitary and gd.is_single_qubit_gate:  # I, X, H, H_XY, S, SQRT_X, C_XYZ, ...
+            noisy_circuit.append(inst)
+            if qubits:
+                noisy_circuit.append("DEPOLARIZE1", qubits, p1)
+        elif gd.is_unitary and gd.is_two_qubit_gate:  # CX, CZ, XCY, SWAP, ISWAP, SQRT_XX, CXSWAP, II, ...
+            noisy_circuit.append(inst)
+            pair_qubits: List[int] = []
+            ctrl_qubits: List[int] = []  # the qubits of the classically controlled pairs (e.g., CX rec[-1] 5)
+            for a, b in zip(targets[::2], targets[1::2]):
+                if a.qubit_value is not None and b.qubit_value is not None:
+                    pair_qubits += [a.qubit_value, b.qubit_value]
+                else:
+                    ctrl_qubits += [t.qubit_value for t in (a, b) if t.qubit_value is not None]
+            if pair_qubits:
+                noisy_circuit.append("DEPOLARIZE2", pair_qubits, p)
+            if ctrl_qubits:
+                noisy_circuit.append("DEPOLARIZE1", ctrl_qubits, p1)
+        else:  # multi-qubit measurements (MPP, MXX, MYY, MZZ) and Pauli product gates (SPP, SPP_DAG): no noise
+            noisy_circuit.append(inst)
     return noisy_circuit
 
 
-def add_noise(circuit: Any, p: float = 0.001) -> Any:
+def add_noise(circuit: Any, p: float = 0.001, force: bool = False) -> Any:
     """
-    Adds uniform circuit-level noise to a Stim circuit: DEPOLARIZE2(p) after two-qubit gates, DEPOLARIZE1(p/10) after
-    single-qubit gates and on the idle qubits in each TICK, and X (Z) flips with probability p after Z-basis (X-basis)
-    resets and before measurements.  Classically controlled two-qubit gates (e.g., CX rec[-1] 5 or CZ sweep[0] 5) get
-    no DEPOLARIZE2 noise.
+    Adds uniform circuit-level noise of strength p to a Stim circuit (the gates are classified by stim.gate_data()):
+    - DEPOLARIZE2(p) after two-qubit gates (CX, CY, CZ, XCX, XCY, XCZ, YCX, YCY, YCZ, SWAP, ISWAP, ISWAP_DAG, SQRT_XX,
+      SQRT_YY, SQRT_ZZ and their _DAG versions, CXSWAP, SWAPCX, CZSWAP, II); a classically controlled gate (e.g.,
+      CX rec[-1] 5 or CZ sweep[0] 5) gets DEPOLARIZE1(p/10) on its qubit;
+    - DEPOLARIZE1(p/10) after one-qubit gates (I, X, Y, Z, H, H_XY, H_YZ, S, S_DAG, SQRT_X, SQRT_Y and their _DAG
+      versions, C_XYZ, C_ZYX, and the other variants), and on the qubits idle since the previous TICK (at each TICK,
+      and at the end of the circuit);
+    - X (Z) flips with probability p after Z-basis or Y-basis (X-basis) resets and before measurements, both before and
+      after a measurement with reset (MR, MRX, MRY);
+    - none for the multi-qubit measurements (MPP, MXX, MYY, MZZ) and the Pauli product gates (SPP, SPP_DAG).
+    The noise of a noisy circuit is kept, unless force=True: then it is replaced (see strip_noise()).
 
     Args:
         circuit: stim.Circuit or path to a .stim file.
-        p: Noise strength (for the distance, only which errors are possible matters).
+        p: Noise strength (for the distance, only which errors are possible matters); p=0: no noise is added.
+        force: If True, all noise of the circuit is removed first (with p=0: only that).
 
     Returns:
-        The noisy stim.Circuit.
+        The noisy stim.Circuit (a copy).
     """
     stim = _get_stim()
     if isinstance(circuit, (str, Path)):
         circuit = stim.Circuit.from_file(str(circuit))
+    if force:
+        circuit = strip_noise(circuit)
+    if p <= 0.0:
+        return circuit.copy()
     num_qubits = circuit.num_qubits
     active_qubits: Set[int] = set()
     noisy_circuit = _add_noise_recursive(circuit, p, num_qubits, active_qubits)
     if active_qubits:
         final_idle_qubits = set(range(num_qubits)) - active_qubits
         if final_idle_qubits:
-            noisy_circuit.append(
-                "DEPOLARIZE1", sorted(list(final_idle_qubits)), p
-            )
+            noisy_circuit.append("DEPOLARIZE1", sorted(final_idle_qubits), 0.1 * p)
     return noisy_circuit
 
 
@@ -2737,7 +2783,8 @@ def strip_minority_detectors(
     basis: str,
     verbose: bool = False,
     thorough: bool = True,
-    thorough_res: Optional[Dict[str, Any]] = None
+    thorough_res: Optional[Dict[str, Any]] = None,
+    mask_out: Optional[List[bool]] = None
 ) -> Tuple[Any, int, int]:
     """Strips detectors corresponding to the minority basis from a Stim circuit.
 
@@ -2751,6 +2798,8 @@ def strip_minority_detectors(
         verbose: Whether to print warnings/statistics.
         thorough: Kept for API compatibility (basis tracking is always enabled).
         thorough_res: Optional precomputed result from classify_qubits_thorough.
+        mask_out: Optional list, extended by one entry per detector of the circuit (in the order of the detectors of
+            its DEM, REPEAT blocks unrolled): True if the detector is stripped, False if it is kept.
 
     Returns:
         Tuple of (simplified_circuit, stripped_count, kept_count).
@@ -2802,6 +2851,7 @@ def strip_minority_detectors(
     )
 
     meas_history: List[int] = []
+    det_mask: List[bool] = []  # one entry per detector (REPEAT blocks unrolled): True if stripped
     stripped_count = 0
     kept_count = 0
     contradictions_c_count = 0
@@ -2818,6 +2868,7 @@ def strip_minority_detectors(
                     continue
                 body_copy = inst.body_copy()
                 meas_before = len(meas_history)
+                mask_before = len(det_mask)
                 strip_before = stripped_count
                 kept_before = kept_count
                 new_body = process_block(body_copy)
@@ -2828,6 +2879,7 @@ def strip_minority_detectors(
                         rep_count - 1
                     )
                     kept_count += (kept_count - kept_before) * (rep_count - 1)
+                    det_mask.extend(det_mask[mask_before:] * (rep_count - 1))
                     if meas_per_rep > 0:
                         meas_history.extend(
                             meas_history[meas_before:meas_after]
@@ -2851,6 +2903,7 @@ def strip_minority_detectors(
                 ]
                 if not rec_targets:
                     stripped_count += 1
+                    det_mask.append(True)
                     continue
 
                 qubits = [
@@ -2917,11 +2970,14 @@ def strip_minority_detectors(
                 else:
                     kept_count += 1
                     new_block.append(inst)
+                det_mask.append(is_minority)
             else:
                 new_block.append(inst)
         return new_block
 
     simp_circuit = process_block(circuit)
+    if mask_out is not None:
+        mask_out.extend(det_mask)
 
     if contradictions_c_count > 0 and verbose:
         sys.stderr.write(
@@ -2966,6 +3022,252 @@ def _write_dem_file(dem: Any, path: str) -> None:
     else:
         with open(path, 'w') as f:
             f.write(str(dem))
+
+
+def _dem_error_columns(dem: Any, pmin: float = 0.0, with_prob: bool = False) -> List[Tuple[Any, ...]]:
+    """
+    The columns of a DEM (a stim.DetectorErrorModel, or a .dem file) as read by the dist_m4ri binary: the detector and
+    observable sets of its error mechanisms, in their order in the flattened DEM (repeat blocks unrolled, with
+    shift_detectors), after the probability cutoff pmin (an error with probability < pmin is skipped).  The components
+    of a decomposed error (separated by '^') are summed mod 2, so that a target listed twice cancels.  With
+    with_prob=True, each column also has the probability of the error, as written: (detectors, observables, p).
+    """
+    if isinstance(dem, (str, Path)):
+        with open(str(dem)) as f:
+            lines = f.read().splitlines()
+    else:
+        lines = str(dem.flattened() if hasattr(dem, 'flattened') else dem).splitlines()
+    cols: List[Tuple[Any, ...]] = []
+
+    def block(i: int, shift: int) -> Tuple[int, int]:
+        # runs the instructions from line i up to the closing brace (or the end): (next line, detector shift)
+        while i < len(lines):
+            s = lines[i].split('#', 1)[0].strip()
+            i += 1
+            if not s:
+                continue
+            if s.startswith('}'):
+                return i, shift
+            if s.startswith('repeat'):
+                count = int(s.split()[1])
+                body, end = i, i
+                for _ in range(count):
+                    end, shift = block(body, shift)
+                if count <= 0:  # skip the body
+                    depth = 1
+                    while end < len(lines) and depth > 0:
+                        t = lines[end].split('#', 1)[0].strip()
+                        end += 1
+                        depth += t.startswith('repeat') - t.startswith('}')
+                i = end
+            elif s.startswith('shift_detectors'):
+                shift += int(s.rsplit(None, 1)[-1])
+            elif s.startswith('error'):
+                p_text = s[s.index('(') + 1:s.index(')')].strip()
+                if float(p_text) < pmin:
+                    continue
+                dets: Set[int] = set()
+                obs: Set[int] = set()
+                for tok in s[s.index(')') + 1:].split():
+                    if tok[0] == 'D':
+                        dets ^= {int(tok[1:]) + shift}
+                    elif tok[0] == 'L':
+                        obs ^= {int(tok[1:])}
+                col = (frozenset(dets), frozenset(obs))
+                cols.append(col + (p_text,) if with_prob else col)
+        return i, shift
+
+    block(0, 0)
+    return cols
+
+
+def _drop_mode(drop: Any) -> str:
+    """
+    The drop option of compute_dem_distance(): "auto" (for None, True, 1, "1", or "auto"), "0" (False, 0, or "0"),
+    "css", or the name of an existing file (ValueError otherwise).
+    """
+    if drop is None or drop is True:
+        return "auto"
+    if drop is False:
+        return "0"
+    if isinstance(drop, numbers.Integral):
+        if drop in (0, 1):
+            return "auto" if drop == 1 else "0"
+        raise ValueError(f"invalid drop={drop}: use 0, 1, 'auto', 'css', or a file with the detectors to drop")
+    s = str(drop).strip()
+    if s.lower() in ("1", "auto"):
+        return "auto"
+    if s == "0":
+        return "0"
+    if s.lower() == "css":
+        return "css"
+    if not os.path.isfile(s):
+        raise ValueError(f"drop={s}: no such file (use 0, 1, auto, css, or a file with the detectors to drop)")
+    return s
+
+
+def _reduced_out_prefix(spec: Union[bool, str, Path], src: str, out_dir: Optional[Union[str, Path]] = None) -> str:
+    """
+    The prefix PREFIX of the files PREFIX_red.dem and PREFIX_red.json of compute_dem_distance(out_reduced=spec) for the
+    input src (a file name, or e.g. 'stim.Circuit'): for True (also '', '1', 'true', 'yes', 'auto'), the basename of
+    the input file (without a suffix _full or _simp; 'dem' for an object); a bare name goes to out_dir (default: the
+    directory of the input file, as for --out-dem), and a path is used as given.
+    """
+    src_path = Path(src) if os.path.exists(src) else None
+    eff_dir = Path(out_dir) if out_dir is not None else (src_path.parent if src_path is not None else Path("."))
+    if spec is True or (isinstance(spec, str) and spec.strip().lower() in ("", "1", "true", "yes", "auto")):
+        stem = src_path.stem if src_path is not None else "dem"
+        if stem.endswith(("_full", "_simp")):
+            stem = stem[:-5]
+        return str(eff_dir / stem)
+    spec_s = str(spec)
+    return str(eff_dir / spec_s) if (not os.path.isabs(spec_s) and os.path.dirname(spec_s) == "") else spec_s
+
+
+def read_drop_file(path: Union[str, Path]) -> Tuple[List[int], Optional[int]]:
+    """
+    Reads a drop file: the 0-based detector indices (k for Dk) separated by white space or commas, where lines starting
+    with '#' or '%' are comments, e.g., the detectors dropped from a DEM written by the binary (outD=FILE).
+
+    Returns:
+        (detectors, num_detectors): the sorted distinct detectors, and the number of detectors of the DEM from the
+        comment line '# N of M detectors dropped ...' written by the binary (None if there is none).
+    """
+    import re
+    dets: Set[int] = set()
+    num: Optional[int] = None
+    with open(str(path)) as f:
+        for line in f:
+            s = line.strip()
+            if s.startswith('#') or s.startswith('%'):
+                mm = re.match(r"#\s*\d+ of (\d+) detectors dropped", s)
+                if mm and num is None:
+                    num = int(mm.group(1))
+                continue
+            dets.update(int(tok) for tok in s.replace(',', ' ').split())
+    return sorted(dets), num
+
+
+def write_reduced_dem(
+    dem: Any,
+    dropped: Sequence[int],
+    prefix: Union[str, Path],
+    pmin: float = 0.0,
+    num_detectors: Optional[int] = None,
+    meta: Optional[Dict[str, Any]] = None
+) -> Tuple[str, str]:
+    """
+    Writes the DEM (a stim.DetectorErrorModel or a .dem file) without the detectors `dropped` (0-based, e.g., those
+    dropped by the binary, see compute_dem_distance(outD=..., out_reduced=...)) to PREFIX_red.dem: the errors which
+    touch none of them (after the cutoff pmin, in the order of the flattened DEM; a decomposed error as the sum of its
+    components), with the other detectors numbered consecutively, and the observables unchanged.  The maps go to
+    PREFIX_red.json: "detectors" (the original index of each detector of the reduced DEM, i.e., the complement of
+    "dropped"), "errors" (the original index of each error of the reduced DEM, 0-based in the order of the flattened DEM
+    after the cutoff pmin, as the columns of the codewords in outC), "dropped", "num_detectors", "num_errors", "pmin",
+    and the entries of meta.  If dropping the detectors is exact (as verified by the binary), the reduced DEM has the
+    same distance, and its codewords map to codewords of the DEM with "errors".
+
+    Returns:
+        (dem_path, json_path): the files written.
+    """
+    cols = _dem_error_columns(dem, pmin, with_prob=True)
+    drop_set = set(int(r) for r in dropped)
+    m = 1 + max([d for S, _, _ in cols for d in S] + list(drop_set), default=-1)
+    if num_detectors is not None:
+        m = max(m, int(num_detectors))
+    k = 1 + max((o for _, O, _ in cols for o in O), default=-1)
+    kept = [r for r in range(m) if r not in drop_set]
+    new_index = {r: i for i, r in enumerate(kept)}
+    dem_path, json_path = f"{prefix}_red.dem", f"{prefix}_red.json"
+    errors: List[int] = []
+    lines = [f"# reduced DEM: {len(drop_set)} of {m} detectors dropped (dist_m4ri.py {__version__}); the maps to the "
+             f"original DEM are in {os.path.basename(json_path)}"]
+    max_det = max_obs = -1
+    for j, (S, O, p) in enumerate(cols):
+        if S & drop_set:
+            continue
+        dets = sorted(new_index[d] for d in S)
+        obs = sorted(O)
+        if dets:
+            max_det = max(max_det, dets[-1])
+        if obs:
+            max_obs = max(max_obs, obs[-1])
+        lines.append(f"error({p})" + "".join(f" D{d}" for d in dets) + "".join(f" L{o}" for o in obs))
+        errors.append(j)
+    if max_det < len(kept) - 1:  # (keeps the number of detectors and observables)
+        lines.append(f"detector D{len(kept) - 1}")
+    if max_obs < k - 1:
+        lines.append(f"logical_observable L{k - 1}")
+    parent_dir = os.path.dirname(os.path.abspath(dem_path))
+    os.makedirs(parent_dir, exist_ok=True)
+    with open(dem_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    info: Dict[str, Any] = {"__version__": __version__}
+    info.update(meta or {})
+    info.update({"pmin": pmin, "num_detectors": m, "num_errors": len(cols), "dropped": sorted(drop_set),
+                 "detectors": kept, "errors": errors})
+    with open(json_path, "w") as f:
+        json.dump(info, f, separators=(",", ":"))
+        f.write("\n")
+    return dem_path, json_path
+
+
+def _expand_equal_columns(
+    cws: List[List[int]],
+    dem: Any,
+    pmin: float = 0.0,
+    maxC: int = 0,
+    verbose: bool = False
+) -> List[List[int]]:
+    """
+    The expanded list of the DEM codewords cws (0-based columns of the DEM, see _dem_error_columns()): every version
+    over the choices among equal columns (the same detectors and observables), which the binary merges (merge=1).
+    Each codeword is mapped to the first columns of its sets of equal columns (two equal columns cancel), and every
+    distinct result c is expanded into the prod_{j in c} |set(j)| codewords with one column from each set (sorted, in
+    the order of cws).  With maxC > 0, at most maxC codewords are returned, with a warning to stderr if some are
+    dropped.
+    """
+    if not cws:
+        return []
+    cols = _dem_error_columns(dem, pmin)
+    sets: Dict[Tuple[frozenset, frozenset], List[int]] = {}
+    for j, c in enumerate(cols):
+        sets.setdefault(c, []).append(j)
+    members = [sets[c] for c in cols]  # the sorted set of the columns equal to column j (j included)
+    keys: List[Tuple[int, ...]] = []
+    seen: Set[Tuple[int, ...]] = set()
+    for cw in cws:
+        if any(j < 0 or j >= len(members) for j in cw):
+            raise ValueError(f"expand: codeword column out of range (the DEM has {len(members)} columns after the "
+                             f"pmin={pmin} cutoff)")
+        odd: Set[int] = set()
+        for j in cw:
+            odd ^= {members[j][0]}
+        key = tuple(sorted(odd))
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    total = 0
+    for key in keys:
+        num = 1
+        for r in key:
+            num *= len(members[r])
+        total += num
+    limit = total if maxC <= 0 else min(total, maxC)
+    out: List[List[int]] = []
+    for key in keys:
+        if len(out) >= limit:
+            break
+        for choice in itertools.product(*(members[r] for r in key)):
+            out.append(sorted(choice))
+            if len(out) >= limit:
+                break
+    if limit < total:
+        sys.stderr.write(f"# Warning: expand: the expanded list has {total} codewords ({len(keys)} up to equal "
+                         f"columns); only the first maxC={maxC} are written (the list is incomplete)\n")
+    elif verbose:
+        print(f"[dist_m4ri] expand: {len(keys)} codewords up to equal columns -> {total} codewords")
+    return out
 
 
 def _css_sector_codes(Hx: Any, Hz: Any, Lx: Optional[Any], Lz: Optional[Any]) -> Dict[str, Tuple[Any, Any, Any]]:
@@ -3110,19 +3412,28 @@ def _cached_code_distance(
     trust_start: bool,
     fdem: Optional[Any] = None,
     pmin: float = 0.0,
-    key_fn: Optional[Callable[[], str]] = None
+    merge: bool = True,
+    key_fn: Optional[Callable[[], str]] = None,
+    cws_out_fn: Optional[Callable[[List[List[int]]], List[List[int]]]] = None,
+    fdrop: Optional[Union[str, Path, List[int]]] = None,
+    outD: Optional[str] = None,
+    sort_rows: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
-    file, with the probability cutoff pmin) with the dist_m4ri binary, using the distance cache shared by
-    compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
-    compute_dem_distance() (the warnings for the expert options are issued by the callers).
+    file, with the probability cutoff pmin, merge, the detectors to drop fdrop ("auto", "0", a file, or a list), and
+    the file outD for the detectors dropped: see run_dist_m4ri()) with the dist_m4ri binary, using the distance cache
+    shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
+    compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
+    (see run_dist_m4ri()) does not change the result, nor the cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
     Otherwise, the binary is run, starting from the cached bounds, and the merged bounds are stored.  The returned
     codewords (those of the run merged with the cached ones, or the cached ones) are written to outC; with finC
-    identical to outC, the codewords already in the file are kept.
+    identical to outC, the codewords already in the file are kept.  If given, cws_out_fn transforms the codewords
+    returned and written to outC (e.g., the expansion over equal DEM columns, see _expand_equal_columns()); the cache
+    keeps the codewords as found.
 
     Returns:
         dict with the distance "dist" (see _dist_from_bounds()), the bounds "dmin", "dmax", "rw_steps", "d_info"
@@ -3133,14 +3444,20 @@ def _cached_code_distance(
     same_file = bool(finC and outC) and os.path.abspath(str(finC)) == os.path.abspath(str(outC))
     finC = check_finc_outc(finC, outC, verbose=verbose)
 
-    def write_out(cws_res: List[List[int]]) -> None:
-        # the codewords to outC; with finC identical to outC, the codewords already in the file are kept
+    def write_out(cws_res: List[List[int]]) -> List[List[int]]:
+        # the codewords returned (transformed by cws_out_fn) and written to outC; with finC identical to outC, the
+        # codewords already in the file are kept
+        if cws_out_fn is not None and cws_res:
+            cws_res = cws_out_fn(cws_res)
         if outC and cws_res:
+            out = cws_res
             if same_file and os.path.isfile(outC):
-                cws_res = _union_cws(read_sparse_vectors(outC), cws_res)
-            _write_nzlist_file(outC, cws_res)
+                out = _union_cws(read_sparse_vectors(outC), cws_res)
+            _write_nzlist_file(outC, out)
+        return cws_res
 
     code_key = cached_entry = plain_key = plain_entry = None
+    hit: Optional[Dict[str, Any]] = None  # the result of a cache hit
     eff_dmin, eff_dmax = dmin, dmax
     if _use_distance_cache:
         if eff_cache_file:
@@ -3165,19 +3482,22 @@ def _cached_code_distance(
                     elif debug & PY_DBG_CACHE:
                         print(f"[dist_m4ri] Cache hit for {kind} distance ({found} known)!")
                     cws_res = [list(cw) for cw in cached_entry.get("cws", [])] if need_cws else []
-                    write_out(cws_res)
-                    return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax,
-                            "rw_steps": c_rw, "d_info": d_info, "cws": cws_res, "cached": True}
-                if verbose:
-                    print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached bounds: dmin={c_dmin}, dmax={c_dmax}, "
-                          f"rw_steps={cached_entry.get('rw_steps', 0)}; continuing search)")
-                eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, cached_entry)
+                    hit = {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax,
+                           "rw_steps": c_rw, "d_info": d_info, "cws": cws_res, "cached": True}
+                else:
+                    if verbose:
+                        print(f"[dist_m4ri] Cache retrieval: PARTIAL (cached bounds: dmin={c_dmin}, dmax={c_dmax}, "
+                              f"rw_steps={cached_entry.get('rw_steps', 0)}; continuing search)")
+                    eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, cached_entry)
             elif verbose:
                 print(f"[dist_m4ri] Cache retrieval: MISS (no entry for '{code_key}')")
         except Exception:
-            code_key = cached_entry = plain_key = plain_entry = None
+            code_key = cached_entry = plain_key = plain_entry = hit = None
     elif verbose:
         print("[dist_m4ri] Cache retrieval: DISABLED (cache is turned off)")
+    if hit is not None:
+        hit["cws"] = write_out(hit["cws"])
+        return hit
 
     if wmax > 0 and eff_dmin > max(wmax, dmin):  # a cached lower bound beyond wmax (the binary needs dmin <= wmax)
         src = cached_entry or plain_entry
@@ -3185,8 +3505,7 @@ def _cached_code_distance(
             c_dmin, c_dmax, c_rw = src.get("dmin", 0) or 0, src.get("dmax", 0) or 0, src.get("rw_steps", 0) or 0
             if verbose:
                 print(f"[dist_m4ri] Cached lower bound dmin={c_dmin} > wmax={wmax}: no CC round needed")
-            cws_res = [list(cw) for cw in src.get("cws", [])] if need_cws else []
-            write_out(cws_res)
+            cws_res = write_out([list(cw) for cw in src.get("cws", [])] if need_cws else [])
             return {"dist": _dist_from_bounds(c_dmin, c_dmax), "dmin": c_dmin, "dmax": c_dmax, "rw_steps": c_rw,
                     "d_info": format_bounds_list(c_dmin, c_dmax, c_rw), "cws": cws_res, "cached": True}
         eff_dmin = max(wmax, dmin)
@@ -3211,6 +3530,15 @@ def _cached_code_distance(
                 temp_files.append(file_dem)
                 _write_dem_file(fdem, file_dem)
         file_H, file_G, file_L = input_file(H, "_H.mtx"), input_file(G, "_G.mtx"), input_file(L, "_L.mtx")
+        file_drop = None
+        if fdem is not None and fdrop is not None:  # the detectors to drop: the file, or the list written to a file
+            if isinstance(fdrop, (str, Path)):
+                file_drop = str(fdrop)
+            elif len(fdrop) > 0:
+                file_drop = create_unique_file(extension="_drop.txt")
+                temp_files.append(file_drop)
+                with open(file_drop, "w") as f:
+                    f.write(" ".join(str(r) for r in fdrop) + "\n")
         outC_file = None
         if need_cws:
             outC_file = create_unique_file(extension="_cws.nz")
@@ -3239,6 +3567,10 @@ def _cached_code_distance(
             threads=threads,
             timeout=timeout,
             pmin=pmin,
+            merge=merge,
+            drop=file_drop,
+            outD=outD if fdem is not None else None,
+            sort_rows=sort_rows,
             dW=dW,
             maxC=maxC,
             outC=outC_file,
@@ -3279,7 +3611,7 @@ def _cached_code_distance(
             res = {"dist": _dist_from_bounds(dmin_res, dmax_res), "dmin": dmin_res, "dmax": dmax_res,
                    "rw_steps": rw_steps, "d_info": format_bounds_list(dmin_res, dmax_res, rw_steps), "cws": cws,
                    "cached": False}
-        write_out(res["cws"])
+        res["cws"] = write_out(res["cws"])
         return res
     finally:
         _remove_temp_files(temp_files, debug)
@@ -3327,6 +3659,7 @@ def compute_classical_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Any:
     """
@@ -3362,6 +3695,10 @@ def compute_classical_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3420,7 +3757,8 @@ def compute_classical_distance(
         smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
+        sort_rows=sort_rows
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -3472,6 +3810,7 @@ def compute_quantum_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Any:
     """
@@ -3510,6 +3849,10 @@ def compute_quantum_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3584,7 +3927,8 @@ def compute_quantum_distance(
         smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
-        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
+        sort_rows=sort_rows
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -3667,6 +4011,7 @@ def compute_css_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -3704,6 +4049,10 @@ def compute_css_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3810,7 +4159,7 @@ def compute_css_distance(
             outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
             seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start
+            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows
         )
         _last_css_stats[s] = dict(_last_run_stats)
 
@@ -3879,26 +4228,68 @@ def _resolve_stim_dem_out_path(
     return str(out_path)
 
 
+def _circuit_dem(circuit: Any) -> Tuple[Any, bool, bool]:
+    """
+    The DEM of a Stim circuit: with decompose_errors=True if stim can decompose its errors (otherwise without).  An
+    error channel with disjoint cases which stim cannot write as independent error mechanisms (e.g., a PAULI_CHANNEL_1
+    with X and Z but no Y errors, PAULI_CHANNEL_2, or ELSE_CORRELATED_ERROR) needs approximate_disjoint_errors=True,
+    which is used only if the conversion fails without it: it only changes the probabilities of the error mechanisms,
+    not which errors are possible (so neither the distance, unless pmin > 0, nor the codewords).
+
+    Returns:
+        (dem, decompose_errors, approximate_disjoint_errors): the DEM, and the options used.
+    """
+    error: Optional[Exception] = None
+    for approx in (False, True):
+        for decomp in (True, False):
+            try:
+                return circuit.detector_error_model(decompose_errors=decomp, approximate_disjoint_errors=approx), \
+                    decomp, approx
+            except Exception as e:  # (stim raises ValueError)
+                error = e
+    assert error is not None
+    raise error
+
+
+def _warn_disabled_simple_full(simple: Optional[bool] = None, full: Optional[bool] = None, cli: bool = False) -> None:
+    """
+    Writes a warning to stderr if the options simple or full (CLI: --simple, --full) are given: they are disabled since
+    version 0.13.0 (accepted for backward compatibility, but ignored).  The DEM of a Stim circuit always has all
+    detectors, and the binary drops detectors if this is exact (drop=auto, the default; e.g., the minority-basis
+    detectors of a CSS circuit, which the simple mode stripped): as fast, with the distance of the full DEM (the
+    simplified DEM only gives a lower bound when dropping them is not exact).
+    """
+    names = [f"--{n}" if cli else f"{n}=" for n, v in (("simple", simple), ("full", full)) if v is not None]
+    if names:
+        sys.stderr.write(f"# Warning: {', '.join(names)}: disabled since version 0.13.0, ignored: the DEM of a Stim "
+                         f"circuit has all detectors, and the binary drops detectors if this is exact (drop=auto, the "
+                         f"default, e.g., the minority-basis detectors of a CSS circuit; drop=0 keeps them)\n")
+
+
 def _dem_from_input(
     dem: Optional[Any],
     circuit: Optional[Any],
-    simple: Optional[bool] = None,
-    full: bool = False,
     basis: Optional[str] = None,
     rounds: Optional[int] = None,
     p_noise: float = 0.001,
     out_dir: Optional[Union[str, Path]] = None,
     out_dem: Optional[Union[bool, str, Path]] = None,
     out_stim: Optional[Union[bool, str, Path]] = None,
-    circ_verbose: bool = False
+    circ_verbose: bool = False,
+    drop_out: Optional[List[int]] = None,
+    force_noise: bool = False
 ) -> Tuple[Any, Optional[Any], Optional[str]]:
     """
     The DEM of compute_dem_distance() (also used by get_cached_distance() for the cache key).  A DEM
     (stim.DetectorErrorModel or .dem file) is used as given.  A Stim circuit (stim.Circuit or .stim file, also when
     given as `dem`) is processed: the empty detectors are removed, the qubits are classified, the REPEAT count is set
-    (rounds), the minority-basis detectors of a CSS circuit are stripped (simple, unless full=True), and circuit-level
-    noise of strength p_noise is added to a noiseless circuit (see add_noise()); then it is converted to a DEM.  The
-    processed circuit and the DEM are saved if requested (out_stim, out_dem, out_dir; see compute_dem_distance()).
+    (rounds), and circuit-level noise of strength p_noise is added to a noiseless circuit (see add_noise(); none for
+    p_noise=0), or with force_noise=True replaces the noise of the circuit (see strip_noise(); with p_noise=0, all noise
+    is removed); then it is converted to a DEM (with all detectors).  The processed circuit and the DEM are saved if
+    requested (out_stim, out_dem, out_dir; see compute_dem_distance()).  For a CSS circuit, the list drop_out (if given)
+    is extended by the minority-basis detectors (0-based detectors of the DEM, see strip_minority_detectors()), which
+    the binary drops if this is exact (drop=css, passed as drop=FILE).  The qubits are only classified for drop_out and
+    circ_verbose.
 
     Returns:
         (dem, circuit, saved_dem_path): the DEM (object or file name), the processed circuit (None for a DEM input),
@@ -3940,55 +4331,56 @@ def _dem_from_input(
             print(f"[dist_m4ri] Removed {empty_removed} empty DETECTOR(s) from '{circuit_src}'")
 
         filepath_hint = circuit_src if circuit_src != "stim.Circuit" else None
-        t_res = classify_qubits_thorough(circuit, verbose=False, basis_arg=basis, filepath=filepath_hint)
-        eff_basis = t_res["basis"]
-        is_css_circ = t_res["is_css"]
-        is_rot_css = t_res.get("is_rotated_css", False)
+        t_res: Optional[Dict[str, Any]] = None  # the classification of the qubits (only for drop=css and verbose)
+        if circ_verbose or drop_out is not None:
+            t_res = classify_qubits_thorough(circuit, verbose=False, basis_arg=basis, filepath=filepath_hint)
 
         if rounds is not None and has_rep:
             circuit = set_circuit_rounds(circuit, rounds)
 
-        if full:
-            use_simple = False
-        elif simple is not None:
-            use_simple = bool(simple)
-        else:
-            use_simple = is_css_circ
+        n_minority = None
+        if t_res is not None and t_res["is_css"] and drop_out is not None:
+            # the minority-basis detectors, for the exact reduction of the DEM in the binary (drop=css)
+            mask: List[bool] = []
+            strip_minority_detectors(circuit, t_res["basis"], verbose=False, thorough=True, thorough_res=t_res,
+                                     mask_out=mask)
+            if len(mask) == circuit.num_detectors:
+                drop_out.extend(i for i, s in enumerate(mask) if s)
+                n_minority = sum(mask)
+            elif circ_verbose:
+                print(f"[dist_m4ri] Warning: {len(mask)} detectors classified, but the circuit has "
+                      f"{circuit.num_detectors}; no detectors to drop")
 
-        stripped_det = 0
-        kept_det = circuit.num_detectors
-        if use_simple and is_css_circ:
-            circuit, stripped_det, kept_det = strip_minority_detectors(
-                circuit, eff_basis, verbose=circ_verbose, thorough=True, thorough_res=t_res
-            )
-        elif simple is True and not is_css_circ and circ_verbose:
-            print(
-                f"[dist_m4ri] Warning: --simple requested, but '{circuit_src}' "
-                "is not classified as a CSS circuit; keeping all detectors."
-            )
+        mode_tag = "_full"  # (the default names of the saved files, see _resolve_stim_dem_out_path())
 
-        mode_tag = "_simp" if (use_simple and is_css_circ) else "_full"
-
-        if circ_verbose:
-            mode_str = ("simple (primary-basis detectors only)" if (use_simple and is_css_circ)
-                        else "full (all detectors)")
+        if circ_verbose and t_res is not None:
+            is_css_circ, is_rot_css = t_res["is_css"], t_res.get("is_rotated_css", False)
             css_type = "rotated-CSS (e.g. XZZX)" if is_rot_css else ("CSS" if is_css_circ else "non-CSS")
             rot_info = f", rotated_data={len(t_res.get('rotated_data_qubits', []))}" if is_rot_css else ""
             rnd_cnt = count_circuit_rounds(circuit)
             print(
                 f"[dist_m4ri] Circuit basis tracking: type={css_type}, "
-                f"basis={eff_basis}, data={len(t_res['data_qubits'])}, "
+                f"basis={t_res['basis']}, data={len(t_res['data_qubits'])}, "
                 f"X_anc={len(t_res['x_ancillas'])}, "
                 f"Z_anc={len(t_res['z_ancillas'])}, "
                 f"routing={len(t_res['routing_qubits'])}{rot_info}, "
                 f"rounds={rnd_cnt}"
             )
-            print(f"[dist_m4ri] Circuit mode: {mode_str} (kept={kept_det}, stripped={stripped_det} detectors)")
+            minority = (f", minority-basis={n_minority} (drop=css: the binary drops them if this is exact)"
+                        if n_minority is not None else "")
+            print(f"[dist_m4ri] Circuit detectors: {circuit.num_detectors}{minority}")
 
-        noise_added = False
-        if not has_noise(circuit):
+        if force_noise:  # the noise of the circuit is replaced (p_noise=0: removed)
+            noise_msg = (f"replaced the noise by circuit-level noise (p={p_noise})" if p_noise > 0.0 else
+                         "removed all noise (p_noise=0)")
+            circuit = add_noise(circuit, p=p_noise, force=True)
+        elif has_noise(circuit):
+            noise_msg = "existing noise detected"
+        elif p_noise > 0.0:
+            noise_msg = f"added circuit-level noise (p={p_noise})"
             circuit = add_noise(circuit, p=p_noise)
-            noise_added = True
+        else:
+            noise_msg = "no noise added (p_noise=0)"
 
         stim_out_path = _resolve_stim_dem_out_path(out_stim, circuit_src, mode_tag, ".stim", out_dir=out_dir)
         if stim_out_path is not None:
@@ -3996,15 +4388,11 @@ def _dem_from_input(
             if circ_verbose:
                 print(f"[dist_m4ri] Saved Stim circuit to '{stim_out_path}'")
 
-        try:
-            dem = circuit.detector_error_model(decompose_errors=True)
-            decomp_used = True
-        except Exception:
-            dem = circuit.detector_error_model(decompose_errors=False)
-            decomp_used = False
+        dem, decomp_used, approx_used = _circuit_dem(circuit)
         if circ_verbose:
-            noise_msg = f"added circuit-level noise (p={p_noise})" if noise_added else "existing noise detected"
-            print(f"[dist_m4ri] Converted '{circuit_src}' to DEM ({noise_msg}, decompose_errors={decomp_used})")
+            approx_msg = ", approximate_disjoint_errors=True" if approx_used else ""
+            print(f"[dist_m4ri] Converted '{circuit_src}' to DEM ({noise_msg}, decompose_errors={decomp_used}"
+                  f"{approx_msg})")
             if all(hasattr(dem, a) for a in ("num_detectors", "num_observables", "num_errors")):
                 print(
                     f"[dist_m4ri] DEM size: {dem.num_detectors} detectors, {dem.num_observables} observables, "
@@ -4059,6 +4447,11 @@ def compute_dem_distance(
     dW: int = -1,
     maxC: int = 0,
     pmin: float = 0.0,
+    merge: bool = True,
+    expand: bool = False,
+    drop: Optional[Union[bool, int, str, Path]] = None,
+    outD: Optional[Union[str, Path]] = None,
+    out_reduced: Optional[Union[bool, str, Path]] = None,
     finC: Optional[str] = None,
     outC: Optional[str] = None,
     do_cws: bool = False,
@@ -4078,14 +4471,16 @@ def compute_dem_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     simple: Optional[bool] = None,
-    full: bool = False,
+    full: Optional[bool] = None,
     basis: Optional[str] = None,
     rounds: Optional[int] = None,
     out_dir: Optional[Union[str, Path]] = None,
     out_dem: Optional[Union[bool, str, Path]] = None,
     out_stim: Optional[Union[bool, str, Path]] = None,
     p_noise: float = 0.001,
+    force_noise: bool = False,
     trust_start: bool = False,
+    sort_rows: Optional[bool] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -4093,7 +4488,9 @@ def compute_dem_distance(
 
     Args:
         dem: stim.DetectorErrorModel object or path to .dem / .stim file.
-        circuit: stim.Circuit object or path to .stim file (converted to DEM).
+        circuit: stim.Circuit object or path to .stim file (converted to DEM; if stim cannot write an error channel with
+            disjoint cases, e.g., a PAULI_CHANNEL_1 without Y errors, as independent error mechanisms, with
+            approximate_disjoint_errors=True, which only changes the probabilities of the error mechanisms).
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
@@ -4118,13 +4515,45 @@ def compute_dem_distance(
             main record even if no calculation is needed (default: False).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
+        sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
+            (faster CC for very different row weights), False keeps their order, and None (default) leaves the
+            binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
+            the cache key do not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
-        maxC: Maximum number of codewords to collect.
+        maxC: Maximum number of codewords to collect (with expand=True, also the maximum number of codewords of the
+            expanded list returned and written to outC; a warning is printed to stderr if some are dropped).
         pmin: Probability cutoff for error mechanisms in DEM.
-            Note: CC start columns (start) index the error mechanisms in their order of appearance in
-            the (flattened) DEM, after the pmin cutoff.
+            Note: CC start columns (start) and the codewords (finC, outC, do_cws) index the error mechanisms in
+            their order of appearance in the (flattened) DEM, after the pmin cutoff: with another pmin, the columns
+            (and the codewords) change.
+        merge: Merge the equal columns of the DEM (error mechanisms with the same detectors and observables) in the
+            binary (default: True).  Exact: dropping two equal columns of a codeword gives a lighter one, so the
+            distance does not change (and the cache key does not depend on merge).  Column indices (finC, outC,
+            start, the returned codewords) are those of the DEM; the codewords found use the first one of each set
+            of equal columns (merge=False: all columns are kept, e.g., to enumerate the codewords with each of them;
+            or expand=True to expand the list found).
+        expand: If True, the codewords returned and written to outC are expanded in Python: each codeword is listed
+            once for every choice among equal columns (default: False; see _expand_equal_columns()).  The binary
+            and the cache keep the merged list.  With dW <= 1, the expanded list is that of merge=False (with
+            dW >= 2, merge=False also lists lighter codewords with two equal columns added).  The expanded list can
+            be much longer (it grows quickly with the weight); with maxC > 0, it is cut at maxC codewords.
+        drop: The detectors which the binary drops if this is verified to be exact, so that the distance (and every
+            codeword found) is that of the DEM, found from the DEM without these detectors and the errors touching
+            them (fewer detectors and errors: as fast as the DEM with only the primary-basis detectors of a CSS
+            circuit).  None, True, 1, or "auto" (default): the binary searches for the largest such set in the DEM alone
+            (drop=auto, see the README), e.g., the minority-basis detectors of a CSS circuit (with the usual noise).
+            "css": for a Stim circuit classified as CSS, its minority-basis detectors (see strip_minority_detectors()),
+            passed as a file (otherwise, e.g., for a DEM, drop=auto is used, with a warning).  False or 0: no detectors
+            are dropped.  A file name: the file with the detectors to drop (0-based, k for Dk; see read_drop_file()),
+            for any DEM.  With "css" or a file, if dropping the detectors is not exact, a note is printed to stderr and
+            the full DEM is used.  The codewords found use only the errors touching no dropped detector.
+        outD: File to which the binary writes the detectors dropped (0-based, see read_drop_file()); with a cached
+            result, the binary is run only to find them (with dmin = dmax: no search).
+        out_reduced: True or a prefix PREFIX: writes the DEM without the detectors dropped (see outD) to
+            PREFIX_red.dem, and the maps to the original DEM (its detectors and errors) to PREFIX_red.json, see
+            write_reduced_dem() (True: PREFIX = <basename>, in out_dir or the directory of the input file).
         finC: Input file with initial codewords.
         outC: Output file to save codewords (NZLIST format).
         do_cws: Whether to return extracted error mechanisms / codewords.
@@ -4135,17 +4564,29 @@ def compute_dem_distance(
         seed: Random seed.
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
-        simple: If True (default for CSS .stim circuits), keep only primary-basis detectors.
-        full: If True, keep all detectors in .stim circuits.
-        basis: Optional primary memory basis override ('X' or 'Z') for .stim circuits.
+        simple / full: Disabled since version 0.13.0 (accepted for backward compatibility, but ignored with a warning
+            to stderr): the DEM of a Stim circuit always has all detectors, and the minority-basis detectors of a CSS
+            circuit (which simple=True stripped) are dropped by the binary if this is exact (see drop).  The distance
+            of the simplified circuit (a lower bound) can still be found by passing the circuit stripped with
+            strip_minority_detectors().
+        basis: Optional primary memory basis override ('X' or 'Z') for .stim circuits, only used with drop="css" (the
+            other basis is that of the minority-basis detectors) and for the verbose report of the classification.
         rounds: Optional number of REPEAT rounds for .stim circuits (warns if no REPEAT block).
         out_dir: Optional output directory for saved DEM and/or Stim circuit files.
-        out_dem: Optional bool or filename to save the constructed DEM (True = auto-named
-            <basename>_simp.dem or <basename>_full.dem).
-        out_stim: Optional bool or filename to save the processed (noisy) Stim circuit
-            (True = auto-named <basename>_simp.stim or <basename>_full.stim).
-        p_noise: Strength of the circuit-level noise added to a noiseless Stim circuit (see add_noise(); default:
-            0.001).  The distance does not depend on it (unless pmin > 0), only on which faults are possible.
+        out_dem: Optional bool or filename to save the constructed DEM (True = auto-named <basename>_full.dem).  The
+            codewords (outC, do_cws) index its error lines (in the order of the flattened DEM): save the DEM in the
+            same run, since a DEM generated again from the circuit may differ (e.g., with another stim version); with
+            outC but without out_dem, a warning is printed to stderr for a Stim circuit.
+        out_stim: Optional bool or filename to save the processed (noisy, rounds-adjusted) Stim circuit
+            (True = auto-named <basename>_full.stim).
+        p_noise: Strength of the uniform circuit-level noise added to a noiseless Stim circuit (see add_noise();
+            default: 0.001; 0: no noise is added, and a noiseless circuit gives no distance, with a note).  The
+            distance does not depend on it (unless pmin > 0), only on which faults are possible.  A circuit with noise
+            (a noise channel or a noisy measurement such as M(0.001), see has_noise()) is used as is, unless
+            force_noise=True.
+        force_noise: If True, the noise of a Stim circuit is replaced by the uniform noise of strength p_noise (see
+            strip_noise(); with p_noise=0, all noise is removed, e.g., to save the noiseless circuit with out_stim),
+            e.g., to compare circuits with the same noise model (default: False).
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -4153,21 +4594,36 @@ def compute_dem_distance(
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
     """
+    global _last_run_stats
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_dem_distance, kwargs)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
     _warn_experimental_ksub(ksub, method, solver)
+    _warn_disabled_simple_full(simple, full)
 
     circ_verbose = verbose or bool(debug & PY_DBG_CIRCUITS)  # Stim circuit to DEM conversion details
+    if not 0.0 <= p_noise <= 0.5:
+        raise ValueError(f"invalid p_noise={p_noise}: the noise strength must be in [0, 0.5]")
+    drop_mode = _drop_mode(drop)  # "auto", "0", "css", or a file name
+    src_in = dem if dem is not None else circuit  # (the input, for the names of the files of out_reduced)
+    src_name = str(src_in) if isinstance(src_in, (str, Path)) else f"stim.{type(src_in).__name__}"
+    css_list: List[int] = []  # the minority-basis detectors of a CSS circuit (drop=css)
     dem, circuit, saved_dem_path = _dem_from_input(
-        dem, circuit, simple=simple, full=full, basis=basis, rounds=rounds, p_noise=p_noise, out_dir=out_dir,
-        out_dem=out_dem, out_stim=out_stim, circ_verbose=circ_verbose
+        dem, circuit, basis=basis, rounds=rounds, p_noise=p_noise, out_dir=out_dir, out_dem=out_dem,
+        out_stim=out_stim, circ_verbose=circ_verbose,
+        drop_out=css_list if (drop_mode == "css" and solver != "codedistance") else None, force_noise=force_noise
     )
+    if getattr(dem, "num_errors", None) == 0:  # (a stim object; e.g., a noiseless circuit with p_noise=0)
+        sys.stderr.write("# Note: the DEM has no error mechanisms (no noise, e.g., p_noise=0 for a noiseless circuit "
+                         "or with force_noise): no distance computed\n")
+        return (0, [0, 0, 0], []) if do_cws else (0, [0, 0, 0])
 
     if solver == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
+        if outD or out_reduced:
+            sys.stderr.write("# Warning: outD and out_reduced are only used with solver='dist_m4ri'; ignored\n")
         codedistance = _get_codedistance()
         params = dict(codedistance_params or {})
         params.setdefault("filterCircuit", False)
@@ -4192,18 +4648,89 @@ def compute_dem_distance(
         return d, d_info
 
     # Solver is native multithreaded dist_m4ri (the cache key is that of the processed DEM, see get_cached_distance())
-    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
-    res = _cached_code_distance(
-        None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
-        num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
-        smax=smax if smax is not None else 0, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC,
-        need_cws=bool(do_cws or outC), eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose,
-        nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
-        kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-        cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        fdem=saved_dem_path if (saved_dem_path is not None and os.path.exists(saved_dem_path)) else dem, pmin=pmin,
-        key_fn=lambda: _dem_cache_key(dem, pmin)
-    )
+    if outC and circuit is not None and saved_dem_path is None:
+        sys.stderr.write(f"# Warning: outC={outC}: the codewords index the error lines of the DEM generated from the "
+                         f"Stim circuit in this run (after the pmin cutoff), which is not saved; save it with "
+                         f"--out-dem (out_dem=...), since a DEM generated again later (e.g., with another stim "
+                         f"version) may not fit\n")
+    fdem_run = saved_dem_path if (saved_dem_path is not None and os.path.exists(saved_dem_path)) else dem
+    temp_files: List[str] = []
+    try:
+        fdrop = drop_mode  # "auto", "0", or a file (drop=css: the minority-basis detectors written to a file)
+        if drop_mode == "css":
+            if css_list:
+                fdrop = create_unique_file(extension="_drop.txt")
+                temp_files.append(fdrop)
+                with open(fdrop, "w") as f:
+                    f.write(f"# {len(css_list)} minority-basis detectors (drop=css)\n" +
+                            " ".join(str(r) for r in css_list) + "\n")
+                if circ_verbose:
+                    print(f"[dist_m4ri] drop=css: the binary drops the {len(css_list)} minority-basis detectors if "
+                          f"this is exact")
+            else:
+                fdrop = "auto"
+                sys.stderr.write("# Warning: drop=css: no minority-basis detectors (they are only known for a Stim "
+                                 "circuit classified as CSS); using drop=auto (the detectors to drop found from the "
+                                 "DEM)\n")
+        outd_file = str(outD) if outD else None
+        if out_reduced and outd_file is None:
+            outd_file = create_unique_file(extension="_outD.txt")
+            temp_files.append(outd_file)
+        if outd_file is not None and not isinstance(fdem_run, (str, Path)):  # (the same DEM file for the runs)
+            fdem_file = create_unique_file(extension=".dem")
+            temp_files.append(fdem_file)
+            _write_dem_file(fdem_run, fdem_file)
+            fdem_run = fdem_file
+        cws_out_fn = None
+        if expand and (do_cws or outC):
+            def cws_out_fn(cws_in: List[List[int]]) -> List[List[int]]:
+                return _expand_equal_columns(cws_in, fdem_run, pmin=pmin, maxC=maxC, verbose=verbose)
+        eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+        res = _cached_code_distance(
+            None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
+            num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
+            smax=smax if smax is not None else 0, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC,
+            need_cws=bool(do_cws or outC), eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose,
+            nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
+            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
+            merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file,
+            sort_rows=sort_rows
+        )
+        ran = not res["cached"]
+        drop_stats = _last_run_stats if ran else {}
+        if outd_file is not None and res["cached"]:  # a run only to find the detectors dropped (bounds coincide)
+            if verbose:
+                print("[dist_m4ri] Cached result: running the binary only for the detectors dropped (outD)")
+            cached_stats = _last_run_stats
+            run_dist_m4ri(dist_m4ri_path=dist_m4ri, method=2, fdem=str(fdem_run), dmin=1, dmax=1, wmax=1, threads=1,
+                          pmin=pmin, merge=merge, drop=fdrop, outD=outd_file, debug=debug & ~BIN_DBG_MASK)
+            drop_stats, _last_run_stats = _last_run_stats, cached_stats  # (the statistics of the cached result)
+            ran = True
+        if ran and fdrop not in ("auto", "0") and drop_stats.get("drop_note"):
+            what = "the minority-basis detectors (drop=css)" if drop_mode == "css" else f"the detectors in {fdrop}"
+            sys.stderr.write(f"# Note: dropping {what} is not exact for this DEM ({drop_stats['drop_note']}); "
+                             f"the full DEM was used\n")
+        elif ran and fdrop not in ("auto", "0") and drop_stats.get("drop_none_listed"):
+            sys.stderr.write(f"# Note: none of the detectors in {fdrop} is in the DEM; nothing dropped\n")
+        if drop_mode == "css" and fdrop != "auto" and outd_file is not None and os.path.isfile(outd_file):
+            with open(outd_file) as f:  # the comment line: drop=css instead of the temporary file
+                text = f.read()
+            with open(outd_file, "w") as f:
+                f.write(text.replace(f"(drop={fdrop}", "(drop=css", 1))
+        if out_reduced and outd_file is not None:
+            dropped, num_det = read_drop_file(outd_file)
+            prefix = _reduced_out_prefix(out_reduced, src_name, out_dir)
+            drop_label = "css" if (drop_mode == "css" and fdrop != "auto") else str(fdrop)
+            dem_red, json_red = write_reduced_dem(
+                fdem_run, dropped, prefix, pmin=pmin, num_detectors=num_det,
+                meta={"source": src_name, "dem": saved_dem_path if saved_dem_path else
+                      (str(fdem_run) if str(fdem_run) not in temp_files else None), "drop": drop_label})
+            if verbose or (debug & PY_DBG_CIRCUITS):
+                print(f"[dist_m4ri] Saved the reduced DEM ({len(dropped)} detectors dropped) to '{dem_red}' and the "
+                      f"maps to '{json_red}'")
+    finally:
+        _remove_temp_files(temp_files, debug)
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     return (dist, d_info, cws) if do_cws else (dist, d_info)
 
@@ -4254,6 +4781,12 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "dW": -1,
         "maxC": 0,
         "pmin": 0.0,
+        "merge": None,
+        "expand": None,
+        "drop": None,
+        "outD": None,
+        "out_reduced": None,
+        "sort_rows": None,
         "noscan": 0,
         "classical": -1,
         "seed": 0,
@@ -4272,13 +4805,16 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "cov_cws": 100,
         "refresh": 0,
         "simple": None,
-        "full": False,
+        "full": None,
         "basis": None,
         "rounds": None,
+        "p_noise": None,
+        "force_noise": False,
         "out_dir": None,
         "out_dem": None,
         "out_stim": None,
         "morehelp": False,
+        "morehelp_topic": None,
         "version": False,
         "unrecognized": [],
     }
@@ -4294,6 +4830,15 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 return True
         return False
 
+    def _add_help_topic(topic: Optional[str]) -> None:  # --morehelp TOPIC, --help TOPIC (several: comma-separated)
+        args["morehelp"] = True
+        if topic and topic != "1":
+            args["morehelp_topic"] = f"{args['morehelp_topic']},{topic}" if args["morehelp_topic"] else topic
+
+    def _help_topic_at(j: int) -> Optional[str]:  # the topic after --morehelp / --help: not an option or a file
+        nxt = argv[j] if j < len(argv) else None
+        return nxt if nxt and not nxt.startswith("-") and "=" not in nxt and not os.path.exists(nxt) else None
+
     i = 0
     while i < len(argv):
         arg = argv[i]
@@ -4307,13 +4852,18 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             continue
 
         if arg in ("--morehelp", "-morehelp", "--more-help", "-more-help", "morehelp"):
-            args["morehelp"] = True
-            i += 1
+            topic = _help_topic_at(i + 1)
+            _add_help_topic(topic)  # --morehelp TOPIC: only the entries of this parameter
+            i += 2 if topic else 1
             continue
 
         if arg in ("-h", "--help", "help", "-?"):
-            args["help"] = True
-            i += 1
+            topic = _help_topic_at(i + 1)
+            if topic:
+                _add_help_topic(topic)  # --help TOPIC: the same as --morehelp TOPIC
+            else:
+                args["help"] = True
+            i += 2 if topic else 1
             continue
 
         if arg in ("--no-throttle", "-no-throttle", "nothrottle", "--nothrottle"):
@@ -4346,14 +4896,18 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             "--simple", "-simple", "--simplified", "-simplified",
             "simple", "simplified"
         ):
-            args["simple"] = True
-            args["full"] = False
+            args["simple"] = True  # disabled since version 0.13.0 (ignored with a warning)
             i += 1
             continue
 
         if arg in ("--full", "-full", "full"):
-            args["full"] = True
-            args["simple"] = False
+            args["full"] = True  # disabled since version 0.13.0 (ignored with a warning)
+            i += 1
+            continue
+
+        if arg in ("--force-noise", "-force-noise", "--force_noise", "-force_noise", "force_noise", "force-noise",
+                   "--force", "-force"):
+            args["force_noise"] = True
             i += 1
             continue
 
@@ -4409,6 +4963,21 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 i += 2
             else:
                 args["out_stim"] = True
+                i += 1
+            continue
+
+        if arg in ("--out-reduced", "-out-reduced", "--out_reduced", "-out_reduced", "out_reduced", "out-reduced"):
+            next_tok = argv[i + 1] if i + 1 < len(argv) else None
+            if (  # the prefix: not an option, nor an existing input file
+                next_tok is not None
+                and not next_tok.startswith("-")
+                and "=" not in next_tok
+                and not (next_tok.endswith((".stim", ".dem", ".mtx", ".mmx")) and os.path.exists(next_tok))
+            ):
+                args["out_reduced"] = next_tok
+                i += 2
+            else:
+                args["out_reduced"] = True
                 i += 1
             continue
 
@@ -4515,6 +5084,45 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["maxC"] = int(val)
             elif key_lower == "pmin":
                 args["pmin"] = float(val)
+            elif key_lower in ("merge", "expand"):
+                if val.lower() in ("1", "true", "yes", "on"):
+                    args[key_lower] = True
+                elif val.lower() in ("0", "false", "no", "off"):
+                    args[key_lower] = False
+                else:
+                    raise ValueError(f"invalid '{arg}': {key_lower} should be 0 or 1")
+            elif key_lower in ("sort_rows", "sort-rows", "sortrows"):
+                if val.lower() in ("1", "true", "yes", "on"):
+                    args["sort_rows"] = True
+                elif val.lower() in ("0", "false", "no", "off"):
+                    args["sort_rows"] = False
+                else:
+                    raise ValueError(f"invalid '{arg}': sort_rows should be 0 or 1")
+            elif key_lower == "drop":  # (the values take precedence over files with these names, as in the binary)
+                if val.lower() in ("1", "true", "yes", "on", "auto"):
+                    args["drop"] = True  # drop=auto
+                elif val.lower() in ("0", "false", "no", "off"):
+                    args["drop"] = False
+                elif val.lower() == "css":
+                    args["drop"] = "css"
+                else:
+                    args["drop"] = val  # a file with the detectors to drop
+            elif key_lower == "outd":
+                args["outD"] = val
+            elif key_lower in ("out-reduced", "out_reduced", "outreduced"):
+                if val.lower() in ("0", "false", "no", "off", "none"):
+                    args["out_reduced"] = None
+                elif val.lower() in ("1", "true", "yes", "auto", ""):
+                    args["out_reduced"] = True
+                else:
+                    args["out_reduced"] = val
+            elif key_lower in ("morehelp", "more-help", "more_help"):
+                _add_help_topic(val)  # (morehelp=1: the full help)
+            elif key_lower in ("help", "h"):
+                if val in ("", "1"):
+                    args["help"] = True
+                else:
+                    _add_help_topic(val)  # help=TOPIC: the same as morehelp=TOPIC
             elif key_lower == "noscan":
                 args["noscan"] = int(val)
             elif key_lower == "classical":
@@ -4547,22 +5155,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["cov_cws"] = int(val)
             elif key_lower == "refresh":
                 args["refresh"] = int(val)
-            elif key_lower in ("simple", "simplified"):
-                bval = (
+            elif key_lower in ("simple", "simplified", "full"):  # disabled since version 0.13.0 (ignored, a warning)
+                args["full" if key_lower == "full" else "simple"] = (
                     bool(int(val)) if val.isdigit()
                     else (val.lower() not in ("0", "false", "no", "off"))
                 )
-                args["simple"] = bval
-                if bval:
-                    args["full"] = False
-            elif key_lower == "full":
-                bval = (
-                    bool(int(val)) if val.isdigit()
-                    else (val.lower() not in ("0", "false", "no", "off"))
-                )
-                args["full"] = bval
-                if bval:
-                    args["simple"] = False
             elif key_lower == "basis":
                 if val.upper() not in ("X", "Z"):
                     raise ValueError(
@@ -4571,6 +5168,14 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["basis"] = val.upper()
             elif key_lower == "rounds":
                 args["rounds"] = int(val)
+            elif key_lower in ("p_noise", "p-noise", "pnoise"):
+                args["p_noise"] = float(val)
+                if not 0.0 <= args["p_noise"] <= 0.5:
+                    raise ValueError(f"invalid '{arg}': the noise strength must be in [0, 0.5]")
+            elif key_lower in ("force_noise", "force-noise", "forcenoise", "force"):
+                args["force_noise"] = (
+                    bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
+                )
             elif key_lower in ("out-dir", "out_dir", "outdir"):
                 args["out_dir"] = val
             elif key_lower in ("out-dem", "out_dem", "outdem"):
@@ -4612,16 +5217,17 @@ def print_cli_short_help(file: Optional[Any] = None) -> None:
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Allowed parameters:
-  fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, classical,
-  --simple, --full, basis, --rounds, --out-dir, --out-dem, --out-stim,
-  method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax, timeout, threads,
-  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, min_hits,
-  cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC,
-  dW, seed, debug, solver, cache, --no-cache, --verbose, --cws, --trust-start
+  fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, merge, drop, outD,
+  --out-reduced, classical, --simple, --full, basis, --rounds, --out-dir,
+  --out-dem, --out-stim, --p-noise, --force-noise, method, dmin, dmax, dstop,
+  dexp (dest), steps, wmin, wmax, timeout, threads, nothrottle, chunk_size
+  (batch), ksub, kwin (win), win_mode, min_hits, cov_cws, refresh, smax, noscan,
+  start, cbeg, cend, finC, outC, maxC, expand, dW, seed, debug, solver, cache,
+  --no-cache, --verbose, --cws, --trust-start, sort_rows
 
 Help options:
-  -h, --help    : display help for commonly used parameters (fits 80 rows)
-  --morehelp    : display full help for all available parameters
+  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
+  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)
   --version     : display the versions of dist_m4ri.py and of the dist_m4ri binary
 """
     print(text, file=file)
@@ -4639,14 +5245,18 @@ Input matrices & models:
   Hx=FILE, Hz=FILE      CSS check matrices, both required (computes dX and dZ)
   Lx=FILE, Lz=FILE      CSS logical operators (optional, constructed if omitted)
   pmin=PROB             Minimum error probability threshold for DEM errors (default: 0.0)
+  merge=0|1             Merge equal DEM columns (exact; codewords use the first one) (default: 1)
+  drop=auto|0|css|FILE  DEM detectors to drop if verified exact: auto=1 (default), 0 (none), css, or a file
+  outD=FILE             Write the DEM detectors dropped (0-based) to FILE
+  --out-reduced [PFX]   Save the reduced DEM and its maps to the DEM: PFX_red.dem and PFX_red.json
   classical=0|1         1: classical code (Hx only), 0: quantum CSS (auto-detected)
-  --simple / --full     For .stim files: keep primary-basis detectors only (--simple, default
-                        for CSS/XZZX circuits) or keep all detectors (--full)
-  basis=X|Z             Override primary memory basis ('X' or 'Z') for .stim circuits
+  basis=X|Z             Override primary memory basis ('X' or 'Z') for .stim circuits (with drop=css)
   --rounds [N]          Set REPEAT block count in .stim circuit (default: 2; warns if no REPEAT)
   --out-dir DIR         Output directory for saved .dem/.stim files (default: input file dir)
-  --out-dem [FILE]      Save constructed DEM (default: <basename>_simp.dem or _full.dem)
-  --out-stim [FILE]     Save processed/noisy Stim circuit (default: <basename>_simp.stim or _full.stim)
+  --out-dem [FILE]      Save constructed DEM (default: <basename>_full.dem)
+  --out-stim [FILE]     Save processed/noisy Stim circuit (default: <basename>_full.stim)
+  --p-noise P           Strength of the noise added to a noiseless .stim circuit (default: 0.001; 0: none)
+  --force-noise         Replace the noise of a .stim circuit by that of --p-noise (with P=0: remove it)
 
 Method and distance bounds:
   method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
@@ -4671,6 +5281,7 @@ Codeword collection & caching:
   --cws                 Collect and output non-trivial minimum-weight codewords
   outC=FILE             Save output codewords (for CSS, auto-suffixed _X.nz / _Z.nz)
   finC=FILE             Input initial candidate codewords (.nz file)
+  expand=0|1            DEM codewords: list all choices among equal columns (merge) (default: 0)
   cache=FILE            Persistent JSON cache file (default: tmp_dist_cache.json)
   --no-cache / nocache  Disable persistent JSON caching
   --verbose / -v        Explain bounds, steps, cache status, and miss probability estimates
@@ -4680,6 +5291,8 @@ Extra parameters (see --morehelp for details):
   start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
   noscan, cbeg, cend    Disabled in Python (ignored with a warning); use the dist_m4ri binary
+  sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
+  --simple, --full      Disabled (ignored with a warning): the DEM has all detectors (see drop)
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500, alias: batch)
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
@@ -4693,20 +5306,24 @@ Extra parameters (see --morehelp for details):
   debug=N (0)           Debug bitmap, OR-combined (1: summary, 2: progress, 4: status, ...)
 
 Help options:
-  -h, --help            Display this help message (commonly used parameters)
-  --morehelp            Display full help with all parameter descriptions
+  -h, --help [TOPIC]    Display this help message (with TOPIC: the same as --morehelp TOPIC)
+  --morehelp [TOPIC]    Display full help for all parameters (or only for TOPIC, e.g., maxC)
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary
 """
     print(help_text, file=file)
 
 
-def print_cli_morehelp(file: Optional[Any] = None) -> None:
-    help_text = f"""dist_m4ri.py (version {__version__}): Multithreaded distance calculator Python CLI
+def _cli_morehelp_text() -> str:
+    """The full help text of the CLI (--morehelp)."""
+    return f"""dist_m4ri.py (version {__version__}): Multithreaded distance calculator Python CLI
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Required input (at least one matrix/model specification):
   fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file.
-                        Automatically constructs parity check H and logical L matrices.
+                        Automatically constructs parity check H and logical L matrices.  An error
+                        channel which stim cannot write as independent errors (e.g., PAULI_CHANNEL_1
+                        without Y errors) is converted with approximate_disjoint_errors=True (only the
+                        probabilities change).
   finH=FILE             Parity check matrix file in Matrix Market (.mmx / .mtx) format.
                         For classical codes, this is check matrix H. For CSS codes, Hx.
   finG=FILE             Generator / Hz matrix for quantum CSS codes in Matrix Market format.
@@ -4717,31 +5334,99 @@ Required input (at least one matrix/model specification):
                         d = min(dX, dZ) (finH=Hx with finG=Hz gives dZ only).
   Lx=FILE, Lz=FILE      Alternative syntax for specifying CSS logical operator matrices.
   pmin=PROB             Minimum error probability threshold for DEM parsing (default: 0.0).
-                        Error mechanisms with probability < pmin are filtered out.
+                        Error mechanisms with probability < pmin are filtered out.  The column
+                        indices (start, finC, outC) count only the error mechanisms kept: with
+                        another pmin, the columns (and the codewords) change.
+  merge=0|1             Merge the equal columns of the DEM (error mechanisms with the same detectors
+                        and observables) in the dist_m4ri binary (default: 1).  Exact: dropping two
+                        equal columns of a codeword gives a lighter one, so the distance does not
+                        change (nor does the cache key).  Column indices (finC, outC, start) are those
+                        of the DEM; the codewords found use the first one of each set of equal columns
+                        (use merge=0 to enumerate the codewords with each of them, or expand=1 to
+                        expand the list found).
+  drop=auto|0|css|FILE  The detectors which the binary drops from the DEM if this is verified to be
+                        exact (default: auto; drop=1 is the same as drop=auto; drop=0 keeps all
+                        detectors).  Exact if every error touching them has a twin, an error with the
+                        same other detectors which touches none of them (or none if it has no other
+                        detector), with the same observables (or with L + A H for one matrix A):
+                        then the distance of the DEM is found from the smaller DEM without these
+                        detectors and the errors touching them, and the codewords found (outC) are
+                        codewords of the DEM which use only errors touching no dropped detector.
+                        drop=auto: the binary searches for the largest such set (with the same
+                        observables) in the DEM alone, e.g., the minority-basis detectors of a CSS
+                        circuit with the usual noise (see the README).  drop=css: for a Stim circuit
+                        classified as CSS (including locally rotated CSS such as XZZX codes, by
+                        ancilla and data basis tracking), its minority-basis detectors (the basis
+                        other than the memory basis, see basis); otherwise (e.g., for a DEM),
+                        drop=auto is used, with a warning.  drop=FILE: the detectors in FILE, for any
+                        DEM (a text file with the 0-based detector indices, k for Dk, separated by
+                        white space or commas; lines starting with '#' or '%' are comments; e.g.,
+                        written by outD).  With css or FILE, if dropping the detectors is not exact, a
+                        note is printed and the full DEM is used.  The values 0, 1, auto, and css take
+                        precedence over files with these names (write ./1 for a file named 1).
+  outD=FILE             Write the detectors dropped from the DEM by the binary to FILE (0-based, in
+                        the format of a drop file; only the comment line '# 0 of M detectors
+                        dropped ...' if none).  With a cached result, the binary is run only for
+                        this (with dmin = dmax: no search).
+  --out-reduced [PREFIX]
+                        Save the DEM without the detectors dropped (see drop and outD) to
+                        PREFIX_red.dem: the errors touching none of them (after the cutoff pmin, in
+                        the order of the flattened DEM), with the other detectors numbered
+                        consecutively.  Its maps to the DEM go to PREFIX_red.json: "detectors" (the
+                        original index of each detector of the reduced DEM, i.e., those not in
+                        outD), "errors" (the original index of each error, as the columns of outC),
+                        "dropped", and "num_detectors", "num_errors", "pmin", "source", "dem",
+                        "drop" (also out_reduced=PREFIX; default PREFIX: the basename of the input
+                        file, without _full, in --out-dir or the directory of the input file).  The
+                        reduced DEM has the same distance, and its codewords are mapped to
+                        codewords of the DEM by "errors".
   classical=0|1         Code type override:
                         1: Classical linear code (Hx only; ignores/discards logicals).
                         0: Quantum CSS code (requires logicals or Hz).
                         Default: auto-detected (1 if only finH/Hx is given; 0 otherwise).
-  --simple / simple=1   For .stim circuits: activate only primary-basis detectors by stripping
-                        minority-basis detectors via ancilla and data basis tracking. Default
-                        for CSS circuits (including locally rotated CSS such as XZZX codes).
-  --full / full=1       For .stim circuits: retain all detectors (both X and Z sectors).
+  --simple / --full     Disabled since version 0.13.0 (also simple=1, full=1): accepted for backward
+                        compatibility, but ignored with a warning to stderr.  The DEM of a Stim circuit
+                        always has all detectors: the binary drops detectors if this is exact (see
+                        drop; e.g., the minority-basis detectors which --simple stripped), which is
+                        as fast and gives the distance of the full DEM (the stripped DEM only gives a
+                        lower bound when dropping them is not exact).
   basis=X|Z             Explicitly set primary memory basis ('X' or 'Z') for .stim circuits
-                        (default: auto-detected from filename or initial/final resets/measurements).
+                        (default: auto-detected from filename or initial/final resets/measurements);
+                        with drop=css, the detectors of the other basis are dropped if this is exact
+                        (otherwise only used for the --verbose report; ignored with a warning).
   --rounds [N]          Construct DEM from a .stim circuit with N repetitions in its REPEAT block
                         (default: 2 when --rounds is given without a number; also rounds=N).
                         Issues a warning and continues with the original circuit if no REPEAT block.
   --out-dir DIR         Output directory for saving constructed DEM and/or processed Stim circuit
                         files (also out_dir=DIR; default: directory of the input .stim/.dem file).
   --out-dem [FILE]      Save constructed (flattened) DEM to FILE. If given without a filename (or
-                        out_dem=1), automatically saves as <basename>_simp.dem or <basename>_full.dem.
-  --out-stim [FILE]     Save processed (noisy, rounds-adjusted, detector-filtered) Stim circuit to
-                        FILE. If given without a filename (or out_stim=1), automatically saves as
-                        <basename>_simp.stim or <basename>_full.stim.
+                        out_dem=1), automatically saves as <basename>_full.dem.
+                        The codewords (outC) index its error lines: save the DEM in the same run (a DEM
+                        generated again from the circuit may differ, e.g., with another stim version).
+  --out-stim [FILE]     Save processed (noisy, rounds-adjusted) Stim circuit to FILE. If given without
+                        a filename (or out_stim=1), automatically saves as <basename>_full.stim.
+  --p-noise P           Strength p of the uniform circuit-level noise added to a noiseless Stim circuit
+                        (also p_noise=P; default: 0.001; 0: no noise is added, and then a noiseless
+                        circuit gives no distance): DEPOLARIZE2(p) after two-qubit gates (CX, CZ,
+                        XCY, SWAP, ISWAP, SQRT_XX, CXSWAP, ..., also II), DEPOLARIZE1(p/10) after
+                        one-qubit gates (I, X, H, H_XY, S, SQRT_X, C_XYZ, ...), on the qubit of a
+                        classically controlled gate (e.g., CX rec[-1] 5), and on the qubits idle since
+                        the previous TICK, and X (Z) flips with probability p after Z-basis or Y-basis
+                        (X-basis) resets and before measurements (before and after MR, MRX, MRY); the
+                        multi-qubit measurements (MPP, MXX, MYY, MZZ) and Pauli product gates (SPP,
+                        SPP_DAG) get no noise.  A circuit with noise (a noise channel, or a noisy
+                        measurement such as M(0.001)) is used as is, unless --force-noise.  The
+                        distance does not depend on p (unless pmin > 0), only on which faults exist.
+  --force-noise         Replace the noise of a Stim circuit (also --force or force_noise=1): all of its
+                        noise is removed (noise channels, measurement flip probabilities, heralded
+                        noise; see stim's Circuit.without_noise()), and then the uniform noise of
+                        --p-noise is added (none with --p-noise 0, e.g., to save the noiseless circuit
+                        with --out-stim), e.g., to compare circuits with the same noise model.
   (conflicting inputs)  The input is selected in the order fdem, Hx/Hz (CSS code), and
                         finH/finG/finL/fin (fin only supplies the missing finH and finG); the
-                        ignored inputs (e.g., matrices with fdem, pmin without fdem, fin with finH,
-                        classical=1 with finG) give a warning.
+                        ignored inputs (e.g., matrices with fdem, pmin, merge, expand, drop, or outD
+                        without fdem, basis, --p-noise, or --force-noise without a Stim circuit, basis
+                        without drop=css, fin with finH, classical=1 with finG) give a warning.
 
 Calculation method:
   method=1|2|3          Calculation method (default: 3):
@@ -4848,6 +5533,15 @@ Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 0).
                         When smax > 0, tracks minimum syndrome weights for each error weight.
                         When smax=0, confinement is not computed.
+  sort_rows=0|1         Sort the rows of H by increasing weight (stable) in the dist_m4ri binary
+                        (default: the binary's, 1 for matrices and 0 for a DEM).  CC extends a
+                        cluster by the columns of the first row of its syndrome (in row order), so
+                        that light rows first reduce the CC work for matrices with very different
+                        row weights (e.g., 1.7-4x with the hook columns of an extended CSS
+                        distance).  The detectors of a DEM are in time order, which is better for
+                        CC: use sort_rows=0 also for matrices exported from a DEM.  The distance, RW,
+                        and the cache key do not depend on the order of the rows; CC enumerates the
+                        same codewords (outC), possibly in another order and with other hit counts.
   start=LIST            Expert option: comma-separated list of CC start columns (0-based), e.g.,
                         start=0,48,96 (default: -1 = all columns; start=N is a one-element list).
                         CC clusters are grown only from the listed columns, and they are NOT
@@ -4876,15 +5570,26 @@ Codeword collection and export:
   outC=FILE             Export found codewords of weight up to min_w + dW (min_w: minimum weight
                         found) to file in .nz format.  In method=2/3, once the distance d is
                         known, CC rounds w = d..d+dW enumerate all such codewords (unless the
-                        timeout is hit).
+                        timeout is hit; for a DEM, up to the choice of equal columns: see merge).
                         In CSS mode, automatically saves X-codewords to FILE_X.nz and
                         Z-codewords to FILE_Z.nz.  The codewords of the run are merged with the
                         cached ones; with finC=FILE (the same file), those already in FILE are kept.
   finC=FILE             Import initial candidate codewords from file in .nz format.
                         In CSS mode, automatically resolves FILE_X.nz and FILE_Z.nz.
-  maxC=N                Maximum number of codewords to collect (default: 0 = unlimited).
+  maxC=N                Maximum number of codewords to collect (default: 0 = unlimited); with
+                        expand=1, also the maximum number of codewords of the expanded list.
   dW=N                  Extra weight window above minimum distance to collect codewords
                         (w <= min_w + dW) (default: 0).
+  expand=0|1            Python only, for a DEM: list each codeword found once for every choice
+                        among equal columns, which the binary merges (see merge; default: 0).  The
+                        binary and the cache keep the merged list.  With dW <= 1, the expanded list
+                        is that of merge=0 (with dW >= 2, merge=0 also lists lighter codewords with
+                        two equal columns added).  The list grows quickly with the weight: with
+                        maxC > 0, at most maxC codewords are written (a warning if some are dropped).
+  (DEM codewords)       The indices refer to the error lines of the DEM in the order of the flattened
+                        DEM, after the pmin cutoff.  For a Stim circuit, save the DEM with --out-dem in
+                        the same run (a warning is printed otherwise): a DEM generated again from the
+                        circuit may differ (e.g., with another stim version).
 
 Distance caching (Python CLI):
   cache=FILE            Path to persistent JSON cache file (default: tmp_dist_cache.json).
@@ -4918,25 +5623,113 @@ General options:
                           524288: keep (and list) the temporary files.
 
 Help options:
-  -h, --help            Display summary help message (fits 80 rows).
-  --morehelp            Display this full help message with all parameters.
+  -h, --help [TOPIC]    Display summary help message (fits 80 rows); with TOPIC, the same as
+                        --morehelp TOPIC (also --help=TOPIC).
+  --morehelp [TOPIC]    Display this full help message with all parameters, or only the entries of
+                        TOPIC, e.g., --morehelp maxC (also --morehelp=TOPIC; several topics separated
+                        by commas, e.g., maxC,dW; the names are case-insensitive, without '-', '_', or
+                        '=VALUE', and include aliases such as dest or batch; an unknown name gives the
+                        closest names on stderr, and the exit code 1).
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary.
 """
-    print(help_text, file=file)
+
+
+def _help_entries(text: str) -> List[Tuple[str, List[str], Dict[str, str]]]:
+    """
+    The entries of a help text (see _cli_morehelp_text()): (section header, the lines of the entry, its names).  An
+    entry starts with a line indented by 2 spaces (the names, then the description), and continues with the lines
+    indented by more; a section header is a line without indentation ending with ':'.  The names (a dict: normalized
+    name -> name as written) are those in the first column (e.g., 'Hx=FILE, Hz=FILE' -> Hx, Hz; '--no-cache /
+    nocache'), without the values (FILE, [N], ...; but all words of a note such as '(DEM codewords)'), and the aliases
+    in the description ('alias: dest', 'Alias: win=N', 'also --no-throttle', 'also rounds=N'); normalized: lowercase,
+    without '-' and '_'.
+    """
+    import re
+    entries: List[Tuple[str, List[str], Dict[str, str]]] = []
+    section = ""
+    for line in text.splitlines():
+        if line and not line[0].isspace() and line.rstrip().endswith(":"):
+            section = line.rstrip()
+            continue
+        m = re.match(r"^  (\S.*?)(?:\s{2,}|$)", line)
+        if m:  # a new entry
+            names: Dict[str, str] = {}
+            for tok in re.split(r"[,/\s]+", m.group(1)):
+                tok = tok.strip("()[]").split("=", 1)[0]
+                # (not a value, e.g., FILE or N; all words of a note, e.g., '(DEM codewords)')
+                if tok.strip("-") and (m.group(1).startswith("(") or not tok.isupper()):
+                    names.setdefault(_help_name_key(tok), tok)
+            entries.append((section, [line], names))
+        elif line.startswith("   ") and entries:
+            entries[-1][1].append(line)
+    for _, lines, names in entries:
+        desc = " ".join(s.strip() for s in lines)
+        for a in re.findall(r"(?i)\balias(?:es)?:\s*(-{0,2}[\w-]+)", desc) + re.findall(r"\balso (--?[\w-]+)", desc) + \
+                re.findall(r"\balso ([\w-]+)=", desc):
+            names.setdefault(_help_name_key(a), a)
+    return entries
+
+
+def _help_name_key(name: str) -> str:
+    """A name of a help entry normalized for matching (see _help_entries()): lowercase, without '-' and '_'."""
+    return name.lower().replace("-", "").replace("_", "")
+
+
+def print_cli_morehelp(file: Optional[Any] = None, topic: Optional[str] = None) -> int:
+    """
+    Prints the full help of the CLI (--morehelp), or with `topic` (one or more names separated by commas, see
+    _help_entries()) only the entries of these parameters, in the order of the full help under their section headers.
+    Returns 0, or 1 if some topic has no entry (then the closest names are suggested on stderr).
+    """
+    import difflib
+    text = _cli_morehelp_text()
+    keys = [(t, _help_name_key(t.split("=", 1)[0])) for t in (s.strip() for s in (topic or "").split(","))]
+    keys = [(t, k) for t, k in keys if k]
+    if not keys:
+        print(text, file=file)
+        return 0
+    entries = _help_entries(text)
+    status = 0
+    chosen: Set[int] = set()
+    for t, key in keys:
+        found = [i for i, e in enumerate(entries) if key in e[2]]
+        if not found:
+            names = {k: v for e in entries for k, v in e[2].items()}
+            close = [names[k] for k in difflib.get_close_matches(key, list(names), n=5, cutoff=0.6)]
+            hint = f"; did you mean {', '.join(close)}?" if close else ""
+            sys.stderr.write(f"dist_m4ri.py: no help entry for '{t}'{hint} (--morehelp lists all parameters)\n")
+            status = 1
+        chosen.update(found)
+    out: List[str] = []
+    section = None
+    for i in sorted(chosen):  # in the order of the full help, under their section headers
+        sec, lines, _ = entries[i]
+        if sec != section:
+            if out:
+                out.append("")
+            out.append(sec)
+            section = sec
+        out.extend(lines)
+    if out:
+        print("\n".join(out), file=file)
+    return status
 
 
 def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
     """
     Writes warnings to stderr for the CLI inputs which are ignored.  The input is selected in the order fdem (a DEM or
     a Stim circuit), Hx / Hz (a CSS code), and finH / finG / finL / fin (one sector of a quantum code, or a classical
-    code); fin=PREFIX supplies only the missing finH (PREFIX + 'X.mtx') and finG (PREFIX + 'Z.mtx', unless finL).
+    code); fin=PREFIX supplies only the missing finH (PREFIX + 'X.mtx') and finG (PREFIX + 'Z.mtx', unless finL).  The
+    disabled options --simple and --full always give a warning (see _warn_disabled_simple_full()).
     """
     def given(*keys: str) -> List[str]:
         return [k for k in keys if args.get(k) is not None]
 
-    stim_opts = [opt for opt, on in (("--simple", args.get("simple") is not None), ("--full", bool(args.get("full"))),
-                                     ("basis=", args.get("basis") is not None),
-                                     ("--out-stim", args.get("out_stim") is not None)) if on]
+    _warn_disabled_simple_full(args.get("simple"), args.get("full"), cli=True)  # (not passed on)
+    stim_opts = [opt for opt, on in (("basis=", args.get("basis") is not None),
+                                     ("--out-stim", args.get("out_stim") is not None),
+                                     ("--p-noise", args.get("p_noise") is not None),
+                                     ("--force-noise", bool(args.get("force_noise")))) if on]
     warns = []
     if args.get("fdem"):
         ign = given("finH", "finG", "finL", "fin", "Hx", "Hz", "Lx", "Lz")
@@ -4944,11 +5737,26 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
             warns.append(f"fdem={args['fdem']} given: ignoring {', '.join(k + '=' for k in ign)}")
         if stim_opts and not str(args["fdem"]).endswith(".stim"):
             warns.append(f"{', '.join(stim_opts)}: only used for a Stim circuit (.stim); ignored")
+        elif (args.get("basis") is not None and str(args.get("drop")).lower() != "css"
+              and not args.get("verbose")):  # (with --verbose, the basis of the classification is reported)
+            warns.append("basis=: only used with drop=css (the minority-basis detectors of a CSS circuit); ignored")
+        if args.get("expand") and not (args.get("outC") or args.get("do_cws")):
+            warns.append("expand=: only used with outC= or --cws; ignored")
     else:
         dem_opts = stim_opts + [opt for opt, on in (("--out-dir", args.get("out_dir") is not None),
                                                     ("--out-dem", args.get("out_dem") is not None)) if on]
         if (args.get("pmin") or 0.0) > 0.0:
             dem_opts.append("pmin=")
+        if args.get("merge") is not None:
+            dem_opts.append("merge=")
+        if args.get("expand") is not None:
+            dem_opts.append("expand=")
+        if args.get("drop") is not None:
+            dem_opts.append("drop=")
+        if args.get("outD") is not None:
+            dem_opts.append("outD=")
+        if args.get("out_reduced") is not None:
+            dem_opts.append("--out-reduced")
         if dem_opts:
             warns.append(f"{', '.join(dem_opts)}: only used with fdem= (a DEM or Stim circuit); ignored")
         if args.get("Hx") is not None or args.get("Hz") is not None:
@@ -4994,9 +5802,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         if compat_warn:
             print(f"dist_m4ri.py: {compat_warn}", file=sys.stderr)
         if args.get("morehelp"):
-            print_cli_morehelp()
-        else:
-            print_cli_help()
+            return print_cli_morehelp(topic=args.get("morehelp_topic"))
+        print_cli_help()
         return 0
 
     if args.get("unrecognized"):
@@ -5044,6 +5851,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 dW=args["dW"],
                 maxC=args["maxC"],
                 pmin=args["pmin"],
+                merge=args["merge"] is not False,
+                expand=bool(args["expand"]),
+                drop=args["drop"],
+                outD=args["outD"],
+                out_reduced=args["out_reduced"],
                 finC=args["finC"],
                 outC=args["outC"],
                 do_cws=args["do_cws"] or (args["outC"] is not None),
@@ -5057,13 +5869,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
-                simple=args["simple"],
-                full=args["full"],
                 basis=args["basis"],
                 rounds=args["rounds"],
+                p_noise=args["p_noise"] if args["p_noise"] is not None else 0.001,
+                force_noise=args["force_noise"],
                 out_dir=args["out_dir"],
                 out_dem=args["out_dem"],
                 out_stim=args["out_stim"],
@@ -5121,6 +5934,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -5203,6 +6017,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -5254,6 +6069,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],

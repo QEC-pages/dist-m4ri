@@ -178,6 +178,16 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     same RW steps (times include reading the input): `bb72_si1000_X.dem` RW 3.6 s $\to$ 0.63 s, CC (`wmax=6`)
     2.4 s $\to$ 1.1 s, `method=3` 3.2 s $\to$ 1.2 s; `gross_uniform_X.dem` 3.3 s $\to$ 1.5 s; `QX900` 0.68 s $\to$
     0.23 s; `surf_d5` 0.77 s $\to$ 0.51 s.
+- [x] **CC row order** (`sort_rows`, 0.14.1): CC extends a cluster by the columns of the first unsatisfied row (in
+  row order), so the binary sorts the rows of $H$ by increasing weight (stable) for matrices (`sort_rows=1`, the
+  default; `sort_rows=0` for a DEM, whose detectors are in time order).
+  - Extended CSS matrices with hook columns (`tmp/distance.py`; rows of weight 5–103): 1.2–2.3x to certify the
+    distance, 1.7–4.2x to enumerate all codewords of a weight.
+  - DEMs, and matrices exported from DEMs: 1.3–4x slower when sorted, since the first detector in time order has most
+    of its columns before the start column of the cluster.
+  - RW is unchanged (the same codewords with the same seed).
+  - Choosing the row with the fewest admissible columns dynamically gave 2–23% fewer CC loop iterations on DEMs in a
+    model, about as much as its per-node cost (`scratch/rowsort/`).
 - [x] **RW Step Profile** (Oct 2026, one thread, after the faster logical check): the Gaussian elimination takes
   70–95% of a RW step for DEMs (`bb72_si1000_X.dem`: 215 of $\sim$310 µs; `gross_uniform_X.dem`: 6.8 of 7.8 ms), the
   transposition 7–15%, the extraction of the candidates the rest. Faster elimination (Task 5, or M4RI on a
@@ -252,15 +262,17 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ## 4. Large DEMs, Simplified DEMs, and Symmetry (discussion, Oct 2026)
 
-- [ ] **No equal columns in DEMs**: stim's DEM of a circuit with a REPEAT block has duplicate error mechanisms even
+- [x] **No equal columns in DEMs**: stim's DEM of a circuit with a REPEAT block has duplicate error mechanisms even
   after flattening the DEM (loop folding), e.g., mitten_90 custom: 23394 errors, 22170 distinct (the DEM of the
   flattened circuit has none); about 16% of the columns of the BB DEMs. CC treats each duplicate separately: merging
   them gave 1.6–1.7x for CC (dem150 and dgross DEMs, `wmax=6`, 128 threads), and RW eliminates fewer columns.
   - Python: merge equal columns (XOR-reduced detector and observable sets, combined probability $p_1 + p_2 - 2p_1p_2$)
     when writing the DEM (or flatten the circuit before generating the DEM; this loses stim's loop folding for very
-    long circuits).
-  - C: optionally also merge on reading any DEM (with a map back to the original columns for `outC`).
-- [ ] **Full DEM from the simplified DEM** (`--full` mode of CSS circuits): the simplified DEM is the full DEM with the
+    long circuits). Not needed now that the binary merges (and it would change the DEM cache keys).
+  - C: done, the binary merges the equal columns on reading a DEM (`merge=1`, the default), with a map back to the
+    original columns (`outC`, `finC`, `start`, `cbeg`, `cend`); bb72 DEM: 2664 -> 2232 columns, CC `wmax=6` in 0.06 s
+    instead of 0.21 s.
+- [x] **Full DEM from the simplified DEM** (`--full` mode of CSS circuits): the simplified DEM is the full DEM with the
   minority-basis detector rows deleted (equal columns merged, empty columns dropped; they never flip an observable), so
   $d_{\rm simp} \le d_{\rm full}$, and $d_{\rm full} = d_{\rm simp}$ iff some minimum-weight simplified codeword lifts
   (one full error per column, with the deleted detectors cancelling too). Sufficient and checked column by column:
@@ -276,6 +288,26 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     checks (no full error projects to an observable-only column; every simplified error used has a clean preimage),
     and every lifted codeword re-verified in the full DEM (`finC` validation). The lower bound
     $d_{\rm simp} \le d_{\rm full}$ alone holds for any set of deleted detectors. An option disables it (for tests).
+  - Done differently (exact reduction in the binary, `drop=FILE`): every full column touching a deleted detector needs
+    a twin (same kept detectors, no deleted one, observables $L + A H$, $A$ by elimination); then the binary runs on
+    the kept detectors and the columns touching no deleted detector, and its codewords are full codewords (no lifting).
+    Python passes the minority-basis detectors with `--full` (`drop=1`, the default). mitten_270 full: 70254 -> 8910
+    columns, RW finds weight 9 (custom) and 7 (hef) in 3.5 s; mitten_90 full: exact $d = 5, 4$ by CC in 0.1 s.
+  - Since 0.13.0, the Python options `--simple` and `--full` (`simple=`, `full=`) are disabled (ignored with a
+    warning): the DEM of a Stim circuit always has all detectors.
+  - Done in 0.14.0: `drop=auto` in the binary (the default, also `drop=1`; `drop=0` keeps all detectors) finds the
+    largest set of detectors which can be dropped with $A = 0$ from the DEM alone (sub-columns with the same
+    observables, groups of the O-minimal columns, seeds with propagation, see the README), and verifies it as for
+    `drop=FILE`; it finds exactly the minority-basis detectors for all CSS circuits tested (bb_756: 12474 of 25704
+    detectors in 1.3 s). `outD=FILE` writes the detectors dropped; Python: `drop=css` (the classification of the
+    circuit; for a DEM, `drop=auto` with a warning) and `--out-reduced [PREFIX]` (the reduced DEM `PREFIX_red.dem` and
+    its maps `PREFIX_red.json`).
+  - Open: a second pass allowing $A \neq 0$ (observables which include detectors of the dropped set).
+- [x] **Uniform noise model** (0.14.0): `add_noise()` classifies the gates with `stim.gate_data()` (all one- and
+  two-qubit gates get depolarizing noise, a classically controlled gate `DEPOLARIZE1(p/10)` on its qubit; no noise for
+  `MPP`, `MXX`, `MYY`, `MZZ`, `SPP`); `strip_noise()` (stim's `without_noise()`); `has_noise()` also detects noisy
+  measurements such as `M(0.001)`; CLI `--p-noise P` (as in `tmp/distance.py`; 0: none added) and `--force-noise`
+  (replace the noise of a circuit, e.g., to compare circuits with the same noise model; with `--p-noise 0`, remove it).
 - [ ] **Extended CSS distance as a seed** (`tmp/distance.py`, code-capacity matrices with one column per hook error):
   not guaranteed to relate to the DEM distances for every CSS circuit. Its lower-bound direction
   ($d_{\rm ext} \le d_{\rm simp}$, via the telescoping sum of the detectors of each check) needs every single fault's

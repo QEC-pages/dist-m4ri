@@ -95,6 +95,25 @@ typedef struct{
   long long int *cw_hits_w; /* total hits of the codewords of each weight in hash (same size) */
   char *fdem;
   double pmin;
+  int merge;       /* 1: merge the equal columns of a DEM (same detectors and observables), see dem_merge_columns() */
+  int nvar_orig;   /* number of columns before merging (and dropping) the columns of a DEM (0: not changed) */
+  int *col_orig;   /* column -> its original column (the first one of its class; NULL: not changed) */
+  int *col_class;  /* original column -> column (-1: dropped, see dem_drop_detectors(); NULL: not changed) */
+  int nvar_merged; /* number of columns after merging the equal columns of a DEM (0: not merged) */
+  char *fdrop;     /* file with the detectors to drop from a DEM if this is exact, see dem_drop_detectors() */
+  int drop_mode;   /* drop=0: keep all detectors, drop=1 or drop=auto (default): find the detectors to drop
+                      (dem_drop_auto()), 2: drop=FILE (fdrop) */
+  int drop_set;    /* 1: drop= given explicitly */
+  int drop_none;   /* 1: drop=auto found no detector which can be dropped exactly */
+  int *drop_list;  /* the detectors dropped (0-based, increasing; ndrop of them), for outD */
+  char *outD;      /* file to write the detectors dropped from a DEM to (outD=FILE) */
+  int ndrop;       /* number of detectors dropped (0: none, or not verified) */
+  int ndrop_rows;  /* number of detectors (rows of H) before dropping */
+  int ndrop_cols;  /* number of columns which touch the dropped detectors (replaced by their twins) */
+  int drop_A;      /* 1: the twins have other observables (L(twin) = L + A H with A != 0) */
+  int sort_rows;   /* 1: sort the rows of H by increasing weight (stable) for CC, see csr_sort_rows_by_weight();
+                      -1 (default): 1 for matrices, 0 for a DEM */
+  int rows_sorted; /* 1: sort_rows changed the order of the rows of H */
   char *finH;
   char *finG;
   char *finL;
@@ -120,6 +139,10 @@ typedef struct{
 
 static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
 // #define MININT(a,b) do{ int t1=(a); int t2=(b); t1<t2? t1 :t2; } while(0)
+
+/* The original (1-based in output: + 1) column of the column j: different only after merging the equal columns of a
+ * DEM (see dem_merge_columns()) */
+static inline int col_orig_index(const params_t * const p, const int j) { return p->col_orig ? p->col_orig[j] : j; }
 
 extern params_t prm;
 /**
@@ -389,7 +412,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.12.4"
+#define DIST_M4RI_VERSION "0.14.1"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -402,14 +425,14 @@ void print_short_help(const char *prog);
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
-  "  method, finH, finG, finL, fin, fdem, pmin, classical, css,\n" \
-  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start,\n" \
+  "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
+  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, sort_rows,\n" \
   "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, min_hits, cov_cws, refresh,\n" \
   "  finC, outC, maxC, dW, seed, debug\n\n" \
   "Help options:\n" \
-  "  -h, --help    : display help for commonly used parameters (fits 80 rows)\n" \
-  "  --morehelp    : display full help for all available parameters\n"
+  "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
+  "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
 
 #define USAGE \
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
@@ -426,6 +449,9 @@ void print_short_help(const char *prog);
   "  fin=[str]          Base name for CSS matrices (loads ${fin}X.mtx, ${fin}Z.mtx)\n" \
   "  fdem=[file]        Stim detector error model (DEM) file\n" \
   "  pmin=[float]       Minimum error probability threshold to keep for DEM (0.0)\n" \
+  "  merge=[0|1]        Merge equal DEM columns (exact; codewords use the first one) (1)\n" \
+  "  drop=[auto|file]   DEM detectors to drop if exact: auto=1 (default), 0 (none), or a file\n" \
+  "  outD=[file]        Write the DEM detectors dropped (0-based) to file\n" \
   "  classical=[0|1]    1: classical code (Hx only), 0: quantum CSS (auto-detected)\n\n" \
   "Distance bounds and guidance:\n" \
   "  dmin=[int]         Certified lower bound on distance (CC starts from dmin) (1)\n" \
@@ -452,6 +478,7 @@ void print_short_help(const char *prog);
   "  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)\n" \
   "  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48\n" \
   "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
+  "  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
@@ -460,8 +487,8 @@ void print_short_help(const char *prog);
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
   "  debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)\n\n" \
   "Help options:\n" \
-  "  -h, --help         Display this help message (commonly used parameters)\n" \
-  "  --morehelp         Display full help with all parameter descriptions\n" \
+  "  -h, --help         Display this help message (--help TOPIC: the same as --morehelp TOPIC)\n" \
+  "  --morehelp         Display full help for all parameters (--morehelp TOPIC: only TOPIC, e.g., maxC)\n" \
   "  --version          Display program version\n"
 
 #define MORE_HELP \
@@ -499,7 +526,44 @@ void print_short_help(const char *prog);
   "                     combined with finH, finG, finL, or fin.\n" \
   "  pmin=[float]       Minimum error probability threshold for DEM parsing (0.0).\n" \
   "                     Error mechanisms with probability < pmin are ignored.\n" \
-  "                     Only valid when fdem is specified.\n" \
+  "                     Only valid when fdem is specified. The column indices\n" \
+  "                     (start, finC, outC) count only the error mechanisms kept:\n" \
+  "                     they change with pmin.\n" \
+  "  merge=[0|1]        Merge the equal columns of a DEM (error mechanisms with the\n" \
+  "                     same detectors and observables) when reading it (default:\n" \
+  "                     1; ignored without fdem). Exact: dropping two equal columns\n" \
+  "                     of a codeword gives a lighter one, so the distance does not\n" \
+  "                     change. Column indices (outC, finC, start, cbeg, cend, and\n" \
+  "                     the printed codewords) are those of the DEM; the codewords\n" \
+  "                     found use the first one of each set of equal columns (use\n" \
+  "                     merge=0 to enumerate the codewords with each of them, or\n" \
+  "                     expand=1 of dist_m4ri.py to expand the list found).\n" \
+  "  drop=[auto|file]   Detectors of a DEM to drop if this is verified to be exact\n" \
+  "                     (default: auto; also drop=1; drop=0 keeps all detectors;\n" \
+  "                     only with fdem; not with classical=1): every column\n" \
+  "                     touching them has a twin, a column with the same other\n" \
+  "                     detectors which touches none of them (no column if it has\n" \
+  "                     no other detector), with observables L + A H for one\n" \
+  "                     matrix A.  Then the twins replace the columns touching the\n" \
+  "                     dropped detectors in any codeword, without increasing its\n" \
+  "                     weight, and the search runs on the other detectors and the\n" \
+  "                     columns which touch none of them: every codeword found\n" \
+  "                     (outC) is a codeword of the full DEM (using only these\n" \
+  "                     columns), and the distance is exact.  finC codewords are\n" \
+  "                     mapped to the twins.\n" \
+  "                     auto: a search for the largest such set (with A = 0) in the\n" \
+  "                     DEM, e.g., the minority-basis detectors of a CSS circuit\n" \
+  "                     (with the usual noise): a column which contains no other\n" \
+  "                     column with the same observables is dropped all or nothing,\n" \
+  "                     and the detectors of the other columns follow by propagation\n" \
+  "                     (see README.md).\n" \
+  "                     file: the detectors listed (0-based, k for Dk, separated by\n" \
+  "                     white space or commas; lines starting with '#' or '%%' are\n" \
+  "                     comments; write ./1 for a file named 1); if dropping them is\n" \
+  "                     not exact, a note is printed and the full DEM is used.\n" \
+  "  outD=[file]        Write the detectors dropped from the DEM (0-based, in the\n" \
+  "                     format of a drop file; only the comment line if none) to\n" \
+  "                     file.  Only valid with fdem.\n" \
   "  classical=[0|1]    Code type override:\n" \
   "                     1: Treat as a classical linear code (Hx only; ignores\n" \
   "                        or discards logical matrix L).\n" \
@@ -545,6 +609,18 @@ void print_short_help(const char *prog);
   "  smax=[int]         Maximum syndrome weight for confinement profile (default: 0).\n" \
   "                     When smax > 0, tracks minimum syndrome weights for each\n" \
   "                     error weight. When smax=0, confinement is not computed.\n" \
+  "  sort_rows=[0|1]    Sort the rows of H by increasing weight (stable) after\n" \
+  "                     reading the input (default: 1 for matrices, finH or fin;\n" \
+  "                     0 for a DEM, fdem).  CC extends a cluster by the columns of\n" \
+  "                     the first row of its syndrome (in row order), so that light\n" \
+  "                     rows first reduce the CC work for matrices with very\n" \
+  "                     different row weights, e.g., 1.7-4x with the hook columns\n" \
+  "                     of an extended CSS distance.  The detectors of a DEM are in\n" \
+  "                     time order, which is better for CC (sorting them made CC\n" \
+  "                     1.3-4x slower): use sort_rows=0 also for matrices exported\n" \
+  "                     from a DEM.  The distance and RW do not depend on the order\n" \
+  "                     of the rows; CC enumerates the same codewords (outC), but\n" \
+  "                     possibly in another order and with other hit counts.\n" \
   "  noscan=[0|1]       Expert option: 1: run CC only at weight w = wmax, skipping\n" \
   "                     the scan over weights w < wmax (default: 0). Only valid for\n" \
   "                     method=2. WARNING: lower weights are not checked, so a\n" \
@@ -570,7 +646,8 @@ void print_short_help(const char *prog);
   "  outC=[file]        Export found codewords of weight up to min_w + dW (min_w:\n" \
   "                     minimum weight found) to file in .nz list format.  In\n" \
   "                     method=2/3, once dmin = dmax = d, CC rounds w = d..d+dW\n" \
-  "                     enumerate all such codewords (unless the timeout is hit).\n" \
+  "                     enumerate all such codewords (unless the timeout is hit;\n" \
+  "                     for a DEM, up to the choice of equal columns: see merge).\n" \
   "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
   "  maxC=[int]         Maximum number of codewords to collect (default: 0).\n" \
   "                     0 means collect all valid codewords found up to wmax or stop\n" \
@@ -681,8 +758,16 @@ void print_short_help(const char *prog);
   "               finC), or the supplied dmax if smaller (0 if none).\n" \
   "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n\n" \
   "Help options:\n" \
-  "  -h, --help         Display help for commonly used parameters (fits 80 rows)\n" \
-  "  --morehelp         Display this full help message listing all parameters\n" \
+  "  -h, --help         Display help for commonly used parameters (fits 80 rows);\n" \
+  "                     --help TOPIC is the same as --morehelp TOPIC.\n" \
+  "  --morehelp         Display this full help message listing all parameters;\n" \
+  "                     --morehelp TOPIC (also --morehelp=TOPIC) displays only the\n" \
+  "                     entries of TOPIC, e.g., --morehelp maxC: one or more names\n" \
+  "                     separated by commas (e.g., maxC,dW), case-insensitive,\n" \
+  "                     without '-', '_', or '=VALUE', including aliases such as\n" \
+  "                     dest or batch (and debug for the debug output bitmap); an\n" \
+  "                     unknown name gives the closest names on stderr, and the\n" \
+  "                     exit code 1.\n" \
   "  --version          Display program version\n"
 
 #define BRIEF_HELP \
