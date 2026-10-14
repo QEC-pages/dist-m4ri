@@ -600,7 +600,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.1): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.2): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
