@@ -3,7 +3,7 @@ var searchData=
   ['n_0',['n',['../structcw__class__stats__t.html#a61a078a96d90c1aa7a7f3daa297cf1d6',1,'cw_class_stats_t::n'],['../structdrop__queue__t.html#aa92bc9ca5899efcf115ba7c8f25442a2',1,'drop_queue_t::n']]],
   ['n0_1',['n0',['../structparams__t.html#a25f587c153f763af776bd21f89f4d029',1,'params_t']]],
   ['name_2',['name',['../structhelp__entry__t.html#a208ab5858a0b7587af403aeac17c6880',1,'help_entry_t']]],
-  ['native_20simd_20bit_20matrix_20engine_20stage_202_3',['Task 5: Native SIMD Bit-Matrix Engine (Stage 2)',['../md_todo.html#autotoc_md92',1,'']]],
+  ['native_20simd_20bit_20matrix_20engine_20stage_202_3',['Task 5: Native SIMD Bit-Matrix Engine (Stage 2)',['../md_todo.html#autotoc_md97',1,'']]],
   ['nchk_4',['nchk',['../structparams__t.html#a2a380c61241b18a605719b406c1435fb',1,'params_t']]],
   ['ncols_5',['ncols',['../structcc__hash__t.html#af33492eb47a77c071f803a3a6ec650cb',1,'cc_hash_t']]],
   ['ndrop_6',['ndrop',['../structparams__t.html#a187a58fe11371157a98a81d0bb6802fc',1,'params_t']]],
