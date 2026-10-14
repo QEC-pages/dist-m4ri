@@ -157,9 +157,58 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ## 2. Additional Algorithmic Explorations & Enhancements
 
-- [ ] **Half-Weight Vector Meet-in-the-Middle**:
-  - Investigate using the syndrome hash table or codeword hash to identify pairs of half-weight vectors whose sum forms
-    a low-weight logical operator.
+- [ ] **RW with pairs of non-pivot columns (Lee–Brickell / Stern, $p=2$)**, the half-weight meet-in-the-middle idea
+  inside a RW step: a codeword with exactly two non-pivot columns is the sum of their two circuits. With uniform
+  information sets, a given codeword of weight $w$ is found $P_2/P_1 = (w-1)(n-r-1)/(2(r-w+2))$ times more often per
+  step ($r = \mathrm{rank}\,H$): about 10 for the dgross CSS code ($w = 18$), 20–100 for the reduced DEMs.
+  - Prototype (Oct 2026, numba, `scratch/speedup/p2_proto.py`; reduced DEMs; uniform and index-window steps as in the
+    binary). Hits of minimum-weight codewords per step, $p=2$ against $p=1$:
+    - bb_72 ($w = 6$, 5000 steps): 25x in the uniform steps (model: 20x) and 11x in the window steps; 1522 distinct
+      weight-6 codewords, against at most 584 for $p=1$ alone.
+    - bb_90 ($w = 8$, 2000 steps): 308 hits against 5.
+    - gross (3000 steps): $w = 10$: 18 against 0; $w = 11$: 152 against 5; $w = 12$: 1193 against 61.
+  - Cost: all pairs take about 3x the time of the elimination.
+    - A Stern collision search, i.e., the pairs whose circuits agree on $l$ random pivot rows, keeps 87–100% of the
+      $p=2$ hits with 12–14% of the pairs for $l = 8$.
+    - The circuits are sparse, so the buckets are very uneven: with $l = 16$, gross still has 1.3M pairs per step.
+    - On gross, a step with $p=1$ and Stern $p=2$ ($l = 8$) took 2.2x the time of the elimination alone
+      (`scratch/speedup/p2_stern.py`), and 200 steps found 3 distinct weight-10 codewords, none of them by $p=1$.
+  - In C:
+    - bucket the non-pivot columns by $l$ pivot rows of their transposed rows (already computed);
+    - check the pairs in each bucket, with early exit at the weight limit;
+    - record the codewords as for $p=1$;
+    - count the $p=1$ and $p=2$ hits separately, and add the $p=2$ term to the information-set estimate.
+- [ ] **RW thread throttle for huge matrices** (Oct 2026, `scratch/speedup/RESULTS.md`, experiment (a)).
+  - The current rule: above 15 MB of dense RW memory per thread, the total is kept near 1.5 GB (2 to 32 RW threads).
+  - bb_360 (reduced, 49 MB per thread): the throughput peaks at 32 RW threads (45 steps/s; 42 and 34 steps/s with 64
+    and 128), so the throttle is right here.
+  - bb_756 (0.43 GB per thread): 3 threads (the throttle) give 0.23 steps/s, against 1.57 with 32 threads and 1.72
+    with 64. The memory bus saturates at 32–64 threads whatever the matrix size.
+  - Proposal: cap the RW threads at min(32, RAM/4 / dense memory per thread) instead of 1.5 GB in total (or make
+    the cap a parameter).
+- [ ] **RW windows for big DEMs** (Oct 2026, experiment (b)): on the reduced dgross DEM (120 s, 32 RW threads), the
+  lightest weight found was:
+  - 31 and 36 with uniform steps only;
+  - 18 and 20 with the default hybrid (an index window of 512 columns, about 1/3 round, on every other step);
+  - 18 in all four runs with index windows of 1 or 2 rounds of columns (`kwin=1456` or `kwin=2912`, `win_mode=1`),
+    which improves the earlier bound of 19;
+  - 24 and 26 with Tanner-graph balls of 1 round (`win_mode=0`).
+
+  On gross, every configuration finds $d = 10$ in under 3 s (window steps need 4–10x fewer steps than uniform ones).
+  - Next:
+    - window sizes which scale with the DEM, e.g., cycling through several sizes (512 to about $n/8$), since the round
+      length is not known without detector coordinates;
+    - fewer uniform steps for big DEMs (keeping some for the statistics);
+    - window-restricted elimination (section 4).
+- [ ] **Upper bounds from code logicals**: in a memory circuit, a minimum-weight logical of the code applied as
+  single-qubit data errors at one time step flips no detector, so it is a DEM codeword of weight $d_{\rm code}$ (with
+  si1000-type noise these errors are error mechanisms).
+  - Python could map the data errors to DEM columns by their detector signatures and pass the codeword as `finC`.
+  - This gives at once dgross $\le 18$, bb_360 $\le 24$, bb_756 $\le 34$ (RW: 18, 23, 58).
+- [ ] **Incremental information sets (Canteaut–Chabaud)**, for huge DEMs: swap one column in or out of the
+  information set per step (a single pivot change, about $r n/64$ word operations) instead of a full elimination.
+  - This gives many more information sets per second (bb_756: 12–50 s per full elimination).
+  - Consecutive sets are correlated: a separate upper-bound mode without `min_hits` and the miss estimate.
 - [ ] **Trivial Codeword Statistics**:
   - Maintain counters of trivial codewords (stabilizers in quantum codes) of weights below $w_{\max}$ to monitor code
     degeneracy profile and ISD efficiency.
@@ -200,9 +249,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     recorded, and with `min_hits` about `min_hits` $\times$ `cov_cws` hits are recorded until convergence (e.g., 1.4 µs
     of lock wait per step of $\sim$260 µs for `surf_d5` with 32 threads); it only shows in runs of a few
     milliseconds.
-- [ ] **Distance Benchmark Update**:
-  - Run the longer benchmark to certify or tighten the provisional distances in `benchmark/BENCHMARK.md` (plan in
-    `tmp/benchmark_distance_plan.md`).
+- [x] **Distance Benchmark Update**: the overnight run of 0.14.0 (Oct 2026, `benchmark/BENCHMARK.md`) certified the
+  distances of all benchmark circuits up to gross. Still open: double gross, bb_360, and bb_756; see **Bounds for the
+  largest circuits** in section 4.
 
 ---
 
@@ -232,7 +281,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     steps=... (uniform permutations: ...), ksub=..., ... s/step per thread, ... RW threads` (parsed by Python).
   - [x] With `debug&16`, the binary prints rank(H), rank(L) or rank(G), and k (dense elimination at startup); sizes,
     numbers of nonzeros, and maximum row and column weights are in the input summary (`debug&1`).
-  - [ ] Python could parse the `# code parameters:` line instead of computing ranks itself.
+  - [ ] Python could parse the `# code parameters:` line instead of computing ranks itself. Needed for
+    `tmp/distance.py`, e.g., an option of the binary to report the ranks, $k$, and other parameters to Python.
 - [x] in addition, print estimated prob to find (miss) a single codeword of given
   weight based on the number of information sets and the n and distance found with RW.
   - Done: Python `--verbose`, and the binary with the hit uniformity warning (Task 4); a proper estimate for DEMs
@@ -240,6 +290,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] The periodic status shows that in `method=3` a CC round can wait for a whole RW batch before any CC thread
   starts (e.g., `c1920H.mmx`: 100 RW steps of 6.6 ms per batch, i.e., 0.66 s): smaller RW batches while CC rounds
   are short, or an RW batch interruption when a CC round starts.
+  - The batch size is set in steps (25–50 for $n \ge 5000$), not in time. At 0.7 s per step (bb_360) a batch takes
+    20–35 s, and at 12–50 s per step (bb_756) several minutes.
+  - Threads which cannot run RW (beyond the RW throttle) join a CC round at once, so the wait matters mainly when
+    all threads run RW.
+  - Proposal: batches of at most about 0.25 s by the measured step time, or leave the batch when a CC round needs the
+    thread.
 
 ### More improvements 
 - [x] try verifying (using cluster decomposition from vecdec (?)) if the
@@ -318,6 +374,23 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   the DEM itself (net data effect of each fault, e.g., with one extra observable per final data measurement), and
   check rank($[H_K; H_z N]$) = rank($H_K$) and $L = L_z N$; its distance is then a certified lower bound on
   $d_{\rm simp}$, and it is code-sized (and keeps the symmetry of a symmetric schedule).
+  - Prototype of the rigorous variant (Oct 2026, `scratch/speedup/model_lb.py`).
+    - Single data measurements are not deterministic, so the circuit gets one deterministic observable $O_h$ per
+      check $h$ of the measured basis: the parity of the final data measurements on its support, read from the
+      detectors after the final measurement.
+    - Verify rank($[H; O]$) = rank($H$), i.e., the rows $O$ lie in the row space of $H$.
+    - The model is $(O, L)$ with equal columns merged: a row reduction with $L$ unchanged, so its distance is a
+      certified lower bound on the circuit distance.
+    - Model sizes and distances (the verification held for all of them):
+      - bb_72: 36 x 180, distance 5 ($d = 6$);
+      - bb_90: 45 x 225, 7 ($d = 8$);
+      - bb_108: 54 x 270, 6 ($d = 8$);
+      - gross: 72 x 360, 8 ($d = 10$);
+      - dgross: 144 x 720, distance 12 (no model codeword of weight $\le 11$, 550 s on 32 threads; one of weight 12
+        found in 467 s on 96 threads), so $d \ge 12$ (the circuit DEM took 2.8 h on 128 threads to certify 11);
+      - bb_360: 180 x 900, $\ge 12$ (no model codeword of weight $\le 11$, 966 s on 32 threads).
+    - Not tight for these schedules (1–2 below $d$), but code-sized; the lifting and refinement below could close the
+      gap.
 - [ ] **Row reductions of a DEM, with lifting and verification in C** (generalizes the two items above): replacing $H$
   by $RH$ with rows in the row space of $H$ (deleting or summing detector rows), with the observables $L$ unchanged,
   can only lower the distance, $d_R \le d_{\rm full}$; deleting or merging observables could raise it. Columns equal
@@ -343,6 +416,16 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Order: clean-twin deletion together with equal-column merging (replaces the Python simplified/full detector map,
     verified automatically); then the code-sized model as a lower bound for large distances; adaptive lifting and
     refinement as research.
+- [ ] **Bounds for the largest circuits** (X sector, Oct 2026, `scratch/speedup/RESULTS.md`):
+  - double gross: $[12, 18]$, before $[11, 19]$. The lower bound comes from the code-sized model above. The upper bound
+    comes from RW with index windows of 1 round (3 weight-18 codewords in 180 s, in `scratch/speedup/cws/`); they are
+    errors of the final data measurements, i.e., a code logical at the time boundary.
+  - bb_360: $[12, 23]$, before $[4, 25]$. The lower bound comes from the model; the upper bound from RW, the default
+    hybrid on 16 threads, found twice and saved in `scratch/speedup/cws/`.
+  - bb_756: only RW, lightest 58 (the code has distance at most 34).
+  - With the model 1–2 below $d$ for the smaller BB circuits, the true distances may be well below the upper bounds
+    (e.g., 13–14 for double gross if the gap is the same). Lifting and refinement of the model codewords, or RW with
+    $p=2$ and better windows, could close the gap.
 - [ ] **Symmetry in code mode** (not for DEMs: their observables break the symmetry, |Aut| = 1 for the BB DEMs once
   duplicates are merged). Automorphism groups with BLISS (python-igraph) take milliseconds (gross, double gross, a
   generalized bicycle code with $n = 3000$, QX900) to 0.26 s (the affine-plane incidence code AG(2,64), $n = 4096$,
