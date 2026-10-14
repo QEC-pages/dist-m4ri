@@ -468,7 +468,8 @@ faster in CC, and 12–100 times faster on the full DEM.
   one of weight 23.
 - For `bb_756`, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the
   reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, `nothrottle=1` would run
-  128 threads (about 55 GB). With 32–64 RW threads, RW runs 6.7–7.4 times more steps per second (Section 6.1).
+  128 threads (about 55 GB). With 32–64 RW threads, RW runs 6.7–7.4 times more steps per second (Section 6.1); 0.14.3
+  runs 32 RW threads by default (Section 7.1).
 
 ### 5.5 Where the speedups come from
 
@@ -532,7 +533,8 @@ RW steps per second against the number of RW threads (`method=1`, timeout 90 s f
 ### 6.2 RW windows on the gross and double-gross DEMs
 
 RW with the column permutations of each step from:
-- **hybrid**: the default (`kwin=0`), an index window of $\min(512, 3n/4)$ columns on every other step;
+- **hybrid**: the default of 0.14.1 (`kwin=0`), an index window of $\min(512, 3n/4)$ columns on every other step
+  (0.14.3: 256 columns for a DEM, Section 7.2);
 - **uniform**: uniform permutations only (`kwin` at least $n$);
 - **idx1**, **idx2**: an index window of about one or two rounds of columns on every step (`kwin=1456` or `kwin=2912`
   for double gross, 732 or 1464 for gross, with `win_mode=1`);
@@ -584,3 +586,105 @@ data qubits and the hook errors), with 3–6 nonzeros each. The verification hel
   cannot: CC on the DEM of the double-gross circuit took 2.8 h on 128 threads to certify 11 (Section 5.1).
 - With the gaps of the smaller circuits, the true distances of the double-gross and `bb_360` circuits may be well below
   the upper bounds 18 and 23.
+
+---
+
+## 7. RW Windows and Thread Throttle of 0.14.3 (2026-10-14)
+
+`dist_m4ri` 0.14.3 (commit `741d9a1`), on the server of Section 4, with the full DEMs of Section 5; RW runs use the
+reduced DEMs (`drop=auto`, the default). The raw data and scripts are in `scratch/speedup/` (not in the repository).
+
+### 7.1 Thread throttle
+
+0.14.3: above 15 MB of dense RW memory per thread, at most 32 threads run RW, with their dense matrices within a
+quarter of the physical memory (at least 2; 1.5 GB if the physical memory is not known), instead of about 1.5 GB in
+total (Section 6.1: the memory bus saturates at 32–64 RW threads whatever the size of the matrix). Default runs
+(`method=1 min_hits=0`, no `threads=`):
+
+| DEM | searched | dense RW memory per thread | RW threads: 0.14.2 → 0.14.3 | RW steps/s: 0.14.2 → 0.14.3 |
+| :--- | :--- | ---: | :--- | :--- |
+| `bb_756_16_34_si1000_r34_Z` | 13230 x 129276 | 0.43 GB | 3 → 32 | 0.23 → **1.49** |
+| `bb_360_12_24_si1000_r24_X` | 4500 x 43560 | 49 MB | 32 → 32 | 45 → 45 |
+
+### 7.2 Window size of the hybrid RW steps
+
+With `kwin=0` and $n \ge 500$, every other RW step uses an index window of $W$ consecutive columns, and the others a
+uniform random permutation. A step finds a codeword if all but one of its columns are pivots. The window columns come
+first in the elimination order, so that they are pivots unless they depend on earlier window columns, while a column
+outside is a pivot with probability about $r/n \approx 0.1$ ($r = \mathrm{rank}\,H$). In a DEM, whose errors are in time
+order, a window is a slab of errors close in time, and its rank is at most the number of detectors they touch. Rank
+density of windows ($D$ detectors and $L$ columns per round, see below):
+
+| DEM (reduced) | $D$ | $L$ | rank / $W$ of $W$ consecutive columns, $W$ = 128 / 256 / 512 / 1024 / 2048 |
+| :--- | ---: | ---: | :--- |
+| gross | 72 | 676 | 0.73 / 0.47 / 0.28 / 0.19 / 0.15 |
+| `mitten_270_54_10_C9xS3_custom_r4_Z` | 108 | 1485 | 0.80 / 0.53 / 0.32 / 0.19 / 0.13 |
+| `mitten_150_30_8_C5xS3_custom_r5_Z` | 60 | 844 | 0.63 / 0.34 / 0.20 / 0.13 / 0.10 |
+| double gross | 144 | 1379 | 0.90 / 0.72 / 0.49 / 0.28 / 0.19 |
+| `bb_360_12_24_si1000_r24_X` | 180 | 1742 | 0.91 / 0.80 / 0.56 / 0.34 / 0.22 |
+
+A window of one round of columns ($L \approx 10 D$) touches about $2D$ detectors, so that most of its columns cannot be
+pivots. A scan of the window size (a single size, the same hybrid scheme); first, the mean number of steps to a
+codeword of the minimum weight (six seeds, 16 threads):
+
+| DEM (reduced) | 128 | 192 | 256 | 384 | 512 | 1024 | 2048 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| gross ($d = 10$) | 3.8k | **1.5k** | 1.8k | 1.8k | 4.8k | 15.5k | 22k |
+| `mitten_270` custom ($d = 9$) | 4.4k | 7.5k | **3.9k** | 7.3k | 25k | 111k | 125k |
+| `mitten_270` hef ($d = 7$) | 30k | **3.3k** | 6.2k | 9.5k | 15k | 13k | |
+| `mitten_150` custom ($d = 7$) | 286 | **133** | 352 | | 1200 | 2.0k | |
+
+Second, the distinct light codewords found in a fixed number of steps (two or three seeds, 32 RW threads, the
+default): for double gross, those of weight at most 21 in $2 \cdot 10^4$ steps (in parentheses: of weight 18); for
+`bb_360`, those of weight at most 28 in 3000 steps (in parentheses: the lightest weight found):
+
+| DEM (reduced) | 128 | 192 | 256 | 384 | 512 | $L$ | $2L$ |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| double gross | 5, 2 (1, 1) | 63, 45 (18, 14) | 58, 64 (9, 13) | 31, 18 (4, 2) | 3, 7 (0, 2) | 3, 2 (2, 0) | 0, 1 |
+| `bb_360` | 3, 12 (27, 26) | | 24, 35, 36 (26, 24, 24) | 18, 8 (25, 26) | 6, 0 (24, 29) | 0 (31) | 0 (33) |
+
+- The best window is 192–256 columns for all six DEMs (1.3–3.6 $D$; it does not grow with $D$ from 60 to 180), 2–10
+  times better than 512: on double gross, about 10 distinct codewords of weight 18 per $2 \cdot 10^4$ steps with 256
+  columns, and 0–2 with 512 or with one round. 0.14.3 uses 256 columns for a DEM (`win_hyb=0`; `win_hyb=N` sets the
+  size).
+- Windows of one and two rounds of columns, alternately, were tried first (from a round estimate): slower than 512.
+  On gross, 9.3k against 4.1k steps to weight 10 (median of five seeds); on `mitten_270` custom, 75k–86k against
+  2k–26k steps; on double gross, a similar time to weight 18; and on `bb_360`, the lightest weight in 120 s was
+  29 and 30 against 27 and 25.
+- Cycling through several sizes (e.g., $2L$ down to $L/8$, or $2D$ and $4D$) is worse than the best single size: the
+  optimum is sharp (double gross: 5, 54, and 5 codewords with 128, 192–256, and 512 columns).
+- Where the codewords are: the weight-18 codewords of double gross are errors of the final data measurements, within
+  177 columns at the end of the DEM; the weight-10 codewords of gross span 120–240 columns, anywhere in time; the
+  weight-9 codewords of `mitten_270` custom have 7 columns within about 90, and 2 columns 800–1000 columns later.
+- Matrices of codes gain nothing from 256 columns (`c1920H`: lightest weights 302–333 with 256 and 297–308 with 512
+  after $10^3$ steps; the random LDPC code with $n = 3000$: the same; `surf_d5`, `surf_d7`, and `QX900`: saturated),
+  so that 0.14.3 keeps 512 for matrices.
+- Graph distance is no restriction at the scale of the codewords: in the column graph of the reduced double-gross DEM
+  (columns adjacent if they share a detector), the balls of radius 2, 3, 12, and 18 hold about 2.2k, 8.3k (32%), 24.5k
+  (93%), and all 26208 columns (median over 20 seed columns): the spatial layer is covered within 3–4 hops, and then
+  the ball grows by about one round per hop in each time direction. The index windows work because the light
+  codewords are compact in the column order of the DEM.
+- With `debug&1`, 0.14.3 prints the rounds of a DEM (from the time translation of its errors): $D$ and $L$ as in the
+  table above, $D = 36$ and $L = 319$ for `bb_72`, $D = 378$ and $L = 3694$ for `bb_756`, and none for the torus
+  circuits with SWAP routing.
+
+### 7.3 Codewords found by the uniform and by the window steps
+
+With `debug&1`, 0.14.3 prints the distinct codewords of the three lowest weights found by each kind of RW step (half of
+the steps are uniform). Runs with `min_hits` large and `cov_cws=300`, so that the 300 lightest codewords are kept:
+
+| DEM (reduced) | RW steps | $w = d$ | $w = d + 1$ | $w = d + 2$ |
+| :--- | ---: | :--- | :--- | :--- |
+| gross | 20000 | 10: 16, all by windows | 11: 113, all by windows | 12: 271, 3 by uniform steps |
+| double gross | 30000 | 18: 10, all by windows | 19: 10, all by windows | 20: 18, all by windows |
+| `bb_360` | 4000 | 24: 3, all by windows | 25: 1, by windows | 26: 8, all by windows |
+
+The uniform steps find almost none of these codewords: with uniform random information sets, a codeword of weight 10
+of gross is found with probability about $1.5 \cdot 10^{-8}$ per step. They are kept for codewords which are not local
+in the column order (e.g., time-like codewords with one error per round), and for the information-set estimate.
+
+### 7.4 Time to a codeword of the minimum weight
+
+On the full DEMs of Section 5.2 (`method=1`, `wmin=d`, 128 threads, `nothrottle=1`, three seeds), 0.14.3 finds a
+codeword of the minimum weight within 0.53 s (median) for all eleven circuits, as 0.14.2. On gross, the steps to weight
+10 (five seeds) were 0.5k–5.7k with 256 columns (median 2.0k) against 1.3k–7.3k with 512 (median 3.0k).

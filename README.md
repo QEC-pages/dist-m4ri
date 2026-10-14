@@ -986,7 +986,8 @@ a 128-thread server: the scaling with the number of threads, and a comparison of
 0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight in at most 1.4 s,
 while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of the
 `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
-detectors stripped, whose distance is only a lower bound).
+detectors stripped, whose distance is only a lower bound). Its Section 7 measures the RW window size and the thread
+throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`).
 
 ![Time to a minimum-weight codeword in the full DEMs of the benchmark circuits](benchmark/figures/fulldem_time.png)
 
