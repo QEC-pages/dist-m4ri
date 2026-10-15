@@ -6,6 +6,6 @@ var searchData=
   ['5_204_20large_20full_20dems_20rw_20for_20180_20s_20default_20parameters_3',['5.4 Large full DEMs (RW for 180 s, default parameters)',['../md_benchmark_2BENCHMARK.html#autotoc_md26',1,'']]],
   ['5_205_20where_20the_20speedups_20come_20from_4',['5.5 Where the speedups come from',['../md_benchmark_2BENCHMARK.html#autotoc_md27',1,'']]],
   ['5_20overnight_20benchmark_20of_200_2014_200_202026_2010_2011_5',['5. Overnight Benchmark of 0.14.0 (2026-10-11)',['../md_benchmark_2BENCHMARK.html#autotoc_md22',1,'']]],
-  ['5_20rw_20convergence_3a_20empirical_20test_20and_20probability_20to_20find_20a_20codeword_6',['5. RW Convergence: Empirical Test and Probability to Find a Codeword',['../md_README.html#autotoc_md58',1,'']]],
-  ['5_3a_20native_20simd_20bit_20matrix_20engine_20stage_202_7',['Task 5: Native SIMD Bit-Matrix Engine (Stage 2)',['../md_todo.html#autotoc_md97',1,'']]]
+  ['5_20rw_20convergence_3a_20empirical_20test_20and_20probability_20to_20find_20a_20codeword_6',['5. RW Convergence: Empirical Test and Probability to Find a Codeword',['../md_README.html#autotoc_md64',1,'']]],
+  ['5_3a_20native_20simd_20bit_20matrix_20engine_20stage_202_7',['Task 5: Native SIMD Bit-Matrix Engine (Stage 2)',['../md_todo.html#autotoc_md103',1,'']]]
 ];

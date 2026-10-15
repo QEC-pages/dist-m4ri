@@ -9,7 +9,9 @@ var searchData=
   ['warg_6',['warg',['../structcc__walk__t.html#a643288b1f2ef910c4494c213f81cefd5',1,'cc_walk_t']]],
   ['wei_7',['wei',['../structONE__VEC__T.html#a0cfa83aed86beb493292e7fe72fcaac5',1,'ONE_VEC_T']]],
   ['weight_8',['weight',['../structCW__VEC__T.html#af5600cd26bc64518edbf2189ef7961d9',1,'CW_VEC_T']]],
-  ['win_5fmode_9',['win_mode',['../structparams__t.html#a80c93935a0df65f29e17293c3bbb9709',1,'params_t']]],
-  ['wmax_10',['wmax',['../structparams__t.html#a761376b54173bf5b7554553693dcc1e8',1,'params_t']]],
-  ['wmin_11',['wmin',['../structparams__t.html#a7698d0ba01e3d1875fc0ed33de3abef4',1,'params_t']]]
+  ['width_9',['width',['../structrw__pairs__ws__t.html#a5725f62477caaa48645af4c13ff96b11',1,'rw_pairs_ws_t']]],
+  ['win_5fhyb_10',['win_hyb',['../structparams__t.html#a54b67e994344b54abe211b595f62951e',1,'params_t']]],
+  ['win_5fmode_11',['win_mode',['../structparams__t.html#a80c93935a0df65f29e17293c3bbb9709',1,'params_t']]],
+  ['wmax_12',['wmax',['../structparams__t.html#a761376b54173bf5b7554553693dcc1e8',1,'params_t']]],
+  ['wmin_13',['wmin',['../structparams__t.html#a7698d0ba01e3d1875fc0ed33de3abef4',1,'params_t']]]
 ];

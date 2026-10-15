@@ -7,12 +7,13 @@ var searchData=
   ['max_5fcol_5fwt_4',['max_col_wt',['../structcc__walk__t.html#ace6b84577cc64d7e326806cb6a4bb01e',1,'cc_walk_t']]],
   ['max_5frow_5fwgt_5fh_5',['max_row_wgt_H',['../structparams__t.html#aeb2fa8ec480148d2e7371cefc35995e8',1,'params_t']]],
   ['maxc_6',['maxC',['../structparams__t.html#a0e3bd9808077ec768a03ebcec432d06a',1,'params_t']]],
-  ['merge_7',['merge',['../structparams__t.html#a00a2a7e345f8c0459526afa4c46d4c0b',1,'params_t']]],
-  ['method_8',['method',['../structparams__t.html#a74084a38c2280b79067adc128bfceefe',1,'params_t']]],
-  ['mh_9',['mH',['../structcc__walk__t.html#a0903bb21ac6909a57bdc8b17bb737789',1,'cc_walk_t']]],
-  ['mht_10',['mHT',['../structcc__walk__t.html#ad9215c47a44e6cfcc3a128b0263dad1b',1,'cc_walk_t']]],
-  ['min_5fcws_11',['min_cws',['../structcw__hit__stats__t.html#a26f505dd93ce8131f4f16a022dfd25f7',1,'cw_hit_stats_t']]],
-  ['min_5fhits_12',['min_hits',['../structparams__t.html#a337df391ebff5219a81f5ac83ee69340',1,'params_t::min_hits'],['../structcw__hit__stats__t.html#a37983d3b4ea47b240a58dcd23a57e782',1,'cw_hit_stats_t::min_hits']]],
-  ['min_5fswei_13',['min_swei',['../structworker__arg.html#ac5e0f8c07155fb0d12d064ae1ec195a1',1,'worker_arg']]],
-  ['min_5fw_14',['min_w',['../structparams__t.html#a53ca760e9f06f86fa573f464f620114b',1,'params_t']]]
+  ['member_7',['member',['../structhelp__entry__t.html#ad1befe5af422469e939e9d83c51674ea',1,'help_entry_t']]],
+  ['merge_8',['merge',['../structparams__t.html#a00a2a7e345f8c0459526afa4c46d4c0b',1,'params_t']]],
+  ['method_9',['method',['../structparams__t.html#a74084a38c2280b79067adc128bfceefe',1,'params_t']]],
+  ['mh_10',['mH',['../structcc__walk__t.html#a0903bb21ac6909a57bdc8b17bb737789',1,'cc_walk_t']]],
+  ['mht_11',['mHT',['../structcc__walk__t.html#ad9215c47a44e6cfcc3a128b0263dad1b',1,'cc_walk_t']]],
+  ['min_5fcws_12',['min_cws',['../structcw__hit__stats__t.html#a26f505dd93ce8131f4f16a022dfd25f7',1,'cw_hit_stats_t']]],
+  ['min_5fhits_13',['min_hits',['../structparams__t.html#a337df391ebff5219a81f5ac83ee69340',1,'params_t::min_hits'],['../structcw__hit__stats__t.html#a37983d3b4ea47b240a58dcd23a57e782',1,'cw_hit_stats_t::min_hits']]],
+  ['min_5fswei_14',['min_swei',['../structworker__arg.html#ac5e0f8c07155fb0d12d064ae1ec195a1',1,'worker_arg']]],
+  ['min_5fw_15',['min_w',['../structparams__t.html#a53ca760e9f06f86fa573f464f620114b',1,'params_t']]]
 ];

@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.14.2</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.14.5</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -114,7 +114,7 @@ Origins and References</h1>
 </ul>
 </li>
 <li><b>2D Local Torus Bivariate Bicycle Stim Circuits</b><ul>
-<li>Copied unmodified from <code>tmp/*.stim</code>. These are noiseless syndrome-extraction templates on a 2D torus with Swap/CNOT routing (<code>L3_torus</code>, with <code>CZSWAP</code> gates) for codes with the nominal parameters $[[60, 8, 14]]$, $[[120, 8, 15]]$, $[[200, 16, 16]]$, and $[[200, 8, 17]]$ (from the file names; the code distances have not been verified) in both $X$ and $Z$ bases. When passed to <code><a class="el" href="namespacedist__m4ri.html#a680946d0b6434e971b5f50bc7b76183f">dist_m4ri.compute_dem_distance</a>(circuit=...)</code> or <code><a class="el" href="namespacedist__m4ri.html#a4ad4f2c24687c529959396fbbdd5bddc">dist_m4ri.add_noise</a>(circuit, p=0.001)</code>, uniform circuit-level noise is added on the fly (<code>DEPOLARIZE2</code> after the two-qubit gates, including <code>CZSWAP</code> since 0.14.0, <code>DEPOLARIZE1</code> after the one-qubit gates and on idle qubits, and <code>X_ERROR</code>/<code>Z_ERROR</code> at resets and measurements; see the README).</li>
+<li>Copied unmodified from <code>tmp/*.stim</code>. These are noiseless syndrome-extraction templates on a 2D torus with Swap/CNOT routing (<code>L3_torus</code>, with <code>CZSWAP</code> gates) for codes with the nominal parameters $[[60, 8, 14]]$, $[[120, 8, 15]]$, $[[200, 16, 16]]$, and $[[200, 8, 17]]$ (from the file names; the code distances have not been verified) in both $X$ and $Z$ bases. When passed to <code><a class="el" href="namespacedist__m4ri.html#a7ff63e3cdd8029f98682d356e4355702">dist_m4ri.compute_dem_distance</a>(circuit=...)</code> or <code><a class="el" href="namespacedist__m4ri.html#a4ad4f2c24687c529959396fbbdd5bddc">dist_m4ri.add_noise</a>(circuit, p=0.001)</code>, uniform circuit-level noise is added on the fly (<code>DEPOLARIZE2</code> after the two-qubit gates, including <code>CZSWAP</code> since 0.14.0, <code>DEPOLARIZE1</code> after the one-qubit gates and on idle qubits, and <code>X_ERROR</code>/<code>Z_ERROR</code> at resets and measurements; see the README).</li>
 </ul>
 </li>
 </ol>
@@ -340,10 +340,10 @@ Origins and References</h1>
 <p>To avoid storing large pre-generated <code>.dem</code> files in the repository, DEMs can be generated on the fly from the <code>.stim</code> files (noise of strength <code>p_noise=0.001</code> is added to the noiseless templates; <code>--force-noise</code> replaces the noise of a circuit by this uniform noise): </p><div class="fragment"><div class="line"><span class="keyword">import</span> dist_m4ri</div>
 <div class="line"> </div>
 <div class="line"><span class="comment"># the full DEM of the circuit, reduced exactly by the binary; also save the reduced DEM and its maps to the full one</span></div>
-<div class="line">dist, bounds = <a class="code hl_function" href="namespacedist__m4ri.html#a680946d0b6434e971b5f50bc7b76183f">dist_m4ri.compute_dem_distance</a>(</div>
+<div class="line">dist, bounds = <a class="code hl_function" href="namespacedist__m4ri.html#a7ff63e3cdd8029f98682d356e4355702">dist_m4ri.compute_dem_distance</a>(</div>
 <div class="line">    circuit=<span class="stringliteral">&quot;benchmark/stim_torus/NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim&quot;</span>,</div>
 <div class="line">    out_dem=<span class="stringliteral">&quot;tmp/torus_n60_X_full.dem&quot;</span>, out_reduced=<span class="stringliteral">&quot;tmp/torus_n60_X&quot;</span>)  <span class="comment"># tmp/torus_n60_X_red.dem, _red.json</span></div>
-<div class="ttc" id="anamespacedist__m4ri_html_a680946d0b6434e971b5f50bc7b76183f"><div class="ttname"><a href="namespacedist__m4ri.html#a680946d0b6434e971b5f50bc7b76183f">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, bool merge=True, bool expand=False, Optional[Union[bool, int, str, Path]] drop=None, Optional[Union[str, Path]] outD=None, Optional[Union[bool, str, Path]] out_reduced=None, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, Optional[bool] simple=None, Optional[bool] full=None, Optional[str] basis=None, Optional[int] rounds=None, Optional[Union[str, Path]] out_dir=None, Optional[Union[bool, str, Path]] out_dem=None, Optional[Union[bool, str, Path]] out_stim=None, float p_noise=0.001, bool force_noise=False, bool trust_start=False, Optional[bool] sort_rows=None, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l04426">dist_m4ri.py:4485</a></div></div>
+<div class="ttc" id="anamespacedist__m4ri_html_a7ff63e3cdd8029f98682d356e4355702"><div class="ttname"><a href="namespacedist__m4ri.html#a7ff63e3cdd8029f98682d356e4355702">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, bool merge=True, bool expand=False, Optional[Union[bool, int, str, Path]] drop=None, Optional[Union[str, Path]] outD=None, Optional[Union[bool, str, Path]] out_reduced=None, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, int win_hyb=0, int pairs=-1, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, Optional[bool] simple=None, Optional[bool] full=None, Optional[str] basis=None, Optional[int] rounds=None, Optional[Union[str, Path]] out_dir=None, Optional[Union[bool, str, Path]] out_dem=None, Optional[Union[bool, str, Path]] out_stim=None, float p_noise=0.001, bool force_noise=False, bool trust_start=False, Optional[bool] sort_rows=None, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l04537">dist_m4ri.py:4598</a></div></div>
 </div><!-- fragment --><table class="markdownTable">
 <tr class="markdownTableHead">
 <th class="markdownTableHeadLeft">Stim circuit   </th><th class="markdownTableHeadLeft">Basis   </th><th class="markdownTableHeadLeft">Full (dets x errs)   </th><th class="markdownTableHeadLeft">Stripped   </th><th class="markdownTableHeadLeft">Searched (0.14.0)   </th><th class="markdownTableHeadLeft">$k$    </th></tr>
@@ -581,7 +581,7 @@ Origins and References</h1>
 <ul>
 <li>On the gross circuit, a RW step of 0.14.0 is 67 times faster, and all 128 threads are used (the dense RW working memory of the full matrix limits 0.12.2 to 32 threads): 270 times more steps in 180 s, and a codeword of the minimum weight 10.</li>
 <li>For <code>bb_360</code>, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.4); Section 6.1 found one of weight 23.</li>
-<li>For <code>bb_756</code>, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, <code>nothrottle=1</code> would run 128 threads (about 55 GB). With 32–64 RW threads, RW runs 6.7–7.4 times more steps per second (Section 6.1).</li>
+<li>For <code>bb_756</code>, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, <code>nothrottle=1</code> would run 128 threads (about 55 GB). With 32–64 RW threads, RW runs 6.7–7.4 times more steps per second (Section 6.1); 0.14.3 runs 32 RW threads by default (Section 7.1).</li>
 </ul>
 <h2><a class="anchor" id="autotoc_md27"></a>
 5.5 Where the speedups come from</h2>
@@ -651,7 +651,7 @@ Origins and References</h1>
 <h2><a class="anchor" id="autotoc_md31"></a>
 6.2 RW windows on the gross and double-gross DEMs</h2>
 <p>RW with the column permutations of each step from:</p><ul>
-<li><b>hybrid</b>: the default (<code>kwin=0</code>), an index window of $\min(512, 3n/4)$ columns on every other step;</li>
+<li><b>hybrid</b>: the default of 0.14.1 (<code>kwin=0</code>), an index window of $\min(512, 3n/4)$ columns on every other step (0.14.3: 256 columns for a DEM, Section 7.2);</li>
 <li><b>uniform</b>: uniform permutations only (<code>kwin</code> at least $n$);</li>
 <li><b>idx1</b>, <b>idx2</b>: an index window of about one or two rounds of columns on every step (<code>kwin=1456</code> or <code>kwin=2912</code> for double gross, 732 or 1464 for gross, with <code>win_mode=1</code>);</li>
 <li><b>bfs1</b>: a Tanner-graph ball of about one round on every step (<code>win_mode=0</code>).</li>
@@ -698,8 +698,88 @@ Origins and References</h1>
 <ul>
 <li>The CC runs on the double-gross and <code>bb_360</code> models used 32 threads, and 96 for the round $w = 12$ of double gross.</li>
 <li>For these schedules, the model is 1–2 below the circuit distance: its lightest codewords do not lift to codewords of the DEM of the same weight. It is still a certified bound, and CC on the model reaches weights which CC on the DEM cannot: CC on the DEM of the double-gross circuit took 2.8 h on 128 threads to certify 11 (Section 5.1).</li>
-<li>With the gaps of the smaller circuits, the true distances of the double-gross and <code>bb_360</code> circuits may be well below the upper bounds 18 and 23. </li>
+<li>With the gaps of the smaller circuits, the true distances of the double-gross and <code>bb_360</code> circuits may be well below the upper bounds 18 and 23.</li>
 </ul>
+<hr  />
+<h1><a class="anchor" id="autotoc_md34"></a>
+7. RW Windows and Thread Throttle of 0.14.3 (2026-10-14)</h1>
+<p><code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> 0.14.3 (commit <code>741d9a1</code>), on the server of Section 4, with the full DEMs of Section 5; RW runs use the reduced DEMs (<code>drop=auto</code>, the default). The raw data and scripts are in <code>scratch/speedup/</code> (not in the repository).</p>
+<h2><a class="anchor" id="autotoc_md35"></a>
+7.1 Thread throttle</h2>
+<p>0.14.3: above 15 MB of dense RW memory per thread, at most 32 threads run RW, with their dense matrices within a quarter of the physical memory (at least 2; 1.5 GB if the physical memory is not known), instead of about 1.5 GB in total (Section 6.1: the memory bus saturates at 32–64 RW threads whatever the size of the matrix). Default runs (<code>method=1 min_hits=0</code>, no <code>threads=</code>):</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">DEM   </th><th class="markdownTableHeadLeft">searched   </th><th class="markdownTableHeadRight">dense RW memory per thread   </th><th class="markdownTableHeadLeft">RW threads: 0.14.2 → 0.14.3   </th><th class="markdownTableHeadLeft">RW steps/s: 0.14.2 → 0.14.3    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_756_16_34_si1000_r34_Z</code>   </td><td class="markdownTableBodyLeft">13230 x 129276   </td><td class="markdownTableBodyRight">0.43 GB   </td><td class="markdownTableBodyLeft">3 → 32   </td><td class="markdownTableBodyLeft">0.23 → <b>1.49</b>    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24_X</code>   </td><td class="markdownTableBodyLeft">4500 x 43560   </td><td class="markdownTableBodyRight">49 MB   </td><td class="markdownTableBodyLeft">32 → 32   </td><td class="markdownTableBodyLeft">45 → 45   </td></tr>
+</table>
+<h2><a class="anchor" id="autotoc_md36"></a>
+7.2 Window size of the hybrid RW steps</h2>
+<p>With <code>kwin=0</code> and $n \ge 500$, every other RW step uses an index window of $W$ consecutive columns, and the others a uniform random permutation. A step finds a codeword if all but one of its columns are pivots. The window columns come first in the elimination order, so that they are pivots unless they depend on earlier window columns, while a column outside is a pivot with probability about $r/n \approx 0.1$ ($r = \mathrm{rank}\,H$). In a DEM, whose errors are in time order, a window is a slab of errors close in time, and its rank is at most the number of detectors they touch. Rank density of windows ($D$ detectors and $L$ columns per round, see below):</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">DEM (reduced)   </th><th class="markdownTableHeadRight">$D$   </th><th class="markdownTableHeadRight">$L$   </th><th class="markdownTableHeadLeft">rank / $W$ of $W$ consecutive columns, $W$ = 128 / 256 / 512 / 1024 / 2048    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">gross   </td><td class="markdownTableBodyRight">72   </td><td class="markdownTableBodyRight">676   </td><td class="markdownTableBodyLeft">0.73 / 0.47 / 0.28 / 0.19 / 0.15    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyRight">108   </td><td class="markdownTableBodyRight">1485   </td><td class="markdownTableBodyLeft">0.80 / 0.53 / 0.32 / 0.19 / 0.13    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z</code>   </td><td class="markdownTableBodyRight">60   </td><td class="markdownTableBodyRight">844   </td><td class="markdownTableBodyLeft">0.63 / 0.34 / 0.20 / 0.13 / 0.10    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft">double gross   </td><td class="markdownTableBodyRight">144   </td><td class="markdownTableBodyRight">1379   </td><td class="markdownTableBodyLeft">0.90 / 0.72 / 0.49 / 0.28 / 0.19    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_360_12_24_si1000_r24_X</code>   </td><td class="markdownTableBodyRight">180   </td><td class="markdownTableBodyRight">1742   </td><td class="markdownTableBodyLeft">0.91 / 0.80 / 0.56 / 0.34 / 0.22   </td></tr>
+</table>
+<p>A window of one round of columns ($L \approx 10 D$) touches about $2D$ detectors, so that most of its columns cannot be pivots. A scan of the window size (a single size, the same hybrid scheme); first, the mean number of steps to a codeword of the minimum weight (six seeds, 16 threads):</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">DEM (reduced)   </th><th class="markdownTableHeadRight">128   </th><th class="markdownTableHeadRight">192   </th><th class="markdownTableHeadRight">256   </th><th class="markdownTableHeadRight">384   </th><th class="markdownTableHeadRight">512   </th><th class="markdownTableHeadRight">1024   </th><th class="markdownTableHeadRight">2048    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">gross ($d = 10$)   </td><td class="markdownTableBodyRight">3.8k   </td><td class="markdownTableBodyRight"><b>1.5k</b>   </td><td class="markdownTableBodyRight">1.8k   </td><td class="markdownTableBodyRight">1.8k   </td><td class="markdownTableBodyRight">4.8k   </td><td class="markdownTableBodyRight">15.5k   </td><td class="markdownTableBodyRight">22k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270</code> custom ($d = 9$)   </td><td class="markdownTableBodyRight">4.4k   </td><td class="markdownTableBodyRight">7.5k   </td><td class="markdownTableBodyRight"><b>3.9k</b>   </td><td class="markdownTableBodyRight">7.3k   </td><td class="markdownTableBodyRight">25k   </td><td class="markdownTableBodyRight">111k   </td><td class="markdownTableBodyRight">125k    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_270</code> hef ($d = 7$)   </td><td class="markdownTableBodyRight">30k   </td><td class="markdownTableBodyRight"><b>3.3k</b>   </td><td class="markdownTableBodyRight">6.2k   </td><td class="markdownTableBodyRight">9.5k   </td><td class="markdownTableBodyRight">15k   </td><td class="markdownTableBodyRight">13k   </td><td class="markdownTableBodyRight"></td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_150</code> custom ($d = 7$)   </td><td class="markdownTableBodyRight">286   </td><td class="markdownTableBodyRight"><b>133</b>   </td><td class="markdownTableBodyRight">352   </td><td class="markdownTableBodyRight"></td><td class="markdownTableBodyRight">1200   </td><td class="markdownTableBodyRight">2.0k   </td><td class="markdownTableBodyRight"></td></tr>
+</table>
+<p>Second, the distinct light codewords found in a fixed number of steps (two or three seeds, 32 RW threads, the default): for double gross, those of weight at most 21 in $2 \cdot 10^4$ steps (in parentheses: of weight 18); for <code>bb_360</code>, those of weight at most 28 in 3000 steps (in parentheses: the lightest weight found):</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">DEM (reduced)   </th><th class="markdownTableHeadLeft">128   </th><th class="markdownTableHeadLeft">192   </th><th class="markdownTableHeadLeft">256   </th><th class="markdownTableHeadLeft">384   </th><th class="markdownTableHeadLeft">512   </th><th class="markdownTableHeadLeft">$L$   </th><th class="markdownTableHeadLeft">$2L$    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">double gross   </td><td class="markdownTableBodyLeft">5, 2 (1, 1)   </td><td class="markdownTableBodyLeft">63, 45 (18, 14)   </td><td class="markdownTableBodyLeft">58, 64 (9, 13)   </td><td class="markdownTableBodyLeft">31, 18 (4, 2)   </td><td class="markdownTableBodyLeft">3, 7 (0, 2)   </td><td class="markdownTableBodyLeft">3, 2 (2, 0)   </td><td class="markdownTableBodyLeft">0, 1    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_360</code>   </td><td class="markdownTableBodyLeft">3, 12 (27, 26)   </td><td class="markdownTableBodyLeft"></td><td class="markdownTableBodyLeft">24, 35, 36 (26, 24, 24)   </td><td class="markdownTableBodyLeft">18, 8 (25, 26)   </td><td class="markdownTableBodyLeft">6, 0 (24, 29)   </td><td class="markdownTableBodyLeft">0 (31)   </td><td class="markdownTableBodyLeft">0 (33)   </td></tr>
+</table>
+<ul>
+<li>The best window is 192–256 columns for all six DEMs (1.3–3.6 $D$; it does not grow with $D$ from 60 to 180), 2–10 times better than 512: on double gross, about 10 distinct codewords of weight 18 per $2 \cdot 10^4$ steps with 256 columns, and 0–2 with 512 or with one round. 0.14.3 uses 256 columns for a DEM (<code>win_hyb=0</code>; <code>win_hyb=N</code> sets the size).</li>
+<li>Windows of one and two rounds of columns, alternately, were tried first (from a round estimate): slower than 512. On gross, 9.3k against 4.1k steps to weight 10 (median of five seeds); on <code>mitten_270</code> custom, 75k–86k against 2k–26k steps; on double gross, a similar time to weight 18; and on <code>bb_360</code>, the lightest weight in 120 s was 29 and 30 against 27 and 25.</li>
+<li>Cycling through several sizes (e.g., $2L$ down to $L/8$, or $2D$ and $4D$) is worse than the best single size: the optimum is sharp (double gross: 5, 54, and 5 codewords with 128, 192–256, and 512 columns).</li>
+<li>Where the codewords are: the weight-18 codewords of double gross are errors of the final data measurements, within 177 columns at the end of the DEM; the weight-10 codewords of gross span 120–240 columns, anywhere in time; the weight-9 codewords of <code>mitten_270</code> custom have 7 columns within about 90, and 2 columns 800–1000 columns later.</li>
+<li>Matrices of codes gain nothing from 256 columns (<code>c1920H</code>: lightest weights 302–333 with 256 and 297–308 with 512 after $10^3$ steps; the random LDPC code with $n = 3000$: the same; <code>surf_d5</code>, <code>surf_d7</code>, and <code>QX900</code>: saturated), so that 0.14.3 keeps 512 for matrices.</li>
+<li>Graph distance is no restriction at the scale of the codewords: in the column graph of the reduced double-gross DEM (columns adjacent if they share a detector), the balls of radius 2, 3, 12, and 18 hold about 2.2k, 8.3k (32%), 24.5k (93%), and all 26208 columns (median over 20 seed columns): the spatial layer is covered within 3–4 hops, and then the ball grows by about one round per hop in each time direction. The index windows work because the light codewords are compact in the column order of the DEM.</li>
+<li>With <code>debug&amp;1</code>, 0.14.3 prints the rounds of a DEM (from the time translation of its errors): $D$ and $L$ as in the table above, $D = 36$ and $L = 319$ for <code>bb_72</code>, $D = 378$ and $L = 3694$ for <code>bb_756</code>, and none for the torus circuits with SWAP routing.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md37"></a>
+7.3 Codewords found by the uniform and by the window steps</h2>
+<p>With <code>debug&amp;1</code>, 0.14.3 prints the distinct codewords of the three lowest weights found by each kind of RW step (half of the steps are uniform). Runs with <code>min_hits</code> large and <code>cov_cws=300</code>, so that the 300 lightest codewords are kept:</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">DEM (reduced)   </th><th class="markdownTableHeadRight">RW steps   </th><th class="markdownTableHeadLeft">$w = d$   </th><th class="markdownTableHeadLeft">$w = d + 1$   </th><th class="markdownTableHeadLeft">$w = d + 2$    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">gross   </td><td class="markdownTableBodyRight">20000   </td><td class="markdownTableBodyLeft">10: 16, all by windows   </td><td class="markdownTableBodyLeft">11: 113, all by windows   </td><td class="markdownTableBodyLeft">12: 271, 3 by uniform steps    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft">double gross   </td><td class="markdownTableBodyRight">30000   </td><td class="markdownTableBodyLeft">18: 10, all by windows   </td><td class="markdownTableBodyLeft">19: 10, all by windows   </td><td class="markdownTableBodyLeft">20: 18, all by windows    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_360</code>   </td><td class="markdownTableBodyRight">4000   </td><td class="markdownTableBodyLeft">24: 3, all by windows   </td><td class="markdownTableBodyLeft">25: 1, by windows   </td><td class="markdownTableBodyLeft">26: 8, all by windows   </td></tr>
+</table>
+<p>The uniform steps find almost none of these codewords: with uniform random information sets, a codeword of weight 10 of gross is found with probability about $1.5 \cdot 10^{-8}$ per step. They are kept for codewords which are not local in the column order (e.g., time-like codewords with one error per round), and for the information-set estimate.</p>
+<h2><a class="anchor" id="autotoc_md38"></a>
+7.4 Time to a codeword of the minimum weight</h2>
+<p>On the full DEMs of Section 5.2 (<code>method=1</code>, <code>wmin=d</code>, 128 threads, <code>nothrottle=1</code>, three seeds), 0.14.3 finds a codeword of the minimum weight within 0.53 s (median) for all eleven circuits, as 0.14.2. On gross, the steps to weight 10 (five seeds) were 0.5k–5.7k with 256 columns (median 2.0k) against 1.3k–7.3k with 512 (median 3.0k). </p>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
 <!-- start footer part -->
