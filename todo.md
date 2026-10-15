@@ -461,6 +461,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
       1.8 s in total). For mitten_270 custom, RW on all rows found no codeword of weight 8 (lightest 9, the circuit
       distance) and CC did not finish $w = 8$ in 120 s: a longer run may show whether the minority rows raise the
       bound to 9 there.
+    - [x] 0.14.7: the minority-basis rows are off by default (`minority=True`, CLI `--model-minority`, to use them).
+      They raised none of the bounds of the 16 circuits of `benchmark/BENCHMARK.md` Section 8.5 (`mitten_270` custom
+      stays 8, with CC on all rows in 7.8 s) and of the stim surface codes ($d = 5, 7$), and cost up to 9 s: with
+      depolarizing-type noise, every net data error which flips the observable of the measured basis also occurs
+      without a component of the other basis, so that a lightest model codeword has a version which these rows do not
+      detect. They may raise the bound for other noise models (e.g., biased noise).
 - [ ] **Row reductions of a DEM, with lifting and verification in C** (generalizes the two items above): replacing $H$
   by $RH$ with rows in the row space of $H$ (deleting or summing detector rows), with the observables $L$ unchanged,
   can only lower the distance, $d_R \le d_{\rm full}$; deleting or merging observables could raise it. Columns equal

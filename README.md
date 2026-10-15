@@ -152,9 +152,14 @@ Relevant parameters:
   classical LDPC codes with a large distance (`c1920H`: 210-277 instead of 317-321 in 1000 steps, three seeds). With 128
   threads, RW finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s, and 23 for `bb_360` in
   1-2 min instead of 24 in 4 min (Section 8 of the [benchmark](benchmark/BENCHMARK.md)). For small codes, a step takes
-  2-5 times longer, but `min_hits` is reached in fewer steps, mostly in about the same time (`surf_d7`: 2-3 times
-  longer). With `debug&1`, the binary prints the pairs checked per step and the codewords recorded from the pairs and
-  from the single columns (`# RW pairs (p=2, ...)`). Not with the experimental `ksub`.
+  2-5 times longer, but `min_hits` is reached in fewer steps, mostly in about the same time. Where the hit counts are
+  strongly non-uniform (a warning with `debug&1`), whether `min_hits` is reached within `steps` is a matter of chance,
+  with or without pairs: e.g., the unreduced matrices `examples/surf_d7_H.mmx` with `_L.mmx` (a circuit DEM given as
+  matrices) mostly run to the step limit with the pairs, in twice the time, while the surface-code circuit of stim with
+  $d = 7$ as a DEM (reduced by the binary) converges as soon as without pairs, and the one with $d = 9$ converges only
+  with the pairs (Section 8.4 of the benchmark). With `debug&1`, the binary prints the pairs checked per step and the
+  codewords recorded from the pairs and from the single columns (`# RW pairs (p=2, ...)`). Not with the experimental
+  `ksub`.
 - `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
   without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
   full-matrix RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$, e.g., for DEMs
@@ -660,7 +665,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.6): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.7): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -869,29 +874,35 @@ interoperability without manual threading overhead.
   - **`expand`** (CLI: `expand=0|1`; default: `False`): the codewords returned and written to `outC` are expanded over
     the choices among equal columns (see [Codeword Export](#codeword-export-outc--finc)); `maxC > 0` limits the
     expanded list (with a warning if some codewords are dropped).
-- `compute_model_lower_bound(circuit, minority=True, out_model=None, return_info=False, ...)` (CLI: `fdem=FILE.stim
-  --model-lb [--out-model PREFIX]`): a certified lower bound on the distance of a Stim memory circuit from its
-  code-sized model, a row reduction of its DEM $(H, L)$, for circuits whose DEM is too large for CC:
+- `compute_model_lower_bound(circuit, minority=False, out_model=None, return_info=False, ...)` (CLI:
+  `fdem=FILE.stim --model-lb [--model-minority] [--out-model PREFIX]`): a certified lower bound on the distance of a
+  Stim memory circuit from its code-sized model, a row reduction of its DEM $(H, L)$, for circuits whose DEM is too
+  large for CC:
   - Two detectors are linked if they share a measurement record other than a final data measurement; in a memory
     circuit, each group of linked detectors is the chain of the detectors of one check over the rounds. Each group
     gives one row of the model, the sum of the rows of its detectors: the chain of a check $h$ of the measured basis
     telescopes to the parity of the final data measurements on $h$, so that the column of an error is the syndrome of
-    its net data error (a data or hook error), and with `minority=True` (default) the chains of the minority-basis
-    checks are rows as well. Equal columns are merged, and the errors with no effect (e.g., ancilla measurement
-    errors) are dropped: a few columns per data qubit, e.g., $144 \times 720$ for the double-gross circuit without the
-    minority-basis rows.
+    its net data error (a data or hook error); with `minority=True` (CLI: `--model-minority`), the chains of the
+    minority-basis checks are rows as well. Equal columns are merged, and the errors with no effect (e.g., ancilla
+    measurement errors) are dropped: a few columns per data qubit, e.g., $144 \times 720$ for the double-gross circuit
+    without the minority-basis rows.
+  - The minority-basis rows are off by default: with depolarizing-type noise, every net data error which flips the
+    observable of the measured basis also occurs without a component of the other basis, so that a lightest model
+    codeword has a version which these rows do not detect. They never raised the bound of the benchmark circuits or
+    of the surface-code circuits of stim, and cost up to 9 s (`mitten_270`, where CC on the larger model was needed);
+    they may raise it for other noise models (e.g., biased noise).
   - Every row is a sum of detector rows, so every codeword of the DEM gives a model codeword of no larger weight: the
     distance of the model certified by CC is a lower bound on the circuit distance. It ignores the timing within the
     rounds: it is tight for the surface-code circuits of stim, the `hef` Mitten circuits, and the `n120` torus
     circuit, but 1-2 below the distance of the BB circuits (`bb_72`: 5, distance 6; gross: 8, distance 10; double
     gross: 12, distance at most 18), of the custom Mitten circuits (`mitten_270`: 8, distance 9), and of the `n60`
     torus circuit (4, distance 6).
-  - The binary runs on the model with the measured-basis rows first, then with all rows starting from that bound: RW
-    first, which ends as soon as it finds a model codeword of that weight, and only otherwise CC from `dmin` (CC on
-    all rows alone would be much slower: gross 75 s for 7, instead of 1.8 s for 8). The bound is stored as
-    `dmin` in the cache record of the DEM (with `"dmin_model"`), so that `compute_dem_distance()` starts CC from it, and
-    the CLI prints the bounds of the circuit. With `return_info=True`, the info has the model (`"H"`, `"L"`, and
-    `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs.
+  - The binary runs on the model with the measured-basis rows first, then (with `minority=True`) with all rows starting
+    from that bound: RW first, which ends as soon as it finds a model codeword of that weight, and only otherwise CC
+    from `dmin` (CC on all rows alone would be much slower: gross 75 s for 7, instead of 1.8 s for 8). The bound is
+    stored as `dmin` in the cache record of the DEM (with `"dmin_model"`), so that `compute_dem_distance()` starts CC
+    from it, and the CLI prints the bounds of the circuit. With `return_info=True`, the info has the model (`"H"`,
+    `"L"`, and `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs.
 - `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ..., mask_out=None)` /
   `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a
   list `mask_out` receives one entry per detector: `True` if it is stripped; `compute_dem_distance()` uses it for the

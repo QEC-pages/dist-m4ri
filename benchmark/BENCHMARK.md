@@ -698,9 +698,9 @@ server of Section 4, with the inputs of Section 5: 476 runs in about one hour. 0
 by default): a RW step also finds the codewords with exactly two non-pivot columns (Lee–Brickell and Stern with
 $p = 2$), from the pairs of columns which agree on $l$ random pivot rows ($l \approx \log_2(n - r)$, fewer while the
 upper bound is large). 0.14.5 added `compute_model_lower_bound()` to the Python wrapper (the code-sized model of
-Section 6.3, with the minority-basis rows by default). 0.14.6 bounds the work of the RW pairs per step, after the slow
-early steps found here (Section 8.7; 142 more runs). The raw data and scripts are in `scratch/bench_0.14.5/` (not in
-the repository).
+Section 6.3, with the minority-basis rows by default until 0.14.6). 0.14.6 bounds the work of the RW pairs per step,
+after the slow early steps found here (Section 8.7; 142 more runs). The raw data and scripts are in
+`scratch/bench_0.14.5/` (not in the repository).
 
 ### 8.1 Full DEMs: time to a codeword of the minimum weight
 
@@ -833,19 +833,36 @@ up to 10% slower (Section 8.7).
 - `surf_d5`: 0.068 s against 0.051 s, since a step takes 20 times longer with 128 threads (0.0031 s against 0.00015 s
   per step and thread; 2.7 times on one thread in the tests of 0.14.4), probably because the codewords of the pairs,
   about 19 per step, are recorded under the mutex of the codeword table.
-- `surf_d7`: 3 times slower, and two of the three runs of 0.14.5 ran to the step limit. In 100k steps, the pairs
-  recorded 780k codewords of weight 7 (with repeats), but the 100 codewords tracked for `min_hits` (`cov_cws`) had only
-  275 hits, against 500 hits in 63k steps with 0.14.3: this circuit has very many codewords of weight 7, and those
-  tracked (the first ones found) are found less often per step with the pairs than without.
+- `surf_d7` (`surf_d7_H.mmx` with `_L.mmx`: the DEM of a surface-code circuit with $d = 7$ given as matrices, which
+  the binary does not reduce, $336 \times 5473$): 2.0–2.2 s against 0.64–0.66 s, since most runs with the pairs end
+  at the step limit. The hit counts of the 100 codewords of weight 7 tracked for `min_hits` (`cov_cws`: the first
+  ones found) are strongly non-uniform in all versions (the binary warns; e.g., one codeword with 184 of 477 hits), so
+  that whether $\langle n \rangle$ reaches 5 within 100k steps depends on the codewords tracked: 0.14.3 also ran to
+  the step limit in one of the three runs, and 0.14.5 converged after 32k steps in one; with the pairs, the tracked
+  set is filled within the first steps. All runs found the distance 7, and `method=3` is not affected (CC).
 - The gross circuit (full DEM): all versions run to the step limit; 0.14.5 takes 1.26 times longer (the pairs of each
   step).
+
+The surface-code circuits of stim (`surface_code:rotated_memory_x`, $d$ rounds, the uniform noise of $p = 0.001$) as
+DEMs, which the binary reduces exactly ($d = 7$: $192 \times 883$), with the default `method=1` (three seeds; the
+scripts and logs in `scratch/bench_0.14.5/surface/`):
+
+| circuit | 0.14.3 | 0.14.6 |
+| :--- | :--- | :--- |
+| $d = 7$ | 0.08–0.09 s (17k–22k steps) | 0.08–0.09 s (1.3k steps) |
+| $d = 9$ | step limit: 0.55–0.58 s, $\langle n \rangle$ = 1.4–2.1 | 1.0–1.4 s (23k–35k steps) |
+| $d = 11$ | step limit: 2.3 s, $\langle n \rangle$ = 1.1–1.5 | step limit: 4.1–4.3 s, $\langle n \rangle$ = 1.2–3.7 |
+
+With the pairs, `min_hits` is reached in 13 times fewer steps for $d = 7$ (in the same time), within the step limit for
+$d = 9$ (0.14.3: not), and with more hits per step for $d = 11$; all runs found the distance $d$.
 
 ### 8.5 Code-sized model lower bound (0.14.5)
 
 `compute_model_lower_bound()` with the default threads, against the circuit distance (Section 2.4). With
-`minority=False`, only the model of the measured-basis chains (Section 6.3) is solved (`method=3`); by default, the
-model with all rows is then searched from that bound (RW with `wmin` equal to the bound, then CC if needed); the times
-are those of the whole calls.
+`minority=False`, only the model of the measured-basis chains (Section 6.3) is solved (`method=3`); with
+`minority=True` (the default of 0.14.5 and 0.14.6), the model with all rows is then searched from that bound (RW with
+`wmin` equal to the bound, then CC if needed); the times are those of the whole calls. Since 0.14.7, the minority-basis
+rows are off by default (`minority=True`, CLI `--model-minority`, to use them).
 
 | Circuit | distance | model (measured-basis rows) | bound | time (s) | model (all rows) | bound | time (s) |
 | :--- | :--- | :--- | :---: | ---: | :--- | :---: | ---: |
@@ -871,7 +888,11 @@ are those of the whole calls.
   the distance for `bb_72`, `bb_90`, and the other custom Mitten circuits, and 2 below it for `bb_108`, gross, and the
   `n60` torus circuit.
 - The minority-basis rows raised none of these bounds: the model with all rows has codewords of the same weight. They
-  cost up to 9 s more (`mitten_270`, where CC on the model with all rows was needed).
+  cost up to 9 s more (`mitten_270`, where CC on the model with all rows was needed). Nor did they for the
+  surface-code circuits of stim (rotated, $X$ and $Z$ basis, and unrotated, $X$ basis; $d = 5$ and 7, bound $d$ with
+  and without them). With depolarizing-type noise, every net data error which flips the observable of the measured
+  basis also occurs without a component of the other basis, so that a lightest model codeword has a version which the
+  minority-basis rows do not detect; they may raise the bound for other noise models (e.g., biased noise).
 - Against CC on the full DEM (Section 8.6): gross, the bound 8 in 0.8 s against the distance 10 in 184 s; `mitten_270`
   custom, 8 in 2.0 s against 9 in 183 s.
 
