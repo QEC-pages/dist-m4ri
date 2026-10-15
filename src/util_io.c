@@ -76,6 +76,11 @@ params_t prm={
   .ksub=0,
   .kwin=0,
   .win_mode=0,
+  .win_hyb=0, /* (auto: 256 for a DEM, 512 for matrices) */
+  .pairs=-1, /* (auto) */
+  .round_D=0,
+  .round_L=0,
+  .round_score=-1.0, /* (not estimated) */
   .min_hits=5,
   .cov_cws=100,
   .refresh=0
@@ -204,6 +209,26 @@ static void print_matrix_summary(FILE *stream, const char name[], const csr_t * 
 
 static const char * drop_label(const params_t * const p);
 
+/** @brief DBG_SUMMARY: the rounds of a DEM (see dem_round_estimate()) */
+static void print_round_summary(FILE *stream, const params_t * const p){
+  if (p->round_D > 0)
+    fprintf(stream, "#   rounds of the DEM: D=%d detectors and L=%d columns per round (estimated: score %.3f)\n",
+            p->round_D, p->round_L, p->round_score);
+  else
+    fprintf(stream, "#   rounds of the DEM: no round structure found (best score %.3f < 0.5)\n",
+            (p->round_score > 0.0) ? p->round_score : 0.0);
+}
+
+/** @brief DBG_SUMMARY: the index windows of the hybrid RW steps (kwin=0, n >= 500: every other step; see win_hyb) */
+static void print_window_summary(FILE *stream, const params_t * const p){
+  fprintf(stream, "#   RW windows: %d columns on every other step, uniform permutations on the others (",
+          rw_hybrid_window(p, p->nvar));
+  if (p->win_hyb > 0)
+    fprintf(stream, "win_hyb=%d)\n", p->win_hyb);
+  else
+    fprintf(stream, "win_hyb=0: 256 for a DEM, 512 for matrices)\n");
+}
+
 /** @brief DBG_SUMMARY: the code type, its length n, the input files, and the input matrices */
 static void print_input_summary(FILE *stream, const params_t * const p){
   const char * const type = p->classical ? "classical code" : (p->fdem ? "detector error model" : "quantum CSS code");
@@ -232,6 +257,10 @@ static void print_input_summary(FILE *stream, const params_t * const p){
     fprintf(stream, "#   drop=auto: no detector can be dropped exactly (the full DEM is used)\n");
   if (p->rows_sorted)
     fprintf(stream, "#   rows of H sorted by increasing weight for CC (sort_rows=1; sort_rows=0 keeps their order)\n");
+  if (p->round_score >= 0.0)
+    print_round_summary(stream, p);
+  if ((p->method & 1) && (p->kwin == 0) && (p->nvar >= 500))
+    print_window_summary(stream, p);
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
   if (p->spaL)
@@ -329,10 +358,12 @@ static int csr_sort_rows_by_weight(csr_t * const M){
 static void dem_merge_columns(params_t * const p);
 static void dem_drop_detectors(params_t * const p);
 static void dem_write_drop_list(const params_t * const p);
+static void dem_round_estimate(params_t * const p);
 
 /* Help topics (--help TOPIC, --morehelp TOPIC): the entries of the full help text MORE_HELP for some parameters. */
 #define HELP_MAX_NAMES 8
 #define HELP_NAME_LEN 32
+#define HELP_MAX_MEMBERS 16
 
 typedef struct {
   int sec;                                  /* the line of its section header, or -1 */
@@ -341,6 +372,8 @@ typedef struct {
   int nnames;
   char key[HELP_MAX_NAMES][HELP_NAME_LEN];  /* the normalized names, see help_key() */
   char name[HELP_MAX_NAMES][HELP_NAME_LEN]; /* the names as written */
+  int nmembers;                             /* a group (section "Option groups"): the number of its members, or 0 */
+  char member[HELP_MAX_MEMBERS][HELP_NAME_LEN]; /* the normalized names of its members */
 } help_entry_t;
 
 /* The normalized form key of the name s (its first n characters, up to '='): lowercase, without '-', '_', and white
@@ -449,11 +482,48 @@ static void help_read_aliases(help_entry_t * const e, const char * const s) {
   }
 }
 
+/* Adds the members of a group listed at s to the entry e: names separated by commas and white space (see the section
+ * "Option groups" of MORE_HELP). */
+static void help_read_members(help_entry_t * const e, const char *s) {
+  for (;;) {
+    while ((*s == ' ') || (*s == ','))
+      s++;
+    const size_t n = help_name_len(s);
+    if (!n)
+      return;
+    if (e->nmembers < HELP_MAX_MEMBERS)
+      help_key(e->member[e->nmembers++], s, n);
+    s += n;
+  }
+}
+
+/* Whether the entry e is a member of the group g (one of its names is listed by g). */
+static int help_is_member(const help_entry_t * const g, const help_entry_t * const e) {
+  for (int i = 0; i < g->nmembers; i++)
+    for (int j = 0; j < e->nnames; j++)
+      if (strcmp(g->member[i], e->key[j]) == 0)
+        return 1;
+  return 0;
+}
+
+/* Whether the topic key matches the name key of a group, also as singular or plural with a trailing 's' (e.g.,
+ * window and windows). */
+static int help_group_key_match(const char * const gkey, const char * const key) {
+  const size_t lg = strlen(gkey), lk = strlen(key);
+  if (strcmp(gkey, key) == 0)
+    return 1;
+  if ((lg == lk + 1) && (gkey[lk] == 's') && (strncmp(gkey, key, lk) == 0))
+    return 1;
+  return (lk == lg + 1) && (key[lg] == 's') && (strncmp(gkey, key, lg) == 0);
+}
+
 /* Splits the help text into lines (the line ends are replaced by '\0'; *lines: the line starts, *nlines) and returns
  * the number of its entries (*ent, to be freed with *lines).  A section header is a line without indentation which ends
  * with ':'.  An entry starts with a line indented by 2 spaces with the names (see help_read_names()), and continues
  * with the lines indented by more; a section header with "(NAME=[", e.g., "Debug output bitmap (debug=[int], ...):",
- * starts an entry NAME with the whole section.  The names of an entry include its aliases (see help_read_aliases()). */
+ * starts an entry NAME with the whole section.  The names of an entry include its aliases (see help_read_aliases()).
+ * The entries of the section "Option groups" are groups: the description lists their members (see
+ * help_read_members()). */
 static int help_entries(char * const text, char *** const lines, int * const nlines, help_entry_t ** const ent) {
   int nl = 0, cap = 256;
   char **ln = malloc((size_t)cap * sizeof(char *));
@@ -476,7 +546,7 @@ static int help_entries(char * const text, char *** const lines, int * const nli
   help_entry_t * const en = calloc((size_t)nl + 1, sizeof(help_entry_t));
   if (!en)
     ERROR("memory allocation");
-  int ne = 0, sec = -1;
+  int ne = 0, sec = -1, groups = 0;
   help_entry_t *cur = NULL;                    /* the entry continued by the following lines, if any */
   for (int i = 0; i < nl; i++) {
     const char * const s = ln[i];
@@ -484,6 +554,7 @@ static int help_entries(char * const text, char *** const lines, int * const nli
     if (len && !isspace((unsigned char)s[0]) && (s[len - 1] == ':')) {      /* a section header */
       sec = i;
       cur = NULL;
+      groups = (strncmp(s, "Option groups", 13) == 0);
       const char * const p = strchr(s, '(');
       const size_t n = p ? help_name_len(p + 1) : 0;
       if (n && (p[1 + n] == '=') && (p[2 + n] == '[')) {                    /* a whole section, e.g., debug */
@@ -502,11 +573,20 @@ static int help_entries(char * const text, char *** const lines, int * const nli
       cur->sec = sec;
       cur->beg = i;
       cur->end = i + 1;
-      help_read_aliases(cur, s);
+      if (groups) {                                    /* a group: its members after the first column */
+        const char * const d = strstr(s + 2, "  ");
+        if (d)
+          help_read_members(cur, d);
+      }
+      else
+        help_read_aliases(cur, s);
     }
     else if (cur && (s[0] == ' ') && (s[1] == ' ') && (s[2] == ' ')) {      /* a continuation line */
       cur->end = i + 1;
-      help_read_aliases(cur, s);
+      if (cur->nmembers > 0)
+        help_read_members(cur, s);
+      else
+        help_read_aliases(cur, s);
     }
     else
       cur = NULL;
@@ -575,9 +655,11 @@ static void help_no_entry(const char * const prog, const char * const s, const i
 
 /* Prints the entries of the full help (MORE_HELP) for the ntopics topics (--help TOPIC, --morehelp TOPIC): each is
  * one or more names separated by commas, compared without case, '-', '_', and '=VALUE' with the names of the entries
- * and their aliases (see help_entries()).  The entries are printed in the order of the full help, under their section
- * headers.  Returns 0, 1 if some topic has no entry (then the closest names are suggested on stderr), or -1 if there
- * is no topic (e.g., --help=), and nothing is printed. */
+ * and their aliases (see help_entries()), and with the names of the groups (section "Option groups", also as singular
+ * or plural).  A group gives all its members, and an entry also the other members of its groups and these groups (one
+ * level: "see also").  The entries are printed in the order of the full help, under their section headers.  Returns
+ * 0, 1 if some topic has no entry (then the closest names are suggested on stderr), or -1 if there is no topic (e.g.,
+ * --help=), and nothing is printed. */
 static int print_help_topics(const char * const prog, const int ntopics, const char * const topics[]) {
   const int len = snprintf(NULL, 0, MORE_HELP, prog, DIST_M4RI_VERSION, prog);
   char * const text = malloc((size_t)len + 1);
@@ -589,7 +671,8 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
   help_entry_t *ent;
   const int ne = help_entries(text, &lines, &nlines, &ent);
   char * const chosen = calloc((size_t)ne + 1, 1);
-  if (!chosen)
+  char * const asked = calloc((size_t)ne + 1, 1);
+  if (!chosen || !asked)
     ERROR("memory allocation");
   int status = 0, nkeys = 0;
   for (int t = 0; t < ntopics; t++)
@@ -610,8 +693,8 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
         nkeys++;
         for (int i = 0; i < ne; i++)
           for (int j = 0; j < ent[i].nnames; j++)
-            if (strcmp(ent[i].key[j], key) == 0)
-              chosen[i] = found = 1;
+            if ((ent[i].nmembers > 0) ? help_group_key_match(ent[i].key[j], key) : (strcmp(ent[i].key[j], key) == 0))
+              asked[i] = found = 1;
         if (!found) {
           help_no_entry(prog, s, n, key, ent, ne);
           status = 1;
@@ -619,6 +702,21 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
       }
       s = next;
     }
+  for (int g = 0; g < ne; g++) { /* the groups asked for or with a member asked for: the group and all its members */
+    if (ent[g].nmembers <= 0)
+      continue;
+    int use = asked[g];
+    for (int i = 0; (i < ne) && !use; i++)
+      use = asked[i] && (ent[i].nmembers == 0) && help_is_member(&ent[g], &ent[i]);
+    if (!use)
+      continue;
+    chosen[g] = 1;
+    for (int i = 0; i < ne; i++)
+      if ((ent[i].nmembers == 0) && help_is_member(&ent[g], &ent[i]))
+        chosen[i] = 1;
+  }
+  for (int i = 0; i < ne; i++)
+    chosen[i] |= asked[i];
   int sec = -2, any = 0;
   for (int i = 0; i < ne; i++) {
     if (!chosen[i])
@@ -634,6 +732,7 @@ static int print_help_topics(const char * const prog, const int ntopics, const c
       printf("%s\n", lines[k]);
     any = 1;
   }
+  free(asked);
   free(chosen);
   free(ent);
   free(lines);
@@ -956,6 +1055,21 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, win_mode=%d\n",argv[i],p->win_mode);
     }
+    else if (sscanf(argv[i],"win_hyb=%d",&dbg)==1){
+      if (dbg < 0)
+        ERROR("invalid '%s': win_hyb should be 0 (256 columns for a DEM, 512 for matrices) or positive\n", argv[i]);
+      p->win_hyb=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, win_hyb=%d\n",argv[i],p->win_hyb);
+    }
+    else if (sscanf(argv[i],"pairs=%d",&dbg)==1){
+      if ((dbg < -1) || (dbg > RW_PAIRS_MAX_BITS))
+        ERROR("invalid '%s': pairs should be -1 (auto), 0 (off), or 1 to %d (random pivot rows of the buckets)\n",
+              argv[i], RW_PAIRS_MAX_BITS);
+      p->pairs=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, pairs=%d\n",argv[i],p->pairs);
+    }
     else if (sscanf(argv[i],"min_hits=%d",&dbg)==1 || sscanf(argv[i],"max_hits=%d",&dbg)==1){
       p->min_hits=dbg;
       if (p->debug & DBG_ARGS)
@@ -1096,6 +1210,9 @@ void var_init(int argc, char **argv, params_t * const p){
       dem_drop_detectors(p);
     if (p->outD)
       dem_write_drop_list(p);
+    /* the rounds of the DEM for the input summary (in the detector order of the DEM, i.e., before sort_rows) */
+    if (p->debug & DBG_SUMMARY)
+      dem_round_estimate(p);
     if (p->classical == -1) p->classical = 0;
     p->nvar = p->spaH->cols;
     p->n0 = p->nvar;
@@ -1296,6 +1413,17 @@ void var_init(int argc, char **argv, params_t * const p){
       p->cend = e;
     }
   }
+  if ((p->win_hyb > 0) && (p->method & 1)) {
+    if (p->kwin > 0)
+      fprintf(stderr, "# WARNING: win_hyb=%d is ignored with kwin=%d (a window of kwin columns on every RW step)\n",
+              p->win_hyb, p->kwin);
+    else if (p->nvar < 500)
+      fprintf(stderr, "# WARNING: win_hyb=%d is ignored for n=%d < 500 (uniform permutations in all RW steps)\n",
+              p->win_hyb, p->nvar);
+  }
+  if ((p->pairs > 0) && (p->ksub > 0) && (p->method & 1))
+    fprintf(stderr, "# WARNING: pairs=%d is ignored with ksub=%d (no RW pairs with the experimental ksub)\n", p->pairs,
+            p->ksub);
   /* The experimental RW option ksub (with or without min_hits, also if it falls back to ksub=0 for m < nu) */
   if (p->ksub > 0 && (p->method & 1)) {
     fprintf(stderr,
@@ -2240,6 +2368,95 @@ static void dem_drop_detectors(params_t * const p) {
   free(inM);
 }
 
+/* The rounds of a DEM, for the input summary (debug&1).  The detectors of the DEM of a circuit are in time order, and
+ * a measurement error flips the same check in two consecutive rounds: two detectors D apart, D the number of detectors
+ * per round.  Candidates: the 8 most frequent differences 2 <= D <= m/3 of the two detectors of the columns with two
+ * detectors.  Score: the fraction of the columns (with their detectors below m - D) whose detectors shifted by D are
+ * those of another column (a time translation by one round).  The candidate with the best score (the more frequent
+ * one for equal scores) is accepted if its score is at least 1/2: then round_D = D and round_L = n D / m columns per
+ * round (rounded); otherwise (e.g., a circuit whose rounds differ, as with SWAP routing) both stay 0.  round_score is
+ * the best score.  For the reduced DEM (after merge and drop, before sort_rows). */
+static void dem_round_estimate(params_t * const p) {
+  const int m = p->spaH->rows, n = p->spaH->cols;
+  p->round_D = p->round_L = 0;
+  p->round_score = 0.0;
+  if ((m < 6) || (n < 2)) return;
+  csr_t * const HT = csr_transpose(NULL, p->spaH); /* row j: the detectors of column j (sorted) */
+  int * const cnt = calloc((size_t)m, sizeof(int)); /* cnt[D]: the columns with two detectors D apart */
+  if (!cnt) ERROR("memory allocation");
+  for (int j = 0; j < n; j++)
+    if (HT->p[j + 1] - HT->p[j] == 2)
+      cnt[HT->i[HT->p[j] + 1] - HT->i[HT->p[j]]]++;
+  enum { NCAND = 8 };
+  int cand[NCAND], ncand = 0; /* by decreasing count, the smaller D first for equal counts */
+  for (int D = 2; D <= m / 3; D++) {
+    if ((cnt[D] == 0) || ((ncand == NCAND) && (cnt[D] <= cnt[cand[NCAND - 1]]))) continue;
+    int k = (ncand < NCAND) ? ncand++ : NCAND - 1;
+    for (; (k > 0) && (cnt[cand[k - 1]] < cnt[D]); k--)
+      cand[k] = cand[k - 1];
+    cand[k] = D;
+  }
+  free(cnt);
+  /* the hash of a set of detectors: the XOR of the keys of its detectors; the columns with detectors in a hash table
+   * (open addressing with linear probing) */
+  size_t size = 4;
+  while (size < 2 * (size_t)n) size <<= 1;
+  uint64_t * const key = malloc((size_t)m * sizeof(uint64_t));
+  uint64_t * const hcol = malloc((size_t)n * sizeof(uint64_t));
+  int * const table = malloc(size * sizeof(int));
+  if (!key || !hcol || !table) ERROR("memory allocation");
+  for (int d = 0; d < m; d++) key[d] = dem_hash64((uint64_t)d + 1);
+  for (size_t s = 0; s < size; s++) table[s] = -1;
+  for (int j = 0; j < n; j++) {
+    uint64_t h = 0;
+    for (int t = HT->p[j]; t < HT->p[j + 1]; t++) h ^= key[HT->i[t]];
+    hcol[j] = h;
+    if (HT->p[j + 1] > HT->p[j]) {
+      size_t s = (size_t)h & (size - 1);
+      while (table[s] >= 0) s = (s + 1) & (size - 1);
+      table[s] = j;
+    }
+  }
+  int best_D = 0;
+  for (int c = 0; c < ncand; c++) {
+    const int D = cand[c];
+    long tot = 0, hit = 0;
+    for (int j = 0; j < n; j++) {
+      const int * const dj = HT->i + HT->p[j];
+      const int w = HT->p[j + 1] - HT->p[j];
+      if ((w == 0) || (dj[w - 1] + D >= m)) continue;
+      tot++;
+      uint64_t h = 0;
+      for (int t = 0; t < w; t++) h ^= key[dj[t] + D];
+      for (size_t s = (size_t)h & (size - 1); table[s] >= 0; s = (s + 1) & (size - 1)) {
+        const int i = table[s];
+        const int * const di = HT->i + HT->p[i];
+        if ((hcol[i] != h) || (HT->p[i + 1] - HT->p[i] != w)) continue;
+        int t = 0;
+        while ((t < w) && (di[t] == dj[t] + D)) t++;
+        if (t == w) { /* column i: column j shifted by D */
+          hit++;
+          break;
+        }
+      }
+    }
+    const double score = (tot > 0) ? (double)hit / (double)tot : 0.0;
+    if (score > p->round_score) {
+      p->round_score = score;
+      best_D = D;
+    }
+  }
+  free(table);
+  free(hcol);
+  free(key);
+  csr_free(HT);
+  if (p->round_score >= 0.5) {
+    const long L = lround((double)n * best_D / m);
+    p->round_D = best_D;
+    p->round_L = (L > 1) ? (int)L : 1;
+  }
+}
+
 FILE * nzlist_w_new(const char fnam[], const char comment[]){
   FILE *f=fopen(fnam,"w");
   if(!f){
@@ -2411,7 +2628,7 @@ static void cw_trim(params_t * const p) {
   while (p->cw_max_w > p->min_w && p->cw_cnt_w[p->cw_max_w] == 0) p->cw_max_w--;
 }
 
-cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
+cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, int src) {
   if (weight <= 0 || weight > p->nvar) return p->codewords;
   if (!p->cw_cnt_w) { /* weight histograms, allocated on first use */
     p->cw_cnt_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
@@ -2424,6 +2641,8 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
   HASH_FIND(hh, p->codewords, arr, keylen, pvec);
   if (pvec) { /* a known codeword: one more hit */
     pvec->cnt++;
+    pvec->cnt_u += (src == CW_SRC_RW_UNIFORM);
+    pvec->cnt_w += (src == CW_SRC_RW_WINDOW);
     p->cw_hits_w[weight]++;
     return p->codewords;
   }
@@ -2446,6 +2665,8 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight) {
   if (!entry) ERROR("memory allocation");
   entry->weight = weight;
   entry->cnt = 1;
+  entry->cnt_u = (src == CW_SRC_RW_UNIFORM);
+  entry->cnt_w = (src == CW_SRC_RW_WINDOW);
   memcpy(entry->arr, arr, keylen);
   HASH_ADD(hh, p->codewords, arr, keylen, entry);
   p->num_cws++;
@@ -2595,6 +2816,31 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
   free(cs);
 }
 
+void print_rw_step_stats(FILE *stream, const params_t * const p) {
+  if (!stream || !p || !p->codewords || p->min_w == INT_MAX) return;
+  enum { NW = 3 }; /* the weights min_w, min_w + 1, min_w + 2 */
+  long long n[NW] = {0}, cws_u[NW] = {0}, hits_u[NW] = {0}, cws_w[NW] = {0}, hits_w[NW] = {0}, cws_b[NW] = {0};
+  cw_vec_t *cw, *tmp;
+  HASH_ITER(hh, p->codewords, cw, tmp) {
+    const int k = cw->weight - p->min_w;
+    if (k < 0 || k >= NW) continue;
+    n[k]++;
+    if (cw->cnt_u > 0) {
+      cws_u[k]++;
+      hits_u[k] += cw->cnt_u;
+    }
+    if (cw->cnt_w > 0) {
+      cws_w[k]++;
+      hits_w[k] += cw->cnt_w;
+    }
+    cws_b[k] += (cw->cnt_u > 0) && (cw->cnt_w > 0);
+  }
+  for (int k = 0; k < NW; k++)
+    if (n[k] > 0)
+      fprintf(stream, "# RW step types, w=%d: uniform steps: cws=%lld, hits=%lld; window steps: cws=%lld, hits=%lld; "
+              "both: cws=%lld (of %lld cws)\n", p->min_w + k, cws_u[k], hits_u[k], cws_w[k], hits_w[k], cws_b[k], n[k]);
+}
+
 int check_min_hits_convergence(const params_t * const p) {
   if (p->min_hits <= 0) return 0;
   cw_hit_stats_t st;
@@ -2679,12 +2925,16 @@ static double log_binom(const double a, const double b) {
   return lgamma(a + 1.0) - lgamma(b + 1.0) - lgamma(a - b + 1.0);
 }
 
-double rw_infoset_find_prob(const int n, const int rank, const int w) {
+double rw_infoset_find_prob(const int n, const int rank, const int w, const int pairs_l) {
   const int k = n - rank; /* number of non-pivot columns */
   if (n <= 0 || rank < 0 || k <= 0 || w < 1 || w > n || w - 1 > rank) return 0.0;
   /* exactly one of the w positions among the k non-pivot columns */
-  const double p1 = exp(log((double)w) + log_binom(n - w, k - 1) - log_binom(n, k));
-  return (p1 < 1.0) ? p1 : 1.0;
+  double p = exp(log((double)w) + log_binom(n - w, k - 1) - log_binom(n, k));
+  /* the RW pairs: exactly two of them, and the other w - 2 (pivot) positions avoid the l pivot rows of the buckets */
+  if ((pairs_l > 0) && (w >= 2) && (k >= 2) && (w - 2 + pairs_l <= rank))
+    p += exp(log_binom(w, 2) + log_binom(n - w, k - 2) - log_binom(n, k) + log_binom(rank - w + 2, pairs_l) -
+             log_binom(rank, pairs_l));
+  return (p < 1.0) ? p : 1.0;
 }
 
 /* Format a duration in seconds (s, min, h, or days) */
@@ -2696,12 +2946,12 @@ static void format_duration(char * const buf, const size_t size, const double t)
 }
 
 void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const int w_lo, const int w_hi,
-                               const long steps, const long steps_total, const double t_step) {
+                               const long steps, const long steps_total, const double t_step, const int pairs_l) {
   if (!stream || w_lo < 1 || w_hi < w_lo) return;
-  int w_hard = w_hi; /* the weight hardest to find (smallest P1) */
-  double p1 = rw_infoset_find_prob(n, rank, w_hi);
+  int w_hard = w_hi; /* the weight hardest to find (smallest probability) */
+  double p1 = rw_infoset_find_prob(n, rank, w_hi, pairs_l);
   for (int w = w_lo; w < w_hi; w++) {
-    const double pw = rw_infoset_find_prob(n, rank, w);
+    const double pw = rw_infoset_find_prob(n, rank, w, pairs_l);
     if (pw < p1) {
       p1 = pw;
       w_hard = w;
@@ -2718,18 +2968,21 @@ void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const 
   const double unif_steps_1pc = (p1 < 1.0) ? ceil(log(0.01) / lq) : 1.0;
   const double steps_1pc = (steps > 0 && steps_total > steps) ? ceil(unif_steps_1pc * steps_total / steps)
                                                                 : unif_steps_1pc;
-  char steps_str[32], time_str[64] = "";
+  char steps_str[32], time_str[64] = "", pairs_str[48] = "";
   snprintf(steps_str, sizeof(steps_str), (steps_1pc < 1e9) ? "%.0f" : "%.3g", steps_1pc);
   if (t_step > 0.0) {
     char dur[32];
     format_duration(dur, sizeof(dur), steps_1pc * t_step);
     snprintf(time_str, sizeof(time_str), ", ~%s", dur);
   }
+  if (pairs_l > 0)
+    snprintf(pairs_str, sizeof(pairs_str), " with pairs (l=%d)", pairs_l);
   fprintf(stream,
-          "#   information-set estimate (uniform random information sets, n=%d, rank(H)=%d): a codeword of weight %d\n"
+          "#   information-set estimate (uniform random information sets%s, n=%d, rank(H)=%d): a codeword of weight "
+          "%d\n"
           "#   is found with probability %.3g per RW step, missed in %ld uniform steps with probability %.2g "
           "(1%% after %s RW steps in total%s)\n",
-          n, rank, w_hard, p1, steps, p_miss, steps_str, time_str);
+          pairs_str, n, rank, w_hard, p1, steps, p_miss, steps_str, time_str);
 }
 
 long long int nzlist_read(const char fnam[], params_t *p){
@@ -2791,7 +3044,7 @@ long long int nzlist_read(const char fnam[], params_t *p){
       const size_t keylen = entry->weight * sizeof(int);
       cw_vec_t *known = NULL, *added = NULL;
       HASH_FIND(hh, p->codewords, entry->arr, keylen, known);
-      p->codewords = codeword_add_maybe(p, entry->arr, entry->weight);
+      p->codewords = codeword_add_maybe(p, entry->arr, entry->weight, CW_SRC_OTHER);
       if (!known) {
         HASH_FIND(hh, p->codewords, entry->arr, keylen, added);
         if (added) count++;

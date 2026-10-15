@@ -6,6 +6,8 @@ Provides high-level APIs for computing:
 - Single-sided quantum code distance: compute_quantum_distance(...)
 - CSS quantum code distance: compute_css_distance(...)
 - Detector Error Model (DEM) distance: compute_dem_distance(...)
+- Certified lower bound on the distance of a Stim memory circuit from its code-sized model:
+  compute_model_lower_bound(...)
 
 Supports distance caching, codeword export, and fallback/option for the codedistance library.
 Since dist_m4ri natively handles multithreading (via POSIX threads and dynamic bracketing),
@@ -30,7 +32,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.2"
+__version__ = "0.14.5"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -262,22 +264,25 @@ def format_bounds_str(bounds: List[int]) -> str:
     return f"{dmin} {dmax} {num_rw}"
 
 
-def rw_infoset_find_prob(n: int, rank: int, w: int) -> float:
+def rw_infoset_find_prob(n: int, rank: int, w: int, pairs_l: int = 0) -> float:
     """
     Information-set estimate of the probability that a RW step finds a given codeword of weight w.
 
     Model: uniform random information sets (as in the dist_m4ri binary, rw_infoset_find_prob()).  A RW step
     reduces H (rank r) with a random column order; a codeword is found if exactly one of its w positions is among
     the k = n - r non-pivot columns: P1(w) = w C(n-w, k-1) / C(n, k).  Codewords of weight w > r + 1 are never
-    found (P1 = 0).
+    found (P1 = 0).  With the RW pairs (pairs_l > 0, the binary's option pairs), also if exactly two of its positions
+    are non-pivot columns and its other w - 2 positions avoid the l pivot rows of the buckets:
+    P2(w) = C(w, 2) C(n-w, k-2) / C(n, k) * C(r - w + 2, l) / C(r, l), and the probability is P1 + P2.
 
     Args:
         n: Block length (number of columns of H).
         rank: Rank r of H.
         w: Codeword weight.
+        pairs_l: The number l of pivot rows of the buckets of the RW pairs (0: no pairs).
 
     Returns:
-        P1(w).
+        P1(w) + P2(w).
     """
     import math
     k = n - rank
@@ -287,19 +292,23 @@ def rw_infoset_find_prob(n: int, rank: int, w: int) -> float:
     def log_binom(a: int, b: int) -> float:
         return math.lgamma(a + 1) - math.lgamma(b + 1) - math.lgamma(a - b + 1)
 
-    return min(1.0, math.exp(math.log(w) + log_binom(n - w, k - 1) - log_binom(n, k)))
+    p = math.exp(math.log(w) + log_binom(n - w, k - 1) - log_binom(n, k))
+    if pairs_l > 0 and w >= 2 and k >= 2 and w - 2 + pairs_l <= rank:
+        p += math.exp(log_binom(w, 2) + log_binom(n - w, k - 2) - log_binom(n, k) + log_binom(rank - w + 2, pairs_l)
+                      - log_binom(rank, pairs_l))
+    return min(1.0, p)
 
 
 def rw_infoset_estimate(
     n: int, rank: int, steps: int, d: int, dmin: int = 1, step_time: float = 0.0, target: float = 0.01,
-    steps_total: int = 0
+    steps_total: int = 0, pairs_l: int = 0
 ) -> Optional[Dict[str, Any]]:
     """
     Information-set estimate of the probability that RW missed a codeword lighter than the upper bound d found.
 
-    Among the weights max(dmin, 1) <= w < d (not excluded by CC), the weight hardest to find (the smallest P1(w),
+    Among the weights max(dmin, 1) <= w < d (not excluded by CC), the weight hardest to find (the smallest P(w),
     see rw_infoset_find_prob()) is used: a single codeword of this weight is missed in `steps` RW steps with uniform
-    random permutations with probability (1 - P1)^steps.  The number of RW steps for the target miss probability is
+    random permutations with probability (1 - P)^steps.  The number of RW steps for the target miss probability is
     given in total, with the fraction steps / steps_total of uniform steps as in the run (localized windows, used in
     about half of the steps for n >= 500, are not counted).  Same as print_rw_infoset_estimate() in the binary.
 
@@ -312,9 +321,10 @@ def rw_infoset_estimate(
         step_time: Wall time per RW step in seconds (0: unknown).
         target: Target miss probability (default: 0.01).
         steps_total: Number of all completed RW steps (0: the same as `steps`).
+        pairs_l: The number l of pivot rows of the buckets of the RW pairs (0: no pairs), see rw_infoset_find_prob().
 
     Returns:
-        Dictionary with the weight `w`, the probability `p_find` = P1(w) per step, the miss probability `p_miss`,
+        Dictionary with the weight `w`, the probability `p_find` = P(w) per step, the miss probability `p_miss`,
         the total number of RW steps `steps_target` for the target miss probability (None if the codeword cannot be
         found), and the corresponding wall time `time_target` (None if unknown); or None if there are no weights to
         check.
@@ -323,9 +333,9 @@ def rw_infoset_estimate(
     w_lo, w_hi = max(dmin, 1), d - 1
     if w_hi < w_lo or n <= 0:
         return None
-    w_hard, p1 = w_hi, rw_infoset_find_prob(n, rank, w_hi)  # the weight hardest to find (smallest P1)
+    w_hard, p1 = w_hi, rw_infoset_find_prob(n, rank, w_hi, pairs_l)  # the weight hardest to find (smallest P)
     for w in range(w_lo, w_hi):
-        pw = rw_infoset_find_prob(n, rank, w)
+        pw = rw_infoset_find_prob(n, rank, w, pairs_l)
         if pw < p1:
             w_hard, p1 = w, pw
     steps_target: Optional[int]
@@ -393,7 +403,7 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
         if line_s.startswith("# RW information sets:"):
             m_rw = re.search(
                 r"n=(\d+), rank\(H\)=(\d+), steps=(\d+) \(uniform permutations: (\d+)\), ksub=(\d+), "
-                r"([0-9.eE+-]+) s/step per thread, (\d+) RW threads", line_s
+                r"(?:pairs=(\d+), )?([0-9.eE+-]+) s/step per thread, (\d+) RW threads", line_s
             )
             if m_rw:
                 stats["rw_n"] = int(m_rw.group(1))
@@ -401,8 +411,34 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 stats["rw_steps"] = int(m_rw.group(3))
                 stats["rw_steps_uniform"] = int(m_rw.group(4))
                 stats["rw_ksub"] = int(m_rw.group(5))
-                stats["rw_step_time"] = float(m_rw.group(6))
-                stats["rw_threads"] = int(m_rw.group(7))
+                stats["rw_pairs_l"] = int(m_rw.group(6)) if m_rw.group(6) else 0
+                stats["rw_step_time"] = float(m_rw.group(7))
+                stats["rw_threads"] = int(m_rw.group(8))
+            continue
+        if line_s.startswith("# RW pairs (p=2"):  # the pairs checked, and the codewords found by pairs and singles
+            m_p = re.search(r"([0-9.eE+-]+) pairs checked per step; .*: (\d+) from pairs, (\d+) from single columns",
+                            line_s)
+            if m_p:
+                stats["rw_pairs_per_step"] = float(m_p.group(1))
+                stats["rw_hits_pairs"] = int(m_p.group(2))
+                stats["rw_hits_single"] = int(m_p.group(3))
+            continue
+        if line_s.startswith("# RW step types, w="):  # the codewords found by the uniform and by the window steps
+            m_st = re.search(r"w=(\d+): uniform steps: cws=(\d+), hits=(\d+); window steps: cws=(\d+), hits=(\d+); "
+                             r"both: cws=(\d+) \(of (\d+) cws\)", line_s)
+            if m_st:
+                v = [int(x) for x in m_st.groups()]
+                stats.setdefault("rw_step_types", {})[v[0]] = {
+                    "uniform_cws": v[1], "uniform_hits": v[2], "window_cws": v[3], "window_hits": v[4],
+                    "both_cws": v[5], "cws": v[6]}
+            continue
+        if line_s.startswith("#   rounds of the DEM:"):  # the input summary (debug & 1, a DEM)
+            m_r = re.search(r"D=(\d+) detectors and L=(\d+) columns per round \(estimated: score ([0-9.]+)\)", line_s)
+            m_n = re.search(r"best score ([0-9.]+)", line_s)
+            if m_r:
+                stats["rounds"] = {"D": int(m_r.group(1)), "L": int(m_r.group(2)), "score": float(m_r.group(3))}
+            elif m_n:
+                stats["rounds"] = {"D": 0, "L": 0, "score": float(m_n.group(1))}
             continue
         if "RW convergence reached" in line_s:  # progress line (debug & 2) or the stop reason (debug & 1)
             stats["rw_converged"] = True
@@ -536,6 +572,20 @@ def explain_bounds(
                     f"max = {ew['hits_max']}, avg = {ew['hits_avg']:.2f}, "
                     f"stdev = {ew['hits_stdev']:.2f}."
                 )
+            n_all, n_unif = stats.get("rw_steps", 0), stats.get("rw_steps_uniform", 0)
+            for w, st in sorted(stats.get("rw_step_types", {}).items()):
+                lines.append(
+                    f"  {prefix}Codewords (w = {w}) by RW step type: {st['uniform_cws']} found in the {n_unif} uniform "
+                    f"steps ({st['uniform_hits']} hits), {st['window_cws']} in the {n_all - n_unif} window steps "
+                    f"({st['window_hits']} hits), {st['both_cws']} in both (of {st['cws']} codewords)."
+                )
+            if stats.get("rw_pairs_l", 0) > 0 and "rw_pairs_per_step" in stats:
+                lines.append(
+                    f"  {prefix}RW pairs (p=2, buckets of l = {stats['rw_pairs_l']} pivot rows): "
+                    f"{stats['rw_pairs_per_step']:.3g} pairs checked per RW step; codewords recorded with weight up to "
+                    f"the upper bound: {stats['rw_hits_pairs']} from pairs, {stats['rw_hits_single']} from single "
+                    f"columns."
+                )
             for hw in stats.get("hit_warnings", []):
                 lines.append(f"  {prefix}WARNING: {hw}")
         else:
@@ -559,15 +609,17 @@ def explain_bounds(
         n_unif = stats.get("rw_steps_uniform", 0)
         if stats.get("rw_n", 0) > 0 and stats.get("rw_ksub", 0) == 0 and n_unif > 0:
             n_cols, rank = stats["rw_n"], stats["rw_rank"]
+            pairs_l = stats.get("rw_pairs_l", 0)
             est = rw_infoset_estimate(n_cols, rank, n_unif, dmax, dmin=max(dmin, 1), step_time=step_wall,
-                                      steps_total=stats.get("rw_steps", n_unif))
+                                      steps_total=stats.get("rw_steps", n_unif), pairs_l=pairs_l)
             if est is not None and est["steps_target"] is None:
                 lines.append(f"  {prefix}Information-set estimate: a codeword of weight {est['w']} cannot be found "
                              f"by RW (n = {n_cols}, rank(H) = {rank}).")
             elif est is not None:
                 t_str = (f", ~{_format_duration(est['time_target'])}" if est["time_target"] is not None else "")
+                p_str = f" with pairs, l = {pairs_l}" if pairs_l > 0 else ""
                 lines.append(
-                    f"  {prefix}Information-set estimate (uniform random information sets; n = {n_cols}, "
+                    f"  {prefix}Information-set estimate (uniform random information sets{p_str}; n = {n_cols}, "
                     f"rank(H) = {rank}, {n_unif} of {stats.get('rw_steps', n_unif)} RW steps uniform): a single "
                     f"codeword of weight {est['w']} < {dmax} is found with probability {est['p_find']:.3g} per RW "
                     f"step and would be missed with probability {est['p_miss']:.2g}; 1% after about "
@@ -575,14 +627,20 @@ def explain_bounds(
                 )
                 if stats.get("min_w") == dmax and "hits_avg" in stats:
                     n_all = stats.get("rw_steps", n_unif)
-                    exp_hits = n_all * rw_infoset_find_prob(n_cols, rank, dmax)
-                    verdict = ("the uniform model is conservative here" if stats["hits_avg"] >= exp_hits else
+                    p1 = rw_infoset_find_prob(n_cols, rank, dmax, pairs_l)
+                    st = stats.get("rw_step_types", {}).get(dmax)
+                    if st is not None and st["cws"] > 0:  # the hits of the uniform steps only
+                        n_ref, obs, note = n_unif, st["uniform_hits"] / st["cws"], " in the uniform steps"
+                    else:
+                        n_ref, obs = n_all, stats["hits_avg"]
+                        note = "" if n_unif == n_all else ", including the steps with localized windows"
+                    exp_hits = n_ref * p1
+                    verdict = ("the uniform model is conservative here" if obs >= exp_hits else
                                "codewords are found less often than in the uniform model, the information-set "
                                "estimate may be optimistic")
-                    note = "" if n_unif == n_all else ", including the steps with localized windows"
                     lines.append(
-                        f"  {prefix}Model check: expected hits per codeword of weight {dmax} in {n_all} uniform RW "
-                        f"steps: {exp_hits:.3g}, observed average {stats['hits_avg']:.2f}{note} ({verdict})."
+                        f"  {prefix}Model check: expected hits per codeword of weight {dmax} in {n_ref} uniform RW "
+                        f"steps: {exp_hits:.3g}, observed average {obs:.2f}{note} ({verdict})."
                     )
         elif stats.get("rw_n", 0) > 0:
             lines.append(f"  {prefix}Information-set estimate: not available (ksub > 0 or kwin > 0: no uniform "
@@ -1362,6 +1420,8 @@ def run_dist_m4ri(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -1393,6 +1453,26 @@ def run_dist_m4ri(
             hook columns of an extended CSS distance); the detectors of a DEM are in time order, which is better for
             CC (use sort_rows=False also for matrices exported from a DEM).  The distance and RW do not depend on the
             order of the rows; CC enumerates the same codewords, possibly in another order and with other hit counts.
+
+    RW windows:
+        kwin / win_mode: A window of kwin columns in every RW step (win_mode=0: a Tanner graph ball, 1: an index
+            window).  kwin=0 (default): the automatic hybrid for n >= 500, an index window of win_hyb columns in every
+            other step and uniform random permutations in the others.
+        win_hyb: Window size of the hybrid RW steps, passed as win_hyb=N if nonzero; 0 (default): 256 columns for a
+            DEM, 512 for matrices (at most 3n/4).  The windows of 192-256 columns find the minimum-weight codewords of
+            circuit DEMs 2-10 times faster than 512, and windows of one round of columns are much slower.  With
+            debug & 1 (or verbose=True), the binary prints the rounds of a DEM (estimated from the time translation of
+            its errors: D detectors and L columns per round, also in _last_run_stats["rounds"]) and the codewords found
+            by the uniform and by the window steps (see _parse_stderr_stats()).
+
+    RW pairs:
+        pairs: The RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern), passed as pairs=N if not -1: a
+            RW step also finds the codewords with two non-pivot columns, checking only the pairs which agree on N
+            random pivot rows (0: off).  -1 (default): auto, about one non-pivot column per bucket, with fewer rows
+            while a codeword of the weight of the upper bound would be kept with probability below 0.8.  The pairs
+            find the minimum-weight codewords of circuit DEMs 7-25 times faster (per wall time) and lighter
+            codewords of codes with a large distance.  With debug & 1, the binary prints the pairs checked per step
+            and the codewords found by pairs and by single columns (also in _last_run_stats).
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -1487,6 +1567,8 @@ def run_dist_m4ri(
     if ksub > 0: cmd.append(f"ksub={ksub}")
     if kwin > 0: cmd.append(f"kwin={kwin}")
     if win_mode != 0: cmd.append(f"win_mode={win_mode}")
+    if win_hyb != 0: cmd.append(f"win_hyb={win_hyb}")
+    if pairs != -1: cmd.append(f"pairs={pairs}")
     if min_hits is not None and min_hits >= 0: cmd.append(f"min_hits={min_hits}")
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh > 0: cmd.append(f"refresh={refresh}")
@@ -3417,7 +3499,9 @@ def _cached_code_distance(
     cws_out_fn: Optional[Callable[[List[List[int]]], List[List[int]]]] = None,
     fdrop: Optional[Union[str, Path, List[int]]] = None,
     outD: Optional[str] = None,
-    sort_rows: Optional[bool] = None
+    sort_rows: Optional[bool] = None,
+    win_hyb: int = 0,
+    pairs: int = -1
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
@@ -3425,7 +3509,8 @@ def _cached_code_distance(
     the file outD for the detectors dropped: see run_dist_m4ri()) with the dist_m4ri binary, using the distance cache
     shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
     compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
-    (see run_dist_m4ri()) does not change the result, nor the cache key.
+    (see run_dist_m4ri()) does not change the result, nor the cache key; nor do the RW window size win_hyb and the RW
+    pairs (pairs) change the cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -3581,6 +3666,8 @@ def _cached_code_distance(
             ksub=ksub,
             kwin=kwin,
             win_mode=win_mode,
+            win_hyb=win_hyb,
+            pairs=pairs,
             min_hits=min_hits,
             cov_cws=cov_cws,
             refresh=refresh,
@@ -3599,6 +3686,8 @@ def _cached_code_distance(
             best_dmin = max(prev.get("dmin", 0) or 0, dmin_res)
             total_rw = (prev.get("rw_steps", 0) or 0) + rw_steps
             record = _sector_record(best_dmin, best_dmax, total_rw, _union_cws(prev.get("cws", []), cws))
+            if "dmin_model" in prev:  # (a bound from the code-sized model, see compute_model_lower_bound())
+                record["dmin_model"] = prev["dmin_model"]
             _distance_cache[code_key] = record
             if plain_key is not None and code_key != plain_key:
                 # start-list run: merge the valid part (or all, with trust_start) into the main record
@@ -3655,6 +3744,8 @@ def compute_classical_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -3699,6 +3790,11 @@ def compute_classical_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3758,7 +3854,7 @@ def compute_classical_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows
+        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -3806,6 +3902,8 @@ def compute_quantum_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -3853,6 +3951,11 @@ def compute_quantum_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3928,7 +4031,7 @@ def compute_quantum_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows
+        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -4007,6 +4110,8 @@ def compute_css_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -4053,6 +4158,11 @@ def compute_css_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4159,7 +4269,8 @@ def compute_css_distance(
             outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
             seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows
+            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
+            pairs=pairs
         )
         _last_css_stats[s] = dict(_last_run_stats)
 
@@ -4467,6 +4578,8 @@ def compute_dem_distance(
     ksub: int = 0,
     kwin: int = 0,
     win_mode: int = 0,
+    win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -4519,6 +4632,11 @@ def compute_dem_distance(
             (faster CC for very different row weights), False keeps their order, and None (default) leaves the
             binary's default (sorted for matrices; the detectors of a DEM are kept in time order).  The result and
             the cache key do not depend on it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
+            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
+            it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4695,7 +4813,7 @@ def compute_dem_distance(
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
             cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
             merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file,
-            sort_rows=sort_rows
+            sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs
         )
         ran = not res["cached"]
         drop_stats = _last_run_stats if ran else {}
@@ -4733,6 +4851,291 @@ def compute_dem_distance(
         _remove_temp_files(temp_files, debug)
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     return (dist, d_info, cws) if do_cws else (dist, d_info)
+
+
+def _model_detector_groups(circuit: Any) -> Tuple[List[int], List[bool], int]:
+    """
+    The groups of the detectors of a Stim circuit for its code-sized model (see compute_model_lower_bound()): two
+    detectors are in the same group if they share a measurement record other than a final data measurement.  The final
+    data measurements are the measurements in the final measurement block (after the last detector which precedes the
+    last measurement) of qubits not measured before it, or all measurements of the final block if there are none
+    (e.g., if every qubit is measured in each round).  In a memory circuit, the groups are the chains of the detectors
+    of the checks, linked by the measurements of their ancillas in consecutive rounds; the chain of a check of the
+    measured basis ends with its detector of the final data measurements.
+
+    Returns:
+        (group, final, num_final): the group of each detector (numbered in the order of their first detectors), for
+        each group whether one of its detectors has a final data measurement, and the number of final data
+        measurements.
+    """
+    stim = _get_stim()
+    det_recs: List[List[int]] = []         # the measurement records of each detector (absolute indices)
+    det_pos: List[int] = []                # its position in the flattened circuit
+    meas_pos: List[int] = []               # the position of the instruction of each measurement record
+    meas_qubits: List[frozenset] = []      # and its qubits
+    for pos, inst in enumerate(circuit.flattened()):
+        if inst.name == "DETECTOR":
+            n = len(meas_pos)
+            det_recs.append([n + t.value for t in inst.targets_copy() if t.is_measurement_record_target])
+            det_pos.append(pos)
+        elif stim.gate_data(inst.name).produces_measurements:
+            for grp in inst.target_groups():  # (one record per group, e.g., per Pauli product of MPP)
+                meas_pos.append(pos)
+                meas_qubits.append(frozenset() if inst.name == "MPAD" else
+                                   frozenset(t.qubit_value for t in grp if t.qubit_value is not None))
+    last_meas = meas_pos[-1] if meas_pos else -1
+    last_det = max((p for p in det_pos if p < last_meas), default=-1)
+    before: Set[int] = set()  # the qubits measured before the final measurement block
+    for p, qs in zip(meas_pos, meas_qubits):
+        if p <= last_det:
+            before |= qs
+    final_data = {r for r, (p, qs) in enumerate(zip(meas_pos, meas_qubits)) if p > last_det and qs and not qs & before}
+    if not final_data:  # (e.g., all qubits are measured in every round): all measurements of the final block
+        final_data = {r for r, p in enumerate(meas_pos) if p > last_det}
+    parent = list(range(len(det_recs)))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    first_det: Dict[int, int] = {}  # the first detector of each measurement record (other than final data)
+    for d, recs in enumerate(det_recs):
+        for r in recs:
+            if r not in final_data:
+                a, b = find(d), find(first_det.setdefault(r, d))
+                if a != b:
+                    parent[max(a, b)] = min(a, b)  # (the root of a group is its first detector)
+    ids: Dict[int, int] = {}
+    group = [ids.setdefault(find(d), len(ids)) for d in range(len(det_recs))]
+    final = [False] * len(ids)
+    for d, recs in enumerate(det_recs):
+        if any(r in final_data for r in recs):
+            final[group[d]] = True
+    return group, final, len(final_data)
+
+
+def _model_matrices(
+    cols: List[Tuple[Any, ...]], group: List[int], use: List[bool], num_observables: int
+) -> Dict[str, Any]:
+    """
+    The matrices of a code-sized model (see compute_model_lower_bound()): one row per group of detectors with use[g]
+    (the sum of the rows of its detectors), and one column per distinct pair (model column, observables) of the error
+    mechanisms `cols` (see _dem_error_columns()); the errors with no effect on the rows nor on the observables are
+    dropped.
+
+    Returns:
+        dict with "H" and "L" (scipy.sparse.csr_matrix), "col_map" (the model column of each error mechanism, -1 if
+        it is dropped), "groups" (the group of each row), and "trivial" (the error mechanisms which flip an observable
+        but no row: then the model has a codeword of weight 1).
+    """
+    import numpy as np
+    import scipy.sparse as sp
+    index: Dict[Tuple[frozenset, frozenset], int] = {}
+    col_map: List[int] = []
+    trivial: List[int] = []
+    for j, (dets, obs) in enumerate(cols):
+        rows: Set[int] = set()
+        for d in dets:
+            if use[group[d]]:
+                rows ^= {group[d]}
+        if not rows:
+            col_map.append(-1)
+            if obs:
+                trivial.append(j)
+            continue
+        col_map.append(index.setdefault((frozenset(rows), obs), len(index)))
+    used = sorted({g for rows, _ in index for g in rows})
+    row_of = {g: i for i, g in enumerate(used)}
+    hi: List[int] = []
+    hj: List[int] = []
+    li: List[int] = []
+    lj: List[int] = []
+    for c, (rows, obs) in enumerate(index):
+        hi.extend(row_of[g] for g in rows)
+        hj.extend([c] * len(rows))
+        li.extend(obs)
+        lj.extend([c] * len(obs))
+    H = sp.csr_matrix((np.ones(len(hi), dtype=np.int8), (hi, hj)), shape=(len(used), len(index)))
+    L = sp.csr_matrix((np.ones(len(li), dtype=np.int8), (li, lj)), shape=(num_observables, len(index)))
+    return {"H": H, "L": L, "col_map": col_map, "groups": used, "trivial": trivial}
+
+
+def compute_model_lower_bound(
+    circuit: Any,
+    dist_m4ri: Optional[str] = None,
+    method: int = 3,
+    threads: Optional[int] = None,
+    timeout: float = 60.0,
+    num_steps: Optional[int] = None,
+    dstop: int = 0,
+    wmax: int = 0,
+    minority: bool = True,
+    pmin: float = 0.0,
+    rounds: Optional[int] = None,
+    p_noise: float = 0.001,
+    force_noise: bool = False,
+    out_model: Optional[Union[str, Path]] = None,
+    cache_file: Optional[Union[str, Path]] = None,
+    seed: int = 0,
+    debug: int = 0,
+    verbose: bool = False,
+    nothrottle: bool = False,
+    pairs: int = -1,
+    return_info: bool = False,
+    **kwargs
+) -> Any:
+    """
+    Certified lower bound on the circuit-level distance of a Stim memory circuit from its code-sized model.
+
+    The model is a row reduction of the DEM (H, L) of the circuit (processed as in compute_dem_distance(), with the
+    options rounds, p_noise, force_noise, and pmin): two detectors are linked if they share a measurement record other
+    than a final data measurement, and each group of linked detectors gives one row, the sum of the rows of its
+    detectors (see _model_detector_groups()).  In a memory circuit, the groups are the chains of the detectors of the
+    checks over the rounds: the chain of a check h of the measured basis telescopes to the parity of the final data
+    measurements on its support, so that the column of an error mechanism is the syndrome of its net data error (a
+    data error or a hook error), and the chains of the minority-basis checks (minority=True) add the net change of
+    their values between their first and last measurements.  Equal columns are merged, and the errors with no effect
+    on the rows nor on the observables (e.g., ancilla measurement errors) are dropped; the model has a few columns per
+    data qubit.  Since every row is a sum of detector rows, every codeword x of the DEM (Hx = 0, Lx != 0) gives a model
+    codeword of weight at most |x|: the distance of the model, as certified by CC (its dmin), is a lower bound on the
+    distance of the DEM.  It ignores the timing within the rounds, so it is not tight in general (e.g., 5 for the
+    bb_72 circuit of distance 6).  Any circuit gives a valid bound, but a useful one needs this structure; if an error
+    flips an observable but no row, the bound is 1 (with a note to stderr).
+
+    The binary runs on the model with the rows of the measured-basis chains first, and then (minority=True) on the
+    model with all rows, starting from that bound (the extra rows can only raise it): RW first, which ends as soon as
+    it finds a model codeword of that weight (then the bound is not raised), and only otherwise with `method` (CC from
+    dmin).  The certified bound is stored as dmin in the
+    cache record of the DEM (the same key as compute_dem_distance(); "dmin_model": the bound), so that a later
+    compute_dem_distance() starts CC from it; the distances of the models are cached under their own keys.
+
+    Args:
+        circuit: Stim memory circuit (stim.Circuit or .stim file).
+        dist_m4ri: Path to dist_m4ri executable (optional).
+        method: Solver method for the model (1=RW, 2=CC, 3=Bracketing default); only CC certifies a bound.
+        threads / timeout / num_steps / seed / nothrottle / pairs: As for compute_dem_distance(), for each run of the
+            binary (at most three).
+        dstop: Stop target (see compute_dem_distance()): the runs end once CC has certified dmin >= dstop.
+        wmax: Maximum weight of the CC rounds on the model (0: until the bounds meet or the timeout).
+        minority: If True (default), the groups without a final data measurement (e.g., the chains of the
+            minority-basis checks of a CSS circuit) are rows of the model as well.
+        pmin: Probability cutoff for the error mechanisms of the DEM.
+        rounds / p_noise / force_noise: The processing of the circuit, as in compute_dem_distance().
+        out_model: If given, the model (with all rows used) is written to PREFIX_HR.mtx and PREFIX_LR.mtx.
+        cache_file: Optional JSON file path for persistent distance caching.
+        debug / verbose: As for compute_dem_distance().
+        return_info: If True, return (bound, info).
+
+    Returns:
+        The certified lower bound, or (bound, info) with return_info=True, where info has "d_info" (the bounds
+        [dmin, dmax, rw_steps] of the circuit's DEM from the cache record, with dmin including the bound; [bound, 0, 0]
+        without the cache), "model_d_info" and "measured_d_info" (the bounds of the model and of its measured-basis
+        part, [] if not run), the sizes "rows", "cols", "rows_measured", "cols_measured", "groups", "groups_final",
+        "detectors", "final_data", "dem_cols", "trivial" (the error mechanisms which flip an observable but no row),
+        the model "H", "L", and "col_map" (the model column of each error mechanism of the DEM, -1 if dropped), and
+        "files" (the files written with out_model).
+
+    Raises:
+        TypeError: for an unknown keyword argument (e.g., a misspelled option).
+        ValueError: if the input is not a Stim circuit.
+    """
+    global _distance_cache
+    _check_kwargs(compute_model_lower_bound, kwargs, aliases=())
+    if isinstance(circuit, (str, Path)) and not str(circuit).endswith(".stim"):
+        raise ValueError(f"compute_model_lower_bound: {circuit} is not a Stim circuit (.stim): the code-sized model is "
+                         f"built from the detectors and measurements of a circuit")
+    if not 0.0 <= p_noise <= 0.5:
+        raise ValueError(f"invalid p_noise={p_noise}: the noise strength must be in [0, 0.5]")
+    circ_verbose = verbose or bool(debug & PY_DBG_CIRCUITS)
+    dem, circ, _ = _dem_from_input(None, circuit, rounds=rounds, p_noise=p_noise, circ_verbose=circ_verbose,
+                                   force_noise=force_noise)
+    info: Dict[str, Any] = {"d_info": [0, 0, 0], "model_d_info": [], "measured_d_info": [], "files": []}
+    if getattr(dem, "num_errors", None) == 0:
+        sys.stderr.write("# Note: the DEM has no error mechanisms (no noise, e.g., p_noise=0 for a noiseless circuit "
+                         "or with force_noise): no bound computed\n")
+        return (0, info) if return_info else 0
+    group, final, num_final = _model_detector_groups(circ)
+    if len(group) != dem.num_detectors:
+        raise ValueError(f"compute_model_lower_bound: {len(group)} detectors in the circuit, {dem.num_detectors} in "
+                         f"its DEM")
+    cols = _dem_error_columns(dem, pmin)
+    part = _model_matrices(cols, group, final, dem.num_observables)  # the rows of the measured-basis chains
+    full = _model_matrices(cols, group, [True] * len(final), dem.num_observables) if minority else part
+    info.update(rows=full["H"].shape[0], cols=full["H"].shape[1], rows_measured=part["H"].shape[0],
+                cols_measured=part["H"].shape[1], groups=len(final), groups_final=sum(final), detectors=len(group),
+                final_data=num_final, dem_cols=len(cols), trivial=len(full["trivial"]), H=full["H"], L=full["L"],
+                col_map=full["col_map"])
+    if verbose:
+        print(f"[dist_m4ri] Code-sized model: {info['rows']} x {info['cols']} ({info['rows_measured']} rows of the "
+              f"chains with final data measurements, {info['rows'] - info['rows_measured']} other), from "
+              f"{len(cols)} error mechanisms and {len(group)} detectors in {len(final)} groups ({num_final} final data "
+              f"measurements)")
+    if out_model:
+        from scipy.io import mmwrite
+        for name, M in (("HR", full["H"]), ("LR", full["L"])):
+            path = f"{out_model}_{name}.mtx"
+            parent_dir = os.path.dirname(os.path.abspath(path))
+            os.makedirs(parent_dir, exist_ok=True)
+            mmwrite(path, M, symmetry="general")
+            info["files"].append(path)
+        if verbose:
+            print(f"[dist_m4ri] Saved the code-sized model to '{info['files'][0]}' and '{info['files'][1]}'")
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+
+    def run(model: Dict[str, Any], dmin: int, run_method: int, wmin: int = 1) -> List[int]:
+        # the bounds [dmin, dmax, rw_steps] of the model
+        res = _cached_code_distance(
+            model["H"], None, model["L"], False, "code-sized model", dist_m4ri=dist_m4ri, method=run_method,
+            threads=threads, timeout=timeout, num_steps=num_steps, d_exp=0, dmin=dmin, dmax=0, dstop=dstop,
+            wmin=wmin, wmax=wmax, smax=0, start_list=None, dW=-1, maxC=0, finC=None, outC=None, need_cws=False,
+            eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
+            chunk_size=0, ksub=0, kwin=0, win_mode=0, min_hits=None, cov_cws=100, refresh=0, trust_start=False,
+            pairs=pairs)
+        return list(res["d_info"])
+
+    if full["trivial"]:
+        sys.stderr.write(f"# Note: code-sized model: {len(full['trivial'])} error mechanisms flip an observable but no "
+                         f"group of detectors (e.g., the first one, column {full['trivial'][0]} of the DEM), so that "
+                         f"the model has a codeword of weight 1: the bound is 1\n")
+        bound = 1
+    else:
+        bound = 1
+        if not part["trivial"]:
+            info["measured_d_info"] = run(part, 0, method)
+            bound = max(bound, info["measured_d_info"][0])
+        info["model_d_info"] = info["measured_d_info"]
+        if full is not part and (dstop <= 0 or bound < dstop) and (wmax <= 0 or bound <= wmax):
+            # all rows: RW first (a model codeword of weight `bound` ends the search), then CC from the bound
+            dmin = bound if bound > 1 else 0
+            info["model_d_info"] = run(full, dmin, 1, wmin=bound)
+            if method != 1 and not 0 < info["model_d_info"][1] <= bound:
+                info["model_d_info"] = run(full, dmin, method)
+            bound = max(bound, info["model_d_info"][0])
+    info["d_info"] = [bound, 0, 0]
+    if _use_distance_cache:  # the bound as dmin in the cache record of the DEM
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
+        key = _dem_cache_key(dem, pmin)
+        prev = _distance_cache.get(key) or {}
+        p_dmin, p_dmax, p_rw = (prev.get("dmin", 0) or 0), (prev.get("dmax", 0) or 0), (prev.get("rw_steps", 0) or 0)
+        if p_dmax > 0 and bound > p_dmax:
+            sys.stderr.write(f"# Warning: the code-sized model bound {bound} exceeds the cached upper bound "
+                             f"{p_dmax} of the DEM: not stored\n")
+            info["d_info"] = format_bounds_list(p_dmin, p_dmax, p_rw)
+        else:
+            record = _sector_record(max(p_dmin, bound), p_dmax, p_rw, prev.get("cws", []))
+            record["dmin_model"] = max(bound, prev.get("dmin_model", 0) or 0)
+            if record != prev:
+                _distance_cache[key] = record
+                if eff_cache_file:
+                    save_distance_cache(eff_cache_file)
+            info["d_info"] = list(record["d_info"])
+    if verbose:
+        print(f"[dist_m4ri] Code-sized model: certified lower bound d >= {bound} on the circuit distance (model bounds "
+              f"{info['model_d_info']}; measured-basis rows only: {info['measured_d_info']})")
+    return (bound, info) if return_info else bound
 
 
 def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
@@ -4801,6 +5204,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "ksub": 0,
         "kwin": 0,
         "win_mode": 0,
+        "win_hyb": 0,
+        "pairs": -1,
         "min_hits": None,
         "cov_cws": 100,
         "refresh": 0,
@@ -4813,6 +5218,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "out_dir": None,
         "out_dem": None,
         "out_stim": None,
+        "model_lb": False,
+        "out_model": None,
         "morehelp": False,
         "morehelp_topic": None,
         "version": False,
@@ -4889,6 +5296,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
         if arg in ("--cws", "-cws", "cws", "do_cws=1", "--do_cws"):
             args["do_cws"] = True
+            i += 1
+            continue
+
+        if arg in ("--model-lb", "-model-lb", "--model_lb", "-model_lb", "model_lb", "model-lb"):
+            args["model_lb"] = True
             i += 1
             continue
 
@@ -5149,6 +5561,16 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["kwin"] = int(val)
             elif key_lower in ("win_mode", "winmode"):
                 args["win_mode"] = int(val)
+            elif key_lower in ("win_hyb", "winhyb"):
+                args["win_hyb"] = int(val)
+                if args["win_hyb"] < 0:
+                    raise ValueError(f"invalid '{arg}': win_hyb should be 0 (256 columns for a DEM, 512 for "
+                                     f"matrices) or positive")
+            elif key_lower == "pairs":
+                args["pairs"] = int(val)
+                if not -1 <= args["pairs"] <= 64:
+                    raise ValueError(f"invalid '{arg}': pairs should be -1 (auto), 0 (off), or 1 to 64 (random pivot "
+                                     f"rows of the buckets)")
             elif key_lower in ("min_hits", "minhits", "max_hits", "maxhits"):
                 args["min_hits"] = int(val)
             elif key_lower in ("cov_cws", "covcws"):
@@ -5185,6 +5607,12 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                     args["out_dem"] = True
                 else:
                     args["out_dem"] = val
+            elif key_lower in ("model-lb", "model_lb", "modellb"):
+                args["model_lb"] = (
+                    bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
+                )
+            elif key_lower in ("out-model", "out_model", "outmodel"):
+                args["out_model"] = val
             elif key_lower in ("out-stim", "out_stim", "outstim"):
                 if val.lower() in ("0", "false", "no", "off", "none"):
                     args["out_stim"] = None
@@ -5219,11 +5647,12 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 Allowed parameters:
   fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, merge, drop, outD,
   --out-reduced, classical, --simple, --full, basis, --rounds, --out-dir,
-  --out-dem, --out-stim, --p-noise, --force-noise, method, dmin, dmax, dstop,
-  dexp (dest), steps, wmin, wmax, timeout, threads, nothrottle, chunk_size
-  (batch), ksub, kwin (win), win_mode, min_hits, cov_cws, refresh, smax, noscan,
-  start, cbeg, cend, finC, outC, maxC, expand, dW, seed, debug, solver, cache,
-  --no-cache, --verbose, --cws, --trust-start, sort_rows
+  --out-dem, --out-stim, --p-noise, --force-noise, --model-lb, --out-model,
+  method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax, timeout, threads,
+  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs,
+  min_hits, cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC,
+  maxC, expand, dW, seed, debug, solver, cache, --no-cache, --verbose, --cws,
+  --trust-start, sort_rows
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5257,6 +5686,7 @@ Input matrices & models:
   --out-stim [FILE]     Save processed/noisy Stim circuit (default: <basename>_full.stim)
   --p-noise P           Strength of the noise added to a noiseless .stim circuit (default: 0.001; 0: none)
   --force-noise         Replace the noise of a .stim circuit by that of --p-noise (with P=0: remove it)
+  --model-lb            Certified lower bound for a .stim circuit from its code-sized model
 
 Method and distance bounds:
   method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
@@ -5298,6 +5728,8 @@ Extra parameters (see --morehelp for details):
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
   kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
+  win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM, 512 for matrices)
+  pairs=N (-1)          RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
   cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
   refresh=N (0)         Periodic N basis refresh interval in RW steps (experimental ksub only)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
@@ -5307,7 +5739,7 @@ Extra parameters (see --morehelp for details):
 
 Help options:
   -h, --help [TOPIC]    Display this help message (with TOPIC: the same as --morehelp TOPIC)
-  --morehelp [TOPIC]    Display full help for all parameters (or only for TOPIC, e.g., maxC)
+  --morehelp [TOPIC]    Display full help for all parameters (or only for TOPIC, e.g., maxC or windows)
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary
 """
     print(help_text, file=file)
@@ -5422,6 +5854,23 @@ Required input (at least one matrix/model specification):
                         noise; see stim's Circuit.without_noise()), and then the uniform noise of
                         --p-noise is added (none with --p-noise 0, e.g., to save the noiseless circuit
                         with --out-stim), e.g., to compare circuits with the same noise model.
+  --model-lb            Certified lower bound on the distance of a Stim memory circuit (fdem=FILE.stim)
+                        from its code-sized model, instead of the distance of its DEM (also
+                        model_lb=1; see compute_model_lower_bound()): the detectors linked by shared
+                        measurements, other than the final data measurements, form chains (one per
+                        check of a memory circuit), and each chain gives a row of the model, the sum
+                        of its detector rows (the chain of a check of the measured basis telescopes
+                        to the parity of the final data measurements on the check; the chains of the
+                        minority-basis checks are rows as well), with the equal columns merged.  Each
+                        codeword of the DEM gives a model codeword of no larger weight, so the model
+                        distance certified by CC is a lower bound on the circuit distance; it ignores
+                        the timing within the rounds (not tight in general, e.g., 5 for the bb_72
+                        circuit of distance 6).  The binary runs on the model with the measured-basis
+                        rows, then with all rows from that bound (RW first; method, threads, timeout,
+                        steps, dstop, wmax, and seed apply to each run).  The bound is stored as dmin in
+                        the cache record of the DEM, and the bounds of the circuit are printed.
+  --out-model PREFIX    With --model-lb, write the model to PREFIX_HR.mtx and PREFIX_LR.mtx (also
+                        out_model=PREFIX).
   (conflicting inputs)  The input is selected in the order fdem, Hx/Hz (CSS code), and
                         finH/finG/finL/fin (fin only supplies the missing finH and finG); the
                         ignored inputs (e.g., matrices with fdem, pmin, merge, expand, drop, or outD
@@ -5482,7 +5931,8 @@ Multithreading & throttling:
                           n < 150 or m*n < 1e5, if m*n*steps < 2e8; m: number of rows of H).
                           Method 2 starts 4 threads, and the others once a CC round takes longer
                           (predicted > 2 ms on the threads started, or running for 5 ms).
-                        - Large memory matrices (dense RW working memory capped at ~1.5 GB).
+                        - Large memory matrices (above 15 MB of dense RW working memory per thread:
+                          at most 32 RW threads, within a quarter of the physical memory).
                         - Small RW step counts (RW threads clamped to <= (steps + 9) / 10).
                         The last two limits apply to RW threads only: CC (method=2) is not
                         limited, and in method=3 CC rounds can use all threads.
@@ -5502,10 +5952,31 @@ Multithreading & throttling:
                         codewords are found much more often than others, and min_hits may end
                         RW early.
   kwin=N                Localized column permutation window size W around a random seed
-                        column j0 (default: 0 = automatic hybrid window/uniform for n>=500).
-                        Alias: win=N.
+                        column j0, used in every RW step (alias: win=N).  Default: 0 = automatic
+                        hybrid for n>=500: every other step uses an index window (win_mode=1) of
+                        win_hyb columns, and the other steps uniform random permutations (also
+                        for codewords which are not local in the column order).
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
+  win_hyb=N             Window size of the hybrid RW steps (kwin=0, n>=500; at most 3n/4).
+                        Default: 0 = 256 columns for a DEM, 512 for matrices.  The window
+                        columns come first in the elimination order; in a DEM, they are errors
+                        close in time, which touch few detectors: windows of 192-256 columns find
+                        circuit codewords 2-10 times faster than 512, and windows of one round of
+                        columns much slower.  With --verbose (or debug&1), the binary prints the
+                        rounds of a DEM (estimated from the time translation of its errors: D
+                        detectors and L columns per round) and the codewords found by the
+                        uniform and by the window steps.
+  pairs=N               RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern): a RW
+                        step also finds the codewords with exactly two non-pivot columns,
+                        checking only the pairs of columns which agree on N random pivot rows
+                        (at most 64; 0 = off).  Default: -1 = auto, about one non-pivot column per
+                        bucket, with fewer rows while a codeword of the weight of the upper bound
+                        would be kept with probability below 0.8.  The pairs find the
+                        minimum-weight codewords of circuit DEMs 7-25 times faster, and lighter
+                        codewords of codes with a large distance.  Not with ksub.  With --verbose
+                        (or debug&1), the binary prints the pairs checked per step and the
+                        codewords found by pairs and by single columns.
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = disabled).
                         Stops RW when the average number of times <n> that RW has found each
                         codeword reaches min_hits, both for the codewords of the minimum weight
@@ -5610,7 +6081,8 @@ General options:
                         multiple debug arguments are OR-combined.  Bits 1 to 32768 are passed
                         to the dist_m4ri binary, which prints diagnostic output to stderr (see
                         its --morehelp; lower bits are more informative):
-                          1: summary (input matrices, stop reason, codeword statistics),
+                          1: summary (input matrices, rounds of a DEM, RW windows, stop reason,
+                             codeword statistics, codewords found by each kind of RW step),
                           2: progress (run plan, finished CC rounds, new upper bounds),
                           4: periodic status (after 1, 2, 4, ... s, then every 60 s),
                           8: thread allocation and timing, 16: code parameters (ranks, k),
@@ -5622,6 +6094,20 @@ General options:
                           262144: Stim circuit to DEM conversion details,
                           524288: keep (and list) the temporary files.
 
+Option groups (--help GROUP prints all entries of GROUP):
+  windows               kwin, win_mode, win_hyb
+  stopping, stop        steps, wmin, timeout, min_hits, cov_cws
+  bounds                dmin, dmax, dstop, dexp, wmax
+  dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand
+  stim                  fdem, basis, --rounds, --out-dir, --out-dem, --out-stim, --p-noise,
+                        --force-noise, --model-lb, --out-model
+  matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical
+  codewords             --cws, outC, finC, maxC, dW, expand
+  threading             threads, nothrottle, chunk_size
+  cache                 cache, --no-cache, --trust-start
+  expert                start, --trust-start, noscan
+  experimental          ksub, refresh
+
 Help options:
   -h, --help [TOPIC]    Display summary help message (fits 80 rows); with TOPIC, the same as
                         --morehelp TOPIC (also --help=TOPIC).
@@ -5629,7 +6115,10 @@ Help options:
                         TOPIC, e.g., --morehelp maxC (also --morehelp=TOPIC; several topics separated
                         by commas, e.g., maxC,dW; the names are case-insensitive, without '-', '_', or
                         '=VALUE', and include aliases such as dest or batch; an unknown name gives the
-                        closest names on stderr, and the exit code 1).
+                        closest names on stderr, and the exit code 1).  A group name (see Option
+                        groups, also as singular or plural, e.g., window) gives all entries of the
+                        group, and a parameter of a group also the other entries of its group (see
+                        also).
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary.
 """
 
@@ -5675,11 +6164,33 @@ def _help_name_key(name: str) -> str:
     return name.lower().replace("-", "").replace("_", "")
 
 
+def _help_group_members(entry: Tuple[str, List[str], Dict[str, str]]) -> Optional[Set[str]]:
+    """
+    The normalized names of the members of a group (an entry of the section 'Option groups' of the full help: the
+    names listed after its first column), or None for another entry.
+    """
+    import re
+    section, lines, _ = entry
+    if not section.startswith("Option groups"):
+        return None
+    m = re.match(r"^  \S.*?(?:\s{2,}|$)", lines[0])
+    text = " ".join([lines[0][m.end():] if m else ""] + [s.strip() for s in lines[1:]])
+    return {_help_name_key(t) for t in re.split(r"[,\s]+", text) if t.strip("-")}
+
+
+def _help_group_key_match(gkey: str, key: str) -> bool:
+    """Whether the topic key matches the name gkey of a group, also as singular or plural (e.g., window, windows)."""
+    return key in (gkey, gkey + "s") or (gkey.endswith("s") and key == gkey[:-1])
+
+
 def print_cli_morehelp(file: Optional[Any] = None, topic: Optional[str] = None) -> int:
     """
     Prints the full help of the CLI (--morehelp), or with `topic` (one or more names separated by commas, see
     _help_entries()) only the entries of these parameters, in the order of the full help under their section headers.
-    Returns 0, or 1 if some topic has no entry (then the closest names are suggested on stderr).
+    A topic may also be a group of the section 'Option groups' (also as singular or plural, e.g., window): then all
+    its members are printed; and an entry of a group also gives the other members of its groups and these groups
+    (one level: 'see also').  Returns 0, or 1 if some topic has no entry (then the closest names are suggested on
+    stderr).
     """
     import difflib
     text = _cli_morehelp_text()
@@ -5689,17 +6200,27 @@ def print_cli_morehelp(file: Optional[Any] = None, topic: Optional[str] = None) 
         print(text, file=file)
         return 0
     entries = _help_entries(text)
+    members = [_help_group_members(e) for e in entries]
     status = 0
-    chosen: Set[int] = set()
+    asked: Set[int] = set()
     for t, key in keys:
-        found = [i for i, e in enumerate(entries) if key in e[2]]
+        found = [i for i, e in enumerate(entries)
+                 if (key in e[2] if members[i] is None else any(_help_group_key_match(g, key) for g in e[2]))]
         if not found:
             names = {k: v for e in entries for k, v in e[2].items()}
             close = [names[k] for k in difflib.get_close_matches(key, list(names), n=5, cutoff=0.6)]
             hint = f"; did you mean {', '.join(close)}?" if close else ""
             sys.stderr.write(f"dist_m4ri.py: no help entry for '{t}'{hint} (--morehelp lists all parameters)\n")
             status = 1
-        chosen.update(found)
+        asked.update(found)
+    chosen: Set[int] = set(asked)
+    for g, mem in enumerate(members):  # the groups asked for or with a member asked for: the group and its members
+        if mem is None:
+            continue
+        in_group = [i for i, e in enumerate(entries) if members[i] is None and mem & set(e[2])]
+        if g in asked or asked & set(in_group):
+            chosen.add(g)
+            chosen.update(in_group)
     out: List[str] = []
     section = None
     for i in sorted(chosen):  # in the order of the full help, under their section headers
@@ -5773,6 +6294,25 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                              "names take precedence")
     if args.get("classical") == 1 and given("finG", "finL", "fin", "fdem", "Hz", "Lx", "Lz"):
         warns.append("classical=1 ignored: the input is a quantum code or a DEM")
+    if args.get("model_lb"):  # the code-sized model of a Stim circuit (compute_model_lower_bound())
+        ign = [opt for opt, on in (("outC=", args.get("outC") is not None), ("finC=", args.get("finC") is not None),
+                                   ("--cws", bool(args.get("do_cws")) and args.get("outC") is None),
+                                   ("drop=", args.get("drop") is not None),
+                                   ("outD=", args.get("outD") is not None),
+                                   ("--out-reduced", args.get("out_reduced") is not None),
+                                   ("--out-dir", args.get("out_dir") is not None),
+                                   ("--out-dem", args.get("out_dem") is not None),
+                                   ("--out-stim", args.get("out_stim") is not None),
+                                   ("start=", args.get("start") is not None), ("dmin=", bool(args.get("dmin"))),
+                                   ("dmax=", bool(args.get("dmax"))), ("dexp=", bool(args.get("dexp"))),
+                                   ("maxC=", bool(args.get("maxC"))), ("dW=", args.get("dW", -1) >= 0),
+                                   ("merge=", args.get("merge") is not None),
+                                   ("expand=", args.get("expand") is not None),
+                                   ("solver=", args.get("solver") not in (None, "dist_m4ri"))) if on]
+        if ign:
+            warns.append(f"{', '.join(ign)}: not used with --model-lb; ignored")
+    elif args.get("out_model") is not None:
+        warns.append("--out-model: only used with --model-lb; ignored")
     for w in warns:
         sys.stderr.write(f"# Warning: {w}\n")
 
@@ -5830,6 +6370,46 @@ def main(argv: Optional[List[str]] = None) -> int:
         disable_distance_cache()
 
     try:
+        if args.get("model_lb"):  # the certified lower bound of a Stim circuit from its code-sized model
+            if not args["fdem"] or not str(args["fdem"]).endswith(".stim"):
+                raise ValueError("--model-lb needs a Stim circuit (fdem=FILE.stim): the code-sized model is built "
+                                 "from the detectors and measurements of a circuit")
+            bound, info = compute_model_lower_bound(
+                circuit=args["fdem"],
+                method=args["method"],
+                threads=args["threads"],
+                timeout=args["timeout"],
+                num_steps=args["steps"],
+                dstop=args["dstop"],
+                wmax=args["wmax"],
+                pmin=args["pmin"],
+                rounds=args["rounds"],
+                p_noise=args["p_noise"] if args["p_noise"] is not None else 0.001,
+                force_noise=args["force_noise"],
+                out_model=args["out_model"],
+                cache_file=cache_file,
+                seed=args["seed"],
+                debug=args["debug"],
+                verbose=args["verbose"],
+                nothrottle=args["nothrottle"],
+                pairs=args["pairs"],
+                return_info=True
+            )
+            if args["verbose"]:
+                print("=== Code-Sized Model Lower Bound ===")
+                print(f"  Model: {info.get('rows', 0)} rows ({info.get('rows_measured', 0)} chains of the "
+                      f"measured-basis checks, {info.get('rows', 0) - info.get('rows_measured', 0)} other) x "
+                      f"{info.get('cols', 0)} columns, from {info.get('dem_cols', 0)} error mechanisms and "
+                      f"{info.get('detectors', 0)} detectors of the DEM.")
+                if info["model_d_info"]:
+                    print(f"  Model bounds (CC certifies dmin): {format_bounds_str(info['model_d_info'])}"
+                          + (f"; measured-basis rows only: {format_bounds_str(info['measured_d_info'])}"
+                             if info["measured_d_info"] and info["measured_d_info"] != info["model_d_info"] else ""))
+                print(f"  Certified lower bound on the circuit distance: d >= {bound}.")
+                print(f"  Circuit bounds (with the cache): {format_bounds_str(info['d_info'])}")
+            print(format_bounds_str(info["d_info"]))
+            return 0
+
         if args["fdem"]:
             res = compute_dem_distance(
                 dem=args["fdem"],
@@ -5869,6 +6449,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -5934,6 +6516,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -6017,6 +6601,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -6069,6 +6655,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ksub=args["ksub"],
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
+                win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],

@@ -55,7 +55,16 @@ with at least 128 rows, the elimination processes 20 or 24 pivots per pass over 
 Russians", with tables of combinations of the pivot rows), which gives the same result about twice as fast for large
 matrices.
 
-Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default).
+Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default,
+with windows of `win_hyb` consecutive columns: 256 for a DEM, whose errors are in time order, and 512 for matrices).
+The window columns come first in the elimination order, so that a codeword with most of its columns in the window is
+found far more often; a window much larger than the minimum-weight codewords, e.g., one round of a DEM, has many
+columns which cannot be pivots and helps little.
+With the RW pairs (`pairs`, on by default), a step also finds the codewords with exactly two non-pivot columns, the
+sums of two such vectors (the algorithms of Lee-Brickell and Stern with `p = 2`): only the pairs of columns which agree
+on `l` random pivot rows are checked (`pairs=l`; auto: about one non-pivot column per bucket), and only those whose
+weights differ by less than the weight limit. This finds the minimum-weight codewords of circuit DEMs 7 to 25 times
+faster.
 With `ksub > 0` (**experimental, should not be used**; a warning is printed), each step reduces the span of `ksub`
 rows of a fixed basis of `ker(H)` (cache-resident elimination): a few codewords are then found much more often than
 others, so that the hit-count criterion `min_hits` may end RW early.
@@ -104,8 +113,9 @@ number of times a minimum-weight codeword has been found. This assumes that all 
 equally often, which is tested with a dispersion test of the hit counts (a warning is printed with `debug=1` if the
 hit counts are strongly non-uniform). The second estimate assumes uniformly random information sets: a given codeword
 of weight `w` is found in one step with the probability `P1(w) = w C(n-w, s-1) / C(n, s)`, where `s = n - rank(H)` is
-the number of non-pivot columns and `C(a, b)` is the binomial coefficient. See the section "RW Convergence: Empirical
-Test and Probability to Find a Codeword" in `README.md` for details.
+the number of non-pivot columns and `C(a, b)` is the binomial coefficient, plus, with the RW pairs,
+`P2(w) = C(w, 2) C(n-w, s-2) / C(n, s) * C(r-w+2, l) / C(r, l)` with `r = rank(H)`. See the section "RW Convergence:
+Empirical Test and Probability to Find a Codeword" in `README.md` for details.
 
 ## Output
 

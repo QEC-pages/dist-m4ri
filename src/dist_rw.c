@@ -134,9 +134,11 @@ int do_RW_dist(params_t * const p){
     int eff_kwin = p->kwin;
     int eff_win_mode = p->win_mode;
     if (eff_kwin == 0 && nvar >= 500 && (ii & 1) == 1) {
-      eff_kwin = minint(512, (nvar * 3) / 4);
+      eff_kwin = rw_hybrid_window(p, nvar);
       eff_win_mode = 1;
     }
+    /* the source of the codewords found in this step, see codeword_add_maybe() */
+    const int src = (eff_kwin > 0 && eff_kwin < nvar) ? CW_SRC_RW_WINDOW : CW_SRC_RW_UNIFORM;
     if (eff_kwin > 0 && eff_kwin < nvar) {
       int seed_col = rand_uniform(nvar);
       localized_window_perm(perm, nvar, seed_col, eff_kwin, eff_win_mode,
@@ -175,7 +177,7 @@ int do_RW_dist(params_t * const p){
         if (cnt > 0 && cnt < limit) {
           int nz = classical ? 1 : sparse_syndrome_non_zero(spaL0, cnt, ee);
           if (nz) {
-            p->codewords = codeword_add_maybe(p, ee, cnt);
+            p->codewords = codeword_add_maybe(p, ee, cnt, src);
             if (cnt < minW) minW = cnt;
             if (codeword_maxc_reached(p)) goto alldone;
             if (check_min_hits_convergence(p)) goto alldone;
@@ -294,7 +296,7 @@ int do_RW_dist(params_t * const p){
 	if(nz){ /** we got non-trivial codeword! */
 	  /** TODO: try local search to `lerr` (if 2 or larger) */
 	  /** at this point we have `cnt` codeword indices in `ee` */
-          p->codewords = codeword_add_maybe(p, ee, cnt);
+          p->codewords = codeword_add_maybe(p, ee, cnt, src);
 	  if (debug & DBG_CODEWORDS){
 	    printf("# step=%d row=%d minW=%d found cw of W=%d: [",ii,ir,minW,cnt);
 	    const int max = ((cnt<25) || (debug & DBG_LARGE)) ?  cnt : 25 ;

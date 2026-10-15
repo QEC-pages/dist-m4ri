@@ -459,10 +459,29 @@ def test_rw_infoset_estimate():
     )
     stats = dist_m4ri._parse_stderr_stats(stderr)
     assert stats["rw_n"] == 204 and stats["rw_rank"] == 101 and stats["rw_steps_uniform"] == 6000
+    assert stats["rw_pairs_l"] == 0  # (the summary line of a binary without the RW pairs)
     exp = dist_m4ri.explain_bounds([0, 8, 6000], method=1, stats=stats)
     assert "Hit-based estimate: P_fail ~ exp(-<n>) = 0.0051 (below 1%)" in exp
     assert "a single codeword of weight 7 < 8 is found with probability" in exp
     assert "Model check: expected hits per codeword of weight 8" in exp
+    # with the RW pairs (l pivot rows of the buckets): P = P1 + P2, P2 = C(w,2) C(n-w,k-2) / C(n,k) C(r-w+2,l) / C(r,l)
+    p2 = comb(7, 2) * comb(197, 101) / comb(204, 103) * comb(96, 4) / comb(101, 4)
+    assert dist_m4ri.rw_infoset_find_prob(204, 101, 7, pairs_l=4) == pytest.approx(p7 + p2, rel=1e-9)
+    assert dist_m4ri.rw_infoset_find_prob(204, 101, 7, pairs_l=0) == pytest.approx(p7, rel=1e-12)
+    est2 = dist_m4ri.rw_infoset_estimate(204, 101, 6000, 8, pairs_l=4)
+    assert est2["w"] == 7 and est2["p_find"] == pytest.approx(p7 + p2)
+    stderr2 = stderr.replace("ksub=0, ", "ksub=0, pairs=4, ") + (
+        "# RW pairs (p=2, buckets of l=4 random pivot rows): 1.23e+03 pairs checked per step; codewords recorded with "
+        "weight up to the upper bound: 517 from pairs, 170 from single columns\n")
+    stats2 = dist_m4ri._parse_stderr_stats(stderr2)
+    assert stats2["rw_pairs_l"] == 4 and stats2["rw_step_time"] == pytest.approx(4.4e-05)
+    assert stats2["rw_threads"] == 8
+    assert (stats2["rw_pairs_per_step"], stats2["rw_hits_pairs"], stats2["rw_hits_single"]) == (1230.0, 517, 170)
+    exp2 = dist_m4ri.explain_bounds([0, 8, 6000], method=1, stats=stats2)
+    assert "Information-set estimate (uniform random information sets with pairs, l = 4; n = 204" in exp2
+    assert f"is found with probability {p7 + p2:.3g} per RW step" in exp2
+    assert ("RW pairs (p=2, buckets of l = 4 pivot rows): 1.23e+03 pairs checked per RW step; codewords recorded "
+            "with weight up to the upper bound: 517 from pairs, 170 from single columns.") in exp2
 
 
 def test_cli_css_dx_dz_bounds(capsys):
@@ -581,18 +600,31 @@ def test_cli_morehelp_topic(capsys):
         return ([s for s in lines if s and not s[0].isspace()],
                 [s.split()[0] for s in lines if s.startswith("  ") and not s.startswith("   ")])
 
-    # --morehelp TOPIC: only the entries of TOPIC, under their section header
+    # --morehelp TOPIC: the entries of TOPIC, under their section header, with the other entries of its group (see
+    # also) and the group (section 'Option groups')
+    groups = "Option groups (--help GROUP prints all entries of GROUP):"
     assert dist_m4ri.main(["--morehelp", "maxC"]) == 0
-    assert entries(capsys.readouterr().out) == (["Codeword collection and export:"], ["maxC=N"])
+    assert entries(capsys.readouterr().out) == (
+        ["Codeword collection and export:", groups],
+        ["--cws", "outC=FILE", "finC=FILE", "maxC=N", "dW=N", "expand=0|1", "codewords"])
     # several topics (case-insensitive, aliases): in the order of the full help, each section header once
-    assert dist_m4ri.main(["--morehelp=dW,MAXC,dest"]) == 0
-    assert entries(capsys.readouterr().out) == (["Distance bounds and guidance:", "Codeword collection and export:"],
-                                                ["dexp=N", "maxC=N", "dW=N"])
+    assert dist_m4ri.main(["--morehelp=SEED,method,v"]) == 0
+    assert entries(capsys.readouterr().out) == (["Calculation method:", "General options:"],
+                                                ["method=1|2|3", "--verbose", "seed=N"])
     # '-', '_', and '=VALUE' are ignored; aliases in the descriptions ('Alias: batch=N', 'also trust_start=1')
     for topic, first in (("no-cache", "--no-cache"), ("--rounds=3", "--rounds"), ("batch", "chunk_size=N"),
                          ("trust_start", "--trust-start"), ("v", "--verbose"), ("out_dem=1", "--out-dem")):
         assert dist_m4ri.main([f"--morehelp={topic}"]) == 0
-        assert entries(capsys.readouterr().out)[1] == [first], topic
+        assert first in entries(capsys.readouterr().out)[1], topic
+    # a group (also singular or plural): all its entries; a parameter of a group gives the whole group
+    for topic in ("windows", "window", "kwin", "WIN_HYB"):
+        assert dist_m4ri.main(["-h", topic]) == 0
+        assert entries(capsys.readouterr().out) == (["Multithreading & throttling:", groups],
+                                                    ["kwin=N", "win_mode=0|1", "win_hyb=N", "windows"]), topic
+    assert dist_m4ri.main(["--help", "experimental"]) == 0
+    assert entries(capsys.readouterr().out)[1] == ["ksub=N", "refresh=N", "experimental"]
+    assert dist_m4ri.main(["--help", "windos"]) == 1
+    assert "no help entry for 'windos'; did you mean windows" in capsys.readouterr().err
     # an unknown topic: the closest names on stderr, exit code 1 (the known topics are still printed)
     assert dist_m4ri.main(["--morehelp", "mthod"]) == 1
     captured = capsys.readouterr()
@@ -600,7 +632,7 @@ def test_cli_morehelp_topic(capsys):
     assert "no help entry for 'mthod'; did you mean method?" in captured.err
     assert dist_m4ri.main(["--morehelp", "maxC,xyz"]) == 1
     captured = capsys.readouterr()
-    assert entries(captured.out)[1] == ["maxC=N"]
+    assert "maxC=N" in entries(captured.out)[1]
     assert "no help entry for 'xyz'" in captured.err
     # an option after --morehelp is not a topic: the full help
     assert dist_m4ri.main(["--morehelp", "--verbose"]) == 0
@@ -608,7 +640,7 @@ def test_cli_morehelp_topic(capsys):
     # --help TOPIC (also -h TOPIC, --help=TOPIC, help=TOPIC): the same as --morehelp TOPIC; topics are collected
     assert dist_m4ri.main(["--morehelp", "maxC,dest"]) == 0
     expected = capsys.readouterr().out
-    assert entries(expected)[1] == ["dexp=N", "maxC=N"]
+    assert {"dexp=N", "maxC=N", "bounds", "codewords"} <= set(entries(expected)[1])
     for argv in (["--help", "maxC,dest"], ["-h", "maxC,dest"], ["--help=maxC,dest"], ["help=maxC,dest"],
                  ["--help", "maxC", "--morehelp", "dest"]):
         assert dist_m4ri.main(argv) == 0
@@ -627,7 +659,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.2" in captured.out
+    assert "0.14.5" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -638,7 +670,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.2" in captured.out
+    assert "0.14.5" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -657,7 +689,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.2" in older_warn
+    assert "expected >= 0.14.5" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1186,6 +1218,160 @@ def test_sort_rows_option(tmp_path, capsys):
         assert "sort_rows=0" in capsys.readouterr().out
         assert dist_m4ri.main([f"finH={S5_H}", "sort_rows=2", "--no-cache"]) == 1
         assert "invalid 'sort_rows=2': sort_rows should be 0 or 1" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_win_hyb_option(capsys):
+    # win_hyb (window size of the hybrid RW steps, n >= 500; 0, the default: 256 columns for a DEM, 512 for matrices)
+    # is passed to the binary if nonzero by run_dist_m4ri(), the compute_*_distance() functions, and the CLI; the
+    # input summary (debug&1) reports the windows, and the codewords found by the uniform and by the window steps are
+    # parsed (_last_run_stats["rw_step_types"]), as the rounds of a DEM (_last_run_stats["rounds"])
+    for val, note in ((0, "512 columns on every other step, uniform permutations on the others (win_hyb=0: 256 for a "
+                          "DEM, 512 for matrices)"),
+                      (100, "100 columns on every other step, uniform permutations on the others (win_hyb=100)")):
+        res = dist_m4ri.run_dist_m4ri(method=1, finH=S5_H, finL=S5_L, steps=200, threads=2, win_hyb=val, verbose=True)
+        assert res[2] > 1
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        assert ("win_hyb=" in run_line) == (val != 0)
+        windows = [ln for ln in (captured.out + captured.err).splitlines() if "RW windows:" in ln]
+        assert len(windows) == 1 and windows[0].endswith(note)
+        types = dist_m4ri._last_run_stats["rw_step_types"]
+        assert types and all(t["uniform_cws"] + t["window_cws"] - t["both_cws"] == t["cws"] for t in types.values())
+        assert "rounds" not in dist_m4ri._last_run_stats  # (a matrix)
+        assert "by RW step type" in dist_m4ri.explain_bounds(list(res), method=1, stats=dist_m4ri._last_run_stats)
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, threads=2, debug=1)
+    capsys.readouterr()
+    rounds = dist_m4ri._last_run_stats["rounds"]
+    assert set(rounds) == {"D", "L", "score"} and 0.0 <= rounds["score"] <= 1.0
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=1, num_steps=20, min_hits=0, threads=2,
+                                                  win_hyb=300, debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) > 0
+        assert "win_hyb=300" in capsys.readouterr().out
+        dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["win_hyb=200"])["win_hyb"] == 200
+        assert dist_m4ri.parse_cli_args([])["win_hyb"] == 0
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=1", "steps=20", "threads=2", "win_hyb=100",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "win_hyb=100" in capsys.readouterr().out
+        assert dist_m4ri.main([f"finH={S5_H}", "method=1", "win_hyb=-1", "--no-cache"]) == 1
+        assert "invalid 'win_hyb=-1'" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_pairs_option(capsys):
+    # pairs (the RW pairs of non-pivot columns, p=2: the pairs of columns which agree on N random pivot rows; -1, the
+    # default: auto; 0: off) is passed to the binary if not -1 by run_dist_m4ri(), the compute_*_distance() functions,
+    # and the CLI; the summary (debug&1) gives the number l of rows (auto: 8 for surf_d5 with n=1958, rank 120, and
+    # d=5), the pairs checked per step, and the codewords found by pairs and by single columns (_last_run_stats)
+    for val, l_exp in ((-1, 8), (0, 0), (12, 12)):
+        res = dist_m4ri.run_dist_m4ri(method=1, finH=S5_H, finL=S5_L, steps=200, threads=1, seed=1, pairs=val,
+                                      verbose=True)
+        assert res[1] == 5
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        assert ("pairs=" in run_line) == (val != -1)
+        stats = dist_m4ri._last_run_stats
+        assert stats["rw_pairs_l"] == l_exp
+        assert ("rw_pairs_per_step" in stats) == (l_exp > 0)
+        exp = dist_m4ri.explain_bounds(list(res), method=1, stats=stats)
+        assert (f"RW pairs (p=2, buckets of l = {l_exp} pivot rows): " in exp) == (l_exp > 0)
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=1, num_steps=20, min_hits=0, threads=2,
+                                                  pairs=0, debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) > 0
+        assert "pairs=0" in capsys.readouterr().out
+        dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["pairs=4"])["pairs"] == 4
+        assert dist_m4ri.parse_cli_args([])["pairs"] == -1
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=1", "steps=20", "threads=2", "pairs=6",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "pairs=6" in capsys.readouterr().out
+        for bad in (-2, 65):
+            assert dist_m4ri.main([f"finH={S5_H}", "method=1", f"pairs={bad}", "--no-cache"]) == 1
+            assert f"invalid 'pairs={bad}'" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_model_lower_bound(tmp_path, capsys):
+    # the code-sized model of a Stim memory circuit (compute_model_lower_bound(), CLI --model-lb): one row per chain of
+    # detectors linked by their measurements (the checks over the rounds; with minority=False, only the chains with
+    # final data measurements), the sum of their rows, so that every DEM codeword gives a model codeword of no larger
+    # weight and the model distance is a certified lower bound: 3 (tight) for the surface code with d=3 (8 checks, 4
+    # of the measured basis), 5 for the bb_72 circuit of distance 6; the bound is stored as dmin in the cache record
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated("surface_code:rotated_memory_x", distance=3, rounds=3,
+                                  after_clifford_depolarization=0.001, before_measure_flip_probability=0.001,
+                                  after_reset_flip_probability=0.001, before_round_data_depolarization=0.001)
+    path = str(tmp_path / "surf_x_d3.stim")
+    circ.to_file(path)
+    cache = str(tmp_path / "cache.json")
+    dist_m4ri.clear_distance_cache()
+    try:
+        b, info = dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=cache, out_model=str(tmp_path / "m"),
+                                                      return_info=True)
+        assert b == 3 and info["model_d_info"][:2] == [3, 3] and info["d_info"] == [3, 0, 0]
+        assert (info["groups"], info["groups_final"], info["rows"], info["rows_measured"]) == (8, 4, 8, 4)
+        assert info["trivial"] == 0 and len(info["col_map"]) == info["dem_cols"]
+        assert info["files"] == [str(tmp_path / "m_HR.mtx"), str(tmp_path / "m_LR.mtx")]
+        assert all(os.path.isfile(f) for f in info["files"])
+        entry = dist_m4ri.get_cached_distance(circuit=path, cache_file=cache)
+        assert (entry["dmin"], entry["dmax"], entry["dmin_model"]) == (3, 0, 3)
+        assert dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=cache, minority=False) == 3
+        # the DEM run starts CC from the cached bound; its codewords map to model codewords of no larger weight
+        dist, d_info, cws = dist_m4ri.compute_dem_distance(circuit=path, method=2, wmax=4, dW=1, drop=0, do_cws=True,
+                                                           threads=2, cache_file=cache)
+        assert dist == 3 and d_info[:2] == [3, 3] and len(cws) > 0
+        entry = dist_m4ri.get_cached_distance(circuit=path, cache_file=cache)
+        assert (entry["dmin"], entry["dmax"], entry["dmin_model"]) == (3, 3, 3)
+        H, L = info["H"].toarray(), info["L"].toarray()
+        for cw in cws:
+            y = np.zeros(H.shape[1], dtype=int)
+            for j in cw:
+                if info["col_map"][j] >= 0:
+                    y[info["col_map"][j]] ^= 1
+            assert not (H @ y % 2).any() and (L @ y % 2).any() and y.sum() <= len(cw)
+        # a circuit in the repository: the model is 1 below the distance 6 (also with the measured-basis rows only)
+        bb72 = os.path.join(EXAMPLES_DIR, "..", "benchmark", "stim_bb", "bb_72_12_6_si1000_r6_X.stim")
+        for minority in (True, False):
+            b, info = dist_m4ri.compute_model_lower_bound(bb72, threads=2, minority=minority, cache_file=None,
+                                                          return_info=True)
+            assert b == 5 and info["rows"] == (72 if minority else 36) and info["rows_measured"] == 36
+        # an error which flips the observable but no detector: the bound is 1, with a note
+        triv = str(tmp_path / "triv.stim")
+        with open(triv, "w") as f:
+            f.write("R 0 1 2 3\nX_ERROR(0.1) 0 1 2\nCX 0 3 1 3\nMR 3\nDETECTOR rec[-1]\nM 0 1 2\n"
+                    "DETECTOR rec[-2] rec[-3] rec[-4]\nOBSERVABLE_INCLUDE(0) rec[-1]\n")
+        b, info = dist_m4ri.compute_model_lower_bound(triv, threads=2, cache_file=None, return_info=True)
+        assert b == 1 and info["trivial"] == 1 and (info["groups"], info["groups_final"]) == (1, 1)
+        assert "flip an observable but no group of detectors" in capsys.readouterr().err
+        # CLI: the bounds of the circuit (without the cache: the bound alone), the model files; errors and warnings
+        assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--no-cache", "threads=2", "--out-model",
+                               str(tmp_path / "cli")]) == 0
+        assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
+        assert os.path.isfile(str(tmp_path / "cli_HR.mtx")) and os.path.isfile(str(tmp_path / "cli_LR.mtx"))
+        dist_m4ri.enable_distance_cache()  # (--no-cache disabled it)
+        assert dist_m4ri.main([f"fdem={path}", "--model-lb", f"cache={cache}", "threads=2", "outC=x.nz"]) == 0
+        captured = capsys.readouterr()
+        assert captured.out.strip().splitlines()[-1] == "3 3 0 (exact)"
+        assert "# Warning: outC=: not used with --model-lb; ignored" in captured.err
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        assert dist_m4ri.main([f"fdem={dem_file}", "--model-lb", "--no-cache"]) == 1
+        assert "--model-lb needs a Stim circuit" in capsys.readouterr().err
+        with pytest.raises(ValueError, match="not a Stim circuit"):
+            dist_m4ri.compute_model_lower_bound(dem_file)
+        with pytest.raises(TypeError, match="did you mean 'minority'"):
+            dist_m4ri.compute_model_lower_bound(path, minorty=False)
     finally:
         dist_m4ri.enable_distance_cache()
         dist_m4ri.clear_distance_cache()

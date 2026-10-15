@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.2" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.5" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.14.2" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.14.5" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -589,11 +589,12 @@ if [ -z "$O82A" ] || [ "$O82A" != "$O82B" ]; then
 fi
 
 # Test 83: warning for strongly non-uniform RW hit counts (surface code: some minimum-weight logicals are found much
-# more often than others), with the information-set estimate; no warning for the code QX150 (one thread, fixed seed)
+# more often than others by the single columns, pairs=0), with the information-set estimate; no warning for the code
+# QX150 (one thread, fixed seed)
 echo "Running Test 83: hit-count warning with the information-set estimate"
 OUT83=$(mktemp)
 ERR83=$(mktemp)
-$BIN_FORK method=1 $S5 steps=10000 seed=1 threads=1 debug=1 > "$OUT83" 2> "$ERR83"
+$BIN_FORK method=1 $S5 steps=10000 seed=1 threads=1 pairs=0 debug=1 > "$OUT83" 2> "$ERR83"
 if ! grep -q -E "^1 5 10000$" "$OUT83" || \
    ! grep -q "Warning: non-uniform RW hit counts of the 100 codewords of weight 5" "$ERR83" || \
    ! grep -q "information-set estimate (uniform random information sets, n=1958, rank(H)=120)" "$ERR83" || \
@@ -654,7 +655,7 @@ $BIN_FORK method=1 finH=$REP86 steps=100 seed=3 threads=1 debug=0x1a0 > "$OUT86"
 if ! grep -q -E "^1 5 [0-9]+$" "$OUT86" || \
    ! grep -q "RW codeword of weight 5 (1-based columns): 1 2 3 4 5$" "$ERR86" || \
    ! grep -q "^# matrix H: 4 x 5, 8 nonzeros" "$ERR86" || ! grep -q "^# \.\.11\.$" "$ERR86" || \
-   ! grep -q -E "^# cw: \[ 1 2 3 4 5 \] cnt=[0-9]+$" "$ERR86"; then
+   ! grep -q -E "^# cw: \[ 1 2 3 4 5 \] cnt=([0-9]+) \(u=\1, w=0\)$" "$ERR86"; then
     echo "  [FAIL] Test 86: stdout '$(cat "$OUT86")', stderr '$(cat "$ERR86")'"
     FAILED=1
 fi
@@ -792,12 +793,12 @@ fi
 # Test 99: RW elimination: the blocked elimination (Four Russians, from 128 rows; c1920H: 1280 rows), and the choice
 # of each thread between it and the column-by-column elimination (128 to 512 rows; surf_d7: 336 rows) find the same
 # information sets as the column-by-column elimination: the same codewords and hit counts with a fixed seed and one
-# thread (reference values of the column-by-column elimination)
-RW99="steps=60 seed=5 threads=1 min_hits=1000000 cov_cws=5000"
+# thread (reference values of the column-by-column elimination, with the single columns only: pairs=0)
+RW99="steps=60 seed=5 threads=1 min_hits=1000000 cov_cws=5000 pairs=0"
 assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx $RW99 debug=1" 0 "^1 344 60$" \
     "^# codewords accumulated: total=5151, min_w=344: cws=1, total_hits=1,"
 S7="finH=$EXAMPLES_DIR/surf_d7_H.mmx finL=$EXAMPLES_DIR/surf_d7_L.mmx"
-RW99="steps=400 seed=6 threads=1 min_hits=1000000 cov_cws=5000"
+RW99="steps=400 seed=6 threads=1 min_hits=1000000 cov_cws=5000 pairs=0"
 assert_output "$BIN_FORK method=1 $S7 $RW99 debug=1" 0 "^1 7 400$" \
     "^# codewords accumulated: total=5835, min_w=7: cws=70, total_hits=71,"
 assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
@@ -899,32 +900,53 @@ assert_output "$BIN_FORK method=2 fdem=$DEM103 drop=$DROP103 wmax=3 threads=1 de
 rm -f "$DEM103" "$DROP103" "$CWS103"
 
 # Test 104: --help TOPIC and --morehelp TOPIC print only the entries of the full help for TOPIC (names and aliases,
-# without case, '-', '_', and '=VALUE'), in the order of the full help under their section headers (each once); an
-# unknown topic gives the closest names on stderr and exit code 1; an argument with '=' is not a topic
+# without case, '-', '_', and '=VALUE'), in the order of the full help under their section headers (each once); a
+# group of the section "Option groups" (also as singular or plural) gives all its entries, and a parameter of a group
+# also the other entries of its group and the group (see also); an unknown topic gives the closest names on stderr
+# and exit code 1; an argument with '=' is not a topic
 assert_output "$BIN_FORK --help maxC" 0 "^  maxC=\[int\] " ""
 assert_output "$BIN_FORK --morehelp=dest" 0 "^  dexp=\[int\] " ""
 assert_output "$BIN_FORK --help no-throttle" 0 "^  nothrottle=\[0\|1\] " ""
 assert_output "$BIN_FORK -h Batch" 0 "^  chunk_size=\[int\] " ""
 assert_output "$BIN_FORK --morehelp debug" 0 "^    2048 : No size cutoff" ""
 assert_output "$BIN_FORK --help mthod" 1 "" "no help entry for 'mthod'; did you mean method\?"
+assert_output "$BIN_FORK --help windos" 1 "" "no help entry for 'windos'; did you mean windows"
 assert_output "$BIN_FORK --help maxC,xyz" 1 "^  maxC=\[int\] " "no help entry for 'xyz' \(--morehelp lists all"
 assert_output "$BIN_FORK --help finH=x.mtx" 0 "^Extra parameters" ""
 assert_output "$BIN --help maxC" 0 "^  maxC=\[int\] " ""
 help_outline() {  # the section headers, the first words of the entries, and '-' for a blank line
     awk '/^$/ {print "-"; next} /^[^ ]/ {print; next} /^  [^ ]/ {print $1}'
 }
-GOT104=$("$BIN_FORK" --help maxC,dW,DEXP | help_outline)
-EXP104=$(printf '%s\n' "Distance bounds and search guidance:" "dexp=[int]" "-" "Codeword collection and export:" \
-    "maxC=[int]" "dW=[int]")
-echo "Running: $BIN_FORK --help maxC,dW,DEXP (entries in the order of the full help)"
+GROUPS104="Option groups (--help GROUP prints all entries of GROUP):"
+GOT104=$("$BIN_FORK" --help method,SEED | help_outline)
+EXP104=$(printf '%s\n' "Calculation method:" "method=[int]" "-" "Execution, multithreading, and timing:" "seed=[int]")
+echo "Running: $BIN_FORK --help method,SEED (entries in the order of the full help)"
 if [ "$GOT104" != "$EXP104" ]; then
     echo "  [FAIL] Expected: $EXP104"
     echo "         Got: $GOT104"
     FAILED=1
 fi
 GOT104=$("$BIN_FORK" --help maxC | help_outline)
-echo "Running: $BIN_FORK --help maxC (only the maxC entry)"
-if [ "$GOT104" != "$(printf 'Codeword collection and export:\nmaxC=[int]')" ]; then
+EXP104=$(printf '%s\n' "Codeword collection and export:" "outC=[file]" "finC=[file]" "maxC=[int]" "dW=[int]" "-" \
+    "$GROUPS104" "codewords")
+echo "Running: $BIN_FORK --help maxC (the codewords group)"
+if [ "$GOT104" != "$EXP104" ]; then
+    echo "  [FAIL] Got: $GOT104"
+    FAILED=1
+fi
+EXP104=$(printf '%s\n' "Execution, multithreading, and timing:" "kwin=[int]" "win_mode=[0|1]" "win_hyb=[int]" "-" \
+    "$GROUPS104" "windows")
+for topic in windows window WIN_HYB kwin; do
+    echo "Running: $BIN_FORK -h $topic (the windows group)"
+    if [ "$("$BIN_FORK" -h $topic | help_outline)" != "$EXP104" ]; then
+        echo "  [FAIL] Got: $("$BIN_FORK" -h $topic | help_outline)"
+        FAILED=1
+    fi
+done
+GOT104=$("$BIN_FORK" --help experimental | help_outline)
+echo "Running: $BIN_FORK --help experimental"
+if [ "$GOT104" != "$(printf '%s\n' "Execution, multithreading, and timing:" "ksub=[int]" "refresh=[int]" "-" \
+    "$GROUPS104" "experimental")" ]; then
     echo "  [FAIL] Got: $GOT104"
     FAILED=1
 fi
@@ -1027,6 +1049,116 @@ assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 sort_row
     "$SORTED106"
 assert_output "$BIN_FORK method=2 $S5 wmax=3 sort_rows=2" 255 "" "invalid 'sort_rows=2': sort_rows should be 0 or 1"
 rm -f "$CWS106A" "$CWS106B"
+
+# Test 107: the hybrid RW windows (kwin=0, n >= 500: a window on every other step, uniform permutations on the others):
+# win_hyb=0 (the default) gives 256 columns for a DEM and 512 for matrices, win_hyb=N the size (at most 3n/4); with
+# debug&1, the input summary gives the rounds of a DEM (here a repetition code with 50 checks in 12 rounds: measurement
+# errors flip two detectors D=50 apart, and a shift by D maps errors to errors; n=1162 columns, L = n D / m = 97
+# columns per round; no round structure for the same DEM with randomly permuted detectors; none for matrices), and the
+# end of RW the codewords found by the uniform and by the window steps; win_hyb is ignored with kwin > 0 and for
+# n < 500 (warnings); invalid values are an error
+DEM107=$(mktemp --suffix=.dem)
+DEM107P=$(mktemp --suffix=.dem)
+awk 'BEGIN { k = 50; R = 12
+  for (t = 0; t < R; t++) {
+    for (i = 0; i <= k; i++) { # data errors: qubit i flips checks i-1 and i (and L0 for i=0)
+      s = "error(0.01)"
+      if (i > 0) s = s " D" (t * k + i - 1)
+      if (i < k) s = s " D" (t * k + i)
+      if (i == 0) s = s " L0"
+      print s
+    }
+    if (t < R - 1)
+      for (i = 0; i < k; i++) # measurement errors: check i in rounds t and t+1
+        print "error(0.01) D" (t * k + i) " D" ((t + 1) * k + i)
+  }
+}' > "$DEM107"
+awk 'BEGIN { srand(1); m = 600; for (d = 0; d < m; d++) p[d] = d
+  for (d = m - 1; d > 0; d--) { j = int(rand() * (d + 1)); x = p[d]; p[d] = p[j]; p[j] = x } }
+  { s = $1; for (f = 2; f <= NF; f++) s = s " " (($f ~ /^D/) ? "D" p[substr($f, 2) + 0] : $f); print s }' \
+    "$DEM107" > "$DEM107P"
+RW107="method=1 steps=40 threads=2 debug=1"
+WIN107="columns on every other step, uniform permutations on the others"
+AUTO107="\(win_hyb=0: 256 for a DEM, 512 for matrices\)$"
+STEP107="^# RW step types, w=[0-9]+: uniform steps: cws=[0-9]+, hits=[0-9]+; window steps: cws=[0-9]+, hits=[0-9]+;"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "^1 [0-9]+ [0-9]+$" \
+    "^#   rounds of the DEM: D=50 detectors and L=97 columns per round \(estimated: score 1\.000\)$"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "" "^#   RW windows: 256 $WIN107 $AUTO107"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "" "$STEP107 both: cws=[0-9]+ \(of [0-9]+ cws\)$"
+assert_output "$BIN_FORK fdem=$DEM107P $RW107" 0 "" \
+    "^#   rounds of the DEM: no round structure found \(best score 0\.[0-4][0-9]* < 0\.5\)$"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107 win_hyb=2000" 0 "" "^#   RW windows: 871 $WIN107 \(win_hyb=2000\)$"
+assert_output "$BIN_FORK $S5 $RW107" 0 "" "^#   RW windows: 512 $WIN107 $AUTO107"
+ERR107=$($BIN_FORK fdem=$DEM107 method=2 wmax=1 threads=2 debug=1 2>&1)
+if printf '%s\n' "$ERR107" | grep -q -E "RW windows|RW step types" || \
+   ! printf '%s\n' "$ERR107" | grep -q "rounds of the DEM: D=50 detectors"; then
+    echo "  [FAIL] Test 107: CC alone: $ERR107"
+    FAILED=1
+fi
+if $BIN_FORK $S5 $RW107 2>&1 | grep -q "rounds of the DEM"; then
+    echo "  [FAIL] Test 107: rounds reported for a matrix"
+    FAILED=1
+fi
+# every codeword of RW was found by the uniform steps, the window steps, or both
+STEPS107=$($BIN_FORK fdem=$DEM107 method=1 steps=200 cov_cws=50 threads=2 debug=1 2>&1 | grep "^# RW step types")
+if [ -z "$STEPS107" ] || ! printf '%s\n' "$STEPS107" | awk '{
+      u = $0; sub(/.*uniform steps: cws=/, "", u); w = $0; sub(/.*window steps: cws=/, "", w)
+      b = $0; sub(/.*both: cws=/, "", b); t = $0; sub(/.*\(of /, "", t)
+      if ((u + 0) + (w + 0) - (b + 0) != (t + 0)) bad = 1 } END { exit bad }'; then
+    echo "  [FAIL] Test 107: RW step types do not add up: $STEPS107"
+    FAILED=1
+fi
+assert_output "$BIN_FORK fdem=$DEM107 $RW107 kwin=64 win_hyb=100" 0 "" \
+    "^# WARNING: win_hyb=100 is ignored with kwin=64 \(a window of kwin columns on every RW step\)$"
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem method=1 steps=20 win_hyb=100 threads=2 debug=0" 0 "" \
+    "^# WARNING: win_hyb=100 is ignored for n=[0-9]+ < 500 \(uniform permutations in all RW steps\)$"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107 win_hyb=-1" 255 "" \
+    "invalid 'win_hyb=-1': win_hyb should be 0 \(256 columns for a DEM, 512 for matrices\) or positive"
+rm -f "$DEM107" "$DEM107P"
+
+# Test 108: RW pairs of non-pivot columns (p=2; pairs=l: the pairs of columns which agree on l random pivot rows; -1:
+# auto, the default; 0: off): the summary line gives l (auto: l=8 for the surf_d5 circuit DEM with n=1958, rank 120,
+# and d=5; pairs=0 without pairs, also with the experimental ksub, with a warning), and the pairs checked per step and
+# the codewords found by pairs and by single columns; the pairs find many more minimum-weight codewords (here, 15125 of
+# the 18043 of weight 5 in 2000 steps, 1029 without pairs), all valid (read back with finC); the information-set
+# estimate includes the pairs; invalid values are an error
+RW108="method=1 steps=400 seed=1 threads=1 debug=1"
+assert_output "$BIN_FORK $S5 $RW108" 0 "^1 5 400$" \
+    "^# RW information sets: n=1958, rank\(H\)=120, steps=400 \(uniform permutations: 200\), ksub=0, pairs=8, "
+assert_output "$BIN_FORK $S5 $RW108" 0 "" "^# RW pairs \(p=2, buckets of l=8 random pivot rows\): [0-9.e+]+ pairs \
+checked per step; codewords recorded with weight up to the upper bound: [0-9]+ from pairs, [0-9]+ from single columns$"
+assert_output "$BIN_FORK $S5 $RW108 pairs=12" 0 "^1 5 400$" "ksub=0, pairs=12, "
+ERR108=$($BIN_FORK $S5 $RW108 pairs=0 2>&1)
+if ! printf '%s\n' "$ERR108" | grep -q "ksub=0, pairs=0, " || printf '%s\n' "$ERR108" | grep -q "^# RW pairs"; then
+    echo "  [FAIL] Test 108: pairs=0: $ERR108"
+    FAILED=1
+fi
+assert_output "$BIN_FORK finH=$EXAMPLES_DIR/c1920H.mmx method=1 steps=20 ksub=32 pairs=8 threads=1 debug=1" 0 "" \
+    "^# WARNING: pairs=8 is ignored with ksub=32 \(no RW pairs with the experimental ksub\)$"
+CWS108=$(mktemp --suffix=.nz)
+N108=""
+for pr in 0 -1; do
+    $BIN_FORK $S5 method=1 steps=2000 seed=1 threads=1 pairs=$pr outC=$CWS108 debug=0 > /dev/null 2>&1
+    N108="$N108 $(grep -vc '^%' "$CWS108")"
+    assert_output "$BIN_FORK $S5 method=1 steps=1 finC=$CWS108 cov_cws=0 pairs=0 threads=1 debug=1" 0 "^1 5 1$" \
+        "^# read [0-9]+ codewords from .*, total [0-9]+, min weight 5$"
+    if $BIN_FORK $S5 method=1 steps=1 finC=$CWS108 cov_cws=0 threads=1 debug=1 2>&1 | grep -q "invalid codewords"; then
+        echo "  [FAIL] Test 108: invalid codewords exported (pairs=$pr)"
+        FAILED=1
+    fi
+done
+echo "Running Test 108: minimum-weight codewords exported without and with pairs:$N108"
+if ! echo "$N108" | awk '{exit !($1 > 0 && $2 >= 5 * $1)}'; then
+    echo "  [FAIL] Test 108: the pairs found too few codewords:$N108"
+    FAILED=1
+fi
+rm -f "$CWS108"
+assert_output "$BIN_FORK $S5 method=1 steps=3000 seed=1 threads=1 min_hits=1000 cov_cws=0 debug=1" 0 "" \
+    "information-set estimate \(uniform random information sets with pairs \(l=8\), n=1958, rank\(H\)=120\)"
+for pr in -2 65; do
+    assert_output "$BIN_FORK $S5 $RW108 pairs=$pr" 255 "" \
+        "invalid 'pairs=$pr': pairs should be -1 \(auto\), 0 \(off\), or 1 to 64 \(random pivot rows of the buckets\)"
+done
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

@@ -36,7 +36,9 @@ extern "C"{
   struct CW_VEC_T {
     UT_hash_handle hh;
     int weight;
-    int cnt;
+    int cnt;   /** number of hits (all sources) */
+    int cnt_u; /** hits in the RW steps with a uniform random permutation */
+    int cnt_w; /** hits in the RW steps with a window (kwin, or the hybrid windows) */
     int arr[0];
   };
 
