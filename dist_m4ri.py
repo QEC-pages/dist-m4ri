@@ -30,7 +30,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.3"
+__version__ = "0.14.4"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -262,22 +262,25 @@ def format_bounds_str(bounds: List[int]) -> str:
     return f"{dmin} {dmax} {num_rw}"
 
 
-def rw_infoset_find_prob(n: int, rank: int, w: int) -> float:
+def rw_infoset_find_prob(n: int, rank: int, w: int, pairs_l: int = 0) -> float:
     """
     Information-set estimate of the probability that a RW step finds a given codeword of weight w.
 
     Model: uniform random information sets (as in the dist_m4ri binary, rw_infoset_find_prob()).  A RW step
     reduces H (rank r) with a random column order; a codeword is found if exactly one of its w positions is among
     the k = n - r non-pivot columns: P1(w) = w C(n-w, k-1) / C(n, k).  Codewords of weight w > r + 1 are never
-    found (P1 = 0).
+    found (P1 = 0).  With the RW pairs (pairs_l > 0, the binary's option pairs), also if exactly two of its positions
+    are non-pivot columns and its other w - 2 positions avoid the l pivot rows of the buckets:
+    P2(w) = C(w, 2) C(n-w, k-2) / C(n, k) * C(r - w + 2, l) / C(r, l), and the probability is P1 + P2.
 
     Args:
         n: Block length (number of columns of H).
         rank: Rank r of H.
         w: Codeword weight.
+        pairs_l: The number l of pivot rows of the buckets of the RW pairs (0: no pairs).
 
     Returns:
-        P1(w).
+        P1(w) + P2(w).
     """
     import math
     k = n - rank
@@ -287,19 +290,23 @@ def rw_infoset_find_prob(n: int, rank: int, w: int) -> float:
     def log_binom(a: int, b: int) -> float:
         return math.lgamma(a + 1) - math.lgamma(b + 1) - math.lgamma(a - b + 1)
 
-    return min(1.0, math.exp(math.log(w) + log_binom(n - w, k - 1) - log_binom(n, k)))
+    p = math.exp(math.log(w) + log_binom(n - w, k - 1) - log_binom(n, k))
+    if pairs_l > 0 and w >= 2 and k >= 2 and w - 2 + pairs_l <= rank:
+        p += math.exp(log_binom(w, 2) + log_binom(n - w, k - 2) - log_binom(n, k) + log_binom(rank - w + 2, pairs_l)
+                      - log_binom(rank, pairs_l))
+    return min(1.0, p)
 
 
 def rw_infoset_estimate(
     n: int, rank: int, steps: int, d: int, dmin: int = 1, step_time: float = 0.0, target: float = 0.01,
-    steps_total: int = 0
+    steps_total: int = 0, pairs_l: int = 0
 ) -> Optional[Dict[str, Any]]:
     """
     Information-set estimate of the probability that RW missed a codeword lighter than the upper bound d found.
 
-    Among the weights max(dmin, 1) <= w < d (not excluded by CC), the weight hardest to find (the smallest P1(w),
+    Among the weights max(dmin, 1) <= w < d (not excluded by CC), the weight hardest to find (the smallest P(w),
     see rw_infoset_find_prob()) is used: a single codeword of this weight is missed in `steps` RW steps with uniform
-    random permutations with probability (1 - P1)^steps.  The number of RW steps for the target miss probability is
+    random permutations with probability (1 - P)^steps.  The number of RW steps for the target miss probability is
     given in total, with the fraction steps / steps_total of uniform steps as in the run (localized windows, used in
     about half of the steps for n >= 500, are not counted).  Same as print_rw_infoset_estimate() in the binary.
 
@@ -312,9 +319,10 @@ def rw_infoset_estimate(
         step_time: Wall time per RW step in seconds (0: unknown).
         target: Target miss probability (default: 0.01).
         steps_total: Number of all completed RW steps (0: the same as `steps`).
+        pairs_l: The number l of pivot rows of the buckets of the RW pairs (0: no pairs), see rw_infoset_find_prob().
 
     Returns:
-        Dictionary with the weight `w`, the probability `p_find` = P1(w) per step, the miss probability `p_miss`,
+        Dictionary with the weight `w`, the probability `p_find` = P(w) per step, the miss probability `p_miss`,
         the total number of RW steps `steps_target` for the target miss probability (None if the codeword cannot be
         found), and the corresponding wall time `time_target` (None if unknown); or None if there are no weights to
         check.
@@ -323,9 +331,9 @@ def rw_infoset_estimate(
     w_lo, w_hi = max(dmin, 1), d - 1
     if w_hi < w_lo or n <= 0:
         return None
-    w_hard, p1 = w_hi, rw_infoset_find_prob(n, rank, w_hi)  # the weight hardest to find (smallest P1)
+    w_hard, p1 = w_hi, rw_infoset_find_prob(n, rank, w_hi, pairs_l)  # the weight hardest to find (smallest P)
     for w in range(w_lo, w_hi):
-        pw = rw_infoset_find_prob(n, rank, w)
+        pw = rw_infoset_find_prob(n, rank, w, pairs_l)
         if pw < p1:
             w_hard, p1 = w, pw
     steps_target: Optional[int]
@@ -393,7 +401,7 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
         if line_s.startswith("# RW information sets:"):
             m_rw = re.search(
                 r"n=(\d+), rank\(H\)=(\d+), steps=(\d+) \(uniform permutations: (\d+)\), ksub=(\d+), "
-                r"([0-9.eE+-]+) s/step per thread, (\d+) RW threads", line_s
+                r"(?:pairs=(\d+), )?([0-9.eE+-]+) s/step per thread, (\d+) RW threads", line_s
             )
             if m_rw:
                 stats["rw_n"] = int(m_rw.group(1))
@@ -401,8 +409,17 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 stats["rw_steps"] = int(m_rw.group(3))
                 stats["rw_steps_uniform"] = int(m_rw.group(4))
                 stats["rw_ksub"] = int(m_rw.group(5))
-                stats["rw_step_time"] = float(m_rw.group(6))
-                stats["rw_threads"] = int(m_rw.group(7))
+                stats["rw_pairs_l"] = int(m_rw.group(6)) if m_rw.group(6) else 0
+                stats["rw_step_time"] = float(m_rw.group(7))
+                stats["rw_threads"] = int(m_rw.group(8))
+            continue
+        if line_s.startswith("# RW pairs (p=2"):  # the pairs checked, and the codewords found by pairs and singles
+            m_p = re.search(r"([0-9.eE+-]+) pairs checked per step; .*: (\d+) from pairs, (\d+) from single columns",
+                            line_s)
+            if m_p:
+                stats["rw_pairs_per_step"] = float(m_p.group(1))
+                stats["rw_hits_pairs"] = int(m_p.group(2))
+                stats["rw_hits_single"] = int(m_p.group(3))
             continue
         if line_s.startswith("# RW step types, w="):  # the codewords found by the uniform and by the window steps
             m_st = re.search(r"w=(\d+): uniform steps: cws=(\d+), hits=(\d+); window steps: cws=(\d+), hits=(\d+); "
@@ -560,6 +577,13 @@ def explain_bounds(
                     f"steps ({st['uniform_hits']} hits), {st['window_cws']} in the {n_all - n_unif} window steps "
                     f"({st['window_hits']} hits), {st['both_cws']} in both (of {st['cws']} codewords)."
                 )
+            if stats.get("rw_pairs_l", 0) > 0 and "rw_pairs_per_step" in stats:
+                lines.append(
+                    f"  {prefix}RW pairs (p=2, buckets of l = {stats['rw_pairs_l']} pivot rows): "
+                    f"{stats['rw_pairs_per_step']:.3g} pairs checked per RW step; codewords recorded with weight up to "
+                    f"the upper bound: {stats['rw_hits_pairs']} from pairs, {stats['rw_hits_single']} from single "
+                    f"columns."
+                )
             for hw in stats.get("hit_warnings", []):
                 lines.append(f"  {prefix}WARNING: {hw}")
         else:
@@ -583,15 +607,17 @@ def explain_bounds(
         n_unif = stats.get("rw_steps_uniform", 0)
         if stats.get("rw_n", 0) > 0 and stats.get("rw_ksub", 0) == 0 and n_unif > 0:
             n_cols, rank = stats["rw_n"], stats["rw_rank"]
+            pairs_l = stats.get("rw_pairs_l", 0)
             est = rw_infoset_estimate(n_cols, rank, n_unif, dmax, dmin=max(dmin, 1), step_time=step_wall,
-                                      steps_total=stats.get("rw_steps", n_unif))
+                                      steps_total=stats.get("rw_steps", n_unif), pairs_l=pairs_l)
             if est is not None and est["steps_target"] is None:
                 lines.append(f"  {prefix}Information-set estimate: a codeword of weight {est['w']} cannot be found "
                              f"by RW (n = {n_cols}, rank(H) = {rank}).")
             elif est is not None:
                 t_str = (f", ~{_format_duration(est['time_target'])}" if est["time_target"] is not None else "")
+                p_str = f" with pairs, l = {pairs_l}" if pairs_l > 0 else ""
                 lines.append(
-                    f"  {prefix}Information-set estimate (uniform random information sets; n = {n_cols}, "
+                    f"  {prefix}Information-set estimate (uniform random information sets{p_str}; n = {n_cols}, "
                     f"rank(H) = {rank}, {n_unif} of {stats.get('rw_steps', n_unif)} RW steps uniform): a single "
                     f"codeword of weight {est['w']} < {dmax} is found with probability {est['p_find']:.3g} per RW "
                     f"step and would be missed with probability {est['p_miss']:.2g}; 1% after about "
@@ -599,7 +625,7 @@ def explain_bounds(
                 )
                 if stats.get("min_w") == dmax and "hits_avg" in stats:
                     n_all = stats.get("rw_steps", n_unif)
-                    p1 = rw_infoset_find_prob(n_cols, rank, dmax)
+                    p1 = rw_infoset_find_prob(n_cols, rank, dmax, pairs_l)
                     st = stats.get("rw_step_types", {}).get(dmax)
                     if st is not None and st["cws"] > 0:  # the hits of the uniform steps only
                         n_ref, obs, note = n_unif, st["uniform_hits"] / st["cws"], " in the uniform steps"
@@ -1393,6 +1419,7 @@ def run_dist_m4ri(
     kwin: int = 0,
     win_mode: int = 0,
     win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -1435,6 +1462,15 @@ def run_dist_m4ri(
             debug & 1 (or verbose=True), the binary prints the rounds of a DEM (estimated from the time translation of
             its errors: D detectors and L columns per round, also in _last_run_stats["rounds"]) and the codewords found
             by the uniform and by the window steps (see _parse_stderr_stats()).
+
+    RW pairs:
+        pairs: The RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern), passed as pairs=N if not -1: a
+            RW step also finds the codewords with two non-pivot columns, checking only the pairs which agree on N
+            random pivot rows (0: off).  -1 (default): auto, about one non-pivot column per bucket, with fewer rows
+            while a codeword of the weight of the upper bound would be kept with probability below 0.8.  The pairs
+            find the minimum-weight codewords of circuit DEMs 7-25 times faster (per wall time) and lighter
+            codewords of codes with a large distance.  With debug & 1, the binary prints the pairs checked per step
+            and the codewords found by pairs and by single columns (also in _last_run_stats).
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -1530,6 +1566,7 @@ def run_dist_m4ri(
     if kwin > 0: cmd.append(f"kwin={kwin}")
     if win_mode != 0: cmd.append(f"win_mode={win_mode}")
     if win_hyb != 0: cmd.append(f"win_hyb={win_hyb}")
+    if pairs != -1: cmd.append(f"pairs={pairs}")
     if min_hits is not None and min_hits >= 0: cmd.append(f"min_hits={min_hits}")
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh > 0: cmd.append(f"refresh={refresh}")
@@ -3461,7 +3498,8 @@ def _cached_code_distance(
     fdrop: Optional[Union[str, Path, List[int]]] = None,
     outD: Optional[str] = None,
     sort_rows: Optional[bool] = None,
-    win_hyb: int = 0
+    win_hyb: int = 0,
+    pairs: int = -1
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
@@ -3469,8 +3507,8 @@ def _cached_code_distance(
     the file outD for the detectors dropped: see run_dist_m4ri()) with the dist_m4ri binary, using the distance cache
     shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
     compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
-    (see run_dist_m4ri()) does not change the result, nor the cache key; nor does the RW window size win_hyb change the
-    cache key.
+    (see run_dist_m4ri()) does not change the result, nor the cache key; nor do the RW window size win_hyb and the RW
+    pairs (pairs) change the cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -3627,6 +3665,7 @@ def _cached_code_distance(
             kwin=kwin,
             win_mode=win_mode,
             win_hyb=win_hyb,
+            pairs=pairs,
             min_hits=min_hits,
             cov_cws=cov_cws,
             refresh=refresh,
@@ -3702,6 +3741,7 @@ def compute_classical_distance(
     kwin: int = 0,
     win_mode: int = 0,
     win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -3749,6 +3789,8 @@ def compute_classical_distance(
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
             run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
             it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3808,7 +3850,7 @@ def compute_classical_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows, win_hyb=win_hyb
+        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -3857,6 +3899,7 @@ def compute_quantum_distance(
     kwin: int = 0,
     win_mode: int = 0,
     win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -3907,6 +3950,8 @@ def compute_quantum_distance(
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
             run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
             it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -3982,7 +4027,7 @@ def compute_quantum_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows, win_hyb=win_hyb
+        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -4062,6 +4107,7 @@ def compute_css_distance(
     kwin: int = 0,
     win_mode: int = 0,
     win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -4111,6 +4157,8 @@ def compute_css_distance(
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
             run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
             it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4217,7 +4265,8 @@ def compute_css_distance(
             outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
             seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb
+            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
+            pairs=pairs
         )
         _last_css_stats[s] = dict(_last_run_stats)
 
@@ -4526,6 +4575,7 @@ def compute_dem_distance(
     kwin: int = 0,
     win_mode: int = 0,
     win_hyb: int = 0,
+    pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
     refresh: int = 0,
@@ -4581,6 +4631,8 @@ def compute_dem_distance(
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
             run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
             it.
+        pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
+            their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
         dW: Extra weight window above dmin to collect codewords.
@@ -4757,7 +4809,7 @@ def compute_dem_distance(
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
             cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
             merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file,
-            sort_rows=sort_rows, win_hyb=win_hyb
+            sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs
         )
         ran = not res["cached"]
         drop_stats = _last_run_stats if ran else {}
@@ -4864,6 +4916,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "kwin": 0,
         "win_mode": 0,
         "win_hyb": 0,
+        "pairs": -1,
         "min_hits": None,
         "cov_cws": 100,
         "refresh": 0,
@@ -5217,6 +5270,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 if args["win_hyb"] < 0:
                     raise ValueError(f"invalid '{arg}': win_hyb should be 0 (256 columns for a DEM, 512 for "
                                      f"matrices) or positive")
+            elif key_lower == "pairs":
+                args["pairs"] = int(val)
+                if not -1 <= args["pairs"] <= 64:
+                    raise ValueError(f"invalid '{arg}': pairs should be -1 (auto), 0 (off), or 1 to 64 (random pivot "
+                                     f"rows of the buckets)")
             elif key_lower in ("min_hits", "minhits", "max_hits", "maxhits"):
                 args["min_hits"] = int(val)
             elif key_lower in ("cov_cws", "covcws"):
@@ -5289,9 +5347,9 @@ Allowed parameters:
   --out-reduced, classical, --simple, --full, basis, --rounds, --out-dir,
   --out-dem, --out-stim, --p-noise, --force-noise, method, dmin, dmax, dstop,
   dexp (dest), steps, wmin, wmax, timeout, threads, nothrottle, chunk_size
-  (batch), ksub, kwin (win), win_mode, win_hyb, min_hits, cov_cws, refresh,
-  smax, noscan, start, cbeg, cend, finC, outC, maxC, expand, dW, seed, debug,
-  solver, cache, --no-cache, --verbose, --cws, --trust-start, sort_rows
+  (batch), ksub, kwin (win), win_mode, win_hyb, pairs, min_hits, cov_cws,
+  refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC, expand, dW, seed,
+  debug, solver, cache, --no-cache, --verbose, --cws, --trust-start, sort_rows
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5367,6 +5425,7 @@ Extra parameters (see --morehelp for details):
   kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
   win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM, 512 for matrices)
+  pairs=N (-1)          RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
   cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
   refresh=N (0)         Periodic N basis refresh interval in RW steps (experimental ksub only)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
@@ -5587,6 +5646,16 @@ Multithreading & throttling:
                         rounds of a DEM (estimated from the time translation of its errors: D
                         detectors and L columns per round) and the codewords found by the
                         uniform and by the window steps.
+  pairs=N               RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern): a RW
+                        step also finds the codewords with exactly two non-pivot columns,
+                        checking only the pairs of columns which agree on N random pivot rows
+                        (at most 64; 0 = off).  Default: -1 = auto, about one non-pivot column per
+                        bucket, with fewer rows while a codeword of the weight of the upper bound
+                        would be kept with probability below 0.8.  The pairs find the
+                        minimum-weight codewords of circuit DEMs 7-25 times faster, and lighter
+                        codewords of codes with a large distance.  Not with ksub.  With --verbose
+                        (or debug&1), the binary prints the pairs checked per step and the
+                        codewords found by pairs and by single columns.
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = disabled).
                         Stops RW when the average number of times <n> that RW has found each
                         codeword reaches min_hits, both for the codewords of the minimum weight
@@ -6001,6 +6070,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
                 win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -6067,6 +6137,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
                 win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -6151,6 +6222,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
                 win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
@@ -6204,6 +6276,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 kwin=args["kwin"],
                 win_mode=args["win_mode"],
                 win_hyb=args["win_hyb"],
+                pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],

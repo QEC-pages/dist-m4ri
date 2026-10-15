@@ -95,6 +95,13 @@ hit counts (the number of times RW found each codeword): the collection window f
 $w_{\min} + \text{dW}$, where $w_{\min}$ is the minimum weight found) and, for `min_hits`, a representative set of
 `cov_cws` lowest-weight codewords, where heavier codewords are gradually replaced as lighter ones are found.
 
+With the RW pairs (`pairs`, on by default), a RW step also finds the codewords with exactly two non-pivot columns $a$
+and $b$: the sum of the codewords of $a$ and $b$, whose pivot part is the sum of the columns $a$ and $b$ of the reduced
+matrix (the algorithms of Lee-Brickell and Stern with $p = 2$). Only the pairs of columns which agree on $l$ random
+pivot rows are checked (the columns are sorted by these bits, their bucket), and in a bucket only the pairs whose
+weights differ by less than the weight limit; the pairs of columns whose codewords have equal syndromes $Lc$ are
+skipped (e.g., the many light trivial codewords of a circuit DEM).
+
 Relevant parameters:
 - `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 100000).
 - `min_hits=[int]`: QDistRnd-style automatic convergence stopping criterion (default: 5; set 0 to disable). Stops RW
@@ -130,6 +137,17 @@ Relevant parameters:
   their detectors are shifted by $D$; $L = n D / m$ columns per round; none, e.g., for circuits with SWAP routing),
   and at the end of RW the codewords of the three lowest weights found by the uniform steps and by the window steps
   (e.g., to see codewords which are not local in the column order).
+- `pairs=[int]`: The RW pairs of non-pivot columns ($p=2$): the number $l$ of random pivot rows of their buckets (at
+  most 64; 0: off). Default: -1 (auto), $l = \lceil \log_2 (n-r) \rceil$ (about one non-pivot column per bucket),
+  with fewer rows (at least one) while a codeword of the weight $w$ of the upper bound would be kept with the
+  probability $\binom{r-l}{w-2} / \binom{r}{w-2}$ below 0.8 ($r$: the rank of $H$). In a fixed number of RW steps,
+  the pairs found the minimum-weight codewords of circuit DEMs 7-26 times more often per second (`bb_72`: 7x; gross,
+  `surf_d7`, `mitten_150`: 22-26x), the weight 18 of the double-gross circuit in 3000 steps (20 without pairs, with
+  2% more time per step), 24 for `bb_360` in 600 steps (26), and much lighter codewords of classical LDPC codes with
+  a large distance (`c1920H`: 210 instead of 320 in 1000 steps). For small codes, a step takes 2-5 times longer, but
+  `min_hits` is reached in fewer steps, in about the same time or less. With `debug&1`, the binary prints the pairs
+  checked per step and the codewords recorded from the pairs and from the single columns (`# RW pairs (p=2, ...)`).
+  Not with the experimental `ksub`.
 - `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
   without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
   full-matrix RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$, e.g., for DEMs
@@ -412,8 +430,16 @@ P_1(w) = \frac{w \binom{n-w}{s-1}}{\binom{n}{s}}
 $$
 
 per step ($P_1 = 0$ for $w > r + 1$), and the codeword is missed in $S$ steps with probability
-$(1 - P_1)^S \approx e^{-S P_1}$. Among the weights $d_{\min} \le w < d_{\max}$, the weight with the smallest $P_1$ is
-used, and the number of RW steps for a 1% miss probability is reported. Only the steps with uniform random column
+$(1 - P_1)^S \approx e^{-S P_1}$. With the RW pairs (`pairs`, $l$ pivot rows of the buckets), it is also found if
+exactly two of its positions are non-pivot columns and its other $w - 2$ positions avoid the $l$ rows:
+
+$$
+P(w) = P_1(w) + P_2(w), \qquad
+P_2(w) = \frac{\binom{w}{2} \binom{n-w}{s-2}}{\binom{n}{s}} \cdot \frac{\binom{r-w+2}{l}}{\binom{r}{l}} .
+$$
+
+Among the weights $d_{\min} \le w < d_{\max}$, the weight with the smallest $P$ is used, and the number of RW steps
+for a 1% miss probability is reported. Only the steps with uniform random column
 permutations are counted (not those with localized windows; with `ksub>0`, the estimate is not available), which makes
 the estimate conservative (for circuit DEMs, often very much so); on the other hand, as the QDistRnd manual points out,
 the information sets of a sparse matrix need not be equally likely.
@@ -422,16 +448,17 @@ With `debug&1`, the binary prints $\langle n\rangle$ (`# codewords accumulated: 
 information-set estimate (`# RW information sets: n=..., rank(H)=..., steps=...`), and the estimate itself together
 with the non-uniform hit count warning. The Python wrapper (`--verbose`) prints both estimates for a RW upper bound
 which is not certified, with the RW steps and time needed for a 1% miss probability, and a model check which compares
-the observed average hits of the codewords of weight $d_{\max}$ with $S \, P_1(d_{\max})$.
+the observed average hits of the codewords of weight $d_{\max}$ with $S \, P(d_{\max})$.
 
 Example (`examples/surf_d5_H.mmx`, a circuit-level matrix of the distance-5 surface code; one thread for a reproducible
-result):
+result; the single columns only, `pairs=0`):
 
 ```text
-$ ./src/dist_m4ri method=1 finH=examples/surf_d5_H.mmx finL=examples/surf_d5_L.mmx steps=10000 seed=1 threads=1 debug=1
+$ ./src/dist_m4ri method=1 finH=examples/surf_d5_H.mmx finL=examples/surf_d5_L.mmx steps=10000 seed=1 threads=1 \
+  pairs=0 debug=1
 ...
 # codewords accumulated: total=100, min_w=5: cws=100, total_hits=208, hits min=1, max=33, avg=2.08, ...
-# RW information sets: n=1958, rank(H)=120, steps=10000 (uniform permutations: 5000), ksub=0, ...
+# RW information sets: n=1958, rank(H)=120, steps=10000 (uniform permutations: 5000), ksub=0, pairs=0, ...
 # Warning: non-uniform RW hit counts of the 100 codewords of weight 5: hits min=1, max=33, avg=2.08, ...
 #   some codewords are found much more often than others of the same weight (relative spread of hit rates 1.89):
 #   a lighter codeword may be missed with probability ~0.58 rather than exp(-1.70)=0.18; consider a larger min_hits
@@ -445,7 +472,10 @@ operators of weight 5 range from 1 to 33, far from the Poisson distribution ($p 
 probability to miss a lighter codeword is estimated as 0.58 instead of $e^{-\mu} = 0.18$, where $\mu = 1.70$ is the
 Poisson mean fitted to the zero-truncated hit counts. The information-set estimate for the weight $w = 4$, the hardest
 to find, gives the miss probability 0.015, and 1% after 10890 RW steps in total (half of them uniform, since
-$n \ge 500$). In fact, the distance is 5: `method=2` with `wmax=4` finds no codeword in 0.1 s.
+$n \ge 500$). In fact, the distance is 5: `method=2` with `wmax=4` finds no codeword in 0.1 s. With the RW pairs (the
+default, here $l = 8$), the same run reaches `min_hits=5` after 3331 steps (0.73 s), without the warning: a codeword of
+weight 4 would be found with the probability 0.018 per step instead of 0.000845, and the pairs gave 67400 hits of
+codewords of weight 5 (18043 distinct ones exist), the single columns 1825.
 
 ---
 
@@ -623,7 +653,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.3): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.4): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -678,6 +708,7 @@ Extra parameters (see --morehelp for details):
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
   win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)
+  pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
   cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
   refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]
@@ -707,8 +738,9 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
   its rounds, `#   rounds of the DEM: D=... detectors and L=... columns per round`, and for the hybrid RW the window
   size), warnings, the reason why the run ended (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`,
   `timeout=60s reached during CC round w=9 (37.5% of start columns claimed)`, or `RW convergence reached`), codeword
-  and hit statistics, RW information sets and the codewords of the three lowest weights found by the uniform and by
-  the window steps (`# RW step types, w=...`), codeword export.
+  and hit statistics, RW information sets (`# RW information sets: ..., pairs=l, ...`), the pairs checked per step
+  and the codewords found by the pairs and by the single columns (`# RW pairs (p=2, ...)`), the codewords of the three
+  lowest weights found by the uniform and by the window steps (`# RW step types, w=...`), codeword export.
 - `2` (default) **progress**: the run plan (method, threads, RW steps, CC weights, timeout, rng seed), finished CC
   rounds, new upper bounds, RW convergence.
 - `4` **periodic status** after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate,
@@ -885,6 +917,12 @@ interoperability without manual threading overhead.
   found by the uniform and by the window steps; `_last_run_stats` holds them as `"rounds"` (`D`, `L`, `score`) and
   `"rw_step_types"` (per weight: the distinct codewords and hits of each kind of step), and the model check of the
   information-set estimate uses the hits of the uniform steps only.
+- RW pairs `pairs` of all `compute_*_distance()` functions (CLI: `pairs=N`; default: -1, auto; 0: off): passed to the
+  binary if not -1 (see [RW Algorithm](#1-multithreaded-rw-algorithm-method1)); the cache key does not depend on it.
+  `_last_run_stats` holds the number of rows `"rw_pairs_l"` (0: no pairs), and with `debug&1` the pairs checked per
+  step `"rw_pairs_per_step"` and the codewords recorded from the pairs and from the single columns (`"rw_hits_pairs"`,
+  `"rw_hits_single"`); the information-set estimate (`rw_infoset_find_prob()`, `rw_infoset_estimate()`: argument
+  `pairs_l`) includes the pairs.
 - Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
   separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
   results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
@@ -974,7 +1012,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (105 tests)
+# Run full C test suite (108 tests)
 make test
 ```
 

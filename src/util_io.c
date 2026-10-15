@@ -77,6 +77,7 @@ params_t prm={
   .kwin=0,
   .win_mode=0,
   .win_hyb=0, /* (auto: 256 for a DEM, 512 for matrices) */
+  .pairs=-1, /* (auto) */
   .round_D=0,
   .round_L=0,
   .round_score=-1.0, /* (not estimated) */
@@ -1061,6 +1062,14 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, win_hyb=%d\n",argv[i],p->win_hyb);
     }
+    else if (sscanf(argv[i],"pairs=%d",&dbg)==1){
+      if ((dbg < -1) || (dbg > RW_PAIRS_MAX_BITS))
+        ERROR("invalid '%s': pairs should be -1 (auto), 0 (off), or 1 to %d (random pivot rows of the buckets)\n",
+              argv[i], RW_PAIRS_MAX_BITS);
+      p->pairs=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, pairs=%d\n",argv[i],p->pairs);
+    }
     else if (sscanf(argv[i],"min_hits=%d",&dbg)==1 || sscanf(argv[i],"max_hits=%d",&dbg)==1){
       p->min_hits=dbg;
       if (p->debug & DBG_ARGS)
@@ -1412,6 +1421,9 @@ void var_init(int argc, char **argv, params_t * const p){
       fprintf(stderr, "# WARNING: win_hyb=%d is ignored for n=%d < 500 (uniform permutations in all RW steps)\n",
               p->win_hyb, p->nvar);
   }
+  if ((p->pairs > 0) && (p->ksub > 0) && (p->method & 1))
+    fprintf(stderr, "# WARNING: pairs=%d is ignored with ksub=%d (no RW pairs with the experimental ksub)\n", p->pairs,
+            p->ksub);
   /* The experimental RW option ksub (with or without min_hits, also if it falls back to ksub=0 for m < nu) */
   if (p->ksub > 0 && (p->method & 1)) {
     fprintf(stderr,
@@ -2913,12 +2925,16 @@ static double log_binom(const double a, const double b) {
   return lgamma(a + 1.0) - lgamma(b + 1.0) - lgamma(a - b + 1.0);
 }
 
-double rw_infoset_find_prob(const int n, const int rank, const int w) {
+double rw_infoset_find_prob(const int n, const int rank, const int w, const int pairs_l) {
   const int k = n - rank; /* number of non-pivot columns */
   if (n <= 0 || rank < 0 || k <= 0 || w < 1 || w > n || w - 1 > rank) return 0.0;
   /* exactly one of the w positions among the k non-pivot columns */
-  const double p1 = exp(log((double)w) + log_binom(n - w, k - 1) - log_binom(n, k));
-  return (p1 < 1.0) ? p1 : 1.0;
+  double p = exp(log((double)w) + log_binom(n - w, k - 1) - log_binom(n, k));
+  /* the RW pairs: exactly two of them, and the other w - 2 (pivot) positions avoid the l pivot rows of the buckets */
+  if ((pairs_l > 0) && (w >= 2) && (k >= 2) && (w - 2 + pairs_l <= rank))
+    p += exp(log_binom(w, 2) + log_binom(n - w, k - 2) - log_binom(n, k) + log_binom(rank - w + 2, pairs_l) -
+             log_binom(rank, pairs_l));
+  return (p < 1.0) ? p : 1.0;
 }
 
 /* Format a duration in seconds (s, min, h, or days) */
@@ -2930,12 +2946,12 @@ static void format_duration(char * const buf, const size_t size, const double t)
 }
 
 void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const int w_lo, const int w_hi,
-                               const long steps, const long steps_total, const double t_step) {
+                               const long steps, const long steps_total, const double t_step, const int pairs_l) {
   if (!stream || w_lo < 1 || w_hi < w_lo) return;
-  int w_hard = w_hi; /* the weight hardest to find (smallest P1) */
-  double p1 = rw_infoset_find_prob(n, rank, w_hi);
+  int w_hard = w_hi; /* the weight hardest to find (smallest probability) */
+  double p1 = rw_infoset_find_prob(n, rank, w_hi, pairs_l);
   for (int w = w_lo; w < w_hi; w++) {
-    const double pw = rw_infoset_find_prob(n, rank, w);
+    const double pw = rw_infoset_find_prob(n, rank, w, pairs_l);
     if (pw < p1) {
       p1 = pw;
       w_hard = w;
@@ -2952,18 +2968,21 @@ void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const 
   const double unif_steps_1pc = (p1 < 1.0) ? ceil(log(0.01) / lq) : 1.0;
   const double steps_1pc = (steps > 0 && steps_total > steps) ? ceil(unif_steps_1pc * steps_total / steps)
                                                                 : unif_steps_1pc;
-  char steps_str[32], time_str[64] = "";
+  char steps_str[32], time_str[64] = "", pairs_str[48] = "";
   snprintf(steps_str, sizeof(steps_str), (steps_1pc < 1e9) ? "%.0f" : "%.3g", steps_1pc);
   if (t_step > 0.0) {
     char dur[32];
     format_duration(dur, sizeof(dur), steps_1pc * t_step);
     snprintf(time_str, sizeof(time_str), ", ~%s", dur);
   }
+  if (pairs_l > 0)
+    snprintf(pairs_str, sizeof(pairs_str), " with pairs (l=%d)", pairs_l);
   fprintf(stream,
-          "#   information-set estimate (uniform random information sets, n=%d, rank(H)=%d): a codeword of weight %d\n"
+          "#   information-set estimate (uniform random information sets%s, n=%d, rank(H)=%d): a codeword of weight "
+          "%d\n"
           "#   is found with probability %.3g per RW step, missed in %ld uniform steps with probability %.2g "
           "(1%% after %s RW steps in total%s)\n",
-          n, rank, w_hard, p1, steps, p_miss, steps_str, time_str);
+          pairs_str, n, rank, w_hard, p1, steps, p_miss, steps_str, time_str);
 }
 
 long long int nzlist_read(const char fnam[], params_t *p){

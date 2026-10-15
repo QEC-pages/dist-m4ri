@@ -134,6 +134,8 @@ typedef struct{
   int win_mode;   /* RW window mode: 0 = Tanner BFS, 1 = index proximity */
   int win_hyb;    /* window size of the hybrid RW steps (kwin=0, n >= 500: an index window on every other step); 0:
                      256 columns for a DEM, 512 for matrices (see rw_hybrid_window()) */
+  int pairs;      /* RW pairs of non-pivot columns (p=2) agreeing on `pairs` random pivot rows (0: off; -1: auto, see
+                     rw_pairs_bits()) */
   int round_D;    /* the rounds of a DEM (debug&1, see dem_round_estimate()): detectors per round (0: none found) */
   int round_L;    /* columns per round, n D / m (0: none found) */
   double round_score; /* the score of the estimate (accepted if >= 0.5; -1: not estimated) */
@@ -261,6 +263,49 @@ static inline int rw_hybrid_window(const params_t * const p, const int nvar) {
   return (w < cap) ? w : cap;
 }
 
+/** @brief The largest number of random pivot rows of the buckets of the RW pairs (`pairs`, a 64-bit key). */
+#define RW_PAIRS_MAX_BITS 64
+
+/** @brief The smallest chance to keep a codeword of the weight of the upper bound in the buckets of the RW pairs with
+ *         `pairs=-1` (auto), see rw_pairs_bits(). */
+#define RW_PAIRS_KEEP 0.8
+
+/**
+ * @brief The chance C(r - l, w - 2) / C(r, w - 2) = C(r - w + 2, l) / C(r, l) that a codeword of weight w with exactly
+ *        two non-pivot positions avoids l random pivot rows (rank r), see rw_pairs_bits().
+ */
+static inline double rw_pairs_keep(const int rank, const int w, const int l) {
+  double q = 1.0;
+  for (int i = 0; i < w - 2; i++) {
+    if (rank - l - i <= 0) return 0.0;
+    q *= (double)(rank - l - i) / (double)(rank - i);
+  }
+  return q;
+}
+
+/**
+ * @brief The number l of random pivot rows of the buckets of the RW pairs (p=2) for a matrix with n columns and rank
+ *        r, with the upper bound w on the distance (0: no pairs).
+ *
+ * A RW step with pairs also finds the codewords with exactly two non-pivot columns a, b: the sum of the codewords of
+ * a and b (p=1), whose pivot part is the sum of the columns a and b of the reduced matrix.  Only the pairs which agree
+ * on l random pivot rows are checked (the non-pivot columns are bucketed by these l bits, as in Stern's algorithm),
+ * which keeps a codeword of weight w with the chance rw_pairs_keep().  `pairs` if given (at most r); auto (-1): about
+ * one non-pivot column per bucket, l = ceil(log2(n - r)), but fewer rows (at least one) while the chance to keep a
+ * codeword of weight w is below RW_PAIRS_KEEP.  No pairs without an upper bound (w = 0).
+ */
+static inline int rw_pairs_bits(const params_t * const p, const int nvar, const int rank, const int w) {
+  const int k = nvar - rank;
+  if ((p->pairs == 0) || (k < 2) || (rank < 1) || (w < 2)) return 0;
+  int l = p->pairs;
+  if (l < 0) {
+    l = 1;
+    while ((l < RW_PAIRS_MAX_BITS) && (((uint64_t)1 << l) < (uint64_t)k)) l++;
+    while ((l > 1) && (rw_pairs_keep(rank, w, l) < RW_PAIRS_KEEP)) l--;
+  }
+  return (l < rank) ? l : rank;
+}
+
 /**
  * @brief Number of codewords in the collection window (weight up to min_w + dW with outC or maxC,
  *        otherwise weight min_w): the codewords exported with outC and counted for maxC.
@@ -363,14 +408,18 @@ int codeword_hit_check(FILE *stream, const params_t * const p);
  *
  * Model: uniform random information sets.  A RW step reduces H (rank r) with a random column order;
  * a codeword is found if exactly one of its w positions is among the k = n - r non-pivot columns:
- * P1(w) = w C(n-w, k-1) / C(n, k).  Codewords of weight w > r + 1 are never found (P1 = 0).
+ * P1(w) = w C(n-w, k-1) / C(n, k).  Codewords of weight w > r + 1 are never found (P1 = 0).  With the
+ * RW pairs (`pairs_l` > 0, see rw_pairs_bits()), also if exactly two of its positions are non-pivot
+ * columns and its other w - 2 positions avoid the pivot rows of the buckets:
+ * P2(w) = C(w, 2) C(n-w, k-2) / C(n, k) * C(r - w + 2, l) / C(r, l), and the probability is P1 + P2.
  *
  * @param n Block length (number of columns of H).
  * @param rank Rank r of H.
  * @param w Codeword weight.
- * @return P1(w).
+ * @param pairs_l The number l of random pivot rows of the buckets of the RW pairs (0: no pairs).
+ * @return P1(w) + P2(w).
  */
-double rw_infoset_find_prob(const int n, const int rank, const int w);
+double rw_infoset_find_prob(const int n, const int rank, const int w, const int pairs_l);
 
 /**
  * @brief Print the information-set estimate of the probability that RW missed a codeword lighter than
@@ -391,9 +440,10 @@ double rw_infoset_find_prob(const int n, const int rank, const int w);
  * @param steps Number of completed RW steps with uniform random permutations.
  * @param steps_total Number of all completed RW steps.
  * @param t_step Wall time per RW step in seconds (0: unknown).
+ * @param pairs_l The number l of random pivot rows of the buckets of the RW pairs (0: no pairs).
  */
 void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const int w_lo, const int w_hi,
-                               const long steps, const long steps_total, const double t_step);
+                               const long steps, const long steps_total, const double t_step, const int pairs_l);
 
 /**
  * @brief Compute hit count statistics (min, max, avg, stdev) for minimum-weight codewords.
@@ -444,7 +494,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.14.3"
+#define DIST_M4RI_VERSION "0.14.4"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -460,7 +510,7 @@ void print_short_help(const char *prog);
   "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, sort_rows,\n" \
   "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
-  "  ksub, kwin (win), win_mode, win_hyb, min_hits, cov_cws, refresh,\n" \
+  "  ksub, kwin (win), win_mode, win_hyb, pairs, min_hits, cov_cws, refresh,\n" \
   "  finC, outC, maxC, dW, seed, debug\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
@@ -515,6 +565,7 @@ void print_short_help(const char *prog);
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
   "  win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)\n" \
+  "  pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)\n" \
   "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
   "  refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
@@ -739,6 +790,18 @@ void print_short_help(const char *prog);
   "                     translation of its errors: D detectors and L columns per\n" \
   "                     round) and the codewords found by the uniform and by the\n" \
   "                     window steps.\n" \
+  "  pairs=[int]        RW pairs of non-pivot columns (p=2, as in Lee-Brickell and\n" \
+  "                     Stern): a RW step also finds the codewords with exactly two\n" \
+  "                     non-pivot columns, checking only the pairs of columns which\n" \
+  "                     agree on pairs=l random pivot rows (at most 64; 0 = off).\n" \
+  "                     Default: -1 = auto, about one non-pivot column per bucket,\n" \
+  "                     with fewer rows while a codeword of the weight of the upper\n" \
+  "                     bound would be kept with probability below 0.8.  The pairs\n" \
+  "                     find the minimum-weight codewords of circuit DEMs 7 to 25\n" \
+  "                     times faster, and lighter codewords of codes with a large\n" \
+  "                     distance.  Not with ksub.  With debug&1, the binary prints\n" \
+  "                     the pairs checked per step and the codewords found by pairs\n" \
+  "                     and by single columns.\n" \
   "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off).\n" \
   "                     Stops RW when the average number of times <n> that RW has\n" \
   "                     found each codeword reaches min_hits, both for the codewords\n" \
@@ -776,7 +839,7 @@ void print_short_help(const char *prog);
   "           confinement profile with smax > 0\n" \
   "    1    : Summary (default): input matrices (and the rounds of a DEM, RW\n" \
   "           windows), warnings, stop reason, codeword and hit statistics,\n" \
-  "           RW information sets and step types, export\n" \
+  "           RW information sets, pairs, and step types, export\n" \
   "    2    : Progress (default): run plan (threads, steps, timeout, seed),\n" \
   "           finished CC rounds, new upper bounds, RW convergence\n" \
   "    4    : Periodic status (after 1, 2, 4, ... s, then every 60 s): bounds,\n" \

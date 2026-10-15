@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.3" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.4" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.14.3" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.14.4" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -589,11 +589,12 @@ if [ -z "$O82A" ] || [ "$O82A" != "$O82B" ]; then
 fi
 
 # Test 83: warning for strongly non-uniform RW hit counts (surface code: some minimum-weight logicals are found much
-# more often than others), with the information-set estimate; no warning for the code QX150 (one thread, fixed seed)
+# more often than others by the single columns, pairs=0), with the information-set estimate; no warning for the code
+# QX150 (one thread, fixed seed)
 echo "Running Test 83: hit-count warning with the information-set estimate"
 OUT83=$(mktemp)
 ERR83=$(mktemp)
-$BIN_FORK method=1 $S5 steps=10000 seed=1 threads=1 debug=1 > "$OUT83" 2> "$ERR83"
+$BIN_FORK method=1 $S5 steps=10000 seed=1 threads=1 pairs=0 debug=1 > "$OUT83" 2> "$ERR83"
 if ! grep -q -E "^1 5 10000$" "$OUT83" || \
    ! grep -q "Warning: non-uniform RW hit counts of the 100 codewords of weight 5" "$ERR83" || \
    ! grep -q "information-set estimate (uniform random information sets, n=1958, rank(H)=120)" "$ERR83" || \
@@ -792,12 +793,12 @@ fi
 # Test 99: RW elimination: the blocked elimination (Four Russians, from 128 rows; c1920H: 1280 rows), and the choice
 # of each thread between it and the column-by-column elimination (128 to 512 rows; surf_d7: 336 rows) find the same
 # information sets as the column-by-column elimination: the same codewords and hit counts with a fixed seed and one
-# thread (reference values of the column-by-column elimination)
-RW99="steps=60 seed=5 threads=1 min_hits=1000000 cov_cws=5000"
+# thread (reference values of the column-by-column elimination, with the single columns only: pairs=0)
+RW99="steps=60 seed=5 threads=1 min_hits=1000000 cov_cws=5000 pairs=0"
 assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx $RW99 debug=1" 0 "^1 344 60$" \
     "^# codewords accumulated: total=5151, min_w=344: cws=1, total_hits=1,"
 S7="finH=$EXAMPLES_DIR/surf_d7_H.mmx finL=$EXAMPLES_DIR/surf_d7_L.mmx"
-RW99="steps=400 seed=6 threads=1 min_hits=1000000 cov_cws=5000"
+RW99="steps=400 seed=6 threads=1 min_hits=1000000 cov_cws=5000 pairs=0"
 assert_output "$BIN_FORK method=1 $S7 $RW99 debug=1" 0 "^1 7 400$" \
     "^# codewords accumulated: total=5835, min_w=7: cws=70, total_hits=71,"
 assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
@@ -1114,6 +1115,50 @@ assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem method=1 steps=20 win_hy
 assert_output "$BIN_FORK fdem=$DEM107 $RW107 win_hyb=-1" 255 "" \
     "invalid 'win_hyb=-1': win_hyb should be 0 \(256 columns for a DEM, 512 for matrices\) or positive"
 rm -f "$DEM107" "$DEM107P"
+
+# Test 108: RW pairs of non-pivot columns (p=2; pairs=l: the pairs of columns which agree on l random pivot rows; -1:
+# auto, the default; 0: off): the summary line gives l (auto: l=8 for the surf_d5 circuit DEM with n=1958, rank 120,
+# and d=5; pairs=0 without pairs, also with the experimental ksub, with a warning), and the pairs checked per step and
+# the codewords found by pairs and by single columns; the pairs find many more minimum-weight codewords (here, 15125 of
+# the 18043 of weight 5 in 2000 steps, 1029 without pairs), all valid (read back with finC); the information-set
+# estimate includes the pairs; invalid values are an error
+RW108="method=1 steps=400 seed=1 threads=1 debug=1"
+assert_output "$BIN_FORK $S5 $RW108" 0 "^1 5 400$" \
+    "^# RW information sets: n=1958, rank\(H\)=120, steps=400 \(uniform permutations: 200\), ksub=0, pairs=8, "
+assert_output "$BIN_FORK $S5 $RW108" 0 "" "^# RW pairs \(p=2, buckets of l=8 random pivot rows\): [0-9.e+]+ pairs \
+checked per step; codewords recorded with weight up to the upper bound: [0-9]+ from pairs, [0-9]+ from single columns$"
+assert_output "$BIN_FORK $S5 $RW108 pairs=12" 0 "^1 5 400$" "ksub=0, pairs=12, "
+ERR108=$($BIN_FORK $S5 $RW108 pairs=0 2>&1)
+if ! printf '%s\n' "$ERR108" | grep -q "ksub=0, pairs=0, " || printf '%s\n' "$ERR108" | grep -q "^# RW pairs"; then
+    echo "  [FAIL] Test 108: pairs=0: $ERR108"
+    FAILED=1
+fi
+assert_output "$BIN_FORK finH=$EXAMPLES_DIR/c1920H.mmx method=1 steps=20 ksub=32 pairs=8 threads=1 debug=1" 0 "" \
+    "^# WARNING: pairs=8 is ignored with ksub=32 \(no RW pairs with the experimental ksub\)$"
+CWS108=$(mktemp --suffix=.nz)
+N108=""
+for pr in 0 -1; do
+    $BIN_FORK $S5 method=1 steps=2000 seed=1 threads=1 pairs=$pr outC=$CWS108 debug=0 > /dev/null 2>&1
+    N108="$N108 $(grep -vc '^%' "$CWS108")"
+    assert_output "$BIN_FORK $S5 method=1 steps=1 finC=$CWS108 cov_cws=0 pairs=0 threads=1 debug=1" 0 "^1 5 1$" \
+        "^# read [0-9]+ codewords from .*, total [0-9]+, min weight 5$"
+    if $BIN_FORK $S5 method=1 steps=1 finC=$CWS108 cov_cws=0 threads=1 debug=1 2>&1 | grep -q "invalid codewords"; then
+        echo "  [FAIL] Test 108: invalid codewords exported (pairs=$pr)"
+        FAILED=1
+    fi
+done
+echo "Running Test 108: minimum-weight codewords exported without and with pairs:$N108"
+if ! echo "$N108" | awk '{exit !($1 > 0 && $2 >= 5 * $1)}'; then
+    echo "  [FAIL] Test 108: the pairs found too few codewords:$N108"
+    FAILED=1
+fi
+rm -f "$CWS108"
+assert_output "$BIN_FORK $S5 method=1 steps=3000 seed=1 threads=1 min_hits=1000 cov_cws=0 debug=1" 0 "" \
+    "information-set estimate \(uniform random information sets with pairs \(l=8\), n=1958, rank\(H\)=120\)"
+for pr in -2 65; do
+    assert_output "$BIN_FORK $S5 $RW108 pairs=$pr" 255 "" \
+        "invalid 'pairs=$pr': pairs should be -1 \(auto\), 0 \(off\), or 1 to 64 \(random pivot rows of the buckets\)"
+done
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

@@ -459,10 +459,29 @@ def test_rw_infoset_estimate():
     )
     stats = dist_m4ri._parse_stderr_stats(stderr)
     assert stats["rw_n"] == 204 and stats["rw_rank"] == 101 and stats["rw_steps_uniform"] == 6000
+    assert stats["rw_pairs_l"] == 0  # (the summary line of a binary without the RW pairs)
     exp = dist_m4ri.explain_bounds([0, 8, 6000], method=1, stats=stats)
     assert "Hit-based estimate: P_fail ~ exp(-<n>) = 0.0051 (below 1%)" in exp
     assert "a single codeword of weight 7 < 8 is found with probability" in exp
     assert "Model check: expected hits per codeword of weight 8" in exp
+    # with the RW pairs (l pivot rows of the buckets): P = P1 + P2, P2 = C(w,2) C(n-w,k-2) / C(n,k) C(r-w+2,l) / C(r,l)
+    p2 = comb(7, 2) * comb(197, 101) / comb(204, 103) * comb(96, 4) / comb(101, 4)
+    assert dist_m4ri.rw_infoset_find_prob(204, 101, 7, pairs_l=4) == pytest.approx(p7 + p2, rel=1e-9)
+    assert dist_m4ri.rw_infoset_find_prob(204, 101, 7, pairs_l=0) == pytest.approx(p7, rel=1e-12)
+    est2 = dist_m4ri.rw_infoset_estimate(204, 101, 6000, 8, pairs_l=4)
+    assert est2["w"] == 7 and est2["p_find"] == pytest.approx(p7 + p2)
+    stderr2 = stderr.replace("ksub=0, ", "ksub=0, pairs=4, ") + (
+        "# RW pairs (p=2, buckets of l=4 random pivot rows): 1.23e+03 pairs checked per step; codewords recorded with "
+        "weight up to the upper bound: 517 from pairs, 170 from single columns\n")
+    stats2 = dist_m4ri._parse_stderr_stats(stderr2)
+    assert stats2["rw_pairs_l"] == 4 and stats2["rw_step_time"] == pytest.approx(4.4e-05)
+    assert stats2["rw_threads"] == 8
+    assert (stats2["rw_pairs_per_step"], stats2["rw_hits_pairs"], stats2["rw_hits_single"]) == (1230.0, 517, 170)
+    exp2 = dist_m4ri.explain_bounds([0, 8, 6000], method=1, stats=stats2)
+    assert "Information-set estimate (uniform random information sets with pairs, l = 4; n = 204" in exp2
+    assert f"is found with probability {p7 + p2:.3g} per RW step" in exp2
+    assert ("RW pairs (p=2, buckets of l = 4 pivot rows): 1.23e+03 pairs checked per RW step; codewords recorded "
+            "with weight up to the upper bound: 517 from pairs, 170 from single columns.") in exp2
 
 
 def test_cli_css_dx_dz_bounds(capsys):
@@ -640,7 +659,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.3" in captured.out
+    assert "0.14.4" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -651,7 +670,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.3" in captured.out
+    assert "0.14.4" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -670,7 +689,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.3" in older_warn
+    assert "expected >= 0.14.4" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1241,6 +1260,42 @@ def test_win_hyb_option(capsys):
         assert "win_hyb=100" in capsys.readouterr().out
         assert dist_m4ri.main([f"finH={S5_H}", "method=1", "win_hyb=-1", "--no-cache"]) == 1
         assert "invalid 'win_hyb=-1'" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_pairs_option(capsys):
+    # pairs (the RW pairs of non-pivot columns, p=2: the pairs of columns which agree on N random pivot rows; -1, the
+    # default: auto; 0: off) is passed to the binary if not -1 by run_dist_m4ri(), the compute_*_distance() functions,
+    # and the CLI; the summary (debug&1) gives the number l of rows (auto: 8 for surf_d5 with n=1958, rank 120, and
+    # d=5), the pairs checked per step, and the codewords found by pairs and by single columns (_last_run_stats)
+    for val, l_exp in ((-1, 8), (0, 0), (12, 12)):
+        res = dist_m4ri.run_dist_m4ri(method=1, finH=S5_H, finL=S5_L, steps=200, threads=1, seed=1, pairs=val,
+                                      verbose=True)
+        assert res[1] == 5
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        assert ("pairs=" in run_line) == (val != -1)
+        stats = dist_m4ri._last_run_stats
+        assert stats["rw_pairs_l"] == l_exp
+        assert ("rw_pairs_per_step" in stats) == (l_exp > 0)
+        exp = dist_m4ri.explain_bounds(list(res), method=1, stats=stats)
+        assert (f"RW pairs (p=2, buckets of l = {l_exp} pivot rows): " in exp) == (l_exp > 0)
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=1, num_steps=20, min_hits=0, threads=2,
+                                                  pairs=0, debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) > 0
+        assert "pairs=0" in capsys.readouterr().out
+        dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["pairs=4"])["pairs"] == 4
+        assert dist_m4ri.parse_cli_args([])["pairs"] == -1
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=1", "steps=20", "threads=2", "pairs=6",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "pairs=6" in capsys.readouterr().out
+        for bad in (-2, 65):
+            assert dist_m4ri.main([f"finH={S5_H}", "method=1", f"pairs={bad}", "--no-cache"]) == 1
+            assert f"invalid 'pairs={bad}'" in capsys.readouterr().err
     finally:
         dist_m4ri.enable_distance_cache()
         dist_m4ri.clear_distance_cache()

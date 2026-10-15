@@ -162,27 +162,31 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ## 2. Additional Algorithmic Explorations & Enhancements
 
-- [ ] **RW with pairs of non-pivot columns (Lee–Brickell / Stern, $p=2$)**, the half-weight meet-in-the-middle idea
-  inside a RW step: a codeword with exactly two non-pivot columns is the sum of their two circuits. With uniform
-  information sets, a given codeword of weight $w$ is found $P_2/P_1 = (w-1)(n-r-1)/(2(r-w+2))$ times more often per
-  step ($r = \mathrm{rank}\,H$): about 10 for the dgross CSS code ($w = 18$), 20–100 for the reduced DEMs.
-  - Prototype (Oct 2026, numba, `scratch/speedup/p2_proto.py`; reduced DEMs; uniform and index-window steps as in the
-    binary). Hits of minimum-weight codewords per step, $p=2$ against $p=1$:
-    - bb_72 ($w = 6$, 5000 steps): 25x in the uniform steps (model: 20x) and 11x in the window steps; 1522 distinct
-      weight-6 codewords, against at most 584 for $p=1$ alone.
-    - bb_90 ($w = 8$, 2000 steps): 308 hits against 5.
-    - gross (3000 steps): $w = 10$: 18 against 0; $w = 11$: 152 against 5; $w = 12$: 1193 against 61.
-  - Cost: all pairs take about 3x the time of the elimination.
-    - A Stern collision search, i.e., the pairs whose circuits agree on $l$ random pivot rows, keeps 87–100% of the
-      $p=2$ hits with 12–14% of the pairs for $l = 8$.
-    - The circuits are sparse, so the buckets are very uneven: with $l = 16$, gross still has 1.3M pairs per step.
-    - On gross, a step with $p=1$ and Stern $p=2$ ($l = 8$) took 2.2x the time of the elimination alone
-      (`scratch/speedup/p2_stern.py`), and 200 steps found 3 distinct weight-10 codewords, none of them by $p=1$.
-  - In C:
-    - bucket the non-pivot columns by $l$ pivot rows of their transposed rows (already computed);
-    - check the pairs in each bucket, with early exit at the weight limit;
-    - record the codewords as for $p=1$;
-    - count the $p=1$ and $p=2$ hits separately, and add the $p=2$ term to the information-set estimate.
+- [x] **RW with pairs of non-pivot columns (Lee–Brickell / Stern, $p=2$)** (0.14.4, option `pairs`, on by default;
+  `scratch/speedup/RESULTS.md`, experiment (h)): a codeword with exactly two non-pivot columns is the sum of their two
+  circuits. With uniform information sets, a given codeword of weight $w$ is found
+  $P_2/P_1 = (w-1)(n-r-1)/(2(r-w+2))$ times more often per step ($r = \mathrm{rank}\,H$, all pairs): about 10 for the
+  dgross CSS code ($w = 18$), 20–100 for the reduced DEMs.
+  - Prototype (numba, `scratch/speedup/p2_proto.py`, `p2_stern.py`): 10–35x more minimum-weight hits per step on
+    bb_72, bb_90, and gross; all pairs take about 3x the time of the elimination, and the circuits are sparse, so that
+    the buckets of a Stern collision search ($l$ random pivot rows) are very uneven.
+  - In C: the non-pivot columns are sorted (radix sort) by a hash of their bits in $l$ random pivot rows, then by
+    "zero L syndrome" and by weight. In a bucket, only the pairs whose weights differ by less than the weight limit are
+    checked (word-wise popcount with early exit); the pairs of two columns with zero L syndromes (light trivial
+    codewords, most columns of a circuit DEM) or with equal L syndromes are skipped (the rows of L reduced with the
+    pivot rows, for at most 64 rows of L). The codewords of the pairs are recorded up to the weight of the upper bound
+    (plus dW when collecting). Auto: $l = \lceil\log_2(n-r)\rceil$, reduced while a codeword of the weight of the upper
+    bound is kept with the probability $\binom{r-l}{w-2}/\binom{r}{w-2} < 0.8$. The information-set estimate
+    includes the $P_2$ term, and `debug&1` prints the pairs checked per step and the codewords from pairs and single
+    columns.
+  - Results (fixed RW steps): the minimum-weight codewords of circuit DEMs 7–26x more often per second (bb_72 7x,
+    gross 22x, surf_d7 and mitten_150 26x); dgross: weight 18 in 3000 steps on 32 threads (20 without pairs; 2% more
+    time per step); bb_360: 24 in 600 steps (26); classical LDPC codes with large distances: c1920H 210 instead of 320
+    in 1000 steps (auto $l = 1$). Small codes: 2–5x longer steps (more hits recorded under the codeword mutex), but
+    `min_hits` is reached in 2–34x fewer steps, in about the same time or less.
+  - Possible follow-ups: thread-local batches of the recorded hits (the codeword mutex limits small codes with many
+    threads, also without pairs); a cost model for $l$ (time of the pairs vs the elimination) instead of the fixed
+    keep probability 0.8; triples ($p=3$) for small ranks.
 - [x] **RW thread throttle for huge matrices** (0.14.3; `scratch/speedup/RESULTS.md`, experiments (a) and (e)): above
   15 MB of dense RW memory per thread, at most 32 RW threads, within a quarter of the physical memory (at least 2;
   1.5 GB if the physical memory is not known), instead of about 1.5 GB in total. The memory bus saturates at 32-64 RW

@@ -208,6 +208,11 @@ typedef struct {
   atomic_long rw_timed_steps;        /* number of RW steps timed in `rw_busy_ns` */
   atomic_int rw_rank;                /* rank of H from the RW elimination (n - nu with ksub > 0), 0 if not known */
   atomic_long rw_unif_steps;         /* completed full-matrix RW steps with uniform random permutations (no window) */
+  atomic_int rw_pairs_l;             /* the number l of pivot rows of the RW pairs (0: none), see rw_pairs_step() */
+  atomic_llong rw_pairs_checked;     /* pairs of non-pivot columns checked (the weight of their sum computed) */
+  atomic_llong rw_hits1;             /* RW codewords recorded with weight up to the upper bound: from single columns */
+  atomic_llong rw_hits2;             /* and from the pairs */
+  const uint64_t *rw_lhash;          /* hashes of the columns of L for the RW pairs (NULL: none), see rw_lhash_init() */
 
   /* CC state for current weight (cache-line isolated) */
   _Alignas(64) atomic_llong cc_next; /* weight, fixed levels, next work unit of the current CC round, see `cc_pack()` */
@@ -995,11 +1000,292 @@ static int rw_eliminate(distfork_ctx_t * const ctx, mzd_t * const M, const int n
   return rank;
 }
 
+/* The RW pairs (p=2), see rw_pairs_bits(): a RW step also finds the codewords with exactly two non-pivot columns a, b,
+ * the sums of the codewords of a and b (p=1), whose pivot part is the sum of the columns a and b of the reduced matrix.
+ * The non-pivot columns are sorted by their bits in l random pivot rows (the bucket, as in Stern's algorithm), and only
+ * the pairs in a bucket are checked.  In a bucket, the columns are sorted by weight, so that only the pairs whose
+ * weights differ by less than the weight limit are checked (the weight of the sum is at least the difference), and the
+ * columns whose codewords have a zero L syndrome come first: the pairs of two of them are skipped (the codewords of
+ * most columns of a circuit DEM are light and local, with a zero L syndrome), and so are the pairs with equal L
+ * syndromes.  With at most 64 rows of L, the L syndromes of all columns are known (the rows of L reduced with the pivot
+ * rows); otherwise, only those of the light columns (a hash, see rw_lhash_init()). */
+typedef struct {
+  const word *row; /* the column in the pivot rows (a row of the transposed reduced matrix) */
+  uint64_t sig;    /* the L syndrome of the column's codeword (or its hash, see rw_lhash_init()), if known */
+  int col;         /* the column */
+  int known;       /* 1 if `sig` is known */
+} rw_pair_t;
+
+/* LSD radix sort (8-bit digits) of `n` keys `a` by their lowest `bits` bits (`tmp`: n more) */
+static void rw_radix_sort(uint64_t * const a, uint64_t * const tmp, const int n, const int bits) {
+  uint64_t *src = a, *dst = tmp;
+  for (int sh = 0; sh < bits; sh += 8) {
+    int cnt[256];
+    memset(cnt, 0, sizeof(cnt));
+    for (int i = 0; i < n; i++) cnt[(src[i] >> sh) & 255]++;
+    for (int d = 0, sum = 0; d < 256; d++) {
+      const int c = cnt[d];
+      cnt[d] = sum;
+      sum += c;
+    }
+    for (int i = 0; i < n; i++) dst[cnt[(src[i] >> sh) & 255]++] = src[i];
+    uint64_t * const t = src;
+    src = dst;
+    dst = t;
+  }
+  if (src != a) memcpy(a, src, (size_t)n * sizeof(uint64_t));
+}
+
+/* The workspace of a thread for the RW pairs (see rw_pair_t, rw_pairs_step()) */
+typedef struct {
+  rw_pair_t *ent; /* the entries of the non-pivot columns (nvar of them) */
+  uint64_t *srt;  /* their sort keys (bucket, zero L syndrome or not, weight, entry), 2 nvar for the radix sort */
+  int nl;         /* the number of rows of L if at most 64 (0: a classical code, or more rows) */
+  wi_t width;     /* the words per row of the RW matrix (with nl > 0) */
+  word *lrows;    /* with nl > 0: the rows of L (nl rows of `width` words) */
+  word *srows;    /* and the rows of L reduced with the pivot rows of a RW step: the L syndromes of the codewords */
+} rw_pairs_ws_t;
+
+/* The hashes of the columns of L for the RW pairs (see rw_pair_t): the hash of the L syndrome of a vector is the sum of
+ * the hashes of its columns.  With at most 64 rows of L, the hash of a column is its mask (the syndrome itself);
+ * otherwise, the sum of 64-bit random hashes of its rows (a non-zero syndrome has the hash zero with probability
+ * 2^-64).  NULL for a classical code. */
+static uint64_t *rw_lhash_init(const params_t * const p) {
+  const colmask_t * const cm = p->maskL;
+  const int nvar = p->spaH->cols;
+  if (p->classical || !cm || cm->cols < nvar) return NULL;
+  uint64_t * const h = malloc((size_t)nvar * sizeof(uint64_t));
+  if (!h) ERROR("memory allocation");
+  if (cm->kw == 1) {
+    for (int j = 0; j < nvar; j++) h[j] = cm->mask[j];
+  } else {
+    uint64_t * const R = malloc((size_t)cm->kw * 64 * sizeof(uint64_t));
+    if (!R) ERROR("memory allocation");
+    uint64_t st = mix64((uint64_t)p->seed ^ 0x2545f4914f6cdd1dULL);
+    for (int t = 0; t < cm->kw * 64; t++) R[t] = splitmix64(&st);
+    for (int j = 0; j < nvar; j++) {
+      uint64_t s = 0;
+      for (int w = 0; w < cm->kw; w++) {
+        for (word m = cm->mask[(size_t)j * cm->kw + w]; m; m &= m - 1) s ^= R[w * 64 + __builtin_ctzll(m)];
+      }
+      h[j] = s;
+    }
+    free(R);
+  }
+  return h;
+}
+
+/* The workspace of the RW pairs of a thread (`ws->ent` NULL without pairs), for the RW matrix `mH` (`nvar` columns) */
+static void rw_pairs_ws_init(rw_pairs_ws_t * const ws, const distfork_ctx_t * const ctx, const mzd_t * const mH,
+                             const int nvar) {
+  memset(ws, 0, sizeof(*ws));
+  if (ctx->p->pairs == 0) return;
+  ws->ent = malloc((size_t)nvar * sizeof(rw_pair_t));
+  ws->srt = malloc((size_t)2 * nvar * sizeof(uint64_t));
+  if (!ws->ent || !ws->srt) ERROR("memory allocation");
+  const colmask_t * const cm = ctx->p->maskL;
+  if (ctx->rw_lhash && cm->kw == 1 && cm->rows > 0) {
+    ws->nl = cm->rows;
+    ws->width = mH->width;
+    ws->lrows = calloc((size_t)ws->nl * ws->width, sizeof(word));
+    ws->srows = malloc((size_t)ws->nl * ws->width * sizeof(word));
+    if (!ws->lrows || !ws->srows) ERROR("memory allocation");
+    for (int j = 0; j < nvar; j++) {
+      for (word m = cm->mask[j]; m; m &= m - 1)
+        ws->lrows[(size_t)__builtin_ctzll(m) * ws->width + (j >> 6)] |= (word)1 << (j & 63);
+    }
+  }
+}
+
+static void rw_pairs_ws_free(rw_pairs_ws_t * const ws) {
+  free(ws->ent);
+  free(ws->srt);
+  free(ws->lrows);
+  free(ws->srows);
+  memset(ws, 0, sizeof(*ws));
+}
+
+/* A codeword of weight `cnt` found by RW is a hit (see rw_hits1, rw_hits2) if not heavier than the upper bound */
+static inline bool rw_is_hit(distfork_ctx_t * const ctx, const int cnt) {
+  const int dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+  return (dmax <= 0) || (cnt <= dmax);
+}
+
+/* Weight limit (exclusive) of the codewords of the RW pairs: as for the single columns (rw_cw_limit()), but at most the
+ * upper bound plus one (plus dW with outC or maxC), and 0 without an upper bound: the pairs would otherwise give far
+ * too many candidates (of any weight, or the heavier codewords of the `min_hits` statistic) */
+static inline int rw_pairs_limit(distfork_ctx_t * const ctx) {
+  const params_t * const p = ctx->p;
+  const int dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+  if (dmax <= 0) return 0;
+  long long int cap = (long long int)dmax + 1;
+  if ((p->outC != NULL || p->maxC > 0) && p->dW > 0) cap += p->dW;
+  const int lim = rw_cw_limit(ctx);
+  return (lim < cap) ? lim : (int)cap;
+}
+
+/* The pairs of a RW step (see rw_pair_t), after its single columns: the reduced matrix `mH` (Gauss-Jordan: `rank` pivot
+ * rows, whose pivot columns are `pivs`) and its transpose `mHT` (row c: the column c in the pivot rows), `l` pivot rows
+ * of the buckets, the workspace `ws`, and the support `ee`; `src` as in rw_record_codeword().  Adds the number of the
+ * pairs checked to `*checked`, and of the hits to `*hits` (see rw_is_hit()); returns l (0: no pairs).  The bucket of a
+ * column is a hash of its l bits (64 bits; the sort uses its top bits: the buckets with different bits are merged
+ * rarely, which only adds pairs). */
+static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * const mHT,
+                         const rci_t * const pivs, const word * const piv_mask, const int rank, int l,
+                         rw_pairs_ws_t * const ws, rci_t * const ee, uint64_t * const rng_state, const int tid,
+                         const int src, long long * const checked, long long * const hits) {
+  params_t * const p = ctx->p;
+  const colmask_t * const maskL = p->maskL;
+  const int classical = p->classical;
+  const uint64_t * const lhash = ctx->rw_lhash;
+  const int nvar = p->spaH->cols;
+  rw_pair_t * const ent = ws->ent;
+  uint64_t * const srt = ws->srt;
+  int lim = rw_pairs_limit(ctx);
+  if (lim < 3 || l < 1 || l > rank) return 0; /* (the weight of a pair is at least 2) */
+  /* the sort keys: the top kb bits of the bucket's hash, the bit "the L syndrome is not known to be zero", the weight
+   * (wb bits), and the entry (ib bits) */
+  int wb = 1, ib = 1;
+  while ((1L << wb) <= (long)rank) wb++;
+  while ((1L << ib) < (long)(nvar - rank)) ib++;
+  const int kb = (l + 8 < 63 - wb - ib) ? l + 8 : 63 - wb - ib;
+  if (kb < 1) return 0;
+  const int sh_grp = ib + wb, sh_key = sh_grp + 1;
+  const uint64_t wmask = ((uint64_t)1 << wb) - 1, imask = ((uint64_t)1 << ib) - 1;
+  const int aw = (rank + 63) >> 6;
+  const word last_mask = (rank & 63) ? (((word)1 << (rank & 63)) - 1) : ~(word)0; /* bits of rows < rank */
+  /* l distinct random pivot rows, as the masks `kmask` of the words `kword` of the rows */
+  int nk = 0, kword[RW_PAIRS_MAX_BITS];
+  word kmask[RW_PAIRS_MAX_BITS];
+  for (int i = 0; i < l; i++) {
+    int r, j;
+    do {
+      r = rand_uniform_thread(rank, rng_state);
+      for (j = 0; j < nk && kword[j] != (r >> 6); j++) continue;
+    } while (j < nk && ((kmask[j] >> (r & 63)) & 1));
+    if (j == nk) {
+      kword[nk] = r >> 6;
+      kmask[nk++] = 0;
+    }
+    kmask[j] |= (word)1 << (r & 63);
+  }
+  /* the L syndromes of the codewords of all columns (with at most 64 rows of L): the rows of L reduced with the pivot
+   * rows (`lhash` is then the column masks of L) */
+  const int nl = ws->nl;
+  const wi_t width = ws->width;
+  if (nl > 0) {
+    memcpy(ws->srows, ws->lrows, (size_t)nl * width * sizeof(word));
+    for (int i = 0; i < rank; i++) {
+      word g = lhash[pivs[i]];
+      if (!g) continue;
+      const word * const ri = mzd_row(mH, i);
+      for (; g; g &= g - 1) rw_row_xor(ws->srows + (size_t)__builtin_ctzll(g) * width, ri, width);
+    }
+  }
+  const int wsig = lim + 1; /* (otherwise) the L syndromes of the columns up to this weight */
+  int K = 0;
+  for (int col = 0; col < nvar; col++) {
+    if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
+    const word * const row = mzd_row(mHT, col);
+    int wt = 0;
+    for (int iw = 0; iw < aw - 1; iw++) wt += __builtin_popcountll(row[iw]);
+    wt += __builtin_popcountll(row[aw - 1] & last_mask);
+    uint64_t key = 0;
+    for (int j = 0; j < nk; j++) key = (key ^ (row[kword[j]] & kmask[j])) * 0x9e3779b97f4a7c15ULL;
+    key >>= 64 - kb;
+    uint64_t sig = 0;
+    int known = 0;
+    if (nl > 0) {
+      const word * const sc = ws->srows + (col >> 6);
+      for (int t = 0; t < nl; t++) sig |= ((sc[(size_t)t * width] >> (col & 63)) & 1) << t;
+      known = 1;
+    } else if (lhash && wt <= wsig) {
+      sig = lhash[col];
+      for (int iw = 0; iw < aw; iw++) {
+        for (word x = (iw < aw - 1) ? row[iw] : (row[iw] & last_mask); x; x &= x - 1)
+          sig ^= lhash[pivs[(iw << 6) + __builtin_ctzll(x)]];
+      }
+      known = 1;
+    }
+    const uint64_t grp = !known || (sig != 0);
+    ent[K].row = row;
+    ent[K].sig = sig;
+    ent[K].col = col;
+    ent[K].known = known;
+    srt[K] = ((uint64_t)key << sh_key) | (grp << sh_grp) | ((uint64_t)wt << ib) | (uint64_t)K;
+    K++;
+  }
+  rw_radix_sort(srt, srt + nvar, K, sh_key + kb);
+
+  /* with one row of L (known syndromes), the other columns have the same syndrome: only their pairs with the columns
+   * with zero syndromes */
+  const bool other_pairs = (nl != 1);
+  long long int nchk = 0, nhits = 0;
+  for (int b0 = 0; b0 < K;) {
+    const uint64_t bkey = srt[b0] >> sh_key;
+    int b1 = b0 + 1;
+    while (b1 < K && (srt[b1] >> sh_key) == bkey) b1++;
+    if (b1 - b0 >= 2) {
+      if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+          atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) break;
+      lim = rw_pairs_limit(ctx); /* (the upper bound may have decreased) */
+      if (lim < 3) break;
+      int lx = lim - 3; /* the largest weight of the sum of the two columns */
+      int g0 = b0;      /* [b0, g0): the columns with zero L syndromes; [g0, b1): the others */
+      while (g0 < b1 && !((srt[g0] >> sh_grp) & 1)) g0++;
+      int lo = g0;
+      const int x_end = other_pairs ? b1 - 1 : g0;
+      for (int x = b0; x < x_end; x++) {
+        const int wx = (int)((srt[x] >> ib) & wmask);
+        const rw_pair_t * const ex = ent + (srt[x] & imask);
+        int y = x + 1;
+        if (x < g0) { /* (a column with a zero L syndrome: only the pairs with the others) */
+          while (lo < b1 && (int)((srt[lo] >> ib) & wmask) < wx - lx) lo++;
+          y = lo;
+        }
+        for (; y < b1; y++) {
+          if ((int)((srt[y] >> ib) & wmask) - wx > lx) break;
+          const rw_pair_t * const ey = ent + (srt[y] & imask);
+          if (x >= g0 && ex->known && ey->known && ex->sig == ey->sig) continue;
+          const word * const ra = ex->row;
+          const word * const rb = ey->row;
+          nchk++;
+          int c = 0;
+          for (int iw = 0; iw < aw - 1 && c <= lx; iw++) c += __builtin_popcountll(ra[iw] ^ rb[iw]);
+          if (c <= lx) c += __builtin_popcountll((ra[aw - 1] ^ rb[aw - 1]) & last_mask);
+          if (c > lx) continue;
+          int cnt = 0;
+          ee[cnt++] = ex->col;
+          ee[cnt++] = ey->col;
+          for (int iw = 0; iw < aw; iw++) {
+            for (word z = (ra[iw] ^ rb[iw]) & ((iw < aw - 1) ? ~(word)0 : last_mask); z; z &= z - 1)
+              ee[cnt++] = pivs[(iw << 6) + __builtin_ctzll(z)];
+          }
+          if (classical || colmask_syndrome_non_zero(maskL, cnt, ee)) {
+            rci_quick_sort(ee, cnt);
+            if (rw_is_hit(ctx, cnt)) nhits++;
+            rw_record_codeword(ctx, ee, cnt, tid, 0, src);
+            lim = rw_pairs_limit(ctx);
+            if (lim < 3) goto done;
+            lx = lim - 3;
+          }
+        }
+      }
+    }
+    b0 = b1;
+  }
+done:
+  *checked += nchk;
+  *hits += nhits;
+  return l;
+}
+
 /* Run RW batch of the global steps step0 .. step0+n_steps-1; returns the number of completed steps.  `el`: the thread's
- * RW elimination (blocked or column by column, see rw_elim_t) */
+ * RW elimination (blocked or column by column, see rw_elim_t); `pws`: the workspace of the RW pairs (see
+ * rw_pairs_ws_init()) */
 static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
                         mzd_t *mH, mzd_t *mHT, rci_t *ee,
-                        mzp_t *perm, mzp_t *pivs, word *piv_mask, rw_elim_t *el,
+                        mzp_t *perm, mzp_t *pivs, word *piv_mask, rw_elim_t *el, rw_pairs_ws_t *pws,
                         int *eff_nrows_ptr,
                         int *visited_cols, int *visited_checks, int *col_queue,
                         int *visit_marker, uint64_t *rng_state, int tid) {
@@ -1012,6 +1298,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
   int eff_nrows = *eff_nrows_ptr;
   int n_done = 0;
   long n_unif = 0; /* completed steps with uniform random permutations (for the information-set estimate) */
+  long long int n_pairs = 0, hits1 = 0, hits2 = 0; /* see rw_pairs_checked, rw_hits1, rw_hits2 */
   double t_last = get_time_sec(), acc_t = 0.0;
   int acc_n = 0;
 
@@ -1109,8 +1396,17 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
       /* the check L c != 0 needs no sorted support: only the codewords recorded are sorted (hash key) */
       if (classical || colmask_syndrome_non_zero(maskL, cnt, ee)) {
         rci_quick_sort(ee, cnt);
+        if (rw_is_hit(ctx, cnt)) hits1++;
         rw_record_codeword(ctx, ee, cnt, tid, 0, uniform ? CW_SRC_RW_UNIFORM : CW_SRC_RW_WINDOW);
       }
+    }
+    if (pws->ent) { /* the pairs of non-pivot columns (p=2) */
+      int l = rw_pairs_bits(p, nvar, rank, atomic_load_explicit(&ctx->dmax, memory_order_relaxed));
+      if (l > 0)
+        l = rw_pairs_step(ctx, mH, mHT, pivs->values, piv_mask, rank, l, pws, ee, rng_state, tid,
+                          uniform ? CW_SRC_RW_UNIFORM : CW_SRC_RW_WINDOW, &n_pairs, &hits2);
+      if (l > 0 && atomic_load_explicit(&ctx->rw_pairs_l, memory_order_relaxed) != l)
+        atomic_store_explicit(&ctx->rw_pairs_l, l, memory_order_relaxed);
     }
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
     n_done++;
@@ -1119,6 +1415,9 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
   }
   rw_time_publish(ctx, &acc_t, &acc_n);
   atomic_fetch_add_explicit(&ctx->rw_unif_steps, n_unif, memory_order_relaxed);
+  if (n_pairs > 0) atomic_fetch_add_explicit(&ctx->rw_pairs_checked, n_pairs, memory_order_relaxed);
+  if (hits1 > 0) atomic_fetch_add_explicit(&ctx->rw_hits1, hits1, memory_order_relaxed);
+  if (hits2 > 0) atomic_fetch_add_explicit(&ctx->rw_hits2, hits2, memory_order_relaxed);
   return n_done;
 }
 
@@ -1304,6 +1603,8 @@ static void *worker_thread_func(void *arg) {
   mzp_t *pivs = NULL;
   word *piv_mask = NULL;
   rw_elim_t rw_el = {NULL, 0, 0, 0, 0, {0.0, 0.0}, 0}; /* the RW elimination of this thread */
+  rw_pairs_ws_t rw_pws; /* the RW pairs of this thread (see rw_pairs_ws_init()) */
+  memset(&rw_pws, 0, sizeof(rw_pws));
   int eff_nrows = ctx->p->spaH->rows;
   int *visited_cols = NULL;
   int *visited_checks = NULL;
@@ -1341,6 +1642,7 @@ static void *worker_thread_func(void *arg) {
       rw_el.table = aligned_alloc(64, tbytes);
       if (!piv_mask || !rw_el.table) ERROR("memory allocation");
       memset(rw_el.table, 0, tbytes);
+      rw_pairs_ws_init(&rw_pws, ctx, mH, nvar);
     }
   }
 
@@ -1515,7 +1817,7 @@ static void *worker_thread_func(void *arg) {
             }
           } else {
             run_rw_steps(ctx, cur_s, n_steps, mH, mHT_rw, ee, perm, pivs,
-                         piv_mask, &rw_el, &eff_nrows, visited_cols, visited_checks,
+                         piv_mask, &rw_el, &rw_pws, &eff_nrows, visited_cols, visited_checks,
                          col_queue, &visit_marker, &rng_state, tid);
             if (eff_nrows > 0 && eff_nrows < mH->nrows) rw_shrink_matrices(&mH, &mHT_rw, eff_nrows);
           }
@@ -1533,6 +1835,7 @@ static void *worker_thread_func(void *arg) {
   if (enable_rw) {
     free(piv_mask);
     free(rw_el.table);
+    rw_pairs_ws_free(&rw_pws);
     safe_mzp_free(perm);
     safe_mzp_free(pivs);
     free(ee);
@@ -2698,6 +3001,12 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.rw_timed_steps, 0);
   atomic_init(&ctx.rw_rank, 0);
   atomic_init(&ctx.rw_unif_steps, 0);
+  atomic_init(&ctx.rw_pairs_l, 0);
+  atomic_init(&ctx.rw_pairs_checked, 0);
+  atomic_init(&ctx.rw_hits1, 0);
+  atomic_init(&ctx.rw_hits2, 0);
+  uint64_t * const rw_lhash = (p->pairs != 0 && (p->method & 1) && p->ksub <= 0) ? rw_lhash_init(p) : NULL;
+  ctx.rw_lhash = rw_lhash;
   atomic_init(&ctx.cc_next, cc_pack(0, 0, 0));
   atomic_init(&ctx.cc_active_workers, 0);
   atomic_init(&ctx.cc_target_workers, 0);
@@ -2887,10 +3196,16 @@ int main(int argc, char **argv) {
     const int rw_rank = atomic_load(&ctx.rw_rank);
     const long rw_timed = atomic_load(&ctx.rw_timed_steps);
     const double t_step = (rw_timed > 0) ? 1e-9 * (double)atomic_load(&ctx.rw_busy_ns) / (double)rw_timed : 0.0;
+    const int rw_pairs_l = atomic_load(&ctx.rw_pairs_l);
     if (rw_done > 0 && rw_rank > 0) {
       fprintf(stderr, "# RW information sets: n=%d, rank(H)=%d, steps=%ld (uniform permutations: %ld), ksub=%d, "
-              "%.3g s/step per thread, %d RW threads\n", p->nvar, rw_rank, rw_done, rw_unif, p->ksub, t_step,
-              ctx.rw_threads);
+              "pairs=%d, %.3g s/step per thread, %d RW threads\n", p->nvar, rw_rank, rw_done, rw_unif, p->ksub,
+              rw_pairs_l, t_step, ctx.rw_threads);
+      if (rw_pairs_l > 0)
+        fprintf(stderr, "# RW pairs (p=2, buckets of l=%d random pivot rows): %.3g pairs checked per step; codewords "
+                "recorded with weight up to the upper bound: %lld from pairs, %lld from single columns\n", rw_pairs_l,
+                (double)atomic_load(&ctx.rw_pairs_checked) / (double)rw_done, (long long)atomic_load(&ctx.rw_hits2),
+                (long long)atomic_load(&ctx.rw_hits1));
       if (rw_unif > 0 && rw_unif < rw_done) /* the codewords found by the uniform and by the window steps */
         print_rw_step_stats(stderr, p);
     }
@@ -2901,7 +3216,7 @@ int main(int argc, char **argv) {
     if (reported_rw_steps > 0 && final_dmin < final_dmax && atomic_load(&ctx.stop_reason) != STOP_DSTOP &&
         codeword_hit_check(stderr, p) > 0 && rw_unif > 0 && rw_rank > 0) {
       print_rw_infoset_estimate(stderr, p->nvar, rw_rank, (final_dmin > 1) ? final_dmin : 1, final_dmax - 1,
-                                rw_unif, rw_done, (ctx.rw_threads > 0) ? t_step / ctx.rw_threads : 0.0);
+                                rw_unif, rw_done, (ctx.rw_threads > 0) ? t_step / ctx.rw_threads : 0.0, rw_pairs_l);
     }
   }
 
@@ -2931,6 +3246,7 @@ int main(int argc, char **argv) {
   }
 
   /* Cleanup */
+  free(rw_lhash);
   safe_mzd_free(ctx.N_global);
   cc_hash_free(cc_hash);
   csr_free(ctx.mHT_cc);
