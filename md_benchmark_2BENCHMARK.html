@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.14.5</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.14.7</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -91,7 +91,7 @@ Directory Structure</h1>
 <li><code>stim_bb/</code>: Unmodified Bivariate Bicycle (BB), Gross, and Double-Gross <code>.stim</code> circuits from external repositories.</li>
 <li><code>stim_mitten/</code>: Mitten code <code>.stim</code> circuits generated via <code>quits</code> with <code>CircuitBuildOptions(get_all_detectors=True)</code>.</li>
 <li><code>stim_torus/</code>: 2D local torus Bivariate Bicycle <code>.stim</code> circuits (<code>d = 14</code> to <code>17</code>, noiseless templates).</li>
-<li><code>figures/</code>: scaling of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> with the number of threads on some of these codes and circuits (Section 4), and the time to a minimum-weight codeword in the full DEMs of the circuits (Section 5).</li>
+<li><code>figures/</code>: scaling of <code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> with the number of threads on some of these codes and circuits (Section 4), the time to a minimum-weight codeword in the full DEMs of the circuits (Sections 5 and 8), and the lightest codeword found against time with and without the RW pairs (Section 8).</li>
 </ul>
 <hr  />
 <h1><a class="anchor" id="autotoc_md8"></a>
@@ -343,7 +343,7 @@ Origins and References</h1>
 <div class="line">dist, bounds = <a class="code hl_function" href="namespacedist__m4ri.html#a7ff63e3cdd8029f98682d356e4355702">dist_m4ri.compute_dem_distance</a>(</div>
 <div class="line">    circuit=<span class="stringliteral">&quot;benchmark/stim_torus/NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim&quot;</span>,</div>
 <div class="line">    out_dem=<span class="stringliteral">&quot;tmp/torus_n60_X_full.dem&quot;</span>, out_reduced=<span class="stringliteral">&quot;tmp/torus_n60_X&quot;</span>)  <span class="comment"># tmp/torus_n60_X_red.dem, _red.json</span></div>
-<div class="ttc" id="anamespacedist__m4ri_html_a7ff63e3cdd8029f98682d356e4355702"><div class="ttname"><a href="namespacedist__m4ri.html#a7ff63e3cdd8029f98682d356e4355702">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, bool merge=True, bool expand=False, Optional[Union[bool, int, str, Path]] drop=None, Optional[Union[str, Path]] outD=None, Optional[Union[bool, str, Path]] out_reduced=None, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, int win_hyb=0, int pairs=-1, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, Optional[bool] simple=None, Optional[bool] full=None, Optional[str] basis=None, Optional[int] rounds=None, Optional[Union[str, Path]] out_dir=None, Optional[Union[bool, str, Path]] out_dem=None, Optional[Union[bool, str, Path]] out_stim=None, float p_noise=0.001, bool force_noise=False, bool trust_start=False, Optional[bool] sort_rows=None, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l04537">dist_m4ri.py:4598</a></div></div>
+<div class="ttc" id="anamespacedist__m4ri_html_a7ff63e3cdd8029f98682d356e4355702"><div class="ttname"><a href="namespacedist__m4ri.html#a7ff63e3cdd8029f98682d356e4355702">dist_m4ri.compute_dem_distance</a></div><div class="ttdeci">Tuple[Any,...] compute_dem_distance(Optional[Any] dem=None, Optional[Any] circuit=None, Optional[str] dist_m4ri=None, int method=3, Optional[int] threads=None, float timeout=60.0, Optional[int] num_steps=None, int d_exp=0, int d_min=0, int d_max=0, int dmin=0, int dmax=0, int dstop=0, int wmin=1, int wmax=0, Optional[int] smax=None, Optional[Union[int, str, Sequence[int]]] start=None, Optional[int] cbeg=None, Optional[int] cend=None, int noscan=0, int dW=-1, int maxC=0, float pmin=0.0, bool merge=True, bool expand=False, Optional[Union[bool, int, str, Path]] drop=None, Optional[Union[str, Path]] outD=None, Optional[Union[bool, str, Path]] out_reduced=None, Optional[str] finC=None, Optional[str] outC=None, bool do_cws=False, Optional[Union[str, Path]] cache_file=None, str solver=&quot;dist_m4ri&quot;, str codedistance_method=&quot;UndetectableErrorStim&quot;, Optional[Dict[str, Any]] codedistance_params=None, int seed=0, int debug=0, bool verbose=False, bool nothrottle=False, int chunk_size=0, int ksub=0, int kwin=0, int win_mode=0, int win_hyb=0, int pairs=-1, Optional[int] min_hits=None, int cov_cws=100, int refresh=0, Optional[bool] simple=None, Optional[bool] full=None, Optional[str] basis=None, Optional[int] rounds=None, Optional[Union[str, Path]] out_dir=None, Optional[Union[bool, str, Path]] out_dem=None, Optional[Union[bool, str, Path]] out_stim=None, float p_noise=0.001, bool force_noise=False, bool trust_start=False, Optional[bool] sort_rows=None, **kwargs)</div><div class="ttdef"><b>Definition</b> <a href="dist__m4ri_8py_source.html#l04539">dist_m4ri.py:4600</a></div></div>
 </div><!-- fragment --><table class="markdownTable">
 <tr class="markdownTableHead">
 <th class="markdownTableHeadLeft">Stim circuit   </th><th class="markdownTableHeadLeft">Basis   </th><th class="markdownTableHeadLeft">Full (dets x errs)   </th><th class="markdownTableHeadLeft">Stripped   </th><th class="markdownTableHeadLeft">Searched (0.14.0)   </th><th class="markdownTableHeadLeft">$k$    </th></tr>
@@ -479,8 +479,7 @@ Origins and References</h1>
 </ul>
 <h2><a class="anchor" id="autotoc_md24"></a>
 5.2 Full DEMs: time to a codeword of the minimum weight</h2>
-<p>The time of RW (<code>method=1</code>, <code>wmin=d</code>: the run stops at the first codeword of weight at most $d$; 128 threads, <code>nothrottle=1</code>, timeout 300 s) on the full DEMs: 0.14.0 reduces them exactly, the older versions work on the full matrices. "&gt; 300 (w)": no codeword of weight $d$ found, $w$ is the lightest weight found.</p>
-<p><img src="figures/fulldem_time.png" alt="Time to a minimum-weight codeword in the full DEMs" class="inline"/></p>
+<p>The time of RW (<code>method=1</code>, <code>wmin=d</code>: the run stops at the first codeword of weight at most $d$; 128 threads, <code>nothrottle=1</code>, timeout 300 s) on the full DEMs: 0.14.0 reduces them exactly, the older versions work on the full matrices. "&gt; 300 (w)": no codeword of weight $d$ found, $w$ is the lightest weight found. The figure of Section 8.1 shows these times together with those of 0.14.3 and 0.14.5.</p>
 <table class="markdownTable">
 <tr class="markdownTableHead">
 <th class="markdownTableHeadLeft">Circuit   </th><th class="markdownTableHeadCenter">$d$   </th><th class="markdownTableHeadLeft">full DEM   </th><th class="markdownTableHeadRight">0.14.0   </th><th class="markdownTableHeadRight">0.12.2   </th><th class="markdownTableHeadRight">0.9.0    </th></tr>
@@ -779,7 +778,244 @@ Origins and References</h1>
 <p>The uniform steps find almost none of these codewords: with uniform random information sets, a codeword of weight 10 of gross is found with probability about $1.5 \cdot 10^{-8}$ per step. They are kept for codewords which are not local in the column order (e.g., time-like codewords with one error per round), and for the information-set estimate.</p>
 <h2><a class="anchor" id="autotoc_md38"></a>
 7.4 Time to a codeword of the minimum weight</h2>
-<p>On the full DEMs of Section 5.2 (<code>method=1</code>, <code>wmin=d</code>, 128 threads, <code>nothrottle=1</code>, three seeds), 0.14.3 finds a codeword of the minimum weight within 0.53 s (median) for all eleven circuits, as 0.14.2. On gross, the steps to weight 10 (five seeds) were 0.5k–5.7k with 256 columns (median 2.0k) against 1.3k–7.3k with 512 (median 3.0k). </p>
+<p>On the full DEMs of Section 5.2 (<code>method=1</code>, <code>wmin=d</code>, 128 threads, <code>nothrottle=1</code>, three seeds), 0.14.3 finds a codeword of the minimum weight within 0.53 s (median) for all eleven circuits, as 0.14.2. On gross, the steps to weight 10 (five seeds) were 0.5k–5.7k with 256 columns (median 2.0k) against 1.3k–7.3k with 512 (median 3.0k).</p>
+<hr  />
+<h1><a class="anchor" id="autotoc_md40"></a>
+8. RW Pairs of 0.14.4 and 0.14.6, and the Model Bound of 0.14.5 (2026-10-15)</h1>
+<p><code><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></code> 0.14.5 (commit <code>6241d59</code>) against 0.14.3 (<code>741d9a1</code>, Section 7) and 0.14.0 (<code>40faf58</code>, Section 5), on the server of Section 4, with the inputs of Section 5: 476 runs in about one hour. 0.14.4 added the RW pairs (<code>pairs</code>, on by default): a RW step also finds the codewords with exactly two non-pivot columns (Lee–Brickell and Stern with $p = 2$), from the pairs of columns which agree on $l$ random pivot rows ($l \approx \log_2(n - r)$, fewer while the upper bound is large). 0.14.5 added <code>compute_model_lower_bound()</code> to the Python wrapper (the code-sized model of Section 6.3, with the minority-basis rows by default until 0.14.6). 0.14.6 bounds the work of the RW pairs per step, after the slow early steps found here (Section 8.7; 142 more runs). The raw data and scripts are in <code>scratch/bench_0.14.5/</code> (not in the repository).</p>
+<h2><a class="anchor" id="autotoc_md41"></a>
+8.1 Full DEMs: time to a codeword of the minimum weight</h2>
+<p>As in Section 5.2 (<code>method=1</code>, <code>wmin=d</code>, 128 threads, <code>nothrottle=1</code>), with five seeds per version (seven for gross): the median wall time, which includes reading the DEM, merging, and the exact reduction, and the median number of RW steps; 0.12.2 and 0.9.0 in the figure: the runs of Section 5.2. All runs of 0.14.x found a codeword of weight $d$. 0.14.6: Section 8.7.</p>
+<p><img src="figures/fulldem_time.png" alt="Time and RW steps to a minimum-weight codeword in the full DEMs" class="inline"/></p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">Circuit   </th><th class="markdownTableHeadCenter">$d$   </th><th class="markdownTableHeadRight">wall (s): 0.14.0   </th><th class="markdownTableHeadRight">0.14.3   </th><th class="markdownTableHeadRight">0.14.5   </th><th class="markdownTableHeadRight">0.14.6   </th><th class="markdownTableHeadRight">RW steps: 0.14.0   </th><th class="markdownTableHeadRight">0.14.3   </th><th class="markdownTableHeadRight">0.14.5   </th><th class="markdownTableHeadRight">0.14.6    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6_X</code>   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.092   </td><td class="markdownTableBodyRight">0.092   </td><td class="markdownTableBodyRight">0.093   </td><td class="markdownTableBodyRight">0.093   </td><td class="markdownTableBodyRight">7   </td><td class="markdownTableBodyRight">6   </td><td class="markdownTableBodyRight">2   </td><td class="markdownTableBodyRight">3    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.16   </td><td class="markdownTableBodyRight">0.16   </td><td class="markdownTableBodyRight">0.16   </td><td class="markdownTableBodyRight">0.16   </td><td class="markdownTableBodyRight">14   </td><td class="markdownTableBodyRight">8   </td><td class="markdownTableBodyRight">2   </td><td class="markdownTableBodyRight">3    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.18   </td><td class="markdownTableBodyRight">0.18   </td><td class="markdownTableBodyRight">0.18   </td><td class="markdownTableBodyRight">0.18   </td><td class="markdownTableBodyRight">2   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">2   </td><td class="markdownTableBodyRight">2    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z</code>   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">0.39   </td><td class="markdownTableBodyRight">0.37   </td><td class="markdownTableBodyRight">0.36   </td><td class="markdownTableBodyRight">0.36   </td><td class="markdownTableBodyRight">979   </td><td class="markdownTableBodyRight">413   </td><td class="markdownTableBodyRight">33   </td><td class="markdownTableBodyRight">13    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5_Z</code>   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.39   </td><td class="markdownTableBodyRight">0.38   </td><td class="markdownTableBodyRight">0.39   </td><td class="markdownTableBodyRight">0.38   </td><td class="markdownTableBodyRight">39   </td><td class="markdownTableBodyRight">121   </td><td class="markdownTableBodyRight">4   </td><td class="markdownTableBodyRight">4    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.44   </td><td class="markdownTableBodyRight">0.44   </td><td class="markdownTableBodyRight">0.44   </td><td class="markdownTableBodyRight">0.44   </td><td class="markdownTableBodyRight">6   </td><td class="markdownTableBodyRight">6   </td><td class="markdownTableBodyRight">4   </td><td class="markdownTableBodyRight">3    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.48   </td><td class="markdownTableBodyRight">0.47   </td><td class="markdownTableBodyRight">0.47   </td><td class="markdownTableBodyRight">0.47   </td><td class="markdownTableBodyRight">46   </td><td class="markdownTableBodyRight">32   </td><td class="markdownTableBodyRight">5   </td><td class="markdownTableBodyRight">6    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">9   </td><td class="markdownTableBodyRight">1.36   </td><td class="markdownTableBodyRight">0.64   </td><td class="markdownTableBodyRight">1.06   </td><td class="markdownTableBodyRight"><b>0.56</b>   </td><td class="markdownTableBodyRight">17.3k   </td><td class="markdownTableBodyRight">1.5k   </td><td class="markdownTableBodyRight">222   </td><td class="markdownTableBodyRight">220    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">1.01   </td><td class="markdownTableBodyRight">0.68   </td><td class="markdownTableBodyRight">0.73   </td><td class="markdownTableBodyRight"><b>0.62</b>   </td><td class="markdownTableBodyRight">7.8k   </td><td class="markdownTableBodyRight">1.6k   </td><td class="markdownTableBodyRight">95   </td><td class="markdownTableBodyRight">161    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.69   </td><td class="markdownTableBodyRight">0.70   </td><td class="markdownTableBodyRight">0.69   </td><td class="markdownTableBodyRight">0.70   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">1    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.75   </td><td class="markdownTableBodyRight">0.74   </td><td class="markdownTableBodyRight">0.74   </td><td class="markdownTableBodyRight">0.74   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">1   </td><td class="markdownTableBodyRight">1    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X</code>   </td><td class="markdownTableBodyCenter">10   </td><td class="markdownTableBodyRight">0.99   </td><td class="markdownTableBodyRight">0.53   </td><td class="markdownTableBodyRight">0.44   </td><td class="markdownTableBodyRight">0.45   </td><td class="markdownTableBodyRight">7.1k   </td><td class="markdownTableBodyRight">778   </td><td class="markdownTableBodyRight">62   </td><td class="markdownTableBodyRight">62   </td></tr>
+</table>
+<ul>
+<li>Where many RW steps are needed (<code>mitten_150</code>, <code>mitten_210 hef</code>, <code>mitten_270</code>, gross), 0.14.5 needs 6–30 times fewer than 0.14.3. The wall time is mostly the input stage (0.07–0.7 s), so that the medians hardly change (gross: 0.44 s against 0.53 s). 0.14.5 with <code>pairs=0</code> behaves as 0.14.3 (gross: 0.51 s, 628 steps).</li>
+<li>On the <code>mitten_270</code> circuits, 0.14.5 is slower than 0.14.3 (custom: 1.06 s against 0.64 s; RW alone, from <code># stopped after</code>, 0.60 s against 0.16 s), although it needs 7–17 times fewer steps. The first codewords found have weights 100–300, and while the upper bound is above about 70, the default $l$ is 1 (with $l = 2$, a codeword of that weight would be kept with a probability below 0.8), so that the steps check millions of pairs: 0.5–5.5 million per step on average over these runs (0.014–0.099 s per step and thread, against 0.003–0.005 s for 0.14.3); the 128 threads spend about 0.1 s in such steps, until the upper bound drops below 20. With a fixed <code>pairs=13</code> ($\approx \log_2(n - r)$), the upper bound drops to about 10 within a few milliseconds, and so it does with the work bound of 0.14.6 ($l \ge 6$, Section 8.7):</li>
+</ul>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">Circuit (median wall time in s / RW time in s / RW steps)   </th><th class="markdownTableHeadLeft">0.14.3   </th><th class="markdownTableHeadLeft">0.14.5   </th><th class="markdownTableHeadLeft">0.14.5, <code>pairs=13</code>   </th><th class="markdownTableHeadLeft">0.14.6    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_270</code> custom ($d = 9$)   </td><td class="markdownTableBodyLeft">0.64 / 0.16 / 1.5k   </td><td class="markdownTableBodyLeft">1.06 / 0.60 / 222   </td><td class="markdownTableBodyLeft">0.56 / 0.12 / 182   </td><td class="markdownTableBodyLeft">0.56 / 0.12 / 220    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270</code> hef ($d = 7$)   </td><td class="markdownTableBodyLeft">0.68 / 0.16 / 1.6k   </td><td class="markdownTableBodyLeft">0.73 / 0.20 / 95   </td><td class="markdownTableBodyLeft">0.62 / 0.12 / 119   </td><td class="markdownTableBodyLeft">0.62 / 0.12 / 161    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150</code> custom ($d = 7$)   </td><td class="markdownTableBodyLeft">0.37 / 0.059 / 413   </td><td class="markdownTableBodyLeft">0.36 / 0.056 / 33   </td><td class="markdownTableBodyLeft">0.36 / 0.055 / 20   </td><td class="markdownTableBodyLeft">0.36 / 0.058 / 13    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft">gross ($d = 10$)   </td><td class="markdownTableBodyLeft">0.53 / 0.21 / 778   </td><td class="markdownTableBodyLeft">0.44 / 0.14 / 62   </td><td class="markdownTableBodyLeft">0.45 / 0.14 / 82   </td><td class="markdownTableBodyLeft">0.45 / 0.14 / 62   </td></tr>
+</table>
+<h2><a class="anchor" id="autotoc_md42"></a>
+8.2 Large DEMs: the time to light codewords</h2>
+<p>RW with the default threads (32 RW threads, Section 7.1) on the full DEMs of the double-gross circuit (<code>wmin=18</code>, three seeds) and of <code>bb_360</code> (<code>wmin=23</code>, two seeds, timeout 240 s). The time of the first codeword of each weight is that of its message "RW found new upper bound", since the start of the run (reading and reducing the DEM take about 1 s and 2 s). The figure shows 0.14.6 (Section 8.7), which finds these codewords as soon as 0.14.5, against 0.14.3.</p>
+<p><img src="figures/rw_pairs.png" alt="The lightest codeword found against time" class="inline"/></p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">DEM   </th><th class="markdownTableHeadCenter">weight   </th><th class="markdownTableHeadLeft">0.14.3: time (s)/RW steps, per seed   </th><th class="markdownTableHeadLeft">0.14.5   </th><th class="markdownTableHeadLeft">0.14.6 (Section 8.7)    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">double gross   </td><td class="markdownTableBodyCenter">18   </td><td class="markdownTableBodyLeft">9.6/2.1k, 11.3/2.5k, 18.8/4.9k   </td><td class="markdownTableBodyLeft">1.5/85, 1.8/126, 2.7/329   </td><td class="markdownTableBodyLeft">1.9/224, 1.5/136, 2.4/355    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_360</code>   </td><td class="markdownTableBodyCenter">24   </td><td class="markdownTableBodyLeft">102, 93   </td><td class="markdownTableBodyLeft">22, 58   </td><td class="markdownTableBodyLeft">8.6, 13    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_360</code>   </td><td class="markdownTableBodyCenter">23   </td><td class="markdownTableBodyLeft">not in 240 s (10.3k steps each)   </td><td class="markdownTableBodyLeft">118/4.8k, 60/2.2k   </td><td class="markdownTableBodyLeft">119/5.1k, 56/2.2k   </td></tr>
+</table>
+<ul>
+<li>Double gross: the weight 18 (the lightest known) 6–7 times sooner with the same seed (RW alone: 0.5–1.7 s instead of 8.6–18 s), in 15–25 times fewer steps, each 1.3–1.6 times longer (0.16–0.20 s per step and thread against 0.12–0.13 s).</li>
+<li><code>bb_360</code>: the weight 23 (the lightest known, Section 6.1) in 60 and 118 s, while 0.14.3 found 24 (after 93 and 102 s) and nothing lighter in 240 s; a step takes 4–14% longer (0.78–0.85 s per step and thread against 0.74–0.75 s).</li>
+<li>In 300 s of 0.14.5 (one seed each), nothing lighter was found: double gross with <code>wmin=17</code> (94k steps; 18 after 2 s) and <code>bb_360</code> with <code>wmin=22</code> (12.8k steps; 24 after 4 s, 23 after 41 s).</li>
+<li><code>bb_756</code> (timeout 240 s): 0.14.3 found 55 (371 steps of 20 s per thread). 0.14.5 found 57 after 90 s, but it did not stop at the timeout and was killed after 540 s. With <code>timeout=60</code>, it had completed no RW step after 32 s (the last status line) and was killed after 200 s, while <code>pairs=0</code> stopped after 62 s (96 steps, weight 61). The first codewords of this DEM have weights of 4000–5000, and while the upper bound is in the hundreds or thousands, the default $l$ is 1–4: a step can then check up to billions of pairs (in 2–16 buckets of the 116k non-pivot columns), and the stop flags are only checked between the buckets. 0.14.6 (Section 8.7) stopped at the timeout, with 55 in 359 steps.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md43"></a>
+8.3 Codes with a large distance</h2>
+<p>RW for 30 s (default threads: 128), three seeds: the lightest codeword found by the time $t$ (median of the seeds; the time includes reading the matrix), and at the end (each seed).</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">code   </th><th class="markdownTableHeadLeft">version   </th><th class="markdownTableHeadRight">$t$ = 1 s   </th><th class="markdownTableHeadRight">2 s   </th><th class="markdownTableHeadRight">4 s   </th><th class="markdownTableHeadRight">8 s   </th><th class="markdownTableHeadRight">16 s   </th><th class="markdownTableHeadRight">30 s   </th><th class="markdownTableHeadLeft">each seed   </th><th class="markdownTableHeadRight">s/step/thread    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>c1920H</code> ($n = 1920$, $k = 641$)   </td><td class="markdownTableBodyLeft">0.14.3   </td><td class="markdownTableBodyRight">294   </td><td class="markdownTableBodyRight">288   </td><td class="markdownTableBodyRight">277   </td><td class="markdownTableBodyRight">265   </td><td class="markdownTableBodyRight">265   </td><td class="markdownTableBodyRight">257   </td><td class="markdownTableBodyLeft">265, 253, 257   </td><td class="markdownTableBodyRight">0.0075    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyLeft">0.14.5   </td><td class="markdownTableBodyRight">257   </td><td class="markdownTableBodyRight">243   </td><td class="markdownTableBodyRight">243   </td><td class="markdownTableBodyRight">243   </td><td class="markdownTableBodyRight">235   </td><td class="markdownTableBodyRight">227   </td><td class="markdownTableBodyLeft">234, 225, 227   </td><td class="markdownTableBodyRight">0.011    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyLeft">0.14.6   </td><td class="markdownTableBodyRight">257   </td><td class="markdownTableBodyRight">257   </td><td class="markdownTableBodyRight">243   </td><td class="markdownTableBodyRight">243   </td><td class="markdownTableBodyRight">235   </td><td class="markdownTableBodyRight">234   </td><td class="markdownTableBodyLeft">234, 234, 227   </td><td class="markdownTableBodyRight">0.011    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft">random (3,6)-regular LDPC, $n = 3000$   </td><td class="markdownTableBodyLeft">0.14.3   </td><td class="markdownTableBodyRight">446   </td><td class="markdownTableBodyRight">434   </td><td class="markdownTableBodyRight">432   </td><td class="markdownTableBodyRight">428   </td><td class="markdownTableBodyRight">428   </td><td class="markdownTableBodyRight">422   </td><td class="markdownTableBodyLeft">426, 410, 422   </td><td class="markdownTableBodyRight">0.013    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyLeft">0.14.5   </td><td class="markdownTableBodyRight">420   </td><td class="markdownTableBodyRight">414   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyLeft">402, 396, 402   </td><td class="markdownTableBodyRight">0.044    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyLeft">0.14.6   </td><td class="markdownTableBodyRight">420   </td><td class="markdownTableBodyRight">414   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyRight">402   </td><td class="markdownTableBodyLeft">402, 396, 402   </td><td class="markdownTableBodyRight">0.046   </td></tr>
+</table>
+<ul>
+<li>For these distances the default is $l = 1$ (all pairs in two buckets): a step takes 1.5 and 3.5 times longer, and the lightest codeword found is lighter at all times, by about 12% for <code>c1920H</code> (at 30 s: 225–234 against 253–265) and by 3–5% for the LDPC code (396–402 against 410–426). 0.14.6 keeps $l = 1$ for both codes (Section 8.7).</li>
+<li>In a fixed number of RW steps (1000 on 8 threads), <code>c1920H</code> gives 210, 275, and 277 with the pairs and 320, 321, and 317 without (three seeds; the RW of several threads is not reproducible: an earlier run of the first seed gave 259).</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md44"></a>
+8.4 Default parameters</h2>
+<p>As in Section 5.3, but with the default parameters of <code>method=1</code> (<code>steps=100000</code>, <code>min_hits=5</code>) and of <code>method=3</code> (the exact distance), no <code>threads=</code> (128 threads, throttled), three seeds: median wall time in s / RW steps ("100k": the step limit, <code>min_hits</code> not reached). The runs of 0.14.6 were made 80 min after those of 0.14.5, when the server was up to 10% slower (Section 8.7).</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">case   </th><th class="markdownTableHeadCenter">$d$   </th><th class="markdownTableHeadCenter">method   </th><th class="markdownTableHeadLeft">0.14.0   </th><th class="markdownTableHeadLeft">0.14.3   </th><th class="markdownTableHeadLeft">0.14.5   </th><th class="markdownTableHeadLeft">0.14.6    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>QX150</code>, one sector   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.016 / 231   </td><td class="markdownTableBodyLeft">0.016 / 232   </td><td class="markdownTableBodyLeft">0.017 / 70   </td><td class="markdownTableBodyLeft">0.016 / 61    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.020   </td><td class="markdownTableBodyLeft">0.019   </td><td class="markdownTableBodyLeft">0.020   </td><td class="markdownTableBodyLeft">0.020    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>QX900</code>, one sector   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.051 / 1.5k   </td><td class="markdownTableBodyLeft">0.050 / 1.5k   </td><td class="markdownTableBodyLeft">0.057 / 214   </td><td class="markdownTableBodyLeft">0.054 / 208    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.055   </td><td class="markdownTableBodyLeft">0.053   </td><td class="markdownTableBodyLeft">0.058   </td><td class="markdownTableBodyLeft">0.059    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>c204H</code>   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.019 / 6.7k   </td><td class="markdownTableBodyLeft">0.019 / 6.4k   </td><td class="markdownTableBodyLeft">0.019 / 3.7k   </td><td class="markdownTableBodyLeft">0.018 / 3.5k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.022   </td><td class="markdownTableBodyLeft">0.021   </td><td class="markdownTableBodyLeft">0.021   </td><td class="markdownTableBodyLeft">0.020    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>surf_d5</code> (<code>surf_d5_H.mmx</code> with <code>_L.mmx</code>)   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.050 / 21.5k   </td><td class="markdownTableBodyLeft">0.051 / 23.1k   </td><td class="markdownTableBodyLeft">0.068 / 1.8k   </td><td class="markdownTableBodyLeft">0.079 / 2.2k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.033   </td><td class="markdownTableBodyLeft">0.031   </td><td class="markdownTableBodyLeft">0.072   </td><td class="markdownTableBodyLeft">0.072    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>surf_d7</code>   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.64 / 54.6k   </td><td class="markdownTableBodyLeft">0.66 / 62.7k   </td><td class="markdownTableBodyLeft">1.96 / 100k   </td><td class="markdownTableBodyLeft">2.19 / 100k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.32   </td><td class="markdownTableBodyLeft">0.44   </td><td class="markdownTableBodyLeft">0.49   </td><td class="markdownTableBodyLeft">0.51    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72</code> circuit, stripped DEM   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.067 / 6.1k   </td><td class="markdownTableBodyLeft">0.068 / 7.0k   </td><td class="markdownTableBodyLeft">0.050 / 1.5k   </td><td class="markdownTableBodyLeft">0.054 / 1.3k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.057   </td><td class="markdownTableBodyLeft">0.056   </td><td class="markdownTableBodyLeft">0.057   </td><td class="markdownTableBodyLeft">0.058    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72</code> circuit, full DEM   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.12 / 5.9k   </td><td class="markdownTableBodyLeft">0.13 / 6.6k   </td><td class="markdownTableBodyLeft">0.11 / 1.2k   </td><td class="markdownTableBodyLeft">0.11 / 1.3k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.11   </td><td class="markdownTableBodyLeft">0.11   </td><td class="markdownTableBodyLeft">0.11   </td><td class="markdownTableBodyLeft">0.12    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150</code> custom circuit, full DEM   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">2.31 / 100k   </td><td class="markdownTableBodyLeft">2.08 / 100k   </td><td class="markdownTableBodyLeft">1.46 / 43.2k   </td><td class="markdownTableBodyLeft">1.64 / 45.0k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.59   </td><td class="markdownTableBodyLeft">0.61   </td><td class="markdownTableBodyLeft">0.62   </td><td class="markdownTableBodyLeft">0.66    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">gross, one sector   </td><td class="markdownTableBodyCenter">12   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.025 / 8.3k   </td><td class="markdownTableBodyLeft">0.025 / 7.8k   </td><td class="markdownTableBodyLeft">0.026 / 970   </td><td class="markdownTableBodyLeft">0.025 / 941    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">0.033   </td><td class="markdownTableBodyLeft">0.033   </td><td class="markdownTableBodyLeft">0.031   </td><td class="markdownTableBodyLeft">0.031    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">double gross, one sector   </td><td class="markdownTableBodyCenter">18   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">0.087 / 100k   </td><td class="markdownTableBodyLeft">0.086 / 100k   </td><td class="markdownTableBodyLeft">0.042 / 25.7k   </td><td class="markdownTableBodyLeft">0.046 / 25.1k    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"></td><td class="markdownTableBodyCenter"></td><td class="markdownTableBodyCenter">3   </td><td class="markdownTableBodyLeft">1.36   </td><td class="markdownTableBodyLeft">1.38   </td><td class="markdownTableBodyLeft">1.37   </td><td class="markdownTableBodyLeft">1.41    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">gross circuit, full DEM   </td><td class="markdownTableBodyCenter">10   </td><td class="markdownTableBodyCenter">1   </td><td class="markdownTableBodyLeft">8.5 / 100k   </td><td class="markdownTableBodyLeft">8.2 / 100k   </td><td class="markdownTableBodyLeft">10.3 / 100k   </td><td class="markdownTableBodyLeft">11.0 / 100k   </td></tr>
+</table>
+<ul>
+<li>With the pairs, <code>min_hits=5</code> is reached in 1.7–13 times fewer RW steps: in about the same time for the small codes, and in less time where 0.14.3 ran to the step limit (double gross: 0.04 s instead of 0.09 s; <code>mitten_150</code>: 1.5 s instead of 2.1 s) or for the <code>bb_72</code> DEMs (20–26%). <code>method=3</code> takes the same time (CC dominates), except for <code>surf_d5</code>.</li>
+<li><code>surf_d5</code>: 0.068 s against 0.051 s, since a step takes 20 times longer with 128 threads (0.0031 s against 0.00015 s per step and thread; 2.7 times on one thread in the tests of 0.14.4), probably because the codewords of the pairs, about 19 per step, are recorded under the mutex of the codeword table.</li>
+<li><code>surf_d7</code> (<code>surf_d7_H.mmx</code> with <code>_L.mmx</code>: the DEM of a surface-code circuit with $d = 7$ given as matrices, which the binary does not reduce, $336 \times 5473$): 2.0–2.2 s against 0.64–0.66 s, since most runs with the pairs end at the step limit. The hit counts of the 100 codewords of weight 7 tracked for <code>min_hits</code> (<code>cov_cws</code>: the first ones found) are strongly non-uniform in all versions (the binary warns; e.g., one codeword with 184 of 477 hits), so that whether $\langle n \rangle$ reaches 5 within 100k steps depends on the codewords tracked: 0.14.3 also ran to the step limit in one of the three runs, and 0.14.5 converged after 32k steps in one; with the pairs, the tracked set is filled within the first steps. All runs found the distance 7, and <code>method=3</code> is not affected (CC).</li>
+<li>The gross circuit (full DEM): all versions run to the step limit; 0.14.5 takes 1.26 times longer (the pairs of each step).</li>
+</ul>
+<p>The surface-code circuits of stim (<code>surface_code:rotated_memory_x</code>, $d$ rounds, the uniform noise of $p = 0.001$) as DEMs, which the binary reduces exactly ($d = 7$: $192 \times 883$), with the default <code>method=1</code> (three seeds; the scripts and logs in <code>scratch/bench_0.14.5/surface/</code>):</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">circuit   </th><th class="markdownTableHeadLeft">0.14.3   </th><th class="markdownTableHeadLeft">0.14.6    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">$d = 7$   </td><td class="markdownTableBodyLeft">0.08–0.09 s (17k–22k steps)   </td><td class="markdownTableBodyLeft">0.08–0.09 s (1.3k steps)    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft">$d = 9$   </td><td class="markdownTableBodyLeft">step limit: 0.55–0.58 s, $\langle n \rangle$ = 1.4–2.1   </td><td class="markdownTableBodyLeft">1.0–1.4 s (23k–35k steps)    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft">$d = 11$   </td><td class="markdownTableBodyLeft">step limit: 2.3 s, $\langle n \rangle$ = 1.1–1.5   </td><td class="markdownTableBodyLeft">step limit: 4.1–4.3 s, $\langle n \rangle$ = 1.2–3.7   </td></tr>
+</table>
+<p>With the pairs, <code>min_hits</code> is reached in 13 times fewer steps for $d = 7$ (in the same time), within the step limit for $d = 9$ (0.14.3: not), and with more hits per step for $d = 11$; all runs found the distance $d$.</p>
+<h2><a class="anchor" id="autotoc_md45"></a>
+8.5 Code-sized model lower bound (0.14.5)</h2>
+<p><code>compute_model_lower_bound()</code> with the default threads, against the circuit distance (Section 2.4). With <code>minority=False</code>, only the model of the measured-basis chains (Section 6.3) is solved (<code>method=3</code>); with <code>minority=True</code> (the default of 0.14.5 and 0.14.6), the model with all rows is then searched from that bound (RW with <code>wmin</code> equal to the bound, then CC if needed); the times are those of the whole calls. Since 0.14.7, the minority-basis rows are off by default (<code>minority=True</code>, CLI <code>--model-minority</code>, to use them).</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">Circuit   </th><th class="markdownTableHeadLeft">distance   </th><th class="markdownTableHeadLeft">model (measured-basis rows)   </th><th class="markdownTableHeadCenter">bound   </th><th class="markdownTableHeadRight">time (s)   </th><th class="markdownTableHeadLeft">model (all rows)   </th><th class="markdownTableHeadCenter">bound   </th><th class="markdownTableHeadRight">time (s)    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_72_12_6_si1000_r6_X</code>   </td><td class="markdownTableBodyLeft">6   </td><td class="markdownTableBodyLeft">36 x 180   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.44   </td><td class="markdownTableBodyLeft">72 x 2664   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.28    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyLeft">8   </td><td class="markdownTableBodyLeft">45 x 225   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">0.39   </td><td class="markdownTableBodyLeft">90 x 3330   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">0.45    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyLeft">8   </td><td class="markdownTableBodyLeft">54 x 270   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.52   </td><td class="markdownTableBodyLeft">108 x 3996   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.52    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X</code>   </td><td class="markdownTableBodyLeft">10   </td><td class="markdownTableBodyLeft">72 x 360   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">0.81   </td><td class="markdownTableBodyLeft">144 x 5328   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">1.33    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">5   </td><td class="markdownTableBodyLeft">36 x 306   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.27   </td><td class="markdownTableBodyLeft">72 x 4941   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.39    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_90_18_6_C3xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">4   </td><td class="markdownTableBodyLeft">36 x 306   </td><td class="markdownTableBodyCenter"><b>4</b>   </td><td class="markdownTableBodyRight">0.51   </td><td class="markdownTableBodyLeft">72 x 4059   </td><td class="markdownTableBodyCenter"><b>4</b>   </td><td class="markdownTableBodyRight">0.41    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z</code>   </td><td class="markdownTableBodyLeft">7   </td><td class="markdownTableBodyLeft">60 x 510   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.53   </td><td class="markdownTableBodyLeft">120 x 8230   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">1.04    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_hef_r5_Z</code>   </td><td class="markdownTableBodyLeft">5   </td><td class="markdownTableBodyLeft">60 x 510   </td><td class="markdownTableBodyCenter"><b>5</b>   </td><td class="markdownTableBodyRight">0.63   </td><td class="markdownTableBodyLeft">120 x 6790   </td><td class="markdownTableBodyCenter"><b>5</b>   </td><td class="markdownTableBodyRight">0.78    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">6   </td><td class="markdownTableBodyLeft">84 x 714   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">0.91   </td><td class="markdownTableBodyLeft">168 x 11802   </td><td class="markdownTableBodyCenter">5   </td><td class="markdownTableBodyRight">1.60    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_210_42_8_C7xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">5   </td><td class="markdownTableBodyLeft">84 x 693   </td><td class="markdownTableBodyCenter"><b>5</b>   </td><td class="markdownTableBodyRight">0.87   </td><td class="markdownTableBodyLeft">168 x 9597   </td><td class="markdownTableBodyCenter"><b>5</b>   </td><td class="markdownTableBodyRight">1.20    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">9   </td><td class="markdownTableBodyLeft">108 x 918   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">2.03   </td><td class="markdownTableBodyLeft">216 x 15048   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">7.76    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">7   </td><td class="markdownTableBodyLeft">108 x 918   </td><td class="markdownTableBodyCenter"><b>7</b>   </td><td class="markdownTableBodyRight">1.14   </td><td class="markdownTableBodyLeft">216 x 12294   </td><td class="markdownTableBodyCenter"><b>7</b>   </td><td class="markdownTableBodyRight">10.2    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyLeft">4   </td><td class="markdownTableBodyLeft">132 x 1089   </td><td class="markdownTableBodyCenter"><b>4</b>   </td><td class="markdownTableBodyRight">1.08   </td><td class="markdownTableBodyLeft">264 x 18183   </td><td class="markdownTableBodyCenter"><b>4</b>   </td><td class="markdownTableBodyRight">1.54    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_330_66_6_C11xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyLeft">4   </td><td class="markdownTableBodyLeft">132 x 1056   </td><td class="markdownTableBodyCenter"><b>4</b>   </td><td class="markdownTableBodyRight">1.11   </td><td class="markdownTableBodyLeft">264 x 14432   </td><td class="markdownTableBodyCenter"><b>4</b>   </td><td class="markdownTableBodyRight">1.54    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>NNEESEEESEENN_..._n60_k8_d14_X</code>   </td><td class="markdownTableBodyLeft">6   </td><td class="markdownTableBodyLeft">30 x 360   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.31   </td><td class="markdownTableBodyLeft">60 x 3810   </td><td class="markdownTableBodyCenter">4   </td><td class="markdownTableBodyRight">0.41    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>NEENNWNWNNEEN_..._n120_k8_d15_X</code>   </td><td class="markdownTableBodyLeft">6 (s, old noise)   </td><td class="markdownTableBodyLeft">60 x 720   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.85   </td><td class="markdownTableBodyLeft">120 x 7440   </td><td class="markdownTableBodyCenter">6   </td><td class="markdownTableBodyRight">0.93   </td></tr>
+</table>
+<ul>
+<li>The bound (bold: equal to the circuit distance) is tight for the <code>hef</code> Mitten circuits and <code>mitten_330</code> custom, and it is 6 for the <code>n120</code> torus circuit, the value of Section 2.4 for its stripped DEM with the old noise; it is 1 below the distance for <code>bb_72</code>, <code>bb_90</code>, and the other custom Mitten circuits, and 2 below it for <code>bb_108</code>, gross, and the <code>n60</code> torus circuit.</li>
+<li>The minority-basis rows raised none of these bounds: the model with all rows has codewords of the same weight. They cost up to 9 s more (<code>mitten_270</code>, where CC on the model with all rows was needed). Nor did they for the surface-code circuits of stim (rotated, $X$ and $Z$ basis, and unrotated, $X$ basis; $d = 5$ and 7, bound $d$ with and without them). With depolarizing-type noise, every net data error which flips the observable of the measured basis also occurs without a component of the other basis, so that a lightest model codeword has a version which the minority-basis rows do not detect; they may raise the bound for other noise models (e.g., biased noise).</li>
+<li>Against CC on the full DEM (Section 8.6): gross, the bound 8 in 0.8 s against the distance 10 in 184 s; <code>mitten_270</code> custom, 8 in 2.0 s against 9 in 183 s.</li>
+</ul>
+<h2><a class="anchor" id="autotoc_md46"></a>
+8.6 Certified distances</h2>
+<p><code>method=3</code> with the arguments of Section 5.1 (128 threads), 0.14.5 and 0.14.6 against 0.14.0 (Section 5.1): about the same, since CC dominates (the short runs are about 0.1 s slower, <code>mitten_270</code> hef is 2 s faster).</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadLeft">Circuit   </th><th class="markdownTableHeadCenter">$d$   </th><th class="markdownTableHeadRight">0.14.0 (s)   </th><th class="markdownTableHeadRight">0.14.5 (s)   </th><th class="markdownTableHeadRight">0.14.6 (s)    </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_150_30_8_C5xS3_custom_r5_Z</code>   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">0.56   </td><td class="markdownTableBodyRight">0.63   </td><td class="markdownTableBodyRight">0.72    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>bb_90_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">0.68   </td><td class="markdownTableBodyRight">0.82   </td><td class="markdownTableBodyRight">0.88    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>bb_108_8_10_si1000_r10_X</code>   </td><td class="markdownTableBodyCenter">8   </td><td class="markdownTableBodyRight">0.71   </td><td class="markdownTableBodyRight">0.83   </td><td class="markdownTableBodyRight">0.89    </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_hef_r4_Z</code>   </td><td class="markdownTableBodyCenter">7   </td><td class="markdownTableBodyRight">5.8   </td><td class="markdownTableBodyRight">3.8   </td><td class="markdownTableBodyRight">3.9    </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyLeft"><code>mitten_270_54_10_C9xS3_custom_r4_Z</code>   </td><td class="markdownTableBodyCenter">9   </td><td class="markdownTableBodyRight">182   </td><td class="markdownTableBodyRight">183   </td><td class="markdownTableBodyRight"></td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyLeft"><code>gross_144_12_12_si1000_r12_X</code>   </td><td class="markdownTableBodyCenter">10   </td><td class="markdownTableBodyRight">179   </td><td class="markdownTableBodyRight">184   </td><td class="markdownTableBodyRight"></td></tr>
+</table>
+<h2><a class="anchor" id="autotoc_md47"></a>
+8.7 A work bound for the RW pairs (0.14.6)</h2>
+<p>0.14.6 fixes the slow early steps of the RW pairs found above (<code>mitten_270</code> in Section 8.1, <code>bb_756</code> in Section 8.2):</p><ul>
+<li>With <code>pairs=-1</code> (auto), $l$ is at least the $l$ at which the about $(n-r)^2/2^{l+1}$ pairs of a step are within about the work of its elimination, $rn/16$ pairs (or $2^{20}$ pairs for small matrices). Early in a run, while the upper bound is far above the distance, the keep probability alone gives $l = 1$ (all pairs in two buckets); the bound is $l \ge 6$ for the reduced DEMs of <code>mitten_270</code> ($r = 648$, $n = 8910$) and <code>bb_756</code> ($r = 13222$, $n = 129276$), 5 for gross, 4 for <code>mitten_150</code> and <code>surf_d7</code>, and 1 (no change) for the codes of Section 8.3 and the small matrices of Section 8.4.</li>
+<li>The stop flags and the upper bound are also polled within the buckets of the pairs (every 65536 pairs), so that a run ends at its timeout also with few rows (e.g., <code>pairs=1</code>).</li>
+</ul>
+<p>The runs of Sections 8.1–8.4 and 8.6 with 0.14.6 (the columns 0.14.6 above):</p><ul>
+<li><code>mitten_270</code>: 0.56 s (custom) and 0.62 s (hef) to the distance, the fastest of all versions, as with <code>pairs=13</code>; RW alone takes 0.12 s, against 0.60 and 0.20 s with 0.14.5 and 0.16 s with 0.14.3.</li>
+<li><code>bb_756</code> (timeout 240 s): 55 in 359 steps, stopped at the timeout (0.14.3: 55 in 371 steps). With <code>timeout=60</code>, 58 in 53 steps, stopped after 64 s (0.14.5: killed after 200 s; with <code>pairs=0</code>, 61 in 96 steps).</li>
+<li>The double-gross and <code>bb_360</code> circuits: the weights 18 and 23 as soon as with 0.14.5, with cheaper steps for double gross (0.12 s per step and thread, against 0.16–0.20 s with 0.14.5, whose early steps with large upper bounds checked many pairs).</li>
+<li>As with 0.14.5: the other full DEMs, gross, the codes (where $l = 1$ is kept: the same lightest weights), the RW steps of the default runs, and the certified distances. The times of the default runs were 0–16% longer, as were those of 0.14.5 itself at that time: on the gross circuit (full DEM, default parameters, 100k RW steps), five runs of each version, alternating, took 10.7 s (0.14.6) and 11.2 s (0.14.5) in the median, against 10.3 s for 0.14.5 in the runs of Section 8.4. </li>
+</ul>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
 <!-- start footer part -->

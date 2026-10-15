@@ -28,7 +28,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.14.5</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.14.7</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -80,12 +80,12 @@ $(function() {
   <div class="headertitle"><div class="title">Todo Notes for &lt;tt&gt;dist_m4ri&lt;/tt&gt; Program</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md91"></a> </p>
-<h1><a class="anchor" id="autotoc_md92"></a>
+<div class="textblock"><p><a class="anchor" id="autotoc_md100"></a> </p>
+<h1><a class="anchor" id="autotoc_md101"></a>
 1. High-Priority Roadmap: High-Performance RW Overhaul</h1>
 <p>This work optimizes the Random Information-Set Decoding (RW, <code>method=1</code>) algorithm to achieve linear multicore scaling (32–128 cores), minimal per-core memory footprint, and enhanced hit rates for quantum CSS codes and Detector Error Models (DEMs).</p>
 <p>Inspired by <code>sqetch</code> (arXiv:2607.28795, Appendix H) and the empirical convergence criteria in <code>QDistRnd</code> (<a href="http://github.com/QEC-pages/QDistRnd">http://github.com/QEC-pages/QDistRnd</a>).</p>
-<h2><a class="anchor" id="autotoc_md93"></a>
+<h2><a class="anchor" id="autotoc_md102"></a>
 Implementation Strategy</h2>
 <ul>
 <li><b>Stage 1 (Immediate / Functional Baseline)</b>:<ul>
@@ -100,7 +100,7 @@ Implementation Strategy</h2>
 </li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md95"></a>
+<h2><a class="anchor" id="autotoc_md104"></a>
 Task 1: Subspace Sketching (&lt;tt&gt;ksub&lt;/tt&gt;, experimental) for In-Cache Multicore Scaling</h2>
 <ul>
 <li>[x] Add CLI parameter <code>ksub=[int]</code> (default <code>0</code> retains original full-matrix RW).</li>
@@ -126,7 +126,7 @@ Task 1: Subspace Sketching (&lt;tt&gt;ksub&lt;/tt&gt;, experimental) for In-Cach
 <li>[ ] Find a subspace sampling for which the hit counts are uniform (or drop <code>ksub</code>).</li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md97"></a>
+<h2><a class="anchor" id="autotoc_md106"></a>
 Task 2: Localized &amp; Windowed Column Permutations for DEMs</h2>
 <ul>
 <li>[x] Add parameters <code>kwin=[int]</code> (window size $W$, default <code>0</code> = uniform random permutation; alias <code>win=[int]</code>) and <code>win_mode=[0|1]</code> (default <code>0</code>).</li>
@@ -148,7 +148,7 @@ Task 2: Localized &amp; Windowed Column Permutations for DEMs</h2>
 </li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md99"></a>
+<h2><a class="anchor" id="autotoc_md108"></a>
 Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$</h2>
 <ul>
 <li>[x] <b>Density Degradation Prevention</b>:<ul>
@@ -172,7 +172,7 @@ Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$</h2>
 </li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md101"></a>
+<h2><a class="anchor" id="autotoc_md110"></a>
 Task 4: Hit-Count Stopping Criterion (&lt;tt&gt;QDistRnd&lt;/tt&gt; Convergence Style)</h2>
 <ul>
 <li>[x] Add parameters <code>min_hits=[int]</code> (default <code>5</code>, <code>0</code> = disabled) and <code>cov_cws=[int]</code> (size of the representative set of lowest-weight codewords, default <code>100</code>).</li>
@@ -190,7 +190,7 @@ Task 4: Hit-Count Stopping Criterion (&lt;tt&gt;QDistRnd&lt;/tt&gt; Convergence 
 <li>[ ] <b>Proper estimate for matrices with many small-weight dual vectors</b>: see Task 6.</li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md103"></a>
+<h2><a class="anchor" id="autotoc_md112"></a>
 Task 5: Native SIMD Bit-Matrix Engine (Stage 2)</h2>
 <ul>
 <li>[ ] Implement a header-only, self-contained SIMD kernel (<code>src/simd_matrix.h</code>) for $k_{\text{sub}} \le 64$:<ul>
@@ -204,7 +204,7 @@ Task 5: Native SIMD Bit-Matrix Engine (Stage 2)</h2>
 </li>
 </ul>
 <hr  />
-<h2><a class="anchor" id="autotoc_md105"></a>
+<h2><a class="anchor" id="autotoc_md114"></a>
 Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors</h2>
 <ul>
 <li>[ ] Find a proper estimate of the probability that RW misses a lighter codeword when the check matrix has many small-weight dual vectors (small-weight trivial vectors in $\ker H$). This is particularly bad for circuit DEMs, whose matrices have a huge number of column triplets summing to zero, as a consequence of the circuit structure: a weight-one error after a CX gate may give a weight-two error, and the net action of the three single-qubit errors is trivial. Both current estimates (Task 4) stay in place until then.</li>
@@ -223,7 +223,7 @@ Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vecto
 </li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md107"></a>
+<h1><a class="anchor" id="autotoc_md116"></a>
 2. Additional Algorithmic Explorations &amp; Enhancements</h1>
 <ul>
 <li>[x] <b>RW with pairs of non-pivot columns (Lee–Brickell / Stern, $p=2$)</b> (0.14.4, option <code>pairs</code>, on by default; <code>scratch/speedup/RESULTS.md</code>, experiment (h)): a codeword with exactly two non-pivot columns is the sum of their two circuits. With uniform information sets, a given codeword of weight $w$ is found $P_2/P_1 = (w-1)(n-r-1)/(2(r-w+2))$ times more often per step ($r = \mathrm{rank}\,H$, all pairs): about 10 for the dgross CSS code ($w = 18$), 20–100 for the reduced DEMs.<ul>
@@ -231,6 +231,7 @@ Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vecto
 <li>In C: the non-pivot columns are sorted (radix sort) by a hash of their bits in $l$ random pivot rows, then by "zero L syndrome" and by weight. In a bucket, only the pairs whose weights differ by less than the weight limit are checked (word-wise popcount with early exit); the pairs of two columns with zero L syndromes (light trivial codewords, most columns of a circuit DEM) or with equal L syndromes are skipped (the rows of L reduced with the pivot rows, for at most 64 rows of L). The codewords of the pairs are recorded up to the weight of the upper bound (plus dW when collecting). Auto: $l = \lceil\log_2(n-r)\rceil$, reduced while a codeword of the weight of the upper bound is kept with the probability $\binom{r-l}{w-2}/\binom{r}{w-2} &lt; 0.8$. The information-set estimate includes the $P_2$ term, and <code>debug&amp;1</code> prints the pairs checked per step and the codewords from pairs and single columns.</li>
 <li>Results (fixed RW steps): the minimum-weight codewords of circuit DEMs 7–26x more often per second (bb_72 7x, gross 22x, surf_d7 and mitten_150 26x); dgross: weight 18 in 3000 steps on 32 threads (20 without pairs; 2% more time per step); bb_360: 24 in 600 steps (26); classical LDPC codes with large distances: c1920H 210 instead of 320 in 1000 steps (auto $l = 1$). Small codes: 2–5x longer steps (more hits recorded under the codeword mutex), but <code>min_hits</code> is reached in 2–34x fewer steps, in about the same time or less.</li>
 <li>Possible follow-ups: thread-local batches of the recorded hits (the codeword mutex limits small codes with many threads, also without pairs); a cost model for $l$ (time of the pairs vs the elimination) instead of the fixed keep probability 0.8; triples ($p=3$) for small ranks.</li>
+<li>[x] 0.14.6: a work bound for the auto $l$ (<code><a class="el" href="BENCHMARK_8md.html">benchmark/BENCHMARK.md</a></code>, Section 8; <code>scratch/bench_0.14.5/</code>): $l$ is at least the $l$ at which the about $(n-r)^2/2^{l+1}$ pairs of a step are within about the work of its elimination, $rn/16$ pairs (or $2^{20}$ pairs for small matrices), and the stop flags and the upper bound are also polled within the buckets (every 65536 pairs). Early in a run, while the upper bound is far above the distance, the keep probability alone gave $l = 1$ (all pairs in two buckets): 0.14.5 on <code>bb_756</code> completed no RW step in the first 32 s and did not stop at its timeout, and on <code>mitten_270</code> took 0.6 s of RW to the distance instead of 0.16 s (0.14.3). The bound gives $l \ge 6$ for these DEMs (0.14.6: 0.12 s of RW to the distance of <code>mitten_270</code>, and <code>bb_756</code> stops at its timeout), and no change for codes with $n - r &lt; r$ (<code>c1920H</code>).</li>
 </ul>
 </li>
 <li>[x] <b>RW thread throttle for huge matrices</b> (0.14.3; <code>scratch/speedup/RESULTS.md</code>, experiments (a) and (e)): above 15 MB of dense RW memory per thread, at most 32 RW threads, within a quarter of the physical memory (at least 2; 1.5 GB if the physical memory is not known), instead of about 1.5 GB in total. The memory bus saturates at 32-64 RW threads whatever the matrix size.<ul>
@@ -309,22 +310,22 @@ Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vecto
 </li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md109"></a>
+<h1><a class="anchor" id="autotoc_md118"></a>
 3. Operational Modes Reference</h1>
-<h2><a class="anchor" id="autotoc_md110"></a>
+<h2><a class="anchor" id="autotoc_md119"></a>
 Mode: Distance Verification</h2>
 <ul>
 <li>Given a suspected distance $d$ (e.g., $d = 10$), run <code>method=1 dmax=10 wmin=9 min_hits=0</code>.</li>
 <li>RW ignores codewords of weight $\ge 10$ and ends as soon as it finds a non-trivial codeword of weight $w \le 9$ (output <code>1 w S</code>; with <code>debug&amp;1</code>, the stop line <code>found a codeword of weight w &lt;= wmin=9</code>).</li>
 <li>If no lighter codeword is found in the <code>steps</code> RW steps, the output is <code>1 10 S</code> (the supplied upper bound). (The legacy <code>dist_m4ri_old method=1 wmax=10 wmin=9</code> outputs <code>-w</code> or <code>0</code>.)</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md111"></a>
+<h2><a class="anchor" id="autotoc_md120"></a>
 Mode: Upper Bound Search with Hit-Count Saturation</h2>
 <ul>
 <li>Run RW with <code>method=1 steps=N min_hits=M cov_cws=K</code>.</li>
 <li>Collects the lowest-weight codewords into the hash table, terminating when the average number of hits per codeword reaches $M$, both for the minimum-weight codewords and for the representative set of $K$ lowest-weight codewords.</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md112"></a>
+<h2><a class="anchor" id="autotoc_md121"></a>
 More debug bits</h2>
 <ul>
 <li>[x] Debug bits reorganized by usability (see README "Debug Output" and <code>--morehelp</code>): 1 summary (input summary, stop reason), 2 progress (run plan with the seed), 4 periodic status (1, 2, 4, ... s, then every 60 s), 8 thread allocation and timing, 16 code parameters, 32 codeword supports, 64 arguments, 128 matrices, 256 codeword dump, 2048 no size cutoff, 4096 legacy traces; bits from 65536 for the Python wrapper (command lines, cache, circuits, keep temporary files). Repeated <code>debug=</code> arguments are OR-combined (hexadecimal values accepted).</li>
@@ -346,7 +347,7 @@ More debug bits</h2>
 </ul>
 </li>
 </ul>
-<h2><a class="anchor" id="autotoc_md113"></a>
+<h2><a class="anchor" id="autotoc_md122"></a>
 More improvements</h2>
 <ul>
 <li>[x] try verifying (using cluster decomposition from vecdec (?)) if the constructed / imported non-trivial CW can be decomposed into disconnected components. Keep only non-trivial part (does it ever happen? how expensive is this?)<ul>
@@ -361,7 +362,7 @@ More improvements</h2>
 <li>[ ]</li>
 </ul>
 <hr  />
-<h1><a class="anchor" id="autotoc_md115"></a>
+<h1><a class="anchor" id="autotoc_md124"></a>
 4. Large DEMs, Simplified DEMs, and Symmetry (discussion, Oct 2026)</h1>
 <ul>
 <li>[x] <b>No equal columns in DEMs</b>: stim's DEM of a circuit with a REPEAT block has duplicate error mechanisms even after flattening the DEM (loop folding), e.g., mitten_90 custom: 23394 errors, 22170 distinct (the DEM of the flattened circuit has none); about 16% of the columns of the BB DEMs. CC treats each duplicate separately: merging them gave 1.6–1.7x for CC (dem150 and dgross DEMs, <code>wmax=6</code>, 128 threads), and RW eliminates fewer columns.<ul>
@@ -399,6 +400,7 @@ More improvements</h2>
 <li>[x] Implemented as <code>compute_model_lower_bound()</code> (0.14.5; CLI <code>--model-lb</code>, <code>--out-model PREFIX</code>): the rows are the sums of the chains of detectors linked by a shared measurement record other than a final data measurement, found from the circuit (one chain per check of a memory circuit), so that the rows lie in the row space of $H$ by construction (no rank check); the chains of the minority-basis checks are extra rows (<code>minority=True</code>). The binary runs on the measured-basis rows first, then RW and, if needed, CC on all rows from that bound; the bound is stored as <code>dmin</code> (and <code>"dmin_model"</code>) in the cache record of the DEM.<ul>
 <li>Results (16 threads, 120 s per run): tight for the stim surface-code circuits ($d = 3, 5$, X and Z), mitten_90 hef (4), mitten_270 hef (7), and the torus n120 circuit (6); below $d$ for mitten_90 custom 4 ($d = 5$) and mitten_270 custom 8 ($d = 9$; the same as $d_{\rm ext}$), mitten_150 custom 6 ($d = 7$), the torus n60 circuit 4 ($d = 6$), and bb_72 5 (X and Z), bb_90 7, bb_108 6, gross 8, as the prototype. In the torus circuits all qubits are measured in each round (the final data measurements are then all those of the final block).</li>
 <li>The minority-basis rows raised none of these bounds within the time. CC on the model with all rows alone is much slower (bb_90: 53 s instead of 0.1 s; gross: only 7 certified in 75 s), which the RW stage avoids (gross: 1.8 s in total). For mitten_270 custom, RW on all rows found no codeword of weight 8 (lightest 9, the circuit distance) and CC did not finish $w = 8$ in 120 s: a longer run may show whether the minority rows raise the bound to 9 there.</li>
+<li>[x] 0.14.7: the minority-basis rows are off by default (<code>minority=True</code>, CLI <code>--model-minority</code>, to use them). They raised none of the bounds of the 16 circuits of <code><a class="el" href="BENCHMARK_8md.html">benchmark/BENCHMARK.md</a></code> Section 8.5 (<code>mitten_270</code> custom stays 8, with CC on all rows in 7.8 s) and of the stim surface codes ($d = 5, 7$), and cost up to 9 s: with depolarizing-type noise, every net data error which flips the observable of the measured basis also occurs without a component of the other basis, so that a lightest model codeword has a version which these rows do not detect. They may raise the bound for other noise models (e.g., biased noise).</li>
 </ul>
 </li>
 </ul>

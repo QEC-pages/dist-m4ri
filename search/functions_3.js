@@ -17,7 +17,7 @@ var searchData=
   ['compute_5fcss_5fdistance_14',['compute_css_distance',['../namespacedist__m4ri.html#acff7006377dff8b35a6274ea84938a7f',1,'dist_m4ri']]],
   ['compute_5fdem_5fdistance_15',['compute_dem_distance',['../namespacedist__m4ri.html#a7ff63e3cdd8029f98682d356e4355702',1,'dist_m4ri']]],
   ['compute_5fmin_5fw_5fhit_5fstats_16',['compute_min_w_hit_stats',['../util__io_8c.html#a45f37cdd958f14abdacf96bdc15bac54',1,'compute_min_w_hit_stats(const params_t *const p, int *min_cnt, int *max_cnt, double *avg_cnt, double *stdev_cnt):&#160;util_io.c'],['../util__io_8h.html#a45f37cdd958f14abdacf96bdc15bac54',1,'compute_min_w_hit_stats(const params_t *const p, int *min_cnt, int *max_cnt, double *avg_cnt, double *stdev_cnt):&#160;util_io.c']]],
-  ['compute_5fmodel_5flower_5fbound_17',['compute_model_lower_bound',['../namespacedist__m4ri.html#a36cfb0441960b9aaa132a28ae9ad46b2',1,'dist_m4ri']]],
+  ['compute_5fmodel_5flower_5fbound_17',['compute_model_lower_bound',['../namespacedist__m4ri.html#a26e0d0f7b884582ac8db5eb6aebde0dd',1,'dist_m4ri']]],
   ['compute_5fquantum_5fdistance_18',['compute_quantum_distance',['../namespacedist__m4ri.html#a93992928c84531a944821a15eaf54b6e',1,'dist_m4ri']]],
   ['count_5fcircuit_5frounds_19',['count_circuit_rounds',['../namespacedist__m4ri.html#a2c4b13c44a50570e297c270e3e236eed',1,'dist_m4ri']]],
   ['create_5funique_5ffile_20',['create_unique_file',['../namespacedist__m4ri.html#a0d2316ce4c5c2336a055b8e2de01dea0',1,'dist_m4ri']]],
