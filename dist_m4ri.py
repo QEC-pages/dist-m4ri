@@ -32,7 +32,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.5"
+__version__ = "0.14.7"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -1469,10 +1469,12 @@ def run_dist_m4ri(
         pairs: The RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern), passed as pairs=N if not -1: a
             RW step also finds the codewords with two non-pivot columns, checking only the pairs which agree on N
             random pivot rows (0: off).  -1 (default): auto, about one non-pivot column per bucket, with fewer rows
-            while a codeword of the weight of the upper bound would be kept with probability below 0.8.  The pairs
-            find the minimum-weight codewords of circuit DEMs 7-25 times faster (per wall time) and lighter
-            codewords of codes with a large distance.  With debug & 1, the binary prints the pairs checked per step
-            and the codewords found by pairs and by single columns (also in _last_run_stats).
+            while a codeword of the weight of the upper bound would be kept with probability below 0.8, but enough
+            rows to keep the pairs of a step within about the work of its elimination (e.g., at least 6 for large
+            circuit DEMs while the upper bound is far above the distance).  The pairs find the minimum-weight
+            codewords of circuit DEMs 7-25 times faster (per wall time) and lighter codewords of codes with a large
+            distance.  With debug & 1, the binary prints the pairs checked per step and the codewords found by pairs
+            and by single columns (also in _last_run_stats).
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -4971,7 +4973,7 @@ def compute_model_lower_bound(
     num_steps: Optional[int] = None,
     dstop: int = 0,
     wmax: int = 0,
-    minority: bool = True,
+    minority: bool = False,
     pmin: float = 0.0,
     rounds: Optional[int] = None,
     p_noise: float = 0.001,
@@ -4995,8 +4997,8 @@ def compute_model_lower_bound(
     detectors (see _model_detector_groups()).  In a memory circuit, the groups are the chains of the detectors of the
     checks over the rounds: the chain of a check h of the measured basis telescopes to the parity of the final data
     measurements on its support, so that the column of an error mechanism is the syndrome of its net data error (a
-    data error or a hook error), and the chains of the minority-basis checks (minority=True) add the net change of
-    their values between their first and last measurements.  Equal columns are merged, and the errors with no effect
+    data error or a hook error), and the chains of the minority-basis checks (with minority=True) add the net change
+    of their values between their first and last measurements.  Equal columns are merged, and the errors with no effect
     on the rows nor on the observables (e.g., ancilla measurement errors) are dropped; the model has a few columns per
     data qubit.  Since every row is a sum of detector rows, every codeword x of the DEM (Hx = 0, Lx != 0) gives a model
     codeword of weight at most |x|: the distance of the model, as certified by CC (its dmin), is a lower bound on the
@@ -5004,12 +5006,16 @@ def compute_model_lower_bound(
     bb_72 circuit of distance 6).  Any circuit gives a valid bound, but a useful one needs this structure; if an error
     flips an observable but no row, the bound is 1 (with a note to stderr).
 
-    The binary runs on the model with the rows of the measured-basis chains first, and then (minority=True) on the
-    model with all rows, starting from that bound (the extra rows can only raise it): RW first, which ends as soon as
-    it finds a model codeword of that weight (then the bound is not raised), and only otherwise with `method` (CC from
-    dmin).  The certified bound is stored as dmin in the
-    cache record of the DEM (the same key as compute_dem_distance(); "dmin_model": the bound), so that a later
-    compute_dem_distance() starts CC from it; the distances of the models are cached under their own keys.
+    The binary runs on the model with the rows of the measured-basis chains first, and then (with minority=True) on
+    the model with all rows, starting from that bound (the extra rows can only raise it): RW first, which ends as soon
+    as it finds a model codeword of that weight (then the bound is not raised), and only otherwise with `method` (CC
+    from dmin).  The minority-basis rows are off by default: with depolarizing-type noise, every net data error which
+    flips the measured-basis observable also occurs without a component of the other basis, so that a lightest model
+    codeword has a version which the minority-basis rows do not detect (they never raised the bound of the benchmark
+    circuits or of the surface-code circuits of stim, and cost up to 9 s for the mitten_270 circuits); they may raise
+    it for other noise models (e.g., biased noise).  The certified bound is stored as dmin in the cache record of the
+    DEM (the same key as compute_dem_distance(); "dmin_model": the bound), so that a later compute_dem_distance()
+    starts CC from it; the distances of the models are cached under their own keys.
 
     Args:
         circuit: Stim memory circuit (stim.Circuit or .stim file).
@@ -5019,8 +5025,8 @@ def compute_model_lower_bound(
             binary (at most three).
         dstop: Stop target (see compute_dem_distance()): the runs end once CC has certified dmin >= dstop.
         wmax: Maximum weight of the CC rounds on the model (0: until the bounds meet or the timeout).
-        minority: If True (default), the groups without a final data measurement (e.g., the chains of the
-            minority-basis checks of a CSS circuit) are rows of the model as well.
+        minority: If True, the groups without a final data measurement (e.g., the chains of the minority-basis
+            checks of a CSS circuit) are rows of the model as well (default: False; CLI: --model-minority).
         pmin: Probability cutoff for the error mechanisms of the DEM.
         rounds / p_noise / force_noise: The processing of the circuit, as in compute_dem_distance().
         out_model: If given, the model (with all rows used) is written to PREFIX_HR.mtx and PREFIX_LR.mtx.
@@ -5219,6 +5225,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "out_dem": None,
         "out_stim": None,
         "model_lb": False,
+        "model_minority": False,
         "out_model": None,
         "morehelp": False,
         "morehelp_topic": None,
@@ -5301,6 +5308,12 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
         if arg in ("--model-lb", "-model-lb", "--model_lb", "-model_lb", "model_lb", "model-lb"):
             args["model_lb"] = True
+            i += 1
+            continue
+
+        if arg in ("--model-minority", "-model-minority", "--model_minority", "-model_minority", "model_minority",
+                   "model-minority"):
+            args["model_minority"] = True
             i += 1
             continue
 
@@ -5611,6 +5624,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["model_lb"] = (
                     bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
                 )
+            elif key_lower in ("model-minority", "model_minority", "modelminority"):
+                args["model_minority"] = (
+                    bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
+                )
             elif key_lower in ("out-model", "out_model", "outmodel"):
                 args["out_model"] = val
             elif key_lower in ("out-stim", "out_stim", "outstim"):
@@ -5647,12 +5664,12 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 Allowed parameters:
   fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, merge, drop, outD,
   --out-reduced, classical, --simple, --full, basis, --rounds, --out-dir,
-  --out-dem, --out-stim, --p-noise, --force-noise, --model-lb, --out-model,
-  method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax, timeout, threads,
-  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs,
-  min_hits, cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC,
-  maxC, expand, dW, seed, debug, solver, cache, --no-cache, --verbose, --cws,
-  --trust-start, sort_rows
+  --out-dem, --out-stim, --p-noise, --force-noise, --model-lb, --model-minority,
+  --out-model, method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax,
+  timeout, threads, nothrottle, chunk_size (batch), ksub, kwin (win), win_mode,
+  win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, cbeg, cend,
+  finC, outC, maxC, expand, dW, seed, debug, solver, cache, --no-cache,
+  --verbose, --cws, --trust-start, sort_rows
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5687,6 +5704,7 @@ Input matrices & models:
   --p-noise P           Strength of the noise added to a noiseless .stim circuit (default: 0.001; 0: none)
   --force-noise         Replace the noise of a .stim circuit by that of --p-noise (with P=0: remove it)
   --model-lb            Certified lower bound for a .stim circuit from its code-sized model
+  --model-minority      With --model-lb, also the rows of the minority-basis checks (default: off)
 
 Method and distance bounds:
   method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
@@ -5861,14 +5879,19 @@ Required input (at least one matrix/model specification):
                         check of a memory circuit), and each chain gives a row of the model, the sum
                         of its detector rows (the chain of a check of the measured basis telescopes
                         to the parity of the final data measurements on the check; the chains of the
-                        minority-basis checks are rows as well), with the equal columns merged.  Each
-                        codeword of the DEM gives a model codeword of no larger weight, so the model
-                        distance certified by CC is a lower bound on the circuit distance; it ignores
-                        the timing within the rounds (not tight in general, e.g., 5 for the bb_72
-                        circuit of distance 6).  The binary runs on the model with the measured-basis
-                        rows, then with all rows from that bound (RW first; method, threads, timeout,
-                        steps, dstop, wmax, and seed apply to each run).  The bound is stored as dmin in
-                        the cache record of the DEM, and the bounds of the circuit are printed.
+                        minority-basis checks only with --model-minority), with the equal columns
+                        merged.  Each codeword of the DEM gives a model codeword of no larger weight,
+                        so the model distance certified by CC is a lower bound on the circuit
+                        distance; it ignores the timing within the rounds (not tight in general, e.g.,
+                        5 for the bb_72 circuit of distance 6).  The binary runs on the model with the
+                        measured-basis rows, then (with --model-minority) with all rows from that bound
+                        (RW first; method, threads, timeout, steps, dstop, wmax, and seed apply to each
+                        run).  The bound is stored as dmin in the cache record of the DEM, and the
+                        bounds of the circuit are printed.
+  --model-minority      With --model-lb, also the chains of the minority-basis checks are rows of the
+                        model (also model_minority=1; default: off).  With depolarizing-type noise,
+                        they do not raise the bound (a lightest model codeword has a version without
+                        components of the other basis), but they may for other noise models.
   --out-model PREFIX    With --model-lb, write the model to PREFIX_HR.mtx and PREFIX_LR.mtx (also
                         out_model=PREFIX).
   (conflicting inputs)  The input is selected in the order fdem, Hx/Hz (CSS code), and
@@ -5972,11 +5995,13 @@ Multithreading & throttling:
                         checking only the pairs of columns which agree on N random pivot rows
                         (at most 64; 0 = off).  Default: -1 = auto, about one non-pivot column per
                         bucket, with fewer rows while a codeword of the weight of the upper bound
-                        would be kept with probability below 0.8.  The pairs find the
-                        minimum-weight codewords of circuit DEMs 7-25 times faster, and lighter
-                        codewords of codes with a large distance.  Not with ksub.  With --verbose
-                        (or debug&1), the binary prints the pairs checked per step and the
-                        codewords found by pairs and by single columns.
+                        would be kept with probability below 0.8, but enough rows to keep the
+                        pairs of a step within about the work of its elimination (e.g., at least
+                        6 for large circuit DEMs while the upper bound is far above the
+                        distance).  The pairs find the minimum-weight codewords of circuit DEMs
+                        7-25 times faster, and lighter codewords of codes with a large distance.
+                        Not with ksub.  With --verbose (or debug&1), the binary prints the pairs
+                        checked per step and the codewords found by pairs and by single columns.
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = disabled).
                         Stops RW when the average number of times <n> that RW has found each
                         codeword reaches min_hits, both for the codewords of the minimum weight
@@ -6100,7 +6125,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   bounds                dmin, dmax, dstop, dexp, wmax
   dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand
   stim                  fdem, basis, --rounds, --out-dir, --out-dem, --out-stim, --p-noise,
-                        --force-noise, --model-lb, --out-model
+                        --force-noise, --model-lb, --model-minority, --out-model
   matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical
   codewords             --cws, outC, finC, maxC, dW, expand
   threading             threads, nothrottle, chunk_size
@@ -6311,8 +6336,11 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                                    ("solver=", args.get("solver") not in (None, "dist_m4ri"))) if on]
         if ign:
             warns.append(f"{', '.join(ign)}: not used with --model-lb; ignored")
-    elif args.get("out_model") is not None:
-        warns.append("--out-model: only used with --model-lb; ignored")
+    else:
+        if args.get("out_model") is not None:
+            warns.append("--out-model: only used with --model-lb; ignored")
+        if args.get("model_minority"):
+            warns.append("--model-minority: only used with --model-lb; ignored")
     for w in warns:
         sys.stderr.write(f"# Warning: {w}\n")
 
@@ -6382,6 +6410,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 num_steps=args["steps"],
                 dstop=args["dstop"],
                 wmax=args["wmax"],
+                minority=args["model_minority"],
                 pmin=args["pmin"],
                 rounds=args["rounds"],
                 p_noise=args["p_noise"] if args["p_noise"] is not None else 0.001,

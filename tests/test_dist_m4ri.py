@@ -659,7 +659,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.5" in captured.out
+    assert "0.14.7" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -670,7 +670,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.5" in captured.out
+    assert "0.14.7" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -689,7 +689,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.5" in older_warn
+    assert "expected >= 0.14.7" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1303,10 +1303,11 @@ def test_pairs_option(capsys):
 
 def test_model_lower_bound(tmp_path, capsys):
     # the code-sized model of a Stim memory circuit (compute_model_lower_bound(), CLI --model-lb): one row per chain of
-    # detectors linked by their measurements (the checks over the rounds; with minority=False, only the chains with
-    # final data measurements), the sum of their rows, so that every DEM codeword gives a model codeword of no larger
-    # weight and the model distance is a certified lower bound: 3 (tight) for the surface code with d=3 (8 checks, 4
-    # of the measured basis), 5 for the bb_72 circuit of distance 6; the bound is stored as dmin in the cache record
+    # detectors linked by their measurements (the checks over the rounds; by default only the chains with final data
+    # measurements, all of them with minority=True, CLI --model-minority), the sum of their rows, so that every DEM
+    # codeword gives a model codeword of no larger weight and the model distance is a certified lower bound: 3 (tight)
+    # for the surface code with d=3 (8 checks, 4 of the measured basis), 5 for the bb_72 circuit of distance 6 (also
+    # with the minority-basis rows); the bound is stored as dmin in the cache record
     if not dist_m4ri._HAS_STIM:
         pytest.skip("stim is not installed")
     import stim
@@ -1317,17 +1318,20 @@ def test_model_lower_bound(tmp_path, capsys):
     circ.to_file(path)
     cache = str(tmp_path / "cache.json")
     dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()  # (a CLI test with --no-cache may have disabled it)
     try:
         b, info = dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=cache, out_model=str(tmp_path / "m"),
                                                       return_info=True)
         assert b == 3 and info["model_d_info"][:2] == [3, 3] and info["d_info"] == [3, 0, 0]
-        assert (info["groups"], info["groups_final"], info["rows"], info["rows_measured"]) == (8, 4, 8, 4)
+        assert (info["groups"], info["groups_final"], info["rows"], info["rows_measured"]) == (8, 4, 4, 4)
         assert info["trivial"] == 0 and len(info["col_map"]) == info["dem_cols"]
         assert info["files"] == [str(tmp_path / "m_HR.mtx"), str(tmp_path / "m_LR.mtx")]
         assert all(os.path.isfile(f) for f in info["files"])
         entry = dist_m4ri.get_cached_distance(circuit=path, cache_file=cache)
         assert (entry["dmin"], entry["dmax"], entry["dmin_model"]) == (3, 0, 3)
-        assert dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=cache, minority=False) == 3
+        b, info = dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=cache, minority=True,
+                                                      return_info=True)
+        assert b == 3 and (info["rows"], info["rows_measured"]) == (8, 4)
         # the DEM run starts CC from the cached bound; its codewords map to model codewords of no larger weight
         dist, d_info, cws = dist_m4ri.compute_dem_distance(circuit=path, method=2, wmax=4, dW=1, drop=0, do_cws=True,
                                                            threads=2, cache_file=cache)
@@ -1360,6 +1364,14 @@ def test_model_lower_bound(tmp_path, capsys):
                                str(tmp_path / "cli")]) == 0
         assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
         assert os.path.isfile(str(tmp_path / "cli_HR.mtx")) and os.path.isfile(str(tmp_path / "cli_LR.mtx"))
+        from scipy.io import mmread
+        assert mmread(str(tmp_path / "cli_HR.mtx")).shape[0] == 4  # (the measured-basis rows only, the default)
+        assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--model-minority", "--no-cache", "threads=2",
+                               "--out-model", str(tmp_path / "clim")]) == 0
+        assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
+        assert mmread(str(tmp_path / "clim_HR.mtx")).shape[0] == 8  # (also the minority-basis rows)
+        assert dist_m4ri.main([f"fdem={path}", "model_minority=1", "--no-cache", "threads=2", "method=2"]) == 0
+        assert "# Warning: --model-minority: only used with --model-lb; ignored" in capsys.readouterr().err
         dist_m4ri.enable_distance_cache()  # (--no-cache disabled it)
         assert dist_m4ri.main([f"fdem={path}", "--model-lb", f"cache={cache}", "threads=2", "outC=x.nz"]) == 0
         captured = capsys.readouterr()

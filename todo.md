@@ -187,6 +187,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Possible follow-ups: thread-local batches of the recorded hits (the codeword mutex limits small codes with many
     threads, also without pairs); a cost model for $l$ (time of the pairs vs the elimination) instead of the fixed
     keep probability 0.8; triples ($p=3$) for small ranks.
+  - [x] 0.14.6: a work bound for the auto $l$ (`benchmark/BENCHMARK.md`, Section 8; `scratch/bench_0.14.5/`): $l$ is
+    at least the $l$ at which the about $(n-r)^2/2^{l+1}$ pairs of a step are within about the work of its
+    elimination, $rn/16$ pairs (or $2^{20}$ pairs for small matrices), and the stop flags and the upper bound are also
+    polled within the buckets (every 65536 pairs). Early in a run, while the upper bound is far above the distance,
+    the keep probability alone gave $l = 1$ (all pairs in two buckets): 0.14.5 on `bb_756` completed no RW step in
+    the first 32 s and did not stop at its timeout, and on `mitten_270` took 0.6 s of RW to the distance instead of
+    0.16 s (0.14.3). The bound gives $l \ge 6$ for these DEMs (0.14.6: 0.12 s of RW to the distance of `mitten_270`,
+    and `bb_756` stops at its timeout), and no change for codes with $n - r < r$ (`c1920H`).
 - [x] **RW thread throttle for huge matrices** (0.14.3; `scratch/speedup/RESULTS.md`, experiments (a) and (e)): above
   15 MB of dense RW memory per thread, at most 32 RW threads, within a quarter of the physical memory (at least 2;
   1.5 GB if the physical memory is not known), instead of about 1.5 GB in total. The memory bus saturates at 32-64 RW
@@ -453,6 +461,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
       1.8 s in total). For mitten_270 custom, RW on all rows found no codeword of weight 8 (lightest 9, the circuit
       distance) and CC did not finish $w = 8$ in 120 s: a longer run may show whether the minority rows raise the
       bound to 9 there.
+    - [x] 0.14.7: the minority-basis rows are off by default (`minority=True`, CLI `--model-minority`, to use them).
+      They raised none of the bounds of the 16 circuits of `benchmark/BENCHMARK.md` Section 8.5 (`mitten_270` custom
+      stays 8, with CC on all rows in 7.8 s) and of the stim surface codes ($d = 5, 7$), and cost up to 9 s: with
+      depolarizing-type noise, every net data error which flips the observable of the measured basis also occurs
+      without a component of the other basis, so that a lightest model codeword has a version which these rows do not
+      detect. They may raise the bound for other noise models (e.g., biased noise).
 - [ ] **Row reductions of a DEM, with lifting and verification in C** (generalizes the two items above): replacing $H$
   by $RH$ with rows in the row space of $H$ (deleting or summing detector rows), with the observables $L$ unchanged,
   can only lower the distance, $d_R \le d_{\rm full}$; deleting or merging observables could raise it. Columns equal

@@ -138,16 +138,28 @@ Relevant parameters:
   and at the end of RW the codewords of the three lowest weights found by the uniform steps and by the window steps
   (e.g., to see codewords which are not local in the column order).
 - `pairs=[int]`: The RW pairs of non-pivot columns ($p=2$): the number $l$ of random pivot rows of their buckets (at
-  most 64; 0: off). Default: -1 (auto), $l = \lceil \log_2 (n-r) \rceil$ (about one non-pivot column per bucket),
-  with fewer rows (at least one) while a codeword of the weight $w$ of the upper bound would be kept with the
-  probability $\binom{r-l}{w-2} / \binom{r}{w-2}$ below 0.8 ($r$: the rank of $H$). In a fixed number of RW steps,
-  the pairs found the minimum-weight codewords of circuit DEMs 7-26 times more often per second (`bb_72`: 7x; gross,
-  `surf_d7`, `mitten_150`: 22-26x), the weight 18 of the double-gross circuit in 3000 steps (20 without pairs, with
-  2% more time per step), 24 for `bb_360` in 600 steps (26), and much lighter codewords of classical LDPC codes with
-  a large distance (`c1920H`: 210 instead of 320 in 1000 steps). For small codes, a step takes 2-5 times longer, but
-  `min_hits` is reached in fewer steps, in about the same time or less. With `debug&1`, the binary prints the pairs
-  checked per step and the codewords recorded from the pairs and from the single columns (`# RW pairs (p=2, ...)`).
-  Not with the experimental `ksub`.
+  most 64; 0: off). Default: -1 (auto), $l = \lceil \log_2 (n-r) \rceil$ (about one non-pivot column per bucket), with
+  fewer rows (at least one) while a codeword of the weight $w$ of the upper bound would be kept with the probability
+  $\binom{r-l}{w-2} / \binom{r}{w-2}$ below 0.8 ($r$: the rank of $H$), but enough rows to keep the about
+  $(n-r)^2/2^{l+1}$ pairs of a step within about the work of its elimination, $rn/16$ pairs (or $2^{20}$ pairs for small
+  matrices). Early in a run, while the upper bound is far above the distance, the keep probability alone gives $l = 1$,
+  all pairs in two buckets: a step on a large circuit DEM would then check millions or billions of pairs (0.14.4 and
+  0.14.5: e.g., 0.6 s of RW to the distance 9 of the `mitten_270` circuit instead of 0.12 s, and no stop at the timeout
+  for `bb_756`). The bound gives $l \ge 6$ for such DEMs, while the codes with $n - r < r$ (e.g., `c1920H`) keep
+  $l = 1$. In a fixed number of RW steps, the pairs found the minimum-weight codewords of circuit DEMs 7-26 times more
+  often per second (`bb_72`: 7x; gross, `surf_d7`, `mitten_150`: 22-26x), the weight 18 of the double-gross circuit in
+  3000 steps (20 without pairs, with 2% more time per step), 24 for `bb_360` in 600 steps (26), and lighter codewords of
+  classical LDPC codes with a large distance (`c1920H`: 210-277 instead of 317-321 in 1000 steps, three seeds). With 128
+  threads, RW finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s, and 23 for `bb_360` in
+  1-2 min instead of 24 in 4 min (Section 8 of the [benchmark](benchmark/BENCHMARK.md)). For small codes, a step takes
+  2-5 times longer, but `min_hits` is reached in fewer steps, mostly in about the same time. Where the hit counts are
+  strongly non-uniform (a warning with `debug&1`), whether `min_hits` is reached within `steps` is a matter of chance,
+  with or without pairs: e.g., the unreduced matrices `examples/surf_d7_H.mmx` with `_L.mmx` (a circuit DEM given as
+  matrices) mostly run to the step limit with the pairs, in twice the time, while the surface-code circuit of stim with
+  $d = 7$ as a DEM (reduced by the binary) converges as soon as without pairs, and the one with $d = 9$ converges only
+  with the pairs (Section 8.4 of the benchmark). With `debug&1`, the binary prints the pairs checked per step and the
+  codewords recorded from the pairs and from the single columns (`# RW pairs (p=2, ...)`). Not with the experimental
+  `ksub`.
 - `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
   without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
   full-matrix RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$, e.g., for DEMs
@@ -653,7 +665,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.5): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.7): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -862,29 +874,35 @@ interoperability without manual threading overhead.
   - **`expand`** (CLI: `expand=0|1`; default: `False`): the codewords returned and written to `outC` are expanded over
     the choices among equal columns (see [Codeword Export](#codeword-export-outc--finc)); `maxC > 0` limits the
     expanded list (with a warning if some codewords are dropped).
-- `compute_model_lower_bound(circuit, minority=True, out_model=None, return_info=False, ...)` (CLI: `fdem=FILE.stim
-  --model-lb [--out-model PREFIX]`): a certified lower bound on the distance of a Stim memory circuit from its
-  code-sized model, a row reduction of its DEM $(H, L)$, for circuits whose DEM is too large for CC:
+- `compute_model_lower_bound(circuit, minority=False, out_model=None, return_info=False, ...)` (CLI:
+  `fdem=FILE.stim --model-lb [--model-minority] [--out-model PREFIX]`): a certified lower bound on the distance of a
+  Stim memory circuit from its code-sized model, a row reduction of its DEM $(H, L)$, for circuits whose DEM is too
+  large for CC:
   - Two detectors are linked if they share a measurement record other than a final data measurement; in a memory
     circuit, each group of linked detectors is the chain of the detectors of one check over the rounds. Each group
     gives one row of the model, the sum of the rows of its detectors: the chain of a check $h$ of the measured basis
     telescopes to the parity of the final data measurements on $h$, so that the column of an error is the syndrome of
-    its net data error (a data or hook error), and with `minority=True` (default) the chains of the minority-basis
-    checks are rows as well. Equal columns are merged, and the errors with no effect (e.g., ancilla measurement
-    errors) are dropped: a few columns per data qubit, e.g., $144 \times 720$ for the double-gross circuit without the
-    minority-basis rows.
+    its net data error (a data or hook error); with `minority=True` (CLI: `--model-minority`), the chains of the
+    minority-basis checks are rows as well. Equal columns are merged, and the errors with no effect (e.g., ancilla
+    measurement errors) are dropped: a few columns per data qubit, e.g., $144 \times 720$ for the double-gross circuit
+    without the minority-basis rows.
+  - The minority-basis rows are off by default: with depolarizing-type noise, every net data error which flips the
+    observable of the measured basis also occurs without a component of the other basis, so that a lightest model
+    codeword has a version which these rows do not detect. They never raised the bound of the benchmark circuits or
+    of the surface-code circuits of stim, and cost up to 9 s (`mitten_270`, where CC on the larger model was needed);
+    they may raise it for other noise models (e.g., biased noise).
   - Every row is a sum of detector rows, so every codeword of the DEM gives a model codeword of no larger weight: the
     distance of the model certified by CC is a lower bound on the circuit distance. It ignores the timing within the
     rounds: it is tight for the surface-code circuits of stim, the `hef` Mitten circuits, and the `n120` torus
     circuit, but 1-2 below the distance of the BB circuits (`bb_72`: 5, distance 6; gross: 8, distance 10; double
     gross: 12, distance at most 18), of the custom Mitten circuits (`mitten_270`: 8, distance 9), and of the `n60`
     torus circuit (4, distance 6).
-  - The binary runs on the model with the measured-basis rows first, then with all rows starting from that bound: RW
-    first, which ends as soon as it finds a model codeword of that weight, and only otherwise CC from `dmin` (CC on
-    all rows alone would be much slower: gross 75 s for 7, instead of 1.8 s for 8). The bound is stored as
-    `dmin` in the cache record of the DEM (with `"dmin_model"`), so that `compute_dem_distance()` starts CC from it, and
-    the CLI prints the bounds of the circuit. With `return_info=True`, the info has the model (`"H"`, `"L"`, and
-    `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs.
+  - The binary runs on the model with the measured-basis rows first, then (with `minority=True`) with all rows starting
+    from that bound: RW first, which ends as soon as it finds a model codeword of that weight, and only otherwise CC
+    from `dmin` (CC on all rows alone would be much slower: gross 75 s for 7, instead of 1.8 s for 8). The bound is
+    stored as `dmin` in the cache record of the DEM (with `"dmin_model"`), so that `compute_dem_distance()` starts CC
+    from it, and the CLI prints the bounds of the circuit. With `return_info=True`, the info has the model (`"H"`,
+    `"L"`, and `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs.
 - `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ..., mask_out=None)` /
   `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a
   list `mask_out` receives one entry per detector: `True` if it is stripped; `compute_dem_distance()` uses it for the
@@ -1049,15 +1067,22 @@ pytest tests/test_dist_m4ri.py -v
 
 The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes ($d = 4$ to $\le 34$) and Stim circuits
 (bivariate bicycle codes including the gross and double-gross codes, Mitten codes, and 2D-local torus BB circuits),
-their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on
-a 128-thread server: the scaling with the number of threads, and a comparison of the versions 0.14.0, 0.12.2, and
-0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight in at most 1.4 s,
-while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of the
-`mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
+their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on a
+128-thread server: the scaling with the number of threads, and a comparison of the versions 0.14.6, 0.14.5, 0.14.3,
+0.14.0, 0.12.2, and 0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight
+in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of
+the `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
 detectors stripped, whose distance is only a lower bound). Its Section 7 measures the RW window size and the thread
-throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`).
+throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its Section 8 the RW pairs of 0.14.4 with the work
+bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5. With the pairs, RW needs 6-30 times fewer steps
+to a minimum-weight codeword of a full DEM where many steps are needed (the time of these short runs is mostly reading
+and reducing the DEM), it finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s and the weight
+23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and it finds lighter codewords of codes with a large
+distance.
 
-![Time to a minimum-weight codeword in the full DEMs of the benchmark circuits](benchmark/figures/fulldem_time.png)
+![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/fulldem_time.png)
+
+![The lightest codeword found against time, 0.14.3 and 0.14.6](benchmark/figures/rw_pairs.png)
 
 ---
 

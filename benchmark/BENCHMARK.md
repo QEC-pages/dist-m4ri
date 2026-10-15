@@ -22,8 +22,9 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 - `stim_bb/`: Unmodified Bivariate Bicycle (BB), Gross, and Double-Gross `.stim` circuits from external repositories.
 - `stim_mitten/`: Mitten code `.stim` circuits generated via `quits` with `CircuitBuildOptions(get_all_detectors=True)`.
 - `stim_torus/`: 2D local torus Bivariate Bicycle `.stim` circuits (`d = 14` to `17`, noiseless templates).
-- `figures/`: scaling of `dist_m4ri` with the number of threads on some of these codes and circuits (Section 4), and
-  the time to a minimum-weight codeword in the full DEMs of the circuits (Section 5).
+- `figures/`: scaling of `dist_m4ri` with the number of threads on some of these codes and circuits (Section 4), the
+  time to a minimum-weight codeword in the full DEMs of the circuits (Sections 5 and 8), and the lightest codeword
+  found against time with and without the RW pairs (Section 8).
 
 ---
 
@@ -391,9 +392,8 @@ Section 4.
 
 The time of RW (`method=1`, `wmin=d`: the run stops at the first codeword of weight at most $d$; 128 threads,
 `nothrottle=1`, timeout 300 s) on the full DEMs: 0.14.0 reduces them exactly, the older versions work on the full
-matrices. "> 300 (w)": no codeword of weight $d$ found, $w$ is the lightest weight found.
-
-![Time to a minimum-weight codeword in the full DEMs](figures/fulldem_time.png)
+matrices. "> 300 (w)": no codeword of weight $d$ found, $w$ is the lightest weight found. The figure of Section 8.1
+shows these times together with those of 0.14.3 and 0.14.5.
 
 | Circuit | $d$ | full DEM | 0.14.0 | 0.12.2 | 0.9.0 |
 | :--- | :---: | :--- | ---: | ---: | ---: |
@@ -688,3 +688,250 @@ in the column order (e.g., time-like codewords with one error per round), and fo
 On the full DEMs of Section 5.2 (`method=1`, `wmin=d`, 128 threads, `nothrottle=1`, three seeds), 0.14.3 finds a
 codeword of the minimum weight within 0.53 s (median) for all eleven circuits, as 0.14.2. On gross, the steps to weight
 10 (five seeds) were 0.5k–5.7k with 256 columns (median 2.0k) against 1.3k–7.3k with 512 (median 3.0k).
+
+---
+
+## 8. RW Pairs of 0.14.4 and 0.14.6, and the Model Bound of 0.14.5 (2026-10-15)
+
+`dist_m4ri` 0.14.5 (commit `6241d59`) against 0.14.3 (`741d9a1`, Section 7) and 0.14.0 (`40faf58`, Section 5), on the
+server of Section 4, with the inputs of Section 5: 476 runs in about one hour. 0.14.4 added the RW pairs (`pairs`, on
+by default): a RW step also finds the codewords with exactly two non-pivot columns (Lee–Brickell and Stern with
+$p = 2$), from the pairs of columns which agree on $l$ random pivot rows ($l \approx \log_2(n - r)$, fewer while the
+upper bound is large). 0.14.5 added `compute_model_lower_bound()` to the Python wrapper (the code-sized model of
+Section 6.3, with the minority-basis rows by default until 0.14.6). 0.14.6 bounds the work of the RW pairs per step,
+after the slow early steps found here (Section 8.7; 142 more runs). The raw data and scripts are in
+`scratch/bench_0.14.5/` (not in the repository).
+
+### 8.1 Full DEMs: time to a codeword of the minimum weight
+
+As in Section 5.2 (`method=1`, `wmin=d`, 128 threads, `nothrottle=1`), with five seeds per version (seven for gross):
+the median wall time, which includes reading the DEM, merging, and the exact reduction, and the median number of RW
+steps; 0.12.2 and 0.9.0 in the figure: the runs of Section 5.2. All runs of 0.14.x found a codeword of weight $d$.
+0.14.6: Section 8.7.
+
+![Time and RW steps to a minimum-weight codeword in the full DEMs](figures/fulldem_time.png)
+
+| Circuit | $d$ | wall (s): 0.14.0 | 0.14.3 | 0.14.5 | 0.14.6 | RW steps: 0.14.0 | 0.14.3 | 0.14.5 | 0.14.6 |
+| :--- | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `bb_72_12_6_si1000_r6_X` | 6 | 0.092 | 0.092 | 0.093 | 0.093 | 7 | 6 | 2 | 3 |
+| `mitten_90_18_6_C3xS3_custom_r4_Z` | 5 | 0.16 | 0.16 | 0.16 | 0.16 | 14 | 8 | 2 | 3 |
+| `mitten_90_18_6_C3xS3_hef_r4_Z` | 4 | 0.18 | 0.18 | 0.18 | 0.18 | 2 | 1 | 2 | 2 |
+| `mitten_150_30_8_C5xS3_custom_r5_Z` | 7 | 0.39 | 0.37 | 0.36 | 0.36 | 979 | 413 | 33 | 13 |
+| `mitten_150_30_8_C5xS3_hef_r5_Z` | 5 | 0.39 | 0.38 | 0.39 | 0.38 | 39 | 121 | 4 | 4 |
+| `mitten_210_42_8_C7xS3_custom_r4_Z` | 6 | 0.44 | 0.44 | 0.44 | 0.44 | 6 | 6 | 4 | 3 |
+| `mitten_210_42_8_C7xS3_hef_r4_Z` | 5 | 0.48 | 0.47 | 0.47 | 0.47 | 46 | 32 | 5 | 6 |
+| `mitten_270_54_10_C9xS3_custom_r4_Z` | 9 | 1.36 | 0.64 | 1.06 | **0.56** | 17.3k | 1.5k | 222 | 220 |
+| `mitten_270_54_10_C9xS3_hef_r4_Z` | 7 | 1.01 | 0.68 | 0.73 | **0.62** | 7.8k | 1.6k | 95 | 161 |
+| `mitten_330_66_6_C11xS3_custom_r4_Z` | 4 | 0.69 | 0.70 | 0.69 | 0.70 | 1 | 1 | 1 | 1 |
+| `mitten_330_66_6_C11xS3_hef_r4_Z` | 4 | 0.75 | 0.74 | 0.74 | 0.74 | 1 | 1 | 1 | 1 |
+| `gross_144_12_12_si1000_r12_X` | 10 | 0.99 | 0.53 | 0.44 | 0.45 | 7.1k | 778 | 62 | 62 |
+
+- Where many RW steps are needed (`mitten_150`, `mitten_210 hef`, `mitten_270`, gross), 0.14.5 needs 6–30 times fewer
+  than 0.14.3. The wall time is mostly the input stage (0.07–0.7 s), so that the medians hardly change (gross: 0.44 s
+  against 0.53 s). 0.14.5 with `pairs=0` behaves as 0.14.3 (gross: 0.51 s, 628 steps).
+- On the `mitten_270` circuits, 0.14.5 is slower than 0.14.3 (custom: 1.06 s against 0.64 s; RW alone, from
+  `# stopped after`, 0.60 s against 0.16 s), although it needs 7–17 times fewer steps. The first codewords found have
+  weights 100–300, and while the upper bound is above about 70, the default $l$ is 1 (with $l = 2$, a codeword of that
+  weight would be kept with a probability below 0.8), so that the steps check millions of pairs: 0.5–5.5 million per
+  step on average over these runs (0.014–0.099 s per step and thread, against 0.003–0.005 s for 0.14.3); the 128
+  threads spend about 0.1 s in such steps, until the upper bound drops below 20. With a fixed `pairs=13`
+  ($\approx \log_2(n - r)$), the upper bound drops to about 10 within a few milliseconds, and so it does with the
+  work bound of 0.14.6 ($l \ge 6$, Section 8.7):
+
+| Circuit (median wall time in s / RW time in s / RW steps) | 0.14.3 | 0.14.5 | 0.14.5, `pairs=13` | 0.14.6 |
+| :--- | :--- | :--- | :--- | :--- |
+| `mitten_270` custom ($d = 9$) | 0.64 / 0.16 / 1.5k | 1.06 / 0.60 / 222 | 0.56 / 0.12 / 182 | 0.56 / 0.12 / 220 |
+| `mitten_270` hef ($d = 7$) | 0.68 / 0.16 / 1.6k | 0.73 / 0.20 / 95 | 0.62 / 0.12 / 119 | 0.62 / 0.12 / 161 |
+| `mitten_150` custom ($d = 7$) | 0.37 / 0.059 / 413 | 0.36 / 0.056 / 33 | 0.36 / 0.055 / 20 | 0.36 / 0.058 / 13 |
+| gross ($d = 10$) | 0.53 / 0.21 / 778 | 0.44 / 0.14 / 62 | 0.45 / 0.14 / 82 | 0.45 / 0.14 / 62 |
+
+### 8.2 Large DEMs: the time to light codewords
+
+RW with the default threads (32 RW threads, Section 7.1) on the full DEMs of the double-gross circuit (`wmin=18`, three
+seeds) and of `bb_360` (`wmin=23`, two seeds, timeout 240 s). The time of the first codeword of each weight is that of
+its message "RW found new upper bound", since the start of the run (reading and reducing the DEM take about 1 s and
+2 s). The figure shows 0.14.6 (Section 8.7), which finds these codewords as soon as 0.14.5, against 0.14.3.
+
+![The lightest codeword found against time](figures/rw_pairs.png)
+
+| DEM | weight | 0.14.3: time (s)/RW steps, per seed | 0.14.5 | 0.14.6 (Section 8.7) |
+| :--- | :---: | :--- | :--- | :--- |
+| double gross | 18 | 9.6/2.1k, 11.3/2.5k, 18.8/4.9k | 1.5/85, 1.8/126, 2.7/329 | 1.9/224, 1.5/136, 2.4/355 |
+| `bb_360` | 24 | 102, 93 | 22, 58 | 8.6, 13 |
+| `bb_360` | 23 | not in 240 s (10.3k steps each) | 118/4.8k, 60/2.2k | 119/5.1k, 56/2.2k |
+
+- Double gross: the weight 18 (the lightest known) 6–7 times sooner with the same seed (RW alone: 0.5–1.7 s instead of
+  8.6–18 s), in 15–25 times fewer steps, each 1.3–1.6 times longer (0.16–0.20 s per step and thread against
+  0.12–0.13 s).
+- `bb_360`: the weight 23 (the lightest known, Section 6.1) in 60 and 118 s, while 0.14.3 found 24 (after 93 and 102 s)
+  and nothing lighter in 240 s; a step takes 4–14% longer (0.78–0.85 s per step and thread against 0.74–0.75 s).
+- In 300 s of 0.14.5 (one seed each), nothing lighter was found: double gross with `wmin=17` (94k steps; 18 after
+  2 s) and `bb_360` with `wmin=22` (12.8k steps; 24 after 4 s, 23 after 41 s).
+- `bb_756` (timeout 240 s): 0.14.3 found 55 (371 steps of 20 s per thread). 0.14.5 found 57 after 90 s, but it did
+  not stop at the timeout and was killed after 540 s. With `timeout=60`, it had completed no RW step after 32 s (the
+  last status line) and was killed after 200 s, while `pairs=0` stopped after 62 s (96 steps, weight 61). The first
+  codewords of this DEM have weights of 4000–5000, and while the upper bound is in the hundreds or thousands, the
+  default $l$ is 1–4: a step can then check up to billions of pairs (in 2–16 buckets of the 116k non-pivot columns),
+  and the stop flags are only checked between the buckets. 0.14.6 (Section 8.7) stopped at the timeout, with 55 in
+  359 steps.
+
+### 8.3 Codes with a large distance
+
+RW for 30 s (default threads: 128), three seeds: the lightest codeword found by the time $t$ (median of the seeds; the
+time includes reading the matrix), and at the end (each seed).
+
+| code | version | $t$ = 1 s | 2 s | 4 s | 8 s | 16 s | 30 s | each seed | s/step/thread |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | :--- | ---: |
+| `c1920H` ($n = 1920$, $k = 641$) | 0.14.3 | 294 | 288 | 277 | 265 | 265 | 257 | 265, 253, 257 | 0.0075 |
+| | 0.14.5 | 257 | 243 | 243 | 243 | 235 | 227 | 234, 225, 227 | 0.011 |
+| | 0.14.6 | 257 | 257 | 243 | 243 | 235 | 234 | 234, 234, 227 | 0.011 |
+| random (3,6)-regular LDPC, $n = 3000$ | 0.14.3 | 446 | 434 | 432 | 428 | 428 | 422 | 426, 410, 422 | 0.013 |
+| | 0.14.5 | 420 | 414 | 402 | 402 | 402 | 402 | 402, 396, 402 | 0.044 |
+| | 0.14.6 | 420 | 414 | 402 | 402 | 402 | 402 | 402, 396, 402 | 0.046 |
+
+- For these distances the default is $l = 1$ (all pairs in two buckets): a step takes 1.5 and 3.5 times longer, and
+  the lightest codeword found is lighter at all times, by about 12% for `c1920H` (at 30 s: 225–234 against 253–265)
+  and by 3–5% for the LDPC code (396–402 against 410–426). 0.14.6 keeps $l = 1$ for both codes (Section 8.7).
+- In a fixed number of RW steps (1000 on 8 threads), `c1920H` gives 210, 275, and 277 with the pairs and 320, 321, and
+  317 without (three seeds; the RW of several threads is not reproducible: an earlier run of the first seed gave 259).
+
+### 8.4 Default parameters
+
+As in Section 5.3, but with the default parameters of `method=1` (`steps=100000`, `min_hits=5`) and of `method=3` (the
+exact distance), no `threads=` (128 threads, throttled), three seeds: median wall time in s / RW steps ("100k": the
+step limit, `min_hits` not reached). The runs of 0.14.6 were made 80 min after those of 0.14.5, when the server was
+up to 10% slower (Section 8.7).
+
+| case | $d$ | method | 0.14.0 | 0.14.3 | 0.14.5 | 0.14.6 |
+| :--- | :---: | :---: | :--- | :--- | :--- | :--- |
+| `QX150`, one sector | 6 | 1 | 0.016 / 231 | 0.016 / 232 | 0.017 / 70 | 0.016 / 61 |
+| | | 3 | 0.020 | 0.019 | 0.020 | 0.020 |
+| `QX900`, one sector | 8 | 1 | 0.051 / 1.5k | 0.050 / 1.5k | 0.057 / 214 | 0.054 / 208 |
+| | | 3 | 0.055 | 0.053 | 0.058 | 0.059 |
+| `c204H` | 8 | 1 | 0.019 / 6.7k | 0.019 / 6.4k | 0.019 / 3.7k | 0.018 / 3.5k |
+| | | 3 | 0.022 | 0.021 | 0.021 | 0.020 |
+| `surf_d5` (`surf_d5_H.mmx` with `_L.mmx`) | 5 | 1 | 0.050 / 21.5k | 0.051 / 23.1k | 0.068 / 1.8k | 0.079 / 2.2k |
+| | | 3 | 0.033 | 0.031 | 0.072 | 0.072 |
+| `surf_d7` | 7 | 1 | 0.64 / 54.6k | 0.66 / 62.7k | 1.96 / 100k | 2.19 / 100k |
+| | | 3 | 0.32 | 0.44 | 0.49 | 0.51 |
+| `bb_72` circuit, stripped DEM | 6 | 1 | 0.067 / 6.1k | 0.068 / 7.0k | 0.050 / 1.5k | 0.054 / 1.3k |
+| | | 3 | 0.057 | 0.056 | 0.057 | 0.058 |
+| `bb_72` circuit, full DEM | 6 | 1 | 0.12 / 5.9k | 0.13 / 6.6k | 0.11 / 1.2k | 0.11 / 1.3k |
+| | | 3 | 0.11 | 0.11 | 0.11 | 0.12 |
+| `mitten_150` custom circuit, full DEM | 7 | 1 | 2.31 / 100k | 2.08 / 100k | 1.46 / 43.2k | 1.64 / 45.0k |
+| | | 3 | 0.59 | 0.61 | 0.62 | 0.66 |
+| gross, one sector | 12 | 1 | 0.025 / 8.3k | 0.025 / 7.8k | 0.026 / 970 | 0.025 / 941 |
+| | | 3 | 0.033 | 0.033 | 0.031 | 0.031 |
+| double gross, one sector | 18 | 1 | 0.087 / 100k | 0.086 / 100k | 0.042 / 25.7k | 0.046 / 25.1k |
+| | | 3 | 1.36 | 1.38 | 1.37 | 1.41 |
+| gross circuit, full DEM | 10 | 1 | 8.5 / 100k | 8.2 / 100k | 10.3 / 100k | 11.0 / 100k |
+
+- With the pairs, `min_hits=5` is reached in 1.7–13 times fewer RW steps: in about the same time for the small codes,
+  and in less time where 0.14.3 ran to the step limit (double gross: 0.04 s instead of 0.09 s; `mitten_150`: 1.5 s
+  instead of 2.1 s) or for the `bb_72` DEMs (20–26%). `method=3` takes the same time (CC dominates), except for
+  `surf_d5`.
+- `surf_d5`: 0.068 s against 0.051 s, since a step takes 20 times longer with 128 threads (0.0031 s against 0.00015 s
+  per step and thread; 2.7 times on one thread in the tests of 0.14.4), probably because the codewords of the pairs,
+  about 19 per step, are recorded under the mutex of the codeword table.
+- `surf_d7` (`surf_d7_H.mmx` with `_L.mmx`: the DEM of a surface-code circuit with $d = 7$ given as matrices, which
+  the binary does not reduce, $336 \times 5473$): 2.0–2.2 s against 0.64–0.66 s, since most runs with the pairs end
+  at the step limit. The hit counts of the 100 codewords of weight 7 tracked for `min_hits` (`cov_cws`: the first
+  ones found) are strongly non-uniform in all versions (the binary warns; e.g., one codeword with 184 of 477 hits), so
+  that whether $\langle n \rangle$ reaches 5 within 100k steps depends on the codewords tracked: 0.14.3 also ran to
+  the step limit in one of the three runs, and 0.14.5 converged after 32k steps in one; with the pairs, the tracked
+  set is filled within the first steps. All runs found the distance 7, and `method=3` is not affected (CC).
+- The gross circuit (full DEM): all versions run to the step limit; 0.14.5 takes 1.26 times longer (the pairs of each
+  step).
+
+The surface-code circuits of stim (`surface_code:rotated_memory_x`, $d$ rounds, the uniform noise of $p = 0.001$) as
+DEMs, which the binary reduces exactly ($d = 7$: $192 \times 883$), with the default `method=1` (three seeds; the
+scripts and logs in `scratch/bench_0.14.5/surface/`):
+
+| circuit | 0.14.3 | 0.14.6 |
+| :--- | :--- | :--- |
+| $d = 7$ | 0.08–0.09 s (17k–22k steps) | 0.08–0.09 s (1.3k steps) |
+| $d = 9$ | step limit: 0.55–0.58 s, $\langle n \rangle$ = 1.4–2.1 | 1.0–1.4 s (23k–35k steps) |
+| $d = 11$ | step limit: 2.3 s, $\langle n \rangle$ = 1.1–1.5 | step limit: 4.1–4.3 s, $\langle n \rangle$ = 1.2–3.7 |
+
+With the pairs, `min_hits` is reached in 13 times fewer steps for $d = 7$ (in the same time), within the step limit for
+$d = 9$ (0.14.3: not), and with more hits per step for $d = 11$; all runs found the distance $d$.
+
+### 8.5 Code-sized model lower bound (0.14.5)
+
+`compute_model_lower_bound()` with the default threads, against the circuit distance (Section 2.4). With
+`minority=False`, only the model of the measured-basis chains (Section 6.3) is solved (`method=3`); with
+`minority=True` (the default of 0.14.5 and 0.14.6), the model with all rows is then searched from that bound (RW with
+`wmin` equal to the bound, then CC if needed); the times are those of the whole calls. Since 0.14.7, the minority-basis
+rows are off by default (`minority=True`, CLI `--model-minority`, to use them).
+
+| Circuit | distance | model (measured-basis rows) | bound | time (s) | model (all rows) | bound | time (s) |
+| :--- | :--- | :--- | :---: | ---: | :--- | :---: | ---: |
+| `bb_72_12_6_si1000_r6_X` | 6 | 36 x 180 | 5 | 0.44 | 72 x 2664 | 5 | 0.28 |
+| `bb_90_8_10_si1000_r10_X` | 8 | 45 x 225 | 7 | 0.39 | 90 x 3330 | 7 | 0.45 |
+| `bb_108_8_10_si1000_r10_X` | 8 | 54 x 270 | 6 | 0.52 | 108 x 3996 | 6 | 0.52 |
+| `gross_144_12_12_si1000_r12_X` | 10 | 72 x 360 | 8 | 0.81 | 144 x 5328 | 8 | 1.33 |
+| `mitten_90_18_6_C3xS3_custom_r4_Z` | 5 | 36 x 306 | 4 | 0.27 | 72 x 4941 | 4 | 0.39 |
+| `mitten_90_18_6_C3xS3_hef_r4_Z` | 4 | 36 x 306 | **4** | 0.51 | 72 x 4059 | **4** | 0.41 |
+| `mitten_150_30_8_C5xS3_custom_r5_Z` | 7 | 60 x 510 | 6 | 0.53 | 120 x 8230 | 6 | 1.04 |
+| `mitten_150_30_8_C5xS3_hef_r5_Z` | 5 | 60 x 510 | **5** | 0.63 | 120 x 6790 | **5** | 0.78 |
+| `mitten_210_42_8_C7xS3_custom_r4_Z` | 6 | 84 x 714 | 5 | 0.91 | 168 x 11802 | 5 | 1.60 |
+| `mitten_210_42_8_C7xS3_hef_r4_Z` | 5 | 84 x 693 | **5** | 0.87 | 168 x 9597 | **5** | 1.20 |
+| `mitten_270_54_10_C9xS3_custom_r4_Z` | 9 | 108 x 918 | 8 | 2.03 | 216 x 15048 | 8 | 7.76 |
+| `mitten_270_54_10_C9xS3_hef_r4_Z` | 7 | 108 x 918 | **7** | 1.14 | 216 x 12294 | **7** | 10.2 |
+| `mitten_330_66_6_C11xS3_custom_r4_Z` | 4 | 132 x 1089 | **4** | 1.08 | 264 x 18183 | **4** | 1.54 |
+| `mitten_330_66_6_C11xS3_hef_r4_Z` | 4 | 132 x 1056 | **4** | 1.11 | 264 x 14432 | **4** | 1.54 |
+| `NNEESEEESEENN_..._n60_k8_d14_X` | 6 | 30 x 360 | 4 | 0.31 | 60 x 3810 | 4 | 0.41 |
+| `NEENNWNWNNEEN_..._n120_k8_d15_X` | 6 (s, old noise) | 60 x 720 | 6 | 0.85 | 120 x 7440 | 6 | 0.93 |
+
+- The bound (bold: equal to the circuit distance) is tight for the `hef` Mitten circuits and `mitten_330` custom, and
+  it is 6 for the `n120` torus circuit, the value of Section 2.4 for its stripped DEM with the old noise; it is 1 below
+  the distance for `bb_72`, `bb_90`, and the other custom Mitten circuits, and 2 below it for `bb_108`, gross, and the
+  `n60` torus circuit.
+- The minority-basis rows raised none of these bounds: the model with all rows has codewords of the same weight. They
+  cost up to 9 s more (`mitten_270`, where CC on the model with all rows was needed). Nor did they for the
+  surface-code circuits of stim (rotated, $X$ and $Z$ basis, and unrotated, $X$ basis; $d = 5$ and 7, bound $d$ with
+  and without them). With depolarizing-type noise, every net data error which flips the observable of the measured
+  basis also occurs without a component of the other basis, so that a lightest model codeword has a version which the
+  minority-basis rows do not detect; they may raise the bound for other noise models (e.g., biased noise).
+- Against CC on the full DEM (Section 8.6): gross, the bound 8 in 0.8 s against the distance 10 in 184 s; `mitten_270`
+  custom, 8 in 2.0 s against 9 in 183 s.
+
+### 8.6 Certified distances
+
+`method=3` with the arguments of Section 5.1 (128 threads), 0.14.5 and 0.14.6 against 0.14.0 (Section 5.1): about the
+same, since CC dominates (the short runs are about 0.1 s slower, `mitten_270` hef is 2 s faster).
+
+| Circuit | $d$ | 0.14.0 (s) | 0.14.5 (s) | 0.14.6 (s) |
+| :--- | :---: | ---: | ---: | ---: |
+| `mitten_150_30_8_C5xS3_custom_r5_Z` | 7 | 0.56 | 0.63 | 0.72 |
+| `bb_90_8_10_si1000_r10_X` | 8 | 0.68 | 0.82 | 0.88 |
+| `bb_108_8_10_si1000_r10_X` | 8 | 0.71 | 0.83 | 0.89 |
+| `mitten_270_54_10_C9xS3_hef_r4_Z` | 7 | 5.8 | 3.8 | 3.9 |
+| `mitten_270_54_10_C9xS3_custom_r4_Z` | 9 | 182 | 183 | |
+| `gross_144_12_12_si1000_r12_X` | 10 | 179 | 184 | |
+
+### 8.7 A work bound for the RW pairs (0.14.6)
+
+0.14.6 fixes the slow early steps of the RW pairs found above (`mitten_270` in Section 8.1, `bb_756` in Section 8.2):
+- With `pairs=-1` (auto), $l$ is at least the $l$ at which the about $(n-r)^2/2^{l+1}$ pairs of a step are within
+  about the work of its elimination, $rn/16$ pairs (or $2^{20}$ pairs for small matrices). Early in a run, while the
+  upper bound is far above the distance, the keep probability alone gives $l = 1$ (all pairs in two buckets); the
+  bound is $l \ge 6$ for the reduced DEMs of `mitten_270` ($r = 648$, $n = 8910$) and `bb_756` ($r = 13222$,
+  $n = 129276$), 5 for gross, 4 for `mitten_150` and `surf_d7`, and 1 (no change) for the codes of Section 8.3 and the
+  small matrices of Section 8.4.
+- The stop flags and the upper bound are also polled within the buckets of the pairs (every 65536 pairs), so that a
+  run ends at its timeout also with few rows (e.g., `pairs=1`).
+
+The runs of Sections 8.1–8.4 and 8.6 with 0.14.6 (the columns 0.14.6 above):
+- `mitten_270`: 0.56 s (custom) and 0.62 s (hef) to the distance, the fastest of all versions, as with `pairs=13`; RW
+  alone takes 0.12 s, against 0.60 and 0.20 s with 0.14.5 and 0.16 s with 0.14.3.
+- `bb_756` (timeout 240 s): 55 in 359 steps, stopped at the timeout (0.14.3: 55 in 371 steps). With `timeout=60`, 58
+  in 53 steps, stopped after 64 s (0.14.5: killed after 200 s; with `pairs=0`, 61 in 96 steps).
+- The double-gross and `bb_360` circuits: the weights 18 and 23 as soon as with 0.14.5, with cheaper steps for double
+  gross (0.12 s per step and thread, against 0.16–0.20 s with 0.14.5, whose early steps with large upper bounds
+  checked many pairs).
+- As with 0.14.5: the other full DEMs, gross, the codes (where $l = 1$ is kept: the same lightest weights), the RW
+  steps of the default runs, and the certified distances. The times of the default runs were 0–16% longer, as were
+  those of 0.14.5 itself at that time: on the gross circuit (full DEM, default parameters, 100k RW steps), five runs
+  of each version, alternating, took 10.7 s (0.14.6) and 11.2 s (0.14.5) in the median, against 10.3 s for 0.14.5 in
+  the runs of Section 8.4.

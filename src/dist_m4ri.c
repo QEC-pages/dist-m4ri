@@ -1124,6 +1124,11 @@ static inline int rw_pairs_limit(distfork_ctx_t * const ctx) {
   return (lim < cap) ? lim : (int)cap;
 }
 
+/* The pairs visited between the polls of the stop flags and of the upper bound in rw_pairs_step(): with few rows l, a
+ * bucket can hold many columns (e.g., with pairs=1, two buckets of (n - r)/2 columns each), so that a step would
+ * otherwise not end in time at a timeout */
+#define RW_PAIRS_POLL 65536
+
 /* The pairs of a RW step (see rw_pair_t), after its single columns: the reduced matrix `mH` (Gauss-Jordan: `rank` pivot
  * rows, whose pivot columns are `pivs`) and its transpose `mHT` (row c: the column c in the pivot rows), `l` pivot rows
  * of the buckets, the workspace `ws`, and the support `ee`; `src` as in rw_record_codeword().  Adds the number of the
@@ -1220,7 +1225,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
   /* with one row of L (known syndromes), the other columns have the same syndrome: only their pairs with the columns
    * with zero syndromes */
   const bool other_pairs = (nl != 1);
-  long long int nchk = 0, nhits = 0;
+  long long int nchk = 0, nhits = 0, nvis = 0, next_poll = RW_PAIRS_POLL; /* nvis: the pairs visited, also skipped */
   for (int b0 = 0; b0 < K;) {
     const uint64_t bkey = srt[b0] >> sh_key;
     int b1 = b0 + 1;
@@ -1236,6 +1241,14 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
       int lo = g0;
       const int x_end = other_pairs ? b1 - 1 : g0;
       for (int x = b0; x < x_end; x++) {
+        if (nvis >= next_poll) { /* a bucket can be large (few rows l): the stop flags and the upper bound, also here */
+          next_poll = nvis + RW_PAIRS_POLL;
+          if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+              atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) goto done;
+          lim = rw_pairs_limit(ctx);
+          if (lim < 3) goto done;
+          lx = lim - 3;
+        }
         const int wx = (int)((srt[x] >> ib) & wmask);
         const rw_pair_t * const ex = ent + (srt[x] & imask);
         int y = x + 1;
@@ -1243,6 +1256,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
           while (lo < b1 && (int)((srt[lo] >> ib) & wmask) < wx - lx) lo++;
           y = lo;
         }
+        const int y0 = y;
         for (; y < b1; y++) {
           if ((int)((srt[y] >> ib) & wmask) - wx > lx) break;
           const rw_pair_t * const ey = ent + (srt[y] & imask);
@@ -1270,6 +1284,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
             lx = lim - 3;
           }
         }
+        nvis += y - y0;
       }
     }
     b0 = b1;
