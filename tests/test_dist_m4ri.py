@@ -659,7 +659,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.4" in captured.out
+    assert "0.14.5" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -670,7 +670,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.4" in captured.out
+    assert "0.14.5" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -689,7 +689,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.4" in older_warn
+    assert "expected >= 0.14.5" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1296,6 +1296,82 @@ def test_pairs_option(capsys):
         for bad in (-2, 65):
             assert dist_m4ri.main([f"finH={S5_H}", "method=1", f"pairs={bad}", "--no-cache"]) == 1
             assert f"invalid 'pairs={bad}'" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_model_lower_bound(tmp_path, capsys):
+    # the code-sized model of a Stim memory circuit (compute_model_lower_bound(), CLI --model-lb): one row per chain of
+    # detectors linked by their measurements (the checks over the rounds; with minority=False, only the chains with
+    # final data measurements), the sum of their rows, so that every DEM codeword gives a model codeword of no larger
+    # weight and the model distance is a certified lower bound: 3 (tight) for the surface code with d=3 (8 checks, 4
+    # of the measured basis), 5 for the bb_72 circuit of distance 6; the bound is stored as dmin in the cache record
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated("surface_code:rotated_memory_x", distance=3, rounds=3,
+                                  after_clifford_depolarization=0.001, before_measure_flip_probability=0.001,
+                                  after_reset_flip_probability=0.001, before_round_data_depolarization=0.001)
+    path = str(tmp_path / "surf_x_d3.stim")
+    circ.to_file(path)
+    cache = str(tmp_path / "cache.json")
+    dist_m4ri.clear_distance_cache()
+    try:
+        b, info = dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=cache, out_model=str(tmp_path / "m"),
+                                                      return_info=True)
+        assert b == 3 and info["model_d_info"][:2] == [3, 3] and info["d_info"] == [3, 0, 0]
+        assert (info["groups"], info["groups_final"], info["rows"], info["rows_measured"]) == (8, 4, 8, 4)
+        assert info["trivial"] == 0 and len(info["col_map"]) == info["dem_cols"]
+        assert info["files"] == [str(tmp_path / "m_HR.mtx"), str(tmp_path / "m_LR.mtx")]
+        assert all(os.path.isfile(f) for f in info["files"])
+        entry = dist_m4ri.get_cached_distance(circuit=path, cache_file=cache)
+        assert (entry["dmin"], entry["dmax"], entry["dmin_model"]) == (3, 0, 3)
+        assert dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=cache, minority=False) == 3
+        # the DEM run starts CC from the cached bound; its codewords map to model codewords of no larger weight
+        dist, d_info, cws = dist_m4ri.compute_dem_distance(circuit=path, method=2, wmax=4, dW=1, drop=0, do_cws=True,
+                                                           threads=2, cache_file=cache)
+        assert dist == 3 and d_info[:2] == [3, 3] and len(cws) > 0
+        entry = dist_m4ri.get_cached_distance(circuit=path, cache_file=cache)
+        assert (entry["dmin"], entry["dmax"], entry["dmin_model"]) == (3, 3, 3)
+        H, L = info["H"].toarray(), info["L"].toarray()
+        for cw in cws:
+            y = np.zeros(H.shape[1], dtype=int)
+            for j in cw:
+                if info["col_map"][j] >= 0:
+                    y[info["col_map"][j]] ^= 1
+            assert not (H @ y % 2).any() and (L @ y % 2).any() and y.sum() <= len(cw)
+        # a circuit in the repository: the model is 1 below the distance 6 (also with the measured-basis rows only)
+        bb72 = os.path.join(EXAMPLES_DIR, "..", "benchmark", "stim_bb", "bb_72_12_6_si1000_r6_X.stim")
+        for minority in (True, False):
+            b, info = dist_m4ri.compute_model_lower_bound(bb72, threads=2, minority=minority, cache_file=None,
+                                                          return_info=True)
+            assert b == 5 and info["rows"] == (72 if minority else 36) and info["rows_measured"] == 36
+        # an error which flips the observable but no detector: the bound is 1, with a note
+        triv = str(tmp_path / "triv.stim")
+        with open(triv, "w") as f:
+            f.write("R 0 1 2 3\nX_ERROR(0.1) 0 1 2\nCX 0 3 1 3\nMR 3\nDETECTOR rec[-1]\nM 0 1 2\n"
+                    "DETECTOR rec[-2] rec[-3] rec[-4]\nOBSERVABLE_INCLUDE(0) rec[-1]\n")
+        b, info = dist_m4ri.compute_model_lower_bound(triv, threads=2, cache_file=None, return_info=True)
+        assert b == 1 and info["trivial"] == 1 and (info["groups"], info["groups_final"]) == (1, 1)
+        assert "flip an observable but no group of detectors" in capsys.readouterr().err
+        # CLI: the bounds of the circuit (without the cache: the bound alone), the model files; errors and warnings
+        assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--no-cache", "threads=2", "--out-model",
+                               str(tmp_path / "cli")]) == 0
+        assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
+        assert os.path.isfile(str(tmp_path / "cli_HR.mtx")) and os.path.isfile(str(tmp_path / "cli_LR.mtx"))
+        dist_m4ri.enable_distance_cache()  # (--no-cache disabled it)
+        assert dist_m4ri.main([f"fdem={path}", "--model-lb", f"cache={cache}", "threads=2", "outC=x.nz"]) == 0
+        captured = capsys.readouterr()
+        assert captured.out.strip().splitlines()[-1] == "3 3 0 (exact)"
+        assert "# Warning: outC=: not used with --model-lb; ignored" in captured.err
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        assert dist_m4ri.main([f"fdem={dem_file}", "--model-lb", "--no-cache"]) == 1
+        assert "--model-lb needs a Stim circuit" in capsys.readouterr().err
+        with pytest.raises(ValueError, match="not a Stim circuit"):
+            dist_m4ri.compute_model_lower_bound(dem_file)
+        with pytest.raises(TypeError, match="did you mean 'minority'"):
+            dist_m4ri.compute_model_lower_bound(path, minorty=False)
     finally:
         dist_m4ri.enable_distance_cache()
         dist_m4ri.clear_distance_cache()

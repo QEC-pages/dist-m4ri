@@ -215,6 +215,24 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   si1000-type noise these errors are error mechanisms).
   - Python could map the data errors to DEM columns by their detector signatures and pass the codeword as `finC`.
   - This gives at once dgross $\le 18$, bb_360 $\le 24$, bb_756 $\le 34$ (RW: 18, 23, 58).
+  - [ ] **Code distance of a circuit as a fast upper bound** (for DEMs and Stim circuits, especially large ones):
+    extract the code from the circuit with the functions of `tmp/distance.py` (`extract_matrices_and_hooks()`: `Hx`,
+    `Hz`, `Lx`, `Lz` from the ancilla interactions and the observables; `compute_css_distance()` for the code), and
+    compute the distance of the sector of the memory basis (Z-type logicals for an X-basis memory: `H = Hx`,
+    `L = Lx`). It is code-sized (seconds where the DEM takes hours) and an upper bound on the circuit distance whenever
+    the logical can be applied by single faults (data errors, or flips of the final data measurements, as with the
+    uniform noise).
+    - Certify it: lift the logical to a DEM codeword (the error mechanisms of the flips of the final data measurements
+      on its support, found by their detector signatures), check $Hx = 0$, $Lx \ne 0$, and pass it to the DEM run as
+      `finC` (an upper bound `dmax` for CC and RW); report a note if no lift exists.
+    - A DEM-only variant without the qubit classification of `distance.py` (which fails, e.g., for the hef circuits,
+      with no X-check ancillas found, and for routing circuits): the error mechanisms which touch only the final
+      detectors (the flips of the final data measurements) form a sub-DEM which is the code itself (rows: the checks
+      of the measured basis, as in the code-sized model); its distance is an upper bound, and its codewords are DEM
+      codewords.
+    - Python: a function (e.g., `compute_code_upper_bound(circuit)`) and a CLI option, the bound stored as `dmax` in
+      the cache record of the DEM (with its codewords); together with `compute_model_lower_bound()`, the bracket
+      $[d_{\rm model}, d_{\rm code}]$ for the circuit without CC or RW on the DEM.
 - [ ] **Incremental information sets (Canteaut–Chabaud)**, for huge DEMs: swap one column in or out of the
   information set per step (a single pivot change, about $r n/64$ word operations) instead of a full elimination.
   - This gives many more information sets per second (bb_756: 12–50 s per full elimination).
@@ -262,6 +280,24 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [x] **Distance Benchmark Update**: the overnight run of 0.14.0 (Oct 2026, `benchmark/BENCHMARK.md`) certified the
   distances of all benchmark circuits up to gross. Still open: double gross, bb_360, and bb_756; see **Bounds for the
   largest circuits** in section 4.
+- [ ] **References for the acceleration techniques** (search online): find the prior work and the right citations for
+  each technique used by `dist_m4ri` (for the README, `introduction.md`, and a paper), and whether better variants
+  exist. Starting points to verify:
+  - RW and information sets: Prange (1962); Lee–Brickell (1988) and Stern (1989) for the pairs ($p = 2$) and the
+    collision buckets; Canteaut–Chabaud (incremental information sets); later information-set decoding (Dumer;
+    May–Meurer–Thomae; Becker–Joux–May–Meurer) for further gains; QDistRnd (random information sets for quantum
+    codes, the hit-count convergence criterion); prior use of localized windows or time slabs for circuit-level
+    distances.
+  - Elimination: the Method of the Four Russians (Arlazarov, Dinic, Kronrod, Faradzev) and M4RI (Albrecht, Bard;
+    Gray-code tables), for the scattered column orders of RW.
+  - CC: connected-cluster enumeration (Dumer, Kovalev, Pryadko 2017), the meet-in-the-middle hash for the last two
+    levels, work units and thread scheduling.
+  - Statistics: index-of-dispersion tests and zero-truncated Poisson fits of the hit counts.
+  - Circuit-level distance: stim's search for undetectable logical errors, SAT/MaxSAT and ILP approaches (e.g., for
+    the BB codes), spacetime codes (Delfosse, Paetznick), hook errors and distance-preserving schedules, extended CSS
+    distances with hooks, exact reductions of DEMs (dropped detectors), and code-sized or folded models as certified
+    lower bounds.
+  - Memory-bandwidth-aware thread throttling for dense GF(2) linear algebra.
 
 ---
 
@@ -401,6 +437,22 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
       - bb_360: 180 x 900, $\ge 12$ (no model codeword of weight $\le 11$, 966 s on 32 threads).
     - Not tight for these schedules (1–2 below $d$), but code-sized; the lifting and refinement below could close the
       gap.
+  - [x] Implemented as `compute_model_lower_bound()` (0.14.5; CLI `--model-lb`, `--out-model PREFIX`): the rows
+    are the sums of the chains of detectors linked by a shared measurement record other than a final data
+    measurement, found from the circuit (one chain per check of a memory circuit), so that the rows lie in the row
+    space of $H$ by construction (no rank check); the chains of the minority-basis checks are extra rows
+    (`minority=True`). The binary runs on the measured-basis rows first, then RW and, if needed, CC on all rows from
+    that bound; the bound is stored as `dmin` (and `"dmin_model"`) in the cache record of the DEM.
+    - Results (16 threads, 120 s per run): tight for the stim surface-code circuits ($d = 3, 5$, X and Z), mitten_90
+      hef (4), mitten_270 hef (7), and the torus n120 circuit (6); below $d$ for mitten_90 custom 4 ($d = 5$) and
+      mitten_270 custom 8 ($d = 9$; the same as $d_{\rm ext}$), mitten_150 custom 6 ($d = 7$), the torus n60
+      circuit 4 ($d = 6$), and bb_72 5 (X and Z), bb_90 7, bb_108 6, gross 8, as the prototype. In the torus circuits
+      all qubits are measured in each round (the final data measurements are then all those of the final block).
+    - The minority-basis rows raised none of these bounds within the time. CC on the model with all rows alone is
+      much slower (bb_90: 53 s instead of 0.1 s; gross: only 7 certified in 75 s), which the RW stage avoids (gross:
+      1.8 s in total). For mitten_270 custom, RW on all rows found no codeword of weight 8 (lightest 9, the circuit
+      distance) and CC did not finish $w = 8$ in 120 s: a longer run may show whether the minority rows raise the
+      bound to 9 there.
 - [ ] **Row reductions of a DEM, with lifting and verification in C** (generalizes the two items above): replacing $H$
   by $RH$ with rows in the row space of $H$ (deleting or summing detector rows), with the observables $L$ unchanged,
   can only lower the distance, $d_R \le d_{\rm full}$; deleting or merging observables could raise it. Columns equal
@@ -412,8 +464,10 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     same distance, and its codewords are full codewords (no lifting). The simplified DEM is the CSS case ($M$ = the
     minority detectors). The condition must hold for $M$ as a whole (single minority detectors usually fail it), so
     candidate sets (sectors, coordinate classes) are tested as groups.
-  - Lossy reductions: summing the detectors of each check over blocks of rounds (over all rounds: the code-sized model
-    of the net data effects, see above) gives cheap certified lower bounds, tight or not depending on the schedule.
+  - Lossy reductions: summing the detectors of each check over all rounds gives the code-sized model of the net data
+    effects (see above), a cheap certified lower bound, tight or not depending on the schedule. Sums over blocks of
+    at least 2 rounds give exactly the same bound: a model codeword realized within one block (its partial syndromes
+    at rounds $t$ and $t+1$ in the same row) is invisible again; see the folded models below.
     Lifting: one member per class with the deleted or summed rows cancelling (meet-in-the-middle over the members,
     within a time window), else a repair with extra columns (a heavier upper bound); refinement: split the summed rows
     of the checks where a lift failed back into per-round detectors and solve again (row generation), until a lift
@@ -426,6 +480,20 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Order: clean-twin deletion together with equal-column merging (replaces the Python simplified/full detector map,
     verified automatically); then the code-sized model as a lower bound for large distances; adaptive lifting and
     refinement as research.
+- [ ] **Folded models (research)**: a refinement of the code-sized model which keeps the timing within the rounds.
+  - Rows $R_{h,c} = \sum_{t \equiv c \pmod p} D_h^t$ for each check $h$ and residue $c$, with $p \ge 2$ (the boundary
+    detectors in their residue classes): sums of detector rows, so that the bound is valid (any row reduction is).
+  - Consecutive rounds are in different rows: the partial syndrome $P$ which the faults of one round leave (detectors
+    $P$ at rounds $t$ and $t+1$, which cancel in the code-sized model) is seen as in the DEM, which is why the lightest
+    codewords of the code-sized model do not lift.
+  - Bounds: $d_{\rm model} \le d_{\rm fold}(p) \le d$, and $d_{\rm fold}(p) \le d_{\rm fold}(p')$ if $p$ divides
+    $p'$ (each mod-$p$ row is a sum of mod-$p'$ rows).
+  - Size: like a DEM with $p$ rounds and periodic time, e.g., about $300 \times 3000$ for double gross with $p = 2$
+    (reduced DEM: $2736 \times 26208$). Spurious codewords remain (equal partial syndromes $p$ rounds apart cancel),
+    and the row weights are those of the DEM, so that CC costs more than on the code-sized model.
+  - Plan: the round of each detector from its position in its chain (`_model_detector_groups()`); test $p = 2, 3, 4$
+    on bb_72 and gross (code-sized bounds 5 and 8, $d = 6$ and 10), then double gross and bb_360 if CC reaches the
+    needed weights.
 - [ ] **Bounds for the largest circuits** (X sector, Oct 2026, `scratch/speedup/RESULTS.md`):
   - double gross: $[12, 18]$, before $[11, 19]$. The lower bound comes from the code-sized model above. The upper bound
     comes from RW with index windows of 1 round (3 weight-18 codewords in 180 s, in `scratch/speedup/cws/`); they are

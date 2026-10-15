@@ -6,6 +6,8 @@ Provides high-level APIs for computing:
 - Single-sided quantum code distance: compute_quantum_distance(...)
 - CSS quantum code distance: compute_css_distance(...)
 - Detector Error Model (DEM) distance: compute_dem_distance(...)
+- Certified lower bound on the distance of a Stim memory circuit from its code-sized model:
+  compute_model_lower_bound(...)
 
 Supports distance caching, codeword export, and fallback/option for the codedistance library.
 Since dist_m4ri natively handles multithreading (via POSIX threads and dynamic bracketing),
@@ -30,7 +32,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.4"
+__version__ = "0.14.5"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -3684,6 +3686,8 @@ def _cached_code_distance(
             best_dmin = max(prev.get("dmin", 0) or 0, dmin_res)
             total_rw = (prev.get("rw_steps", 0) or 0) + rw_steps
             record = _sector_record(best_dmin, best_dmax, total_rw, _union_cws(prev.get("cws", []), cws))
+            if "dmin_model" in prev:  # (a bound from the code-sized model, see compute_model_lower_bound())
+                record["dmin_model"] = prev["dmin_model"]
             _distance_cache[code_key] = record
             if plain_key is not None and code_key != plain_key:
                 # start-list run: merge the valid part (or all, with trust_start) into the main record
@@ -4849,6 +4853,291 @@ def compute_dem_distance(
     return (dist, d_info, cws) if do_cws else (dist, d_info)
 
 
+def _model_detector_groups(circuit: Any) -> Tuple[List[int], List[bool], int]:
+    """
+    The groups of the detectors of a Stim circuit for its code-sized model (see compute_model_lower_bound()): two
+    detectors are in the same group if they share a measurement record other than a final data measurement.  The final
+    data measurements are the measurements in the final measurement block (after the last detector which precedes the
+    last measurement) of qubits not measured before it, or all measurements of the final block if there are none
+    (e.g., if every qubit is measured in each round).  In a memory circuit, the groups are the chains of the detectors
+    of the checks, linked by the measurements of their ancillas in consecutive rounds; the chain of a check of the
+    measured basis ends with its detector of the final data measurements.
+
+    Returns:
+        (group, final, num_final): the group of each detector (numbered in the order of their first detectors), for
+        each group whether one of its detectors has a final data measurement, and the number of final data
+        measurements.
+    """
+    stim = _get_stim()
+    det_recs: List[List[int]] = []         # the measurement records of each detector (absolute indices)
+    det_pos: List[int] = []                # its position in the flattened circuit
+    meas_pos: List[int] = []               # the position of the instruction of each measurement record
+    meas_qubits: List[frozenset] = []      # and its qubits
+    for pos, inst in enumerate(circuit.flattened()):
+        if inst.name == "DETECTOR":
+            n = len(meas_pos)
+            det_recs.append([n + t.value for t in inst.targets_copy() if t.is_measurement_record_target])
+            det_pos.append(pos)
+        elif stim.gate_data(inst.name).produces_measurements:
+            for grp in inst.target_groups():  # (one record per group, e.g., per Pauli product of MPP)
+                meas_pos.append(pos)
+                meas_qubits.append(frozenset() if inst.name == "MPAD" else
+                                   frozenset(t.qubit_value for t in grp if t.qubit_value is not None))
+    last_meas = meas_pos[-1] if meas_pos else -1
+    last_det = max((p for p in det_pos if p < last_meas), default=-1)
+    before: Set[int] = set()  # the qubits measured before the final measurement block
+    for p, qs in zip(meas_pos, meas_qubits):
+        if p <= last_det:
+            before |= qs
+    final_data = {r for r, (p, qs) in enumerate(zip(meas_pos, meas_qubits)) if p > last_det and qs and not qs & before}
+    if not final_data:  # (e.g., all qubits are measured in every round): all measurements of the final block
+        final_data = {r for r, p in enumerate(meas_pos) if p > last_det}
+    parent = list(range(len(det_recs)))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    first_det: Dict[int, int] = {}  # the first detector of each measurement record (other than final data)
+    for d, recs in enumerate(det_recs):
+        for r in recs:
+            if r not in final_data:
+                a, b = find(d), find(first_det.setdefault(r, d))
+                if a != b:
+                    parent[max(a, b)] = min(a, b)  # (the root of a group is its first detector)
+    ids: Dict[int, int] = {}
+    group = [ids.setdefault(find(d), len(ids)) for d in range(len(det_recs))]
+    final = [False] * len(ids)
+    for d, recs in enumerate(det_recs):
+        if any(r in final_data for r in recs):
+            final[group[d]] = True
+    return group, final, len(final_data)
+
+
+def _model_matrices(
+    cols: List[Tuple[Any, ...]], group: List[int], use: List[bool], num_observables: int
+) -> Dict[str, Any]:
+    """
+    The matrices of a code-sized model (see compute_model_lower_bound()): one row per group of detectors with use[g]
+    (the sum of the rows of its detectors), and one column per distinct pair (model column, observables) of the error
+    mechanisms `cols` (see _dem_error_columns()); the errors with no effect on the rows nor on the observables are
+    dropped.
+
+    Returns:
+        dict with "H" and "L" (scipy.sparse.csr_matrix), "col_map" (the model column of each error mechanism, -1 if
+        it is dropped), "groups" (the group of each row), and "trivial" (the error mechanisms which flip an observable
+        but no row: then the model has a codeword of weight 1).
+    """
+    import numpy as np
+    import scipy.sparse as sp
+    index: Dict[Tuple[frozenset, frozenset], int] = {}
+    col_map: List[int] = []
+    trivial: List[int] = []
+    for j, (dets, obs) in enumerate(cols):
+        rows: Set[int] = set()
+        for d in dets:
+            if use[group[d]]:
+                rows ^= {group[d]}
+        if not rows:
+            col_map.append(-1)
+            if obs:
+                trivial.append(j)
+            continue
+        col_map.append(index.setdefault((frozenset(rows), obs), len(index)))
+    used = sorted({g for rows, _ in index for g in rows})
+    row_of = {g: i for i, g in enumerate(used)}
+    hi: List[int] = []
+    hj: List[int] = []
+    li: List[int] = []
+    lj: List[int] = []
+    for c, (rows, obs) in enumerate(index):
+        hi.extend(row_of[g] for g in rows)
+        hj.extend([c] * len(rows))
+        li.extend(obs)
+        lj.extend([c] * len(obs))
+    H = sp.csr_matrix((np.ones(len(hi), dtype=np.int8), (hi, hj)), shape=(len(used), len(index)))
+    L = sp.csr_matrix((np.ones(len(li), dtype=np.int8), (li, lj)), shape=(num_observables, len(index)))
+    return {"H": H, "L": L, "col_map": col_map, "groups": used, "trivial": trivial}
+
+
+def compute_model_lower_bound(
+    circuit: Any,
+    dist_m4ri: Optional[str] = None,
+    method: int = 3,
+    threads: Optional[int] = None,
+    timeout: float = 60.0,
+    num_steps: Optional[int] = None,
+    dstop: int = 0,
+    wmax: int = 0,
+    minority: bool = True,
+    pmin: float = 0.0,
+    rounds: Optional[int] = None,
+    p_noise: float = 0.001,
+    force_noise: bool = False,
+    out_model: Optional[Union[str, Path]] = None,
+    cache_file: Optional[Union[str, Path]] = None,
+    seed: int = 0,
+    debug: int = 0,
+    verbose: bool = False,
+    nothrottle: bool = False,
+    pairs: int = -1,
+    return_info: bool = False,
+    **kwargs
+) -> Any:
+    """
+    Certified lower bound on the circuit-level distance of a Stim memory circuit from its code-sized model.
+
+    The model is a row reduction of the DEM (H, L) of the circuit (processed as in compute_dem_distance(), with the
+    options rounds, p_noise, force_noise, and pmin): two detectors are linked if they share a measurement record other
+    than a final data measurement, and each group of linked detectors gives one row, the sum of the rows of its
+    detectors (see _model_detector_groups()).  In a memory circuit, the groups are the chains of the detectors of the
+    checks over the rounds: the chain of a check h of the measured basis telescopes to the parity of the final data
+    measurements on its support, so that the column of an error mechanism is the syndrome of its net data error (a
+    data error or a hook error), and the chains of the minority-basis checks (minority=True) add the net change of
+    their values between their first and last measurements.  Equal columns are merged, and the errors with no effect
+    on the rows nor on the observables (e.g., ancilla measurement errors) are dropped; the model has a few columns per
+    data qubit.  Since every row is a sum of detector rows, every codeword x of the DEM (Hx = 0, Lx != 0) gives a model
+    codeword of weight at most |x|: the distance of the model, as certified by CC (its dmin), is a lower bound on the
+    distance of the DEM.  It ignores the timing within the rounds, so it is not tight in general (e.g., 5 for the
+    bb_72 circuit of distance 6).  Any circuit gives a valid bound, but a useful one needs this structure; if an error
+    flips an observable but no row, the bound is 1 (with a note to stderr).
+
+    The binary runs on the model with the rows of the measured-basis chains first, and then (minority=True) on the
+    model with all rows, starting from that bound (the extra rows can only raise it): RW first, which ends as soon as
+    it finds a model codeword of that weight (then the bound is not raised), and only otherwise with `method` (CC from
+    dmin).  The certified bound is stored as dmin in the
+    cache record of the DEM (the same key as compute_dem_distance(); "dmin_model": the bound), so that a later
+    compute_dem_distance() starts CC from it; the distances of the models are cached under their own keys.
+
+    Args:
+        circuit: Stim memory circuit (stim.Circuit or .stim file).
+        dist_m4ri: Path to dist_m4ri executable (optional).
+        method: Solver method for the model (1=RW, 2=CC, 3=Bracketing default); only CC certifies a bound.
+        threads / timeout / num_steps / seed / nothrottle / pairs: As for compute_dem_distance(), for each run of the
+            binary (at most three).
+        dstop: Stop target (see compute_dem_distance()): the runs end once CC has certified dmin >= dstop.
+        wmax: Maximum weight of the CC rounds on the model (0: until the bounds meet or the timeout).
+        minority: If True (default), the groups without a final data measurement (e.g., the chains of the
+            minority-basis checks of a CSS circuit) are rows of the model as well.
+        pmin: Probability cutoff for the error mechanisms of the DEM.
+        rounds / p_noise / force_noise: The processing of the circuit, as in compute_dem_distance().
+        out_model: If given, the model (with all rows used) is written to PREFIX_HR.mtx and PREFIX_LR.mtx.
+        cache_file: Optional JSON file path for persistent distance caching.
+        debug / verbose: As for compute_dem_distance().
+        return_info: If True, return (bound, info).
+
+    Returns:
+        The certified lower bound, or (bound, info) with return_info=True, where info has "d_info" (the bounds
+        [dmin, dmax, rw_steps] of the circuit's DEM from the cache record, with dmin including the bound; [bound, 0, 0]
+        without the cache), "model_d_info" and "measured_d_info" (the bounds of the model and of its measured-basis
+        part, [] if not run), the sizes "rows", "cols", "rows_measured", "cols_measured", "groups", "groups_final",
+        "detectors", "final_data", "dem_cols", "trivial" (the error mechanisms which flip an observable but no row),
+        the model "H", "L", and "col_map" (the model column of each error mechanism of the DEM, -1 if dropped), and
+        "files" (the files written with out_model).
+
+    Raises:
+        TypeError: for an unknown keyword argument (e.g., a misspelled option).
+        ValueError: if the input is not a Stim circuit.
+    """
+    global _distance_cache
+    _check_kwargs(compute_model_lower_bound, kwargs, aliases=())
+    if isinstance(circuit, (str, Path)) and not str(circuit).endswith(".stim"):
+        raise ValueError(f"compute_model_lower_bound: {circuit} is not a Stim circuit (.stim): the code-sized model is "
+                         f"built from the detectors and measurements of a circuit")
+    if not 0.0 <= p_noise <= 0.5:
+        raise ValueError(f"invalid p_noise={p_noise}: the noise strength must be in [0, 0.5]")
+    circ_verbose = verbose or bool(debug & PY_DBG_CIRCUITS)
+    dem, circ, _ = _dem_from_input(None, circuit, rounds=rounds, p_noise=p_noise, circ_verbose=circ_verbose,
+                                   force_noise=force_noise)
+    info: Dict[str, Any] = {"d_info": [0, 0, 0], "model_d_info": [], "measured_d_info": [], "files": []}
+    if getattr(dem, "num_errors", None) == 0:
+        sys.stderr.write("# Note: the DEM has no error mechanisms (no noise, e.g., p_noise=0 for a noiseless circuit "
+                         "or with force_noise): no bound computed\n")
+        return (0, info) if return_info else 0
+    group, final, num_final = _model_detector_groups(circ)
+    if len(group) != dem.num_detectors:
+        raise ValueError(f"compute_model_lower_bound: {len(group)} detectors in the circuit, {dem.num_detectors} in "
+                         f"its DEM")
+    cols = _dem_error_columns(dem, pmin)
+    part = _model_matrices(cols, group, final, dem.num_observables)  # the rows of the measured-basis chains
+    full = _model_matrices(cols, group, [True] * len(final), dem.num_observables) if minority else part
+    info.update(rows=full["H"].shape[0], cols=full["H"].shape[1], rows_measured=part["H"].shape[0],
+                cols_measured=part["H"].shape[1], groups=len(final), groups_final=sum(final), detectors=len(group),
+                final_data=num_final, dem_cols=len(cols), trivial=len(full["trivial"]), H=full["H"], L=full["L"],
+                col_map=full["col_map"])
+    if verbose:
+        print(f"[dist_m4ri] Code-sized model: {info['rows']} x {info['cols']} ({info['rows_measured']} rows of the "
+              f"chains with final data measurements, {info['rows'] - info['rows_measured']} other), from "
+              f"{len(cols)} error mechanisms and {len(group)} detectors in {len(final)} groups ({num_final} final data "
+              f"measurements)")
+    if out_model:
+        from scipy.io import mmwrite
+        for name, M in (("HR", full["H"]), ("LR", full["L"])):
+            path = f"{out_model}_{name}.mtx"
+            parent_dir = os.path.dirname(os.path.abspath(path))
+            os.makedirs(parent_dir, exist_ok=True)
+            mmwrite(path, M, symmetry="general")
+            info["files"].append(path)
+        if verbose:
+            print(f"[dist_m4ri] Saved the code-sized model to '{info['files'][0]}' and '{info['files'][1]}'")
+    eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+
+    def run(model: Dict[str, Any], dmin: int, run_method: int, wmin: int = 1) -> List[int]:
+        # the bounds [dmin, dmax, rw_steps] of the model
+        res = _cached_code_distance(
+            model["H"], None, model["L"], False, "code-sized model", dist_m4ri=dist_m4ri, method=run_method,
+            threads=threads, timeout=timeout, num_steps=num_steps, d_exp=0, dmin=dmin, dmax=0, dstop=dstop,
+            wmin=wmin, wmax=wmax, smax=0, start_list=None, dW=-1, maxC=0, finC=None, outC=None, need_cws=False,
+            eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
+            chunk_size=0, ksub=0, kwin=0, win_mode=0, min_hits=None, cov_cws=100, refresh=0, trust_start=False,
+            pairs=pairs)
+        return list(res["d_info"])
+
+    if full["trivial"]:
+        sys.stderr.write(f"# Note: code-sized model: {len(full['trivial'])} error mechanisms flip an observable but no "
+                         f"group of detectors (e.g., the first one, column {full['trivial'][0]} of the DEM), so that "
+                         f"the model has a codeword of weight 1: the bound is 1\n")
+        bound = 1
+    else:
+        bound = 1
+        if not part["trivial"]:
+            info["measured_d_info"] = run(part, 0, method)
+            bound = max(bound, info["measured_d_info"][0])
+        info["model_d_info"] = info["measured_d_info"]
+        if full is not part and (dstop <= 0 or bound < dstop) and (wmax <= 0 or bound <= wmax):
+            # all rows: RW first (a model codeword of weight `bound` ends the search), then CC from the bound
+            dmin = bound if bound > 1 else 0
+            info["model_d_info"] = run(full, dmin, 1, wmin=bound)
+            if method != 1 and not 0 < info["model_d_info"][1] <= bound:
+                info["model_d_info"] = run(full, dmin, method)
+            bound = max(bound, info["model_d_info"][0])
+    info["d_info"] = [bound, 0, 0]
+    if _use_distance_cache:  # the bound as dmin in the cache record of the DEM
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
+        key = _dem_cache_key(dem, pmin)
+        prev = _distance_cache.get(key) or {}
+        p_dmin, p_dmax, p_rw = (prev.get("dmin", 0) or 0), (prev.get("dmax", 0) or 0), (prev.get("rw_steps", 0) or 0)
+        if p_dmax > 0 and bound > p_dmax:
+            sys.stderr.write(f"# Warning: the code-sized model bound {bound} exceeds the cached upper bound "
+                             f"{p_dmax} of the DEM: not stored\n")
+            info["d_info"] = format_bounds_list(p_dmin, p_dmax, p_rw)
+        else:
+            record = _sector_record(max(p_dmin, bound), p_dmax, p_rw, prev.get("cws", []))
+            record["dmin_model"] = max(bound, prev.get("dmin_model", 0) or 0)
+            if record != prev:
+                _distance_cache[key] = record
+                if eff_cache_file:
+                    save_distance_cache(eff_cache_file)
+            info["d_info"] = list(record["d_info"])
+    if verbose:
+        print(f"[dist_m4ri] Code-sized model: certified lower bound d >= {bound} on the circuit distance (model bounds "
+              f"{info['model_d_info']}; measured-basis rows only: {info['measured_d_info']})")
+    return (bound, info) if return_info else bound
+
+
 def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
     """Writes codewords to a text file in NZLIST format (1-based indices).
     Skips creating the file if cws is empty.
@@ -4929,6 +5218,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "out_dir": None,
         "out_dem": None,
         "out_stim": None,
+        "model_lb": False,
+        "out_model": None,
         "morehelp": False,
         "morehelp_topic": None,
         "version": False,
@@ -5005,6 +5296,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
         if arg in ("--cws", "-cws", "cws", "do_cws=1", "--do_cws"):
             args["do_cws"] = True
+            i += 1
+            continue
+
+        if arg in ("--model-lb", "-model-lb", "--model_lb", "-model_lb", "model_lb", "model-lb"):
+            args["model_lb"] = True
             i += 1
             continue
 
@@ -5311,6 +5607,12 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                     args["out_dem"] = True
                 else:
                     args["out_dem"] = val
+            elif key_lower in ("model-lb", "model_lb", "modellb"):
+                args["model_lb"] = (
+                    bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
+                )
+            elif key_lower in ("out-model", "out_model", "outmodel"):
+                args["out_model"] = val
             elif key_lower in ("out-stim", "out_stim", "outstim"):
                 if val.lower() in ("0", "false", "no", "off", "none"):
                     args["out_stim"] = None
@@ -5345,11 +5647,12 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 Allowed parameters:
   fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, merge, drop, outD,
   --out-reduced, classical, --simple, --full, basis, --rounds, --out-dir,
-  --out-dem, --out-stim, --p-noise, --force-noise, method, dmin, dmax, dstop,
-  dexp (dest), steps, wmin, wmax, timeout, threads, nothrottle, chunk_size
-  (batch), ksub, kwin (win), win_mode, win_hyb, pairs, min_hits, cov_cws,
-  refresh, smax, noscan, start, cbeg, cend, finC, outC, maxC, expand, dW, seed,
-  debug, solver, cache, --no-cache, --verbose, --cws, --trust-start, sort_rows
+  --out-dem, --out-stim, --p-noise, --force-noise, --model-lb, --out-model,
+  method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax, timeout, threads,
+  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs,
+  min_hits, cov_cws, refresh, smax, noscan, start, cbeg, cend, finC, outC,
+  maxC, expand, dW, seed, debug, solver, cache, --no-cache, --verbose, --cws,
+  --trust-start, sort_rows
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5383,6 +5686,7 @@ Input matrices & models:
   --out-stim [FILE]     Save processed/noisy Stim circuit (default: <basename>_full.stim)
   --p-noise P           Strength of the noise added to a noiseless .stim circuit (default: 0.001; 0: none)
   --force-noise         Replace the noise of a .stim circuit by that of --p-noise (with P=0: remove it)
+  --model-lb            Certified lower bound for a .stim circuit from its code-sized model
 
 Method and distance bounds:
   method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
@@ -5550,6 +5854,23 @@ Required input (at least one matrix/model specification):
                         noise; see stim's Circuit.without_noise()), and then the uniform noise of
                         --p-noise is added (none with --p-noise 0, e.g., to save the noiseless circuit
                         with --out-stim), e.g., to compare circuits with the same noise model.
+  --model-lb            Certified lower bound on the distance of a Stim memory circuit (fdem=FILE.stim)
+                        from its code-sized model, instead of the distance of its DEM (also
+                        model_lb=1; see compute_model_lower_bound()): the detectors linked by shared
+                        measurements, other than the final data measurements, form chains (one per
+                        check of a memory circuit), and each chain gives a row of the model, the sum
+                        of its detector rows (the chain of a check of the measured basis telescopes
+                        to the parity of the final data measurements on the check; the chains of the
+                        minority-basis checks are rows as well), with the equal columns merged.  Each
+                        codeword of the DEM gives a model codeword of no larger weight, so the model
+                        distance certified by CC is a lower bound on the circuit distance; it ignores
+                        the timing within the rounds (not tight in general, e.g., 5 for the bb_72
+                        circuit of distance 6).  The binary runs on the model with the measured-basis
+                        rows, then with all rows from that bound (RW first; method, threads, timeout,
+                        steps, dstop, wmax, and seed apply to each run).  The bound is stored as dmin in
+                        the cache record of the DEM, and the bounds of the circuit are printed.
+  --out-model PREFIX    With --model-lb, write the model to PREFIX_HR.mtx and PREFIX_LR.mtx (also
+                        out_model=PREFIX).
   (conflicting inputs)  The input is selected in the order fdem, Hx/Hz (CSS code), and
                         finH/finG/finL/fin (fin only supplies the missing finH and finG); the
                         ignored inputs (e.g., matrices with fdem, pmin, merge, expand, drop, or outD
@@ -5779,7 +6100,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   bounds                dmin, dmax, dstop, dexp, wmax
   dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand
   stim                  fdem, basis, --rounds, --out-dir, --out-dem, --out-stim, --p-noise,
-                        --force-noise
+                        --force-noise, --model-lb, --out-model
   matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical
   codewords             --cws, outC, finC, maxC, dW, expand
   threading             threads, nothrottle, chunk_size
@@ -5973,6 +6294,25 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                              "names take precedence")
     if args.get("classical") == 1 and given("finG", "finL", "fin", "fdem", "Hz", "Lx", "Lz"):
         warns.append("classical=1 ignored: the input is a quantum code or a DEM")
+    if args.get("model_lb"):  # the code-sized model of a Stim circuit (compute_model_lower_bound())
+        ign = [opt for opt, on in (("outC=", args.get("outC") is not None), ("finC=", args.get("finC") is not None),
+                                   ("--cws", bool(args.get("do_cws")) and args.get("outC") is None),
+                                   ("drop=", args.get("drop") is not None),
+                                   ("outD=", args.get("outD") is not None),
+                                   ("--out-reduced", args.get("out_reduced") is not None),
+                                   ("--out-dir", args.get("out_dir") is not None),
+                                   ("--out-dem", args.get("out_dem") is not None),
+                                   ("--out-stim", args.get("out_stim") is not None),
+                                   ("start=", args.get("start") is not None), ("dmin=", bool(args.get("dmin"))),
+                                   ("dmax=", bool(args.get("dmax"))), ("dexp=", bool(args.get("dexp"))),
+                                   ("maxC=", bool(args.get("maxC"))), ("dW=", args.get("dW", -1) >= 0),
+                                   ("merge=", args.get("merge") is not None),
+                                   ("expand=", args.get("expand") is not None),
+                                   ("solver=", args.get("solver") not in (None, "dist_m4ri"))) if on]
+        if ign:
+            warns.append(f"{', '.join(ign)}: not used with --model-lb; ignored")
+    elif args.get("out_model") is not None:
+        warns.append("--out-model: only used with --model-lb; ignored")
     for w in warns:
         sys.stderr.write(f"# Warning: {w}\n")
 
@@ -6030,6 +6370,46 @@ def main(argv: Optional[List[str]] = None) -> int:
         disable_distance_cache()
 
     try:
+        if args.get("model_lb"):  # the certified lower bound of a Stim circuit from its code-sized model
+            if not args["fdem"] or not str(args["fdem"]).endswith(".stim"):
+                raise ValueError("--model-lb needs a Stim circuit (fdem=FILE.stim): the code-sized model is built "
+                                 "from the detectors and measurements of a circuit")
+            bound, info = compute_model_lower_bound(
+                circuit=args["fdem"],
+                method=args["method"],
+                threads=args["threads"],
+                timeout=args["timeout"],
+                num_steps=args["steps"],
+                dstop=args["dstop"],
+                wmax=args["wmax"],
+                pmin=args["pmin"],
+                rounds=args["rounds"],
+                p_noise=args["p_noise"] if args["p_noise"] is not None else 0.001,
+                force_noise=args["force_noise"],
+                out_model=args["out_model"],
+                cache_file=cache_file,
+                seed=args["seed"],
+                debug=args["debug"],
+                verbose=args["verbose"],
+                nothrottle=args["nothrottle"],
+                pairs=args["pairs"],
+                return_info=True
+            )
+            if args["verbose"]:
+                print("=== Code-Sized Model Lower Bound ===")
+                print(f"  Model: {info.get('rows', 0)} rows ({info.get('rows_measured', 0)} chains of the "
+                      f"measured-basis checks, {info.get('rows', 0) - info.get('rows_measured', 0)} other) x "
+                      f"{info.get('cols', 0)} columns, from {info.get('dem_cols', 0)} error mechanisms and "
+                      f"{info.get('detectors', 0)} detectors of the DEM.")
+                if info["model_d_info"]:
+                    print(f"  Model bounds (CC certifies dmin): {format_bounds_str(info['model_d_info'])}"
+                          + (f"; measured-basis rows only: {format_bounds_str(info['measured_d_info'])}"
+                             if info["measured_d_info"] and info["measured_d_info"] != info["model_d_info"] else ""))
+                print(f"  Certified lower bound on the circuit distance: d >= {bound}.")
+                print(f"  Circuit bounds (with the cache): {format_bounds_str(info['d_info'])}")
+            print(format_bounds_str(info["d_info"]))
+            return 0
+
         if args["fdem"]:
             res = compute_dem_distance(
                 dem=args["fdem"],
