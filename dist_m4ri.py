@@ -32,7 +32,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.5"
+__version__ = "0.14.6"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -1469,10 +1469,12 @@ def run_dist_m4ri(
         pairs: The RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern), passed as pairs=N if not -1: a
             RW step also finds the codewords with two non-pivot columns, checking only the pairs which agree on N
             random pivot rows (0: off).  -1 (default): auto, about one non-pivot column per bucket, with fewer rows
-            while a codeword of the weight of the upper bound would be kept with probability below 0.8.  The pairs
-            find the minimum-weight codewords of circuit DEMs 7-25 times faster (per wall time) and lighter
-            codewords of codes with a large distance.  With debug & 1, the binary prints the pairs checked per step
-            and the codewords found by pairs and by single columns (also in _last_run_stats).
+            while a codeword of the weight of the upper bound would be kept with probability below 0.8, but enough
+            rows to keep the pairs of a step within about the work of its elimination (e.g., at least 6 for large
+            circuit DEMs while the upper bound is far above the distance).  The pairs find the minimum-weight
+            codewords of circuit DEMs 7-25 times faster (per wall time) and lighter codewords of codes with a large
+            distance.  With debug & 1, the binary prints the pairs checked per step and the codewords found by pairs
+            and by single columns (also in _last_run_stats).
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -5972,11 +5974,13 @@ Multithreading & throttling:
                         checking only the pairs of columns which agree on N random pivot rows
                         (at most 64; 0 = off).  Default: -1 = auto, about one non-pivot column per
                         bucket, with fewer rows while a codeword of the weight of the upper bound
-                        would be kept with probability below 0.8.  The pairs find the
-                        minimum-weight codewords of circuit DEMs 7-25 times faster, and lighter
-                        codewords of codes with a large distance.  Not with ksub.  With --verbose
-                        (or debug&1), the binary prints the pairs checked per step and the
-                        codewords found by pairs and by single columns.
+                        would be kept with probability below 0.8, but enough rows to keep the
+                        pairs of a step within about the work of its elimination (e.g., at least
+                        6 for large circuit DEMs while the upper bound is far above the
+                        distance).  The pairs find the minimum-weight codewords of circuit DEMs
+                        7-25 times faster, and lighter codewords of codes with a large distance.
+                        Not with ksub.  With --verbose (or debug&1), the binary prints the pairs
+                        checked per step and the codewords found by pairs and by single columns.
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = disabled).
                         Stops RW when the average number of times <n> that RW has found each
                         codeword reaches min_hits, both for the codewords of the minimum weight

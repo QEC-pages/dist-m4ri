@@ -270,6 +270,16 @@ static inline int rw_hybrid_window(const params_t * const p, const int nvar) {
  *         `pairs=-1` (auto), see rw_pairs_bits(). */
 #define RW_PAIRS_KEEP 0.8
 
+/** @brief The elimination of a RW step (rank r, n columns) takes about r^2 n / (64 RW_PAIRS_WORK) word operations, the
+ *         scale of the work of its RW pairs with `pairs=-1` (auto), see rw_pairs_min_bits().  (Measured with l = 1:
+ *         the pairs took 0.5 and 2.5 times the time of the elimination for c1920H and a random LDPC code with
+ *         n = 3000, against 0.67 and 2.0 times from this estimate.) */
+#define RW_PAIRS_WORK 16.0
+
+/** @brief The number of pairs of a RW step allowed with `pairs=-1` (auto) whatever the work of its elimination (small
+ *         matrices), see rw_pairs_min_bits(). */
+#define RW_PAIRS_FREE 1048576.0
+
 /**
  * @brief The chance C(r - l, w - 2) / C(r, w - 2) = C(r - w + 2, l) / C(r, l) that a codeword of weight w with exactly
  *        two non-pivot positions avoids l random pivot rows (rank r), see rw_pairs_bits().
@@ -284,6 +294,30 @@ static inline double rw_pairs_keep(const int rank, const int w, const int l) {
 }
 
 /**
+ * @brief The fewest random pivot rows l of the buckets of the RW pairs with `pairs=-1` (auto), for a matrix with n
+ *        columns and rank r: the n - r non-pivot columns give about (n - r)^2 / 2^(l+1) pairs per RW step, each
+ *        compared in at most r/64 words, which should be at most about the work of the elimination of the step,
+ *        r n / RW_PAIRS_WORK pairs (or RW_PAIRS_FREE pairs, for small matrices).
+ *
+ * This matters while the upper bound w is far above the distance, early in a run: the chance to keep a codeword of
+ * weight w (rw_pairs_keep()) then asks for l = 1, i.e., all pairs in two buckets, so that a step on a circuit DEM
+ * (n - r about 10 r) would check millions (mitten_270, n = 8910) or billions (bb_756, n = 129276) of pairs; with this
+ * bound, l >= 6 for these DEMs.  Codes with n - r < r (e.g., c1920H) keep l = 1.
+ */
+static inline int rw_pairs_min_bits(const int nvar, const int rank) {
+  const double k = (double)(nvar - rank);
+  double budget = (double)rank * (double)nvar / RW_PAIRS_WORK;
+  if (budget < RW_PAIRS_FREE) budget = RW_PAIRS_FREE;
+  int l = 1;
+  double pairs = k * k / 4.0; /* (n - r)^2 / 2^(l+1) */
+  while ((l < RW_PAIRS_MAX_BITS) && (pairs > budget)) {
+    l++;
+    pairs /= 2.0;
+  }
+  return l;
+}
+
+/**
  * @brief The number l of random pivot rows of the buckets of the RW pairs (p=2) for a matrix with n columns and rank
  *        r, with the upper bound w on the distance (0: no pairs).
  *
@@ -292,7 +326,8 @@ static inline double rw_pairs_keep(const int rank, const int w, const int l) {
  * on l random pivot rows are checked (the non-pivot columns are bucketed by these l bits, as in Stern's algorithm),
  * which keeps a codeword of weight w with the chance rw_pairs_keep().  `pairs` if given (at most r); auto (-1): about
  * one non-pivot column per bucket, l = ceil(log2(n - r)), but fewer rows (at least one) while the chance to keep a
- * codeword of weight w is below RW_PAIRS_KEEP.  No pairs without an upper bound (w = 0).
+ * codeword of weight w is below RW_PAIRS_KEEP, and not fewer than rw_pairs_min_bits() (the work of the pairs of a
+ * step).  No pairs without an upper bound (w = 0).
  */
 static inline int rw_pairs_bits(const params_t * const p, const int nvar, const int rank, const int w) {
   const int k = nvar - rank;
@@ -301,7 +336,8 @@ static inline int rw_pairs_bits(const params_t * const p, const int nvar, const 
   if (l < 0) {
     l = 1;
     while ((l < RW_PAIRS_MAX_BITS) && (((uint64_t)1 << l) < (uint64_t)k)) l++;
-    while ((l > 1) && (rw_pairs_keep(rank, w, l) < RW_PAIRS_KEEP)) l--;
+    const int lmin = rw_pairs_min_bits(nvar, rank);
+    while ((l > 1) && (l > lmin) && (rw_pairs_keep(rank, w, l) < RW_PAIRS_KEEP)) l--;
   }
   return (l < rank) ? l : rank;
 }
@@ -494,7 +530,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.14.5"
+#define DIST_M4RI_VERSION "0.14.6"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -796,7 +832,10 @@ void print_short_help(const char *prog);
   "                     agree on pairs=l random pivot rows (at most 64; 0 = off).\n" \
   "                     Default: -1 = auto, about one non-pivot column per bucket,\n" \
   "                     with fewer rows while a codeword of the weight of the upper\n" \
-  "                     bound would be kept with probability below 0.8.  The pairs\n" \
+  "                     bound would be kept with probability below 0.8, but enough\n" \
+  "                     rows to keep the pairs of a step within about the work of\n" \
+  "                     its elimination (e.g., l >= 6 for large circuit DEMs while\n" \
+  "                     the upper bound is far above the distance).  The pairs\n" \
   "                     find the minimum-weight codewords of circuit DEMs 7 to 25\n" \
   "                     times faster, and lighter codewords of codes with a large\n" \
   "                     distance.  Not with ksub.  With debug&1, the binary prints\n" \
