@@ -1066,7 +1066,8 @@ pytest tests/test_dist_m4ri.py -v
 ### Benchmark Suite (`benchmark/`)
 
 The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes ($d = 4$ to $\le 34$) and Stim circuits
-(bivariate bicycle codes including the gross and double-gross codes, Mitten codes, and 2D-local torus BB circuits),
+(bivariate bicycle codes including the gross and double-gross codes, Mitten codes including those of arXiv:2607.28795
+with circuits of their published hook-free schedules, SHYPS codes, and 2D-local torus BB circuits),
 their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on a
 128-thread server: the scaling with the number of threads, and a comparison of the versions 0.14.6, 0.14.5, 0.14.3,
 0.14.0, 0.12.2, and 0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight

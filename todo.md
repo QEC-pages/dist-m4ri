@@ -545,4 +545,6 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   submatrix (all rows touched by the window), at a fraction of the cost of the full elimination; window shapes: time
   slabs (space-like logicals), tubes of a few stabilizers over all rounds (time-like logicals), Tanner-graph balls, and
   the full matrix (uniform steps, which keep every codeword reachable). Separate hit statistics for the window steps.
-
+- [ ] **Exact distance from extended CSS distance** Formulate explicit criteria
+      on the exactness of the extended CSS distance, and learn to recognize such
+      DEMs / circuits, as an alternative to code-sized model bounds
