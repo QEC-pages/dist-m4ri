@@ -548,3 +548,5 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] **Exact distance from extended CSS distance** Formulate explicit criteria
       on the exactness of the extended CSS distance, and learn to recognize such
       DEMs / circuits, as an alternative to code-sized model bounds
+- [ ] **Optimize pair $p=2$ construction**: only start $i+j$ pairs with $i$ a verified codeword (non-trivial)
+- [ ] **examine symmetry** of `model` check matrices to get guaranteed lower bounds faster (`--model-lb` option)
