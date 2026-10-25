@@ -34,13 +34,15 @@ any unsatisfied row, forbidden sets, and admissible bounds}
 The connected-cluster (CC) algorithm of Dumer, Kovalev, and Pryadko~\cite{DKP17} certifies lower bounds on the
 distance by enumerating irreducible clusters: starting from a column of the parity-check matrix, a cluster is extended,
 one column at a time, by a column of an unsatisfied row. Up to version 0.14.8, \ttt{dist\_m4ri} always extends a
-cluster by the columns of the \emph{first} unsatisfied row in row order. We formulate the modified order of the
-branch-and-bound search of Ref.~\cite{LOMKZ26} (App.~B), used in Ref.~\cite{Lee26} (App.~C.4): branching on an
+cluster by the columns of the \emph{first} unsatisfied row in row order (since version 0.15.0, with
+\ttt{cc\_prune=0}). We formulate the modified order of the
+branch-and-bound search of Ref.~\cite{LOMKZ26} (App.~B), used in Ref.~\cite{Lee26} (App.~C.4), the default of
+\ttt{dist\_m4ri} since version 0.15.0 (\ttt{cc\_prune=1}): branching on an
 \emph{arbitrary} unsatisfied row, in particular on the one with the fewest available columns; a \emph{forbidden set}
 which excludes the columns of the earlier sibling branches; and pruning by \emph{admissible lower bounds} on the number
 of missing columns. Theorem~\ref{thm:main} states that the search reports every irreducible codeword of weight at most
 $W$ which contains the start column and avoids the initial forbidden set, and that it reports it exactly once if the
-forbidden set is used. The current order is the special case without the forbidden set, where every irreducible
+forbidden set is used. The first-row order is the special case without the forbidden set, where every irreducible
 codeword is reported at least once. The corollaries cover the certification of the distance by increasing weights, the
 hit counts, start lists, orbit exclusion under a group of code automorphisms, the hash table used for the last two
 extensions of a cluster, and the work units of the multithreaded search.
@@ -219,17 +221,20 @@ In step~3(a), the columns $v_1,\dots,v_{i-1}$ are forbidden in the branch $i$ wh
 
 \paragraph{Instances.}
 \begin{itemize}
-  \item \emph{The current order} (\ttt{cc\_walk()} and \ttt{start\_CC\_recurs\_mt()} in \ttt{dist\_m4ri}~0.14.8,
+  \item \emph{The first-row order} (\ttt{cc\_walk()} with \ttt{cc\_prune=0}, and \ttt{start\_CC\_recurs\_mt()} with
+    \ttt{smax>0}; the only order up to \ttt{dist\_m4ri}~0.14.8,
     the principle of irreducible clusters of~\cite{DKP17}): $\rho_{\rm first}(S,F)=\min U(S)$, the first unsatisfied
     row in the row order of $H$ (rows sorted by weight with \ttt{sort\_rows=1}); $\varepsilon=0$; $\beta=\beta_1$
     (tested before a child is searched, which is the same as step~1 of the child); the columns in increasing order; and
     $F_0=\{u\in[n]:u<v\}$, i.e., clusters grow by columns larger than the start column.
-  \item \emph{The branch and bound} of~\cite{LOMKZ26} (\ttt{cc\_prune=1}): $\rho_{\min}(S,F)$ is an unsatisfied row
+  \item \emph{The branch and bound} of~\cite{LOMKZ26} (\ttt{cc\_bnb()} with \ttt{cc\_prune=1}, the default since
+    version 0.15.0): $\rho_{\min}(S,F)$ is an unsatisfied row
     with the fewest available columns, $|A_r(S,F)|$ minimal (ties broken by the row order); $\varepsilon=1$; and
     $\beta=\max(\beta_0,\beta_1,\beta_2)$, with $\beta_2$ computed greedily and only where it can prune
     ($|U(S)|>W-|S|$) and $W-|S|\ge3$. With \ttt{cc\_prune=2}, also $\beta_3$ and $\beta_4$.
-  \item \emph{Unlimited clusters} from a start list (\ttt{start=}): $F_0=\emptyset$, or the earlier start columns
-    (Proposition~\ref{prop:start}), or the earlier orbits (Proposition~\ref{prop:orbits}).
+  \item \emph{Unlimited clusters} from a start list (\ttt{start=}): $F_0=\emptyset$ (\ttt{cc\_prune=0}), or the earlier
+    start columns (Proposition~\ref{prop:start}; \ttt{cc\_prune=1} and \ttt{2}), or the earlier orbits
+    (Proposition~\ref{prop:orbits}).
 \end{itemize}
 
 \section{Main theorem}\label{sec:main}
@@ -293,7 +298,7 @@ Hence $v_i$ is not in the set reported by $e'$, and the two reported sets differ
 \begin{remark}\label{rem:mult}
 Without the forbidden set ($\varepsilon=0$), a codeword can be reported several times: if it meets the branching row
 of a node in three columns which are not yet in the cluster, each of the three branches can lead to it. For instance,
-the current order records 2084 hits for the 1884 codewords of weight 12 of the gross code $[[144,12,12]]$, and the
+the first-row order records 2084 hits for the 1884 codewords of weight 12 of the gross code $[[144,12,12]]$, and the
 branch and bound records each of them once.
 \end{remark}
 

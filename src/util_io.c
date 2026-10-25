@@ -36,6 +36,7 @@ params_t prm={
   .drop_A=0,
   .sort_rows=-1, /* (auto: 1 for matrices, 0 for a DEM) */
   .rows_sorted=0,
+  .cc_prune=1,
   .start_list=NULL,
   .start_num=0,
   .cbeg=-1,
@@ -962,6 +963,13 @@ void var_init(int argc, char **argv, params_t * const p){
       p->irred=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, irred=%d\n",argv[i],p->irred);
+    }
+    else if (sscanf(argv[i],"cc_prune=%d",&dbg)==1){
+      if ((dbg < 0) || (dbg > 2))
+        ERROR("invalid '%s': cc_prune should be 0, 1, or 2\n", argv[i]);
+      p->cc_prune=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, cc_prune=%d\n",argv[i],p->cc_prune);
     }
     else if (0==strncmp(argv[i],"drop=",5)){
       char * const val = file_arg_value(argc, argv, &i, 5);

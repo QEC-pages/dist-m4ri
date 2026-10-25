@@ -188,20 +188,45 @@ If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `out
 columns for weight $w$ to collect all unique minimum-weight codewords.
 With `smax=0` (default), the syndrome of a cluster is kept as a bitset (a column is added by flipping its rows), and
 the last column of a cluster is found by a hash lookup: the syndrome left after the next-to-last column must equal a
-column of $H$ (instead of a scan of the candidate columns). The clusters and the codewords found (with their hit
-counts) are the same as with `smax>0`, only faster (about 3-5 times for CSS codes, and 5-20 times for circuit DEMs).
-A cluster is extended by the columns of the first row of its syndrome, in the order of the rows of $H$ (every codeword
-which contains the cluster has a column in that row). With `sort_rows=1`, the default for matrices (`finH` or `fin`),
-the rows of $H$ are sorted by increasing weight (stable) after reading the input, so that light rows come first: this
-reduces the CC work for matrices with very different row weights, e.g., 1.7-4.2 times for the matrices with hook
-columns of an extended CSS distance (rows of weight 5 to 103), while codes with rows of equal weight are not changed.
-For a DEM (`fdem`), the default is `sort_rows=0`: its detectors are in time order, and the first unsatisfied detector
-of a cluster then has most of its columns before the start column (these are not used), which is better than a light
-row; sorting the rows made CC 1.3-1.6 times slower for the matrices `surf_d5_H.mmx` and `surf_d7_H.mmx` exported from
-DEMs in [`examples/`](examples/) (use `sort_rows=0` for such matrices), and up to about 4 times (estimated) for the
-reduced DEMs of the Mitten circuits. The distance and RW do not depend on the order of the rows (with the same seed, RW
-finds the same codewords); CC enumerates the same codewords (e.g., with `outC`), possibly in another order and with
-other hit counts. With `debug=1`, the input summary notes that the rows were sorted.
+column of $H$ (instead of a scan of the candidate columns). With `cc_prune=0`, the clusters and the codewords found
+(with their hit counts) are the same as with `smax>0`, only faster (about 3-5 times for CSS codes, and 5-20 times for
+circuit DEMs): a cluster is extended by the columns of the first row of its syndrome, in the order of the rows of $H$
+(every codeword which contains the cluster has a column in that row), and a branch is pruned if its syndrome weight
+exceeds $R \Delta$, where $R$ is the number of columns left and $\Delta$ the maximum column weight of $H$.
+
+**Branch and bound (`cc_prune=1`, the default since version 0.15.0)**, after J. Y. Lee, K. Okada, N. Maskara, K.
+Kasai, and H. Zhou, arXiv:2609.30069 (App. B), as used by G. Lee, arXiv:2610.13880 (App. C.4); the proof that it
+finds the same codewords is in [`doc/cc_completeness.tex`](doc/cc_completeness.tex):
+- A column is *available* if it is larger than the start column, and neither in the cluster nor forbidden. A cluster
+  is extended by the available columns of the unsatisfied row (a row of its syndrome) with the fewest available
+  columns, the first such row in the row order; with `sort_rows`, the order of the rows only breaks ties.
+- Sibling exclusion: the column of a branch is forbidden in the later branches of the same cluster, so that every
+  codeword is found exactly once, with one CC hit (e.g., 1884 hits for the 1884 codewords of weight 12 of the gross
+  code, against 2084 hits with `cc_prune=0`). Only irreducible codewords are found for sure (see
+  [Codeword Export](#codeword-export-outc--finc)).
+- A branch is pruned by lower bounds on the number of columns still needed: the syndrome weight bound above, an
+  unsatisfied row without available columns (a dead end), and the packing bound (the number of unsatisfied rows with
+  pairwise disjoint sets of available columns, each of which needs its own column, found greedily, where it can
+  prune). `cc_prune=2` also uses the coverage and fractional cover bounds: fewer nodes, but more work per node (slower
+  than `cc_prune=1` in most of our tests).
+- The gain grows with the weight. E.g., with `method=2` on 128 threads (the rounds up to the distance $d$): the $X$
+  sector of `yarn_mitten_300` ($d = 14$) in 0.23 s instead of 1.7 s (32 times fewer nodes in the round $w = 13$),
+  `yarn_ablp_560` ($d = 14$) in 0.20 s instead of 3.7 s, and double gross ($d = 18$) in 0.33 s instead of 1.4 s; the
+  round $w = 11$ of `yarn_mitten_630` with 105 times fewer nodes (22 times less CC work). The full DEMs of the gross
+  circuit ($d = 10$) and of the custom `mitten_270` circuit ($d = 9$) are certified in 79 s and 141 s instead of
+  189 s and 197 s (`method=3`). For DEMs at small weights ($w \le 7$), the fewer nodes cost about as much time.
+
+With `sort_rows=1`, the default for matrices (`finH` or `fin`), the rows of $H$ are sorted by increasing weight
+(stable) after reading the input, so that light rows come first. With `cc_prune=0`, this reduces the CC work for
+matrices with very different row weights, e.g., 1.7-4.2 times for the matrices with hook columns of an extended CSS
+distance (rows of weight 5 to 103), while codes with rows of equal weight are not changed. For a DEM (`fdem`), the
+default is `sort_rows=0`: its detectors are in time order, and with `cc_prune=0`, the first unsatisfied detector of a
+cluster then has most of its columns before the start column (these are not used), which is better than a light row;
+sorting the rows made CC 1.3-1.6 times slower for the matrices `surf_d5_H.mmx` and `surf_d7_H.mmx` exported from DEMs
+in [`examples/`](examples/) (use `sort_rows=0` for such matrices), and up to about 4 times (estimated) for the reduced
+DEMs of the Mitten circuits. The distance and RW do not depend on the order of the rows (with the same seed, RW finds
+the same codewords); CC enumerates the same codewords (e.g., with `outC`), possibly in another order (with
+`cc_prune=0`, also with other hit counts). With `debug=1`, the input summary notes that the rows were sorted.
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
 $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
 soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`). A stop target `dstop=U` ends the scan
@@ -220,6 +245,10 @@ Relevant parameters:
   and the bitset syndromes with hash lookups above; set e.g. `smax=5` to compute confinement).
 - `sort_rows=[0|1]`: Sort the rows of $H$ by increasing weight for CC (default: 1 for matrices, 0 for a DEM; see
   above).
+- `cc_prune=[0|1|2]`: The CC search with `smax=0` (default: 1, the branch and bound; 0: the walk of the first
+  unsatisfied row of the versions before 0.15.0; 2: also the coverage and fractional cover bounds; see above). All
+  values find the same codewords and distances; with `debug&8`, the binary prints the nodes (calls of the recursion)
+  of each CC round.
 
 Expert parameters (each prints a `# WARNING:` to `stderr`; see
 [Restricting the CC Search](#restricting-the-cc-search-expert-options) below):
@@ -274,8 +303,9 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
   record (and the cache file is saved) even if no calculation is needed. For DEM input, the start columns index the
   error mechanisms in their order in the flattened DEM (after the `pmin` cutoff). For CSS codes, the same list is
   used in both sectors.
-- **Possible optimization** (not implemented): clusters grown from a listed column could skip the columns listed
-  before it, since all codewords containing those columns have already been enumerated.
+- **Clusters from a listed column skip the columns listed before it** (since version 0.15.0, with `cc_prune=1` or `2`):
+  all codewords containing those columns have already been enumerated from them, so that each codeword is found once,
+  from the first listed column it contains (see [`doc/cc_completeness.tex`](doc/cc_completeness.tex)).
 
 ### 3. Bracketing Mode (`method=3`, default)
 Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to
@@ -683,7 +713,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.8): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.15.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -735,6 +765,7 @@ Extra parameters (see --morehelp for details):
   cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs
   irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)
   sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)
+  cc_prune=[0|1|2] (1)   CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
@@ -778,7 +809,7 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
 - `4` **periodic status** after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate,
   $\langle n\rangle$, and the progress of the current CC round (or why no CC round runs).
 - `8` **thread allocation and timing**: throttling, the planning and re-planning of CC rounds, waits for RW, and the
-  predicted vs measured CC work of each round.
+  predicted vs measured CC work of each round, with its number of nodes (calls of the CC recursion; see `cc_prune`).
 - `16` **code parameters**: $\mathrm{rank}\,H$, $\mathrm{rank}\,L$ (or $\mathrm{rank}\,G$), and $k$, by dense
   elimination at startup (slow for large matrices).
 - `32` **codewords**: the support (1-based columns) of each new lightest codeword (RW, CC, `finC`).
@@ -972,6 +1003,9 @@ interoperability without manual threading overhead.
   (`0` if none). A cached lower bound `dmin >= dstop` answers the request without a calculation.
 - Row order `sort_rows` of all `compute_*_distance()` functions (CLI: `sort_rows=0|1`; default: `None`, the binary's
   default, i.e., sorted rows for matrices and the detectors of a DEM in time order): passed to the binary (see
+  [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it.
+- CC search `cc_prune` of `run_dist_m4ri()` and of all `compute_*_distance()` functions (CLI: `cc_prune=0|1|2` or
+  `--cc-prune N`; default: `None`, the binary's default 1, the branch and bound): passed to the binary (see
   [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it.
 - RW window size `win_hyb` of all `compute_*_distance()` functions (CLI: `win_hyb=N`; default: 0, i.e., 256 columns
   for a DEM and 512 for matrices): passed to the binary if nonzero (see

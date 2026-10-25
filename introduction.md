@@ -75,19 +75,28 @@ found, or when the hit-count criterion `min_hits` is met (see Convergence below)
 ## How it works: CC algorithm (method=2)
 
 The connected-cluster algorithm grows clusters of columns. A cluster starts at a column `i` and only uses columns
-`j > i`; at each level, a column is added from the support of the first check that is not satisfied by the cluster.
+`j > i`; at each level, a column is added from the support of a check that is not satisfied by the cluster.
 Round `w` enumerates all such clusters of weight `w` (the start columns are distributed among the threads; with few
 start columns per thread, a start column is split into work units which also fix the first one to three columns added).
 A round without codewords raises the lower bound to `dmin = w + 1`, and a codeword found in a round gives the exact
 distance. This search finds every minimum-weight codeword, starting from its smallest column: a proper subset of a
 minimum-weight codeword has a non-zero syndrome (otherwise, the subset or the rest of the codeword would be a lighter
-codeword), and the support of its first unsatisfied check contains another position of the codeword [DKP17]. The work
-of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`. With `smax=0` (default),
-the syndrome of a cluster is kept as a bitset, and the last column of a cluster is found by a hash lookup: the syndrome
-left after the next-to-last column must be that of a single column of `H`. The first unsatisfied check is taken in the
-order of the rows of `H`: for matrices, the rows are sorted by increasing weight (`sort_rows=1`, the default), which
-reduces the work when the row weights are very different; the detectors of a DEM are kept in time order (`sort_rows=0`,
-the default with `fdem`), which is better there.
+codeword), and the support of each of its unsatisfied checks contains another position of the codeword [DKP17]. The
+work of round `w` grows roughly as `n (D - 1)^(w - 1)`, where `D` is the maximum row weight of `H`. With `smax=0`
+(default), the syndrome of a cluster is kept as a bitset, and the last column of a cluster is found by a hash lookup:
+the syndrome left after the next-to-last column must be that of a single column of `H`.
+
+Since version 0.15.0, the search is a branch and bound (`cc_prune=1`, the default) [LOMKZ26, Lee26]: a cluster is
+extended from the unsatisfied check with the fewest available columns; the column of each branch is forbidden in the
+later branches, so that every codeword is found exactly once; and a cluster is pruned if lower bounds on the number of
+columns still needed exceed the weight left (an unsatisfied check without available columns, or a packing of
+unsatisfied checks with disjoint sets of available columns). It visits far fewer clusters, by factors which grow with
+the weight (e.g., 30-100 times fewer, in 10-26 times less CC time, in the rounds `w = 11..13` of the codes with
+`d = 14` to `20` of the benchmark), and it finds the same codewords; the proof is in `doc/cc_completeness.tex`. With
+`cc_prune=0`, the first unsatisfied check in the order of the rows of `H` is taken, as in earlier versions: for
+matrices, the rows are sorted by increasing weight (`sort_rows=1`, the default), which reduces the work when the row
+weights are very different; the detectors of a DEM are kept in time order (`sort_rows=0`, the default with `fdem`),
+which is better there.
 
 The expert options `start`, `cbeg`/`cend`, and `noscan` restrict the search; each of them prints a warning, since the
 reported `dmin` is then not necessarily a lower bound (`dmax` is always valid). With `smax > 0`, CC also computes the
@@ -175,6 +184,11 @@ If you use this program, please cite:
     [doi:10.1109/TIT.2017.2690381](https://doi.org/10.1109/TIT.2017.2690381).
 
 Other related papers and software:
+
+*   **Branch and bound for the CC search** (`cc_prune=1`, since version 0.15.0):
+    [LOMKZ26] J. Y. Lee, K. Okada, N. Maskara, K. Kasai, and H. Zhou, "Design principles for ultra-high-rate quantum
+    codes," arXiv:2609.30069 [quant-ph], 2026, Appendix B; [Lee26] G. Lee, "Bicycle Race: small two-block codes on
+    the Pareto frontier," arXiv:2610.13880 [quant-ph], 2026, Appendix C.4.
 
 *   **vecdec Repository** (implements the Random Information Set (RW) algorithm and can handle different error
     weights/probabilities):

@@ -117,6 +117,8 @@ typedef struct{
   int sort_rows;   /* 1: sort the rows of H by increasing weight (stable) for CC, see csr_sort_rows_by_weight();
                       -1 (default): 1 for matrices, 0 for a DEM */
   int rows_sorted; /* 1: sort_rows changed the order of the rows of H */
+  int cc_prune;    /* the CC search with smax = 0: 0 the walk of the first unsatisfied row (cc_walk(), before 0.15.0),
+                      1 (default) the branch and bound (cc_bnb()), 2 the branch and bound with the cover bounds */
   char *finH;
   char *finG;
   char *finL;
@@ -533,7 +535,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.14.8"
+#define DIST_M4RI_VERSION "0.15.0"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -548,7 +550,7 @@ void print_short_help(const char *prog);
   "Allowed parameters:\n" \
   "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, sort_rows,\n" \
-  "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
+  "  cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, win_hyb, pairs, min_hits, cov_cws, refresh,\n" \
   "  finC, outC, maxC, dW, irred, seed, debug\n\n" \
   "Help options:\n" \
@@ -601,6 +603,7 @@ void print_short_help(const char *prog);
   "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
   "  irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)\n" \
   "  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)\n" \
+  "  cc_prune=[0|1|2] (1)   CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
@@ -735,16 +738,33 @@ void print_short_help(const char *prog);
   "                     error weight. When smax=0, confinement is not computed.\n" \
   "  sort_rows=[0|1]    Sort the rows of H by increasing weight (stable) after\n" \
   "                     reading the input (default: 1 for matrices, finH or fin;\n" \
-  "                     0 for a DEM, fdem).  CC extends a cluster by the columns of\n" \
-  "                     the first row of its syndrome (in row order), so that light\n" \
-  "                     rows first reduce the CC work for matrices with very\n" \
-  "                     different row weights, e.g., 1.7-4x with the hook columns\n" \
-  "                     of an extended CSS distance.  The detectors of a DEM are in\n" \
-  "                     time order, which is better for CC (sorting them made CC\n" \
-  "                     1.3-4x slower): use sort_rows=0 also for matrices exported\n" \
-  "                     from a DEM.  The distance and RW do not depend on the order\n" \
-  "                     of the rows; CC enumerates the same codewords (outC), but\n" \
-  "                     possibly in another order and with other hit counts.\n" \
+  "                     0 for a DEM, fdem).  With cc_prune=0, CC extends a cluster\n" \
+  "                     by the columns of the first row of its syndrome (in row\n" \
+  "                     order), so that light rows first reduce the CC work for\n" \
+  "                     matrices with very different row weights, e.g., 1.7-4x\n" \
+  "                     with the hook columns of an extended CSS distance, while\n" \
+  "                     the detectors of a DEM are in time order, which is better\n" \
+  "                     (sorting them made CC 1.3-4x slower).  With cc_prune=1 or\n" \
+  "                     2, the order of the rows only breaks ties.  The distance\n" \
+  "                     and RW do not depend on the order of the rows; CC finds the\n" \
+  "                     same codewords (outC), possibly in another order (with\n" \
+  "                     cc_prune=0, also with other hit counts).\n" \
+  "  cc_prune=[0|1|2]   The CC search with smax=0 (default: 1).  0: the walk of\n" \
+  "                     the versions before 0.15.0: a cluster is extended by the\n" \
+  "                     columns of the first unsatisfied row of its syndrome, and\n" \
+  "                     a branch is pruned if its syndrome weight exceeds what the\n" \
+  "                     columns left can cancel.  1: branch and bound: it branches\n" \
+  "                     on the unsatisfied row with the fewest available columns,\n" \
+  "                     the columns of the earlier branches are forbidden in the\n" \
+  "                     later ones (each codeword is found once: one CC hit), and\n" \
+  "                     a branch is pruned by lower bounds on the number of columns\n" \
+  "                     needed (an unsatisfied row without available columns, or a\n" \
+  "                     packing of unsatisfied rows with disjoint sets of available\n" \
+  "                     columns).  2: also the coverage and fractional cover bounds\n" \
+  "                     (fewer nodes, more work per node).  All values find the\n" \
+  "                     same codewords and distances (doc/cc_completeness.tex);\n" \
+  "                     with the expert start list, cc_prune=1 and 2 forbid the\n" \
+  "                     columns listed before the start column.\n" \
   "  noscan=[0|1]       Expert option: 1: run CC only at weight w = wmax, skipping\n" \
   "                     the scan over weights w < wmax (default: 0). Only valid for\n" \
   "                     method=2. WARNING: lower weights are not checked, so a\n" \

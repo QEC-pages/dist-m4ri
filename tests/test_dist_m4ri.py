@@ -659,7 +659,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.8" in captured.out
+    assert "0.15.0" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -670,7 +670,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.8" in captured.out
+    assert "0.15.0" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -689,7 +689,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.8" in older_warn
+    assert "expected >= 0.15.0" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1218,6 +1218,51 @@ def test_sort_rows_option(tmp_path, capsys):
         assert "sort_rows=0" in capsys.readouterr().out
         assert dist_m4ri.main([f"finH={S5_H}", "sort_rows=2", "--no-cache"]) == 1
         assert "invalid 'sort_rows=2': sort_rows should be 0 or 1" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_cc_prune_option(tmp_path, capsys):
+    # cc_prune=None leaves the binary's default (1, the branch and bound); 0 / 1 / 2 are passed as cc_prune=N; the
+    # distance and the codewords enumerated (outC) do not depend on it, and with cc_prune=1 or 2 each codeword is found
+    # exactly once (surf_d5 as matrices: with cc_prune=0, codewords with equal columns are found several times)
+    cws = {}
+    for val in (None, 0, 1, 2):
+        out = str(tmp_path / f"cws_{val}.nz")
+        res = dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, threads=2, outC=out, cc_prune=val,
+                                      verbose=True)
+        assert tuple(res) == (5, 5, 0)
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        if val is None:
+            assert "cc_prune=" not in run_line
+        else:
+            assert f"cc_prune={val}" in run_line
+        hits = re.search(r"# codewords accumulated: total=(\d+), min_w=5: cws=\d+, total_hits=(\d+),",
+                         captured.out + captured.err)
+        assert hits, captured.err
+        assert (hits.group(1) == hits.group(2)) == (val != 0)
+        cws[val] = sorted(tuple(cw) for cw in dist_m4ri.read_sparse_vectors(out))
+    assert len(cws[None]) > 1 and cws[None] == cws[0] == cws[1] == cws[2]
+    with pytest.raises(ValueError, match="cc_prune should be 0, 1, or 2"):
+        dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, cc_prune=3)
+    # the compute_*_distance() functions and the CLI pass it on (the cache key does not depend on it)
+    dist_m4ri.clear_distance_cache()
+    try:
+        for val in (0, 2):
+            assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=2, wmax=5, threads=2, cc_prune=val,
+                                                      debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) == 5
+            assert f"cc_prune={val}" in capsys.readouterr().out
+            dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["cc_prune=0"])["cc_prune"] == 0
+        assert dist_m4ri.parse_cli_args(["--cc-prune", "2"])["cc_prune"] == 2
+        assert dist_m4ri.parse_cli_args([])["cc_prune"] is None
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=5", "threads=2", "--cc-prune", "0",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "cc_prune=0" in capsys.readouterr().out
+        assert dist_m4ri.main([f"finH={S5_H}", "cc_prune=3", "--no-cache"]) == 1
+        assert "invalid 'cc_prune=3': cc_prune should be 0, 1, or 2" in capsys.readouterr().err
     finally:
         dist_m4ri.enable_distance_cache()
         dist_m4ri.clear_distance_cache()
