@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.7" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.8" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.14.7" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.14.8" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -927,8 +927,8 @@ if [ "$GOT104" != "$EXP104" ]; then
     FAILED=1
 fi
 GOT104=$("$BIN_FORK" --help maxC | help_outline)
-EXP104=$(printf '%s\n' "Codeword collection and export:" "outC=[file]" "finC=[file]" "maxC=[int]" "dW=[int]" "-" \
-    "$GROUPS104" "codewords")
+EXP104=$(printf '%s\n' "Codeword collection and export:" "outC=[file]" "finC=[file]" "maxC=[int]" "dW=[int]" \
+    "irred=[0|1]" "-" "$GROUPS104" "codewords")
 echo "Running: $BIN_FORK --help maxC (the codewords group)"
 if [ "$GOT104" != "$EXP104" ]; then
     echo "  [FAIL] Got: $GOT104"
@@ -1159,6 +1159,52 @@ for pr in -2 65; do
     assert_output "$BIN_FORK $S5 $RW108 pairs=$pr" 255 "" \
         "invalid 'pairs=$pr': pairs should be -1 \(auto\), 0 \(off\), or 1 to 64 \(random pivot rows of the buckets\)"
 done
+
+# Test 109: irred=1 (the default) records only irreducible codewords, not the union of a codeword and a disjoint nonzero
+# vector with zero syndrome; the surface-code DEM has trivial codewords of weight 3, so that reducible codewords appear
+# from the weight d+3 = 6 on.  The CC rounds w = 3..6 export 21, 100, 356, and 1198 codewords (1300 of weight 6 with
+# irred=0); RW with the pairs (one thread, a fixed seed) finds the same 1675 codewords (with irred=0, also reducible
+# sums of two disjoint circuits); a reducible finC codeword is replaced by an irreducible part (c96H: the union of two
+# disjoint codewords of weight 6), also by dist_m4ri_old; irred is 0 or 1
+CWS109=$(mktemp --suffix=.nz)
+FIN109=$(mktemp --suffix=.nz)
+cnt109() {  # the numbers of codewords of each weight in an .nz file, e.g., "3:21 4:100 "
+    grep -v '^%' "$1" | awk '{n[$1]++} END {for (w in n) printf "%s:%d\n", w, n[w]}' | sort -n | tr '\n' ' '
+}
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=6 dW=3 outC=$CWS109 threads=4 debug=1" 0 \
+    "^3 3 0$" "^# reducible codewords skipped \(irred=1, .*\): [0-9]+ times in CC, 0 times in RW$"
+echo "Running Test 109: the irreducible codewords of weight 3..6 found by CC: $(cnt109 "$CWS109")"
+if [ "$(cnt109 "$CWS109")" != "3:21 4:100 5:356 6:1198 " ]; then
+    echo "  [FAIL] Test 109: expected 3:21 4:100 5:356 6:1198"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=6 dW=3 outC=$CWS109 threads=4 irred=0 debug=1" \
+    0 "^3 3 0$" "irred=0 \(expert option\): reducible codewords are also recorded"
+if [ "$(cnt109 "$CWS109")" != "3:21 4:100 5:356 6:1300 " ]; then
+    echo "  [FAIL] Test 109: irred=0: $(cnt109 "$CWS109")"
+    FAILED=1
+fi
+for ir in 1 0; do
+    assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=3000 min_hits=0 dW=3 threads=1 seed=5 \
+irred=$ir outC=$CWS109 debug=1" 0 "^1 3 3000$" ""
+    N109=$(grep -vc '^%' "$CWS109")
+    echo "Running Test 109: RW with the pairs, irred=$ir: $N109 codewords"
+    if { [ $ir = 1 ] && [ "$N109" != 1675 ]; } || { [ $ir = 0 ] && [ "$N109" -le 1675 ]; }; then
+        echo "  [FAIL] Test 109: RW with irred=$ir exported $N109 codewords"
+        FAILED=1
+    fi
+done
+printf '%%%%NZLIST\n%% the union of two disjoint codewords of weight 6 of c96H\n%s\n' \
+    "12 18 21 25 46 50 59 60 63 64 76 91 93" > "$FIN109"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/c96H.mmx classical=1 finC=$FIN109 threads=1 debug=33" 0 \
+    "^6 6 0$" "min weight 6; 1 reducible codewords replaced by an irreducible part \(irred=1\)"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/c96H.mmx classical=1 finC=$FIN109 threads=1 irred=0 debug=33" 0 \
+    "^6 6 0$" "^# read 1 codewords from .*, total 1, min weight 12$"
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/c96H.mmx classical=1 finC=$FIN109 wmax=6 debug=1" 0 "" \
+    "min weight 6; 1 reducible codewords replaced by an irreducible part \(irred=1\)"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 irred=2" 255 "" \
+    "invalid 'irred=2': irred should be 0 or 1"
+rm -f "$CWS109" "$FIN109"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

@@ -636,26 +636,37 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     yarn_mitten_500, 540, 630.
   - Docs: README (CC section, `start`, help texts in `util_io.h`), `introduction.md`, Python docstrings; version 0.15.0
     in the four files.
-- [ ] **Irreducible codewords only** (codes and DEMs): a codeword which splits into a codeword and a zero-syndrome
-  vector with disjoint supports is not recorded by CC. Test: the columns of $H$ on the support $C$ have rank $|C| - 1$
-  (otherwise a proper subset of $C$ has zero syndrome); a small dense elimination on the at most $|C|\Delta$ rows
-  touched, only for the codewords found.
-  - There is no such filter yet: `nzlist_read()` checks the column range, the merged twins of a DEM, $Hc = 0$, and
-    $Lc \neq 0$.
+- [x] **Irreducible codewords only** (codes and DEMs; 0.14.8, `irred=1` by default): a codeword which splits into a
+  codeword and a zero-syndrome vector with disjoint supports is not recorded. The expert option `irred=0` of the binary
+  records all codewords, as before (the Python CLI ignores it with a warning).
+  - CC (`cc_record()`, both kernels): the columns of $H$ on the support $C$ have rank $|C| - 1$ (otherwise a proper
+    subset of $C$ has zero syndrome); a small dense elimination on the at most $|C|\Delta$ rows touched
+    (`csr_cols_rank()` in `util_m4ri.c`, with a per-thread workspace `cols_ws_t`), only for the codewords found.
+  - RW pairs (`rw_pairs_step()`): the sum of two circuits is reducible iff their supports are disjoint, i.e., iff the
+    weight of the sum is the sum of the weights (free); single RW columns give circuits, which are irreducible; the
+    rows of the experimental `ksub` get the rank test.
+  - `finC` (`nzlist_read()`, also in `dist_m4ri_old`): a reducible codeword is replaced by a nontrivial part (the
+    lighter one if both parts are; `csr_cols_dependency()`, repeated until irreducible), which may lower `dmax`.
+  - `debug&1`: the counts of the reducible codewords skipped by CC and RW, and of the `finC` codewords replaced.
+  - Regression data (`scratch/cc_bnb/m0/`: `m0.sh`, the outputs of 0.14.7 for 16 deterministic runs of CC, RW, and
+    `method=3` on codes and DEMs, and `verify_m1.sh`): the same results in all 16 runs; with `irred=0`, the same
+    codeword sets as 0.14.7; with `irred=1`, exactly the reducible codewords removed (checked with `cwcheck`, which
+    tests each codeword): surf_d3 DEM with `dW=3`: 102 of 1777 (CC), 848 of 2523 (RW with pairs, 3000 steps; none
+    without pairs), 255 of 1930 (`method=3`), so that all three now give the same 1675 codewords; bb_72 DEM, RW with
+    `dW=3`, 1000 steps: 15024 of 142284. None for the codes (CC at $w \le d + 2$) or at $w \le d + 2$ for the DEMs.
+  - Before 0.14.8, there was no such filter: `nzlist_read()` checked the column range, the merged twins of a DEM,
+    $Hc = 0$, and $Lc \neq 0$.
   - vecdec (`~/prog/vecdec/src/vecdec.c`) has two filters: `do_hash_decomp()` (after reading `finC`) splits each
     codeword into its connected components in the Tanner graph (`ufl_decompose()` in `dec_pre.c`), and replaces a
     reducible one (several components, or a trivial one) by its components with a nonzero syndrome of $L$;
     `do_hash_remove_reduc()` (after the RIS search) removes the codewords which contain a lighter stored codeword
     (at least `dx` = 1, or 3 for a DEM, lighter). CC codewords are connected by construction, so that the component
     test never fires on them: in the surf_d3 DEM, all the reducible codewords found by CC are connected (204, 2102,
-    11552 at $w = 6, 7, 8$). The subset test finds them only if their lighter part is stored. Hence the rank test for
-    CC and the RW pairs, and vecdec's replacement by the nontrivial parts for `finC`.
+    11552 hits at $w = 6, 7, 8$). The subset test finds them only if their lighter part is stored. Hence the rank
+    test for CC and the RW pairs, and vecdec's replacement by the nontrivial parts for `finC`.
   - Minimum-weight codewords are irreducible; both kernels find every irreducible codeword (each proper prefix of its
     path has nonzero syndrome), but only some reducible ones, depending on the path: from $w = d + w_0$ on, with $w_0$
     the weight of the lightest zero-syndrome vector (3 for circuit DEMs).
   - Prototype (`bb_irr=1`): with the filter, both kernels give the same codewords at every weight (surf_d3 DEM,
     $w = 3, \dots, 8$), each hit once; without it, the sets differ from $w = 6$ on by reducible ones only (e.g., 204
     reducible hits at $w = 6$ for 0.14.7, 66 for the branch and bound).
-  - Also for `finC` (keep the lightest logical part: a vector $x \neq 0$ of the kernel of $H$ on $C$ with
-    $Lx \neq 0$, which may lower `dmax`) and the RW pairs (the sum of two circuits with disjoint supports is
-    reducible); single RW columns give circuits, which are irreducible.

@@ -606,7 +606,7 @@ def test_cli_morehelp_topic(capsys):
     assert dist_m4ri.main(["--morehelp", "maxC"]) == 0
     assert entries(capsys.readouterr().out) == (
         ["Codeword collection and export:", groups],
-        ["--cws", "outC=FILE", "finC=FILE", "maxC=N", "dW=N", "expand=0|1", "codewords"])
+        ["--cws", "outC=FILE", "finC=FILE", "maxC=N", "dW=N", "irred=0|1", "expand=0|1", "codewords"])
     # several topics (case-insensitive, aliases): in the order of the full help, each section header once
     assert dist_m4ri.main(["--morehelp=SEED,method,v"]) == 0
     assert entries(capsys.readouterr().out) == (["Calculation method:", "General options:"],
@@ -659,7 +659,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.7" in captured.out
+    assert "0.14.8" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -670,7 +670,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.7" in captured.out
+    assert "0.14.8" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -689,7 +689,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.7" in older_warn
+    assert "expected >= 0.14.8" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1467,11 +1467,12 @@ def test_start_list_trust_after_calculation_css(tmp_path):
 
 def test_cli_start_trust_start_and_disabled_options(capsys):
     args = dist_m4ri.parse_cli_args(
-        ["finH=h.mtx", "start=5,1,1", "--trust-start", "noscan=1", "cbeg=2", "cend=3"]
+        ["finH=h.mtx", "start=5,1,1", "--trust-start", "noscan=1", "cbeg=2", "cend=3", "irred=0"]
     )
     assert args["start"] == [1, 5]
     assert args["trust_start"] is True
-    assert (args["noscan"], args["cbeg"], args["cend"]) == (1, 2, 3)
+    assert (args["noscan"], args["cbeg"], args["cend"], args["irred"]) == (1, 2, 3, 0)
+    assert dist_m4ri.parse_cli_args([])["irred"] is None
     assert dist_m4ri.parse_cli_args(["trust_start=0"])["trust_start"] is False
     assert dist_m4ri.parse_cli_args(["trust-start=1"])["trust_start"] is True
     assert dist_m4ri.parse_cli_args(["--trust-start=yes"])["trust_start"] is True
@@ -1487,14 +1488,21 @@ def test_cli_start_trust_start_and_disabled_options(capsys):
         # Disabled options are ignored with a warning; the start list gives the distance with a warning
         ret = dist_m4ri.main([
             f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=7", "noscan=1", "cbeg=30",
-            "start=0,41", "--no-cache", "threads=2"
+            "start=0,41", "--no-cache", "threads=2", "irred=0"
         ])
         assert ret == 0
         captured = capsys.readouterr()
         assert "5 5 0 (exact)" in captured.out
         assert "noscan=1 is disabled in the Python interface" in captured.err
         assert "cbeg=30 is disabled in the Python interface" in captured.err
+        assert "irred=0 is disabled in the Python interface" in captured.err
         assert "WARNING: start=0,41 (expert option)" in captured.err
+        # irred=1 (the binary's default) is accepted silently
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=7", "--no-cache", "irred=1"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "5 5 0 (exact)" in captured.out
+        assert "irred" not in captured.err
     finally:
         dist_m4ri.enable_distance_cache()
 

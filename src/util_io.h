@@ -86,6 +86,9 @@ typedef struct{
   int dW;
   char *finC;
   char *outC;
+  int irred; /* 1 (default): only irreducible codewords are recorded, i.e., not the union of a codeword and a disjoint
+              * nonzero zero-syndrome vector (CC codewords and RW pairs are filtered, finC codewords are replaced by an
+              * irreducible nontrivial part); 0: expert, all codewords as before 0.14.8 */
   cw_vec_t *codewords; /* hash of codewords: the collection window (weight up to min_w + dW with outC or maxC)
                           and the representative set for `min_hits`, see codeword_add_maybe() */
   long long int num_cws; /* number of codewords in hash */
@@ -530,7 +533,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.14.7"
+#define DIST_M4RI_VERSION "0.14.8"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -547,7 +550,7 @@ void print_short_help(const char *prog);
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, sort_rows,\n" \
   "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
   "  ksub, kwin (win), win_mode, win_hyb, pairs, min_hits, cov_cws, refresh,\n" \
-  "  finC, outC, maxC, dW, seed, debug\n\n" \
+  "  finC, outC, maxC, dW, irred, seed, debug\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -596,6 +599,7 @@ void print_short_help(const char *prog);
   "  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)\n" \
   "  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48\n" \
   "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
+  "  irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)\n" \
   "  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
@@ -766,14 +770,28 @@ void print_short_help(const char *prog);
   "  outC=[file]        Export found codewords of weight up to min_w + dW (min_w:\n" \
   "                     minimum weight found) to file in .nz list format.  In\n" \
   "                     method=2/3, once dmin = dmax = d, CC rounds w = d..d+dW\n" \
-  "                     enumerate all such codewords (unless the timeout is hit;\n" \
-  "                     for a DEM, up to the choice of equal columns: see merge).\n" \
+  "                     enumerate all such irreducible codewords (see irred; unless\n" \
+  "                     the timeout is hit; for a DEM, up to the choice of equal\n" \
+  "                     columns: see merge).\n" \
   "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
+  "                     A reducible codeword is replaced by an irreducible part with\n" \
+  "                     a nonzero syndrome of L (see irred).\n" \
   "  maxC=[int]         Maximum number of codewords to collect (default: 0).\n" \
   "                     0 means collect all valid codewords found up to wmax or stop\n" \
   "                     flag. If maxC > 0, halts when maxC codewords are collected.\n" \
   "  dW=[int]           Extra weight window above minimum distance (default: 0).\n" \
-  "                     Collects codewords with weight up to min_w + dW.\n\n" \
+  "                     Collects codewords with weight up to min_w + dW.\n" \
+  "  irred=[0|1]        Expert option: 1 (default) records only irreducible\n" \
+  "                     codewords: a codeword which is the union of a codeword and a\n" \
+  "                     disjoint nonzero vector with zero syndrome (e.g., a trivial\n" \
+  "                     weight-3 vector of a circuit DEM, from weight d+3 on) is not\n" \
+  "                     recorded.  Minimum-weight codewords are always irreducible.\n" \
+  "                     Tested for the CC codewords (the rank of their columns of\n" \
+  "                     H) and for the RW pairs (the sum of two disjoint vectors\n" \
+  "                     with zero syndrome is skipped); a finC codeword is replaced\n" \
+  "                     by an irreducible part with a nonzero syndrome of L.\n" \
+  "                     0: all codewords are recorded, as before version 0.14.8.\n" \
+  "                     (dist_m4ri_old: finC only.)\n\n" \
   "Execution, multithreading, and timing:\n" \
   "  threads=[int]      Maximum number of worker threads to use (default: 0 = all\n" \
   "                     logical CPUs available, i.e., the CPU affinity mask, e.g.,\n" \
@@ -914,7 +932,7 @@ void print_short_help(const char *prog);
   "  bounds             dmin, dmax, dstop, dexp, wmax\n" \
   "  dem                fdem, pmin, merge, drop, outD\n" \
   "  matrices, matrix   finH, finG, finL, fin, classical\n" \
-  "  codewords          outC, finC, maxC, dW\n" \
+  "  codewords          outC, finC, maxC, dW, irred\n" \
   "  threading          threads, nothrottle, chunk_size\n" \
   "  expert             noscan, start, cbeg, cend\n" \
   "  experimental       ksub, refresh\n\n" \

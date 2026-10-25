@@ -142,6 +142,19 @@ typedef struct {
   word *mask; /**< cols * kw words: the mask of column j starts at mask[j * kw] */
 } colmask_t;
 
+/**
+ * Workspace of csr_cols_rank() and csr_cols_dependency() (one per thread, see cols_ws_init()): the rows of H touched
+ * by a set of columns are numbered in the order found (`rmap`, all -1 between the calls), and the columns are stored as
+ * dense bit vectors over these rows (`bits`, reallocated as needed).
+ */
+typedef struct {
+  int m;       /**< number of rows of H (the size of rmap and rlist) */
+  int *rmap;   /**< row -> its index among the rows touched (-1: not touched) */
+  int *rlist;  /**< the rows touched, in the order found */
+  word *bits;  /**< the dense bit vectors of the columns (cap words) */
+  size_t cap;  /**< number of words allocated in bits */
+} cols_ws_t;
+
 #define SORT_NAME rci
 #define SORT_TYPE rci_t
 #define SORT_CMP(x, y) ((x) - (y))
@@ -656,6 +669,51 @@ static inline int colmask_syndrome_non_zero(const colmask_t * const cm, const in
    * @return Always returns NULL.
    */
   colmask_t * colmask_free(colmask_t *cm);
+
+  /**
+   * @brief Allocate the workspace of csr_cols_rank() and csr_cols_dependency() for a matrix H with m rows.
+   * @param m Number of rows of H.
+   * @return Newly allocated workspace (free with cols_ws_free()).
+   */
+  cols_ws_t * cols_ws_init(const int m);
+
+  /**
+   * @brief Free the workspace allocated by cols_ws_init().
+   * @param ws Workspace (may be NULL).
+   * @return Always returns NULL.
+   */
+  cols_ws_t * cols_ws_free(cols_ws_t *ws);
+
+  /**
+   * @brief Rank of a set of columns of a sparse binary matrix H.
+   *
+   * A dense Gaussian elimination of the cnt columns restricted to the rows they touch (duplicate entries cancel mod
+   * 2).  A nonempty codeword C (H 1_C = 0) is irreducible, i.e., it is not the union of two disjoint nonempty
+   * codewords (no nonempty proper subset of C has zero syndrome), if and only if the rank of its columns is |C| - 1.
+   *
+   * @param HT The transpose of H in CSR form (row j: the rows of the column j of H).
+   * @param cnt Number of columns.
+   * @param cols The columns (distinct).
+   * @param ws Workspace for H (see cols_ws_init()).
+   * @return The rank of the columns.
+   */
+  int csr_cols_rank(const csr_t * const HT, const int cnt, const int cols[], cols_ws_t * const ws);
+
+  /**
+   * @brief A nonempty proper subset of a set of columns of H with zero sum, if there is one.
+   *
+   * The kernel of the columns restricted to the rows they touch, from a Gaussian elimination which tracks the
+   * combinations of the columns: a kernel vector other than 0 and the all-ones vector, if the kernel has one.
+   *
+   * @param HT The transpose of H in CSR form (row j: the rows of the column j of H).
+   * @param cnt Number of columns.
+   * @param cols The columns (distinct).
+   * @param ws Workspace for H (see cols_ws_init()).
+   * @param sub Output: the columns of the subset, in the order of cols (at most cnt - 1 of them).
+   * @return The size of the subset, or 0 if there is none (e.g., for an irreducible codeword).
+   */
+  int csr_cols_dependency(const csr_t * const HT, const int cnt, const int cols[], cols_ws_t * const ws,
+                          int sub[]);
 
   /**
    * @brief Construct a column permutation with a localized window at the front.

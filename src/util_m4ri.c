@@ -7,6 +7,8 @@
 #include <m4ri/m4ri.h>
 #include <m4ri/mzd.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include "mmio.h"
 
@@ -971,6 +973,143 @@ colmask_t * colmask_free(colmask_t *cm) {
     free(cm);
   }
   return NULL;
+}
+
+cols_ws_t * cols_ws_init(const int m) {
+  cols_ws_t *ws = calloc(1, sizeof(cols_ws_t));
+  if (!ws) ERROR("memory allocation");
+  ws->m = m;
+  ws->rmap = malloc((size_t)(m > 0 ? m : 1) * sizeof(int));
+  ws->rlist = malloc((size_t)(m > 0 ? m : 1) * sizeof(int));
+  if (!ws->rmap || !ws->rlist) ERROR("memory allocation");
+  for (int r = 0; r < m; r++) ws->rmap[r] = -1;
+  return ws;
+}
+
+cols_ws_t * cols_ws_free(cols_ws_t *ws) {
+  if (ws) {
+    free(ws->rmap);
+    free(ws->rlist);
+    free(ws->bits);
+    free(ws);
+  }
+  return NULL;
+}
+
+/* The rows of H touched by the columns cols[0..cnt-1], numbered in ws->rmap (ws->rlist: the rows); returns their
+ * number.  The caller restores rmap with cols_ws_clear(). */
+static int cols_ws_rows(const csr_t * const HT, const int cnt, const int cols[], cols_ws_t * const ws) {
+  int nr = 0;
+  for (int i = 0; i < cnt; i++) {
+    for (int k = HT->p[cols[i]]; k < HT->p[cols[i] + 1]; k++) {
+      const int r = HT->i[k];
+      if (ws->rmap[r] < 0) {
+        ws->rmap[r] = nr;
+        ws->rlist[nr++] = r;
+      }
+    }
+  }
+  return nr;
+}
+
+static void cols_ws_clear(cols_ws_t * const ws, const int nr) {
+  for (int i = 0; i < nr; i++) ws->rmap[ws->rlist[i]] = -1;
+}
+
+/* cnt rows of `stride` words in ws->bits, set to zero; the column i in the first words of row i (its bits: the rows
+ * touched, see cols_ws_rows()) */
+static word * cols_ws_matrix(const csr_t * const HT, const int cnt, const int cols[], cols_ws_t * const ws,
+                             const size_t stride) {
+  const size_t num = (size_t)cnt * stride;
+  if (num > ws->cap) {
+    free(ws->bits);
+    ws->cap = (num > 2 * ws->cap) ? num : 2 * ws->cap;
+    ws->bits = malloc(ws->cap * sizeof(word));
+    if (!ws->bits) ERROR("memory allocation");
+  }
+  word * const M = ws->bits;
+  if (num > 0) memset(M, 0, num * sizeof(word));
+  for (int i = 0; i < cnt; i++) {
+    for (int k = HT->p[cols[i]]; k < HT->p[cols[i] + 1]; k++) {
+      const int b = ws->rmap[HT->i[k]];
+      M[(size_t)i * stride + (b >> 6)] ^= (word)1 << (b & 63); /* duplicate entries cancel */
+    }
+  }
+  return M;
+}
+
+/* Gaussian elimination of the cnt rows of M (`stride` words each) on their first nr bits; returns the rank, the
+ * independent rows first.  Rows rank..cnt-1 are then zero in the first nr bits (the other words of the rows, e.g.,
+ * the tracked combinations, are transformed alike). */
+static int cols_ws_eliminate(word * const M, const int cnt, const int nr, const size_t stride) {
+  int rank = 0;
+  for (int b = 0; b < nr && rank < cnt; b++) {
+    const size_t wb = (size_t)(b >> 6);
+    const word mb = (word)1 << (b & 63);
+    int piv = -1;
+    for (int i = rank; i < cnt; i++) {
+      if (M[(size_t)i * stride + wb] & mb) {
+        piv = i;
+        break;
+      }
+    }
+    if (piv < 0) continue;
+    word * const pr = M + (size_t)rank * stride;
+    if (piv != rank) {
+      word * const qr = M + (size_t)piv * stride;
+      for (size_t x = 0; x < stride; x++) {
+        const word t = pr[x];
+        pr[x] = qr[x];
+        qr[x] = t;
+      }
+    }
+    /* (the rows rank.. are zero in the bits below b, so that the words below wb need no update) */
+    for (int i = rank + 1; i < cnt; i++) {
+      word * const ri = M + (size_t)i * stride;
+      if (ri[wb] & mb)
+        for (size_t x = wb; x < stride; x++) ri[x] ^= pr[x];
+    }
+    rank++;
+  }
+  return rank;
+}
+
+int csr_cols_rank(const csr_t * const HT, const int cnt, const int cols[], cols_ws_t * const ws) {
+  if (cnt <= 0) return 0;
+  const int nr = cols_ws_rows(HT, cnt, cols, ws);
+  const size_t nw = (size_t)((nr + 63) >> 6);
+  int rank = 0;
+  if (nw > 0) {
+    word * const M = cols_ws_matrix(HT, cnt, cols, ws, nw);
+    rank = cols_ws_eliminate(M, cnt, nr, nw);
+  }
+  cols_ws_clear(ws, nr);
+  return rank;
+}
+
+int csr_cols_dependency(const csr_t * const HT, const int cnt, const int cols[], cols_ws_t * const ws, int sub[]) {
+  if (cnt <= 1) return 0;
+  const int nr = cols_ws_rows(HT, cnt, cols, ws);
+  const size_t nw = (size_t)((nr + 63) >> 6), tw = (size_t)((cnt + 63) >> 6);
+  const size_t stride = nw + tw; /* the column on the rows touched, then the combination of the columns */
+  word * const M = cols_ws_matrix(HT, cnt, cols, ws, stride);
+  cols_ws_clear(ws, nr);
+  for (int i = 0; i < cnt; i++) M[(size_t)i * stride + nw + (size_t)(i >> 6)] |= (word)1 << (i & 63);
+  const int rank = cols_ws_eliminate(M, cnt, nr, stride);
+  /* the rows rank..cnt-1: a basis of the kernel (their combinations have zero sums); one of them is neither zero nor
+   * the all-ones vector if the kernel has dimension at least 2 */
+  for (int i = rank; i < cnt; i++) {
+    const word * const t = M + (size_t)i * stride + nw;
+    int k = 0;
+    for (int j = 0; j < cnt; j++)
+      if ((t[j >> 6] >> (j & 63)) & 1) k++;
+    if (k == 0 || k == cnt) continue;
+    k = 0;
+    for (int j = 0; j < cnt; j++)
+      if ((t[j >> 6] >> (j & 63)) & 1) sub[k++] = cols[j];
+    return k;
+  }
+  return 0;
 }
 
 static inline uint64_t util_splitmix64(uint64_t *state) {

@@ -32,7 +32,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.14.7"
+__version__ = "0.14.8"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -1074,6 +1074,8 @@ def check_finc_outc(finC: Optional[str], outC: Optional[str], verbose: bool = Fa
 # - noscan, cbeg, cend: disabled in the Python interface (ignored with a warning to stderr); use the dist_m4ri
 #   binary directly (noscan: CC only at w=wmax; cbeg/cend: start-column range for split multi-run use, where
 #   each column is eventually listed in one of the runs).
+# - irred (since version 0.14.8): the CLI ignores irred=0 with a warning (see _warn_cli_conflicts()); the binary
+#   always runs with its default irred=1, so that the codewords recorded (and cached) are irreducible.
 # ---------------------------------------------------------------------------------------------------------------
 
 def _normalize_start_list(start: Any) -> Optional[List[int]]:
@@ -1474,7 +1476,8 @@ def run_dist_m4ri(
             circuit DEMs while the upper bound is far above the distance).  The pairs find the minimum-weight
             codewords of circuit DEMs 7-25 times faster (per wall time) and lighter codewords of codes with a large
             distance.  With debug & 1, the binary prints the pairs checked per step and the codewords found by pairs
-            and by single columns (also in _last_run_stats).
+            and by single columns (also in _last_run_stats).  The pairs of disjoint codewords are skipped (their sum
+            is reducible: the binary records only irreducible codewords, its default irred=1).
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -3799,7 +3802,8 @@ def compute_classical_distance(
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
-        dW: Extra weight window above dmin to collect codewords.
+        dW: Extra weight window above dmin to collect codewords (only irreducible ones: not the union of a
+            codeword and a disjoint nonzero vector with zero syndrome; the binary's default irred=1).
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
         outC: Output file to save codewords (NZLIST format).
@@ -3960,7 +3964,8 @@ def compute_quantum_distance(
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
-        dW: Extra weight window above dmin to collect codewords.
+        dW: Extra weight window above dmin to collect codewords (only irreducible ones: not the union of a
+            codeword and a disjoint nonzero vector with zero syndrome; the binary's default irred=1).
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
         outC: Output file to save codewords (NZLIST format).
@@ -4167,7 +4172,8 @@ def compute_css_distance(
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
-        dW: Extra weight window above dmin to collect codewords.
+        dW: Extra weight window above dmin to collect codewords (only irreducible ones: not the union of a
+            codeword and a disjoint nonzero vector with zero syndrome; the binary's default irred=1).
         maxC: Maximum number of codewords to collect.
         finC: Input file with initial codewords.
         outC: Output file to save codewords (NZLIST format).
@@ -4641,7 +4647,8 @@ def compute_dem_distance(
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
             subspace dimension sampled from ker(H) in RW (default: 0, full-matrix RW).
-        dW: Extra weight window above dmin to collect codewords.
+        dW: Extra weight window above dmin to collect codewords (only irreducible ones: not the union of a
+            codeword and a disjoint nonzero vector with zero syndrome; the binary's default irred=1).
         maxC: Maximum number of codewords to collect (with expand=True, also the maximum number of codewords of the
             expanded list returned and written to outC; a warning is printed to stderr if some are dropped).
         pmin: Probability cutoff for error mechanisms in DEM.
@@ -5197,6 +5204,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "out_reduced": None,
         "sort_rows": None,
         "noscan": 0,
+        "irred": None,
         "classical": -1,
         "seed": 0,
         "debug": 0,
@@ -5550,6 +5558,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                     _add_help_topic(val)  # help=TOPIC: the same as morehelp=TOPIC
             elif key_lower == "noscan":
                 args["noscan"] = int(val)
+            elif key_lower == "irred":  # (disabled: ignored with a warning, see _warn_cli_conflicts())
+                args["irred"] = int(val)
             elif key_lower == "classical":
                 args["classical"] = int(val)
             elif key_lower == "seed":
@@ -5668,7 +5678,7 @@ Allowed parameters:
   --out-model, method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax,
   timeout, threads, nothrottle, chunk_size (batch), ksub, kwin (win), win_mode,
   win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, cbeg, cend,
-  finC, outC, maxC, expand, dW, seed, debug, solver, cache, --no-cache,
+  finC, outC, maxC, expand, dW, irred, seed, debug, solver, cache, --no-cache,
   --verbose, --cws, --trust-start, sort_rows
 
 Help options:
@@ -5738,7 +5748,7 @@ Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
   start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
-  noscan, cbeg, cend    Disabled in Python (ignored with a warning); use the dist_m4ri binary
+  noscan, cbeg, cend    Disabled in Python (ignored with a warning; also irred=0): use the dist_m4ri binary
   sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
   --simple, --full      Disabled (ignored with a warning): the DEM has all detectors (see drop)
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
@@ -6065,17 +6075,26 @@ Codeword collection and export:
   --cws                 Collect and display non-trivial minimum-weight codewords.
   outC=FILE             Export found codewords of weight up to min_w + dW (min_w: minimum weight
                         found) to file in .nz format.  In method=2/3, once the distance d is
-                        known, CC rounds w = d..d+dW enumerate all such codewords (unless the
-                        timeout is hit; for a DEM, up to the choice of equal columns: see merge).
+                        known, CC rounds w = d..d+dW enumerate all such irreducible codewords
+                        (see irred; unless the timeout is hit; for a DEM, up to the choice of
+                        equal columns: see merge).
                         In CSS mode, automatically saves X-codewords to FILE_X.nz and
                         Z-codewords to FILE_Z.nz.  The codewords of the run are merged with the
-                        cached ones; with finC=FILE (the same file), those already in FILE are kept.
+                        cached ones; with finC=FILE (the same file), those already in FILE are kept
+                        (also reducible ones recorded before version 0.14.8).
   finC=FILE             Import initial candidate codewords from file in .nz format.
-                        In CSS mode, automatically resolves FILE_X.nz and FILE_Z.nz.
+                        In CSS mode, automatically resolves FILE_X.nz and FILE_Z.nz.  The binary
+                        replaces a reducible codeword by an irreducible part (see irred).
   maxC=N                Maximum number of codewords to collect (default: 0 = unlimited); with
                         expand=1, also the maximum number of codewords of the expanded list.
   dW=N                  Extra weight window above minimum distance to collect codewords
                         (w <= min_w + dW) (default: 0).
+  irred=0|1             Disabled in the Python interface: irred=0, an expert option of the
+                        dist_m4ri binary, is ignored with a warning to stderr.  Only irreducible
+                        codewords are recorded (irred=1, the default of the binary): a codeword
+                        which is the union of a codeword and a disjoint nonzero vector with zero
+                        syndrome (e.g., a trivial weight-3 vector of a circuit DEM, from weight
+                        d+3 on) is not.  Minimum-weight codewords are always irreducible.
   expand=0|1            Python only, for a DEM: list each codeword found once for every choice
                         among equal columns, which the binary merges (see merge; default: 0).  The
                         binary and the cache keep the merged list.  With dW <= 1, the expanded list
@@ -6127,7 +6146,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   stim                  fdem, basis, --rounds, --out-dir, --out-dem, --out-stim, --p-noise,
                         --force-noise, --model-lb, --model-minority, --out-model
   matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical
-  codewords             --cws, outC, finC, maxC, dW, expand
+  codewords             --cws, outC, finC, maxC, dW, irred, expand
   threading             threads, nothrottle, chunk_size
   cache                 cache, --no-cache, --trust-start
   expert                start, --trust-start, noscan
@@ -6266,12 +6285,16 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
     Writes warnings to stderr for the CLI inputs which are ignored.  The input is selected in the order fdem (a DEM or
     a Stim circuit), Hx / Hz (a CSS code), and finH / finG / finL / fin (one sector of a quantum code, or a classical
     code); fin=PREFIX supplies only the missing finH (PREFIX + 'X.mtx') and finG (PREFIX + 'Z.mtx', unless finL).  The
-    disabled options --simple and --full always give a warning (see _warn_disabled_simple_full()).
+    disabled options --simple and --full always give a warning (see _warn_disabled_simple_full()), and so does the
+    expert option irred of the dist_m4ri binary, unless irred=1 (the codewords recorded are always irreducible).
     """
     def given(*keys: str) -> List[str]:
         return [k for k in keys if args.get(k) is not None]
 
     _warn_disabled_simple_full(args.get("simple"), args.get("full"), cli=True)  # (not passed on)
+    if args.get("irred") is not None and args["irred"] != 1:  # (not passed on: the binary's default irred=1)
+        sys.stderr.write(f"# Warning: irred={args['irred']} is disabled in the Python interface (ignored: only "
+                         f"irreducible codewords are recorded); use the dist_m4ri binary directly\n")
     stim_opts = [opt for opt, on in (("basis=", args.get("basis") is not None),
                                      ("--out-stim", args.get("out_stim") is not None),
                                      ("--p-noise", args.get("p_noise") is not None),

@@ -33,7 +33,7 @@ any unsatisfied row, forbidden sets, and admissible bounds}
 \begin{abstract}
 The connected-cluster (CC) algorithm of Dumer, Kovalev, and Pryadko~\cite{DKP17} certifies lower bounds on the
 distance by enumerating irreducible clusters: starting from a column of the parity-check matrix, a cluster is extended,
-one column at a time, by a column of an unsatisfied row. Up to version 0.14.7, \ttt{dist\_m4ri} always extends a
+one column at a time, by a column of an unsatisfied row. Up to version 0.14.8, \ttt{dist\_m4ri} always extends a
 cluster by the columns of the \emph{first} unsatisfied row in row order. We formulate the modified order of the
 branch-and-bound search of Ref.~\cite{LOMKZ26} (App.~B), used in Ref.~\cite{Lee26} (App.~C.4): branching on an
 \emph{arbitrary} unsatisfied row, in particular on the one with the fewest available columns; a \emph{forbidden set}
@@ -219,10 +219,10 @@ In step~3(a), the columns $v_1,\dots,v_{i-1}$ are forbidden in the branch $i$ wh
 
 \paragraph{Instances.}
 \begin{itemize}
-  \item \emph{The current order} (\ttt{cc\_walk()} and \ttt{start\_CC\_recurs\_mt()} in \ttt{dist\_m4ri}~0.14.7,
-    the irreducible-cluster principle of~\cite{DKP17}): $\rho_{\rm first}(S,F)=\min U(S)$, the first unsatisfied row
-    in the row order of $H$ (rows sorted by weight with \ttt{sort\_rows=1}); $\varepsilon=0$; $\beta=\beta_1$ (tested
-    before a child is searched, which is the same as step~1 of the child); the columns in increasing order; and
+  \item \emph{The current order} (\ttt{cc\_walk()} and \ttt{start\_CC\_recurs\_mt()} in \ttt{dist\_m4ri}~0.14.8,
+    the principle of irreducible clusters of~\cite{DKP17}): $\rho_{\rm first}(S,F)=\min U(S)$, the first unsatisfied
+    row in the row order of $H$ (rows sorted by weight with \ttt{sort\_rows=1}); $\varepsilon=0$; $\beta=\beta_1$
+    (tested before a child is searched, which is the same as step~1 of the child); the columns in increasing order; and
     $F_0=\{u\in[n]:u<v\}$, i.e., clusters grow by columns larger than the start column.
   \item \emph{The branch and bound} of~\cite{LOMKZ26} (\ttt{cc\_prune=1}): $\rho_{\min}(S,F)$ is an unsatisfied row
     with the fewest available columns, $|A_r(S,F)|$ minimal (ties broken by the row order); $\varepsilon=1$; and
@@ -364,7 +364,8 @@ $\varepsilon$. If every reported set $R$ is accepted only if $\rank H_R=|R|-1$ (
 accepted sets of the round $w$ are exactly the irreducible codewords of weight $w$ (Corollary~\ref{cor:roots}),
 independently of the choice rule and the orderings, and with $\varepsilon=1$ each of them is accepted exactly once:
 the CC search contributes exactly one hit to each codeword it finds. The test costs a Gaussian elimination of $|R|$
-columns restricted to the at most $|R|\Delta$ rows they touch, and it is applied only to the reported sets.
+columns restricted to the at most $|R|\Delta$ rows they touch, and it is applied only to the reported sets. Since
+version 0.14.8, \ttt{dist\_m4ri} applies it to every codeword found by CC (the default \ttt{irred=1}).
 \end{remark}
 
 \begin{proposition}[start lists]\label{prop:start}

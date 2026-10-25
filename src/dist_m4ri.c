@@ -46,6 +46,9 @@
  * cov_cws lowest-weight codewords for the QDistRnd-style `min_hits` stopping criterion.  With outC or maxC, RW does not
  * end the run when the bounds coincide (or on wmin); in method=3 with outC, the CC rounds w = d..d+dW then enumerate
  * all codewords to export.  At the end (debug&1), non-uniform hit counts are reported (codeword_hit_check()).
+ * With irred=1 (the default), only irreducible codewords are recorded, i.e., not the union of a codeword and a disjoint
+ * nonzero zero-syndrome vector: the CC codewords are tested by the rank of their columns (cw_irreducible()), and the RW
+ * pairs of disjoint circuits are skipped (rw_pairs_step()); single RW candidates are circuits, hence irreducible.
  *
  * Timing model (method=2, 3): the CC work of a round is measured as the total CC thread time, and the work of the
  * next round is extrapolated with the growth factor of the last two rounds.  With a timeout, a CC round predicted not
@@ -228,6 +231,10 @@ typedef struct {
 
   /* Codeword synchronization */
   pthread_mutex_t cw_mutex;
+  /* irred=1: the reducible codewords not recorded (the union of a codeword and a disjoint nonzero zero-syndrome
+   * vector), found by CC and by RW (pairs of disjoint circuits, ksub rows) */
+  atomic_llong cw_red_cc;
+  atomic_llong cw_red_rw;
 
   /* Subspace sketching (ksub) state */
   mzd_t *N_global;
@@ -297,6 +304,7 @@ typedef struct worker_arg {
   distfork_ctx_t *ctx;
   int tid;
   int min_swei[MAX_W];
+  cols_ws_t *irr_ws; /* irred=1: the workspace of the test of the CC (and ksub RW) codewords, see cw_irreducible() */
 } worker_arg_t;
 
 /* A CC round at weight w hands out the work units u = beg*R .. (end+1)*R-1 one at a time, where beg..end are the start
@@ -378,11 +386,26 @@ static inline void ctx_update_feed_limit(distfork_ctx_t * const ctx) {
   }
 }
 
+/* irred=1: is the codeword of the `cnt` columns `vec` irreducible, i.e., not the union of a codeword and a disjoint
+ * nonzero zero-syndrome vector?  Iff the rank of its columns of H is cnt - 1 (see csr_cols_rank()).  Always true with
+ * irred=0. */
+static inline bool cw_irreducible(const distfork_ctx_t * const ctx, cols_ws_t * const ws, const int cnt,
+                                  const int vec[]) {
+  if (!ctx->p->irred || !ws || cnt < 2) return true;
+  return csr_cols_rank(ctx->mHT_cc, cnt, vec, ws) == cnt - 1;
+}
+
 /* Record the CC codeword `err` (sorted columns, nonzero syndrome of L) found by worker `warg`, and update the upper
- * bound; returns true if the run is to stop (the first codeword without outC and maxC, or maxC codewords) */
+ * bound; returns true if the run is to stop (the first codeword without outC and maxC, or maxC codewords).  With
+ * irred=1, a reducible codeword is not recorded (counted in `cw_red_cc`); the CC search finds every irreducible
+ * codeword, but only some reducible ones, from the weight d + 3 on for a circuit DEM (doc/cc_completeness.tex). */
 static __attribute__((noinline)) bool cc_record(distfork_ctx_t * const ctx, const worker_arg_t * const warg,
                                                 const one_vec_t * const err) {
   params_t * const p = ctx->p;
+  if (!cw_irreducible(ctx, warg->irr_ws, err->wei, err->vec)) {
+    atomic_fetch_add_explicit(&ctx->cw_red_cc, 1, memory_order_relaxed);
+    return false;
+  }
   bool stop = false;
   pthread_mutex_lock(&ctx->cw_mutex);
   p->codewords = codeword_add_maybe(p, err->vec, err->wei, CW_SRC_OTHER);
@@ -1225,7 +1248,9 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
   /* with one row of L (known syndromes), the other columns have the same syndrome: only their pairs with the columns
    * with zero syndromes */
   const bool other_pairs = (nl != 1);
+  const bool irred = (p->irred != 0);
   long long int nchk = 0, nhits = 0, nvis = 0, next_poll = RW_PAIRS_POLL; /* nvis: the pairs visited, also skipped */
+  long long int nred = 0; /* irred=1: the pairs of disjoint circuits skipped (reducible sums) */
   for (int b0 = 0; b0 < K;) {
     const uint64_t bkey = srt[b0] >> sh_key;
     int b1 = b0 + 1;
@@ -1258,7 +1283,8 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
         }
         const int y0 = y;
         for (; y < b1; y++) {
-          if ((int)((srt[y] >> ib) & wmask) - wx > lx) break;
+          const int wy = (int)((srt[y] >> ib) & wmask);
+          if (wy - wx > lx) break;
           const rw_pair_t * const ey = ent + (srt[y] & imask);
           if (x >= g0 && ex->known && ey->known && ex->sig == ey->sig) continue;
           const word * const ra = ex->row;
@@ -1268,6 +1294,13 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
           for (int iw = 0; iw < aw - 1 && c <= lx; iw++) c += __builtin_popcountll(ra[iw] ^ rb[iw]);
           if (c <= lx) c += __builtin_popcountll((ra[aw - 1] ^ rb[aw - 1]) & last_mask);
           if (c > lx) continue;
+          /* irred=1: the sum of the two circuits is reducible iff they are disjoint, i.e., the weight of the sum of
+           * their pivot parts is wx + wy (a kernel vector on the pivots and the two columns is a sum of the two
+           * circuits, so that the circuits are the only candidates for a proper subset with zero syndrome) */
+          if (irred && c == wx + wy) {
+            nred++;
+            continue;
+          }
           int cnt = 0;
           ee[cnt++] = ex->col;
           ee[cnt++] = ey->col;
@@ -1292,6 +1325,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
 done:
   *checked += nchk;
   *hits += nhits;
+  if (nred > 0) atomic_fetch_add_explicit(&ctx->cw_red_rw, nred, memory_order_relaxed);
   return l;
 }
 
@@ -1551,6 +1585,11 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
       }
 
       if (cnt > 0 && cnt < limit && (classical || colmask_syndrome_non_zero(maskL, cnt, ee))) {
+        /* irred=1: a reduced row of the sampled subspace is not a circuit, so it can be reducible */
+        if (!cw_irreducible(ctx, ctx->wargs[tid].irr_ws, cnt, ee)) {
+          atomic_fetch_add_explicit(&ctx->cw_red_rw, 1, memory_order_relaxed);
+          continue;
+        }
         rw_record_codeword(ctx, ee, cnt, tid, ksub,
                            (eff_kwin > 0 && eff_kwin < nvar) ? CW_SRC_RW_WINDOW : CW_SRC_RW_UNIFORM);
       }
@@ -1690,6 +1729,9 @@ static void *worker_thread_func(void *arg) {
       if (!walk.S || !walk.E || !walk.cols || !walk.cw) ERROR("memory allocation");
     }
   }
+
+  /* irred=1: the workspace of the irreducibility test of the codewords found by CC and by the experimental ksub RW */
+  if (ctx->p->irred && (ctx->p->method >= 2 || use_ksub)) warg->irr_ws = cols_ws_init(ctx->p->spaH->rows);
 
   while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
     if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
@@ -1873,6 +1915,7 @@ static void *worker_thread_func(void *arg) {
   free(walk.E);
   free(walk.cols);
   free(walk.cw);
+  warg->irr_ws = cols_ws_free(warg->irr_ws);
 
   return NULL;
 }
@@ -3027,6 +3070,8 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.cc_target_workers, 0);
   atomic_init(&ctx.cc_round_active, 0);
   atomic_init(&ctx.cc_busy_ns, 0);
+  atomic_init(&ctx.cw_red_cc, 0);
+  atomic_init(&ctx.cw_red_rw, 0);
   atomic_init(&ctx.next_refresh_step, p->refresh > 0 ? p->refresh : 0);
 
   pthread_mutex_init(&ctx.cw_mutex, NULL);
@@ -3115,6 +3160,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < num_threads; i++) {
     args[i].ctx = &ctx;
     args[i].tid = i;
+    args[i].irr_ws = NULL; /* (allocated by the worker, see worker_thread_func()) */
     for (int k = 0; k < MAX_W; k++) {
       args[i].min_swei[k] = p->spaH->rows + 1;
     }
@@ -3205,6 +3251,10 @@ int main(int argc, char **argv) {
 
   if (p->debug & DBG_SUMMARY) {
     print_codeword_stats(stderr, p);
+    const long long red_cc = atomic_load(&ctx.cw_red_cc), red_rw = atomic_load(&ctx.cw_red_rw);
+    if (red_cc > 0 || red_rw > 0) /* (see cw_irreducible(); a codeword found several times is counted each time) */
+      fprintf(stderr, "# reducible codewords skipped (irred=1, a codeword plus a disjoint nonzero vector with zero "
+              "syndrome): %lld times in CC, %lld times in RW\n", red_cc, red_rw);
     /* RW data for the information-set estimate (see print_rw_infoset_estimate(); also used by the Python wrapper) */
     const long rw_done = atomic_load(&ctx.rw_steps_completed);
     const long rw_unif = atomic_load(&ctx.rw_unif_steps);

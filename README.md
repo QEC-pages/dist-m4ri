@@ -100,7 +100,9 @@ and $b$: the sum of the codewords of $a$ and $b$, whose pivot part is the sum of
 matrix (the algorithms of Lee-Brickell and Stern with $p = 2$). Only the pairs of columns which agree on $l$ random
 pivot rows are checked (the columns are sorted by these bits, their bucket), and in a bucket only the pairs whose
 weights differ by less than the weight limit; the pairs of columns whose codewords have equal syndromes $Lc$ are
-skipped (e.g., the many light trivial codewords of a circuit DEM).
+skipped (e.g., the many light trivial codewords of a circuit DEM). With `irred=1` (the default), so are the pairs whose
+codewords are disjoint: their sum is a reducible codeword (see [Codeword Export](#codeword-export-outc--finc)), at no
+extra cost (the weight of the sum is then the sum of the two weights).
 
 Relevant parameters:
 - `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 100000).
@@ -544,9 +546,25 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
   `drop=0` to enumerate all codewords of the DEM. (The Python wrapper returns the codewords of a cached record if it
   has any: use `--no-cache` or another cache file to enumerate them again with other options.)
 - **`finC=[file.nz]`**: Reads initial codewords from a file to initialize $d_{\max}$ and the codeword hash table
-  (codewords heavier than `wmax > 0` are skipped; for a DEM with `merge=1`, two equal columns of a codeword cancel).
+  (codewords heavier than `wmax > 0` are skipped; for a DEM with `merge=1`, two equal columns of a codeword cancel;
+  with `irred=1`, a reducible codeword is replaced by an irreducible part, see below).
 - **`dW=[int]`**: When set (e.g. `dW=1`), preserves and exports codewords of weight up to $w \le d_{\min} + \text{dW}$.
 - **`maxC=[int]`**: Limits collection to at most `maxC` unique codewords (of weight up to $w_{\min} + \text{dW}$).
+- **Irreducible codewords only (`irred=1`, the default; since version 0.14.8)**: a codeword $c$ is *reducible* if it
+  is the union of a codeword and a disjoint nonzero vector $x$ with zero syndrome, $Hx = 0$ (e.g., a trivial weight-3
+  vector of a circuit DEM, or a second codeword); equivalently, the columns of $H$ on the support of $c$ have a rank
+  below $|c| - 1$. The nontrivial one of the two parts (at least one is) is a lighter codeword, so that the
+  minimum-weight codewords are irreducible, and reducible codewords can only appear in the window `dW`: e.g., for a
+  circuit DEM, from the weight $d + 3$ on. They are not recorded (hence not exported or counted for `min_hits`): CC
+  tests the rank of the columns of each codeword found (the CC search finds every irreducible codeword, but only some
+  reducible ones, see [`doc/cc_completeness.tex`](doc/cc_completeness.tex)), RW skips the pairs of disjoint codewords
+  (see [method=1](#1-multithreaded-rw-algorithm-method1); the codewords of single columns are irreducible), and a
+  reducible `finC` codeword is replaced by a nontrivial part (the lighter one if both are), repeatedly, until it is
+  irreducible (`debug&1` gives their number with the codewords read; this can lower $d_{\max}$). E.g., 102 of the 1300
+  codewords of weight 6 found by CC for the surface-code DEM `examples/surf_d3.dem` (`dW=3`) are reducible, and 18% of
+  the codewords of weight 9 found by RW with the pairs for the `bb_72` circuit DEM (`dW=3`). With `debug&1`, the binary
+  prints how many times reducible codewords were skipped (`# reducible codewords skipped ...`). The expert option
+  `irred=0` (binary only; the Python CLI ignores it with a warning) records all codewords, as before version 0.14.8.
 
 ---
 
@@ -665,7 +683,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.7): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.14.8): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -715,6 +733,7 @@ Extra parameters (see --morehelp for details):
   noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)
   start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48
   cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs
+  irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)
   sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
@@ -750,9 +769,10 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
   its rounds, `#   rounds of the DEM: D=... detectors and L=... columns per round`, and for the hybrid RW the window
   size), warnings, the reason why the run ended (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`,
   `timeout=60s reached during CC round w=9 (37.5% of start columns claimed)`, or `RW convergence reached`), codeword
-  and hit statistics, RW information sets (`# RW information sets: ..., pairs=l, ...`), the pairs checked per step
-  and the codewords found by the pairs and by the single columns (`# RW pairs (p=2, ...)`), the codewords of the three
-  lowest weights found by the uniform and by the window steps (`# RW step types, w=...`), codeword export.
+  and hit statistics, the reducible codewords skipped (`irred=1`, see [Codeword Export](#codeword-export-outc--finc)),
+  RW information sets (`# RW information sets: ..., pairs=l, ...`), the pairs checked per step and the codewords found
+  by the pairs and by the single columns (`# RW pairs (p=2, ...)`), the codewords of the three lowest weights found by
+  the uniform and by the window steps (`# RW step types, w=...`), codeword export.
 - `2` (default) **progress**: the run plan (method, threads, RW steps, CC weights, timeout, rng seed), finished CC
   rounds, new upper bounds, RW convergence.
 - `4` **periodic status** after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate,
@@ -943,7 +963,9 @@ interoperability without manual threading overhead.
   own results: use separate cache files for different versions.
 - Codewords (`do_cws=True` or `outC=FILE`): the codewords of a run are merged with the cached ones (also in the cache
   record), and they are written to `outC` (for CSS codes, to the sector files); with `finC` identical to `outC`, the
-  codewords already in the file are kept.
+  codewords already in the file are kept. These can include reducible codewords recorded before version 0.14.8 (see
+  [Codeword Export](#codeword-export-outc--finc)): use a new cache file (or `--no-cache`) and a new `outC` file to get
+  only irreducible codewords.
 - Stop target `dstop` of all `compute_*_distance()` functions (CLI: `dstop=U`): the search ends once CC has certified
   `dmin >= dstop`, unless a lighter codeword is found (see [Bracketing Mode](#3-bracketing-mode-method3-default));
   the bounds are then `[dmin, w, rw_steps]` with `dmin >= dstop` and the weight `w` of the lightest codeword found
@@ -968,7 +990,9 @@ interoperability without manual threading overhead.
   separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
   results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
   disabled in Python (ignored with a warning to `stderr`); see
-  [Restricting the CC Search](#restricting-the-cc-search-expert-options).
+  [Restricting the CC Search](#restricting-the-cc-search-expert-options). The expert option `irred=0` of the binary
+  is not available either (the CLI ignores it with a warning): the codewords recorded and cached are irreducible (see
+  [Codeword Export](#codeword-export-outc--finc)).
 - The experimental RW option `ksub` of the `compute_*_distance()` functions and the CLI should not be used: with
   `ksub>0` (and `method=1` or `3`), the same warning as from the binary is written to `stderr`.
 - An unknown keyword argument of the `compute_*_distance()` functions (e.g., a misspelled option, or `steps=` for
