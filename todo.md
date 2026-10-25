@@ -580,14 +580,17 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   N. Maskara, K. Kasai, H. Zhou, "Design principles for ultra-high-rate quantum codes," arXiv:2609.30069 (2026),
   App. B. Goal: `method=2` certification of distances up to $d = 20$ for matrices with row weights up to 12.
   - **Implemented in 0.15.0** (M2 of `scratch/cc_bnb/PLAN.md`): `cc_bnb()` in `dist_m4ri.c` as described below,
-    `cc_prune=0|1|2` (default 1), the start-list exclusion, nodes per round with `debug&8`, the Python pass-through,
-    Test 110. Open: M3 (benchmark on an idle machine, 1 and 128 threads, BENCHMARK.md) and M4 (per-node cost, then
-    the default of `cc_prune=2`).
-  - First measurements (2026-10-25, 128 threads, idle server, one run each; `scratch/cc_bnb/m2/`): the same
-    codewords as 0.14.8 in all 16 runs of `scratch/cc_bnb/m0/` (each codeword once); `method=2` up to the distance:
+    `cc_prune=0|1|2` (default 1), the start-list exclusion, nodes per round with `debug&8` (exact: independent of the
+    threads and work units; Python: `_last_run_stats["cc_rounds"]`), the Python pass-through (also
+    `compute_model_lower_bound()`), Tests 110 and 111. Open: M3 (benchmark on an idle machine, 1 and 128 threads,
+    BENCHMARK.md) and M4 (per-node cost, then the default of `cc_prune=2`).
+  - First measurements (2026-10-25, 128 threads, idle server, one run each; `scratch/cc_bnb/m2/`; the node counts
+    again with the exact counter, `nodes_count_w.sh`, as the nodes at the fixed levels of the work units were counted
+    once per unit before): the same codewords as 0.14.8 in all 16 runs of `scratch/cc_bnb/m0/` (each codeword once);
+    `method=2` up to the distance:
     - $X$ sectors: yarn_mitten_300 ($d = 14$) 1.69 s -> 0.23 s (round $w = 13$: 1.59G -> 49.8M nodes, 32x),
       yarn_ablp_560 ($d = 14$) 3.66 s -> 0.20 s (3.54G -> 47.5M nodes, 74x), double gross ($d = 18$) 1.36 s ->
-      0.33 s (round $w = 17$: 15x fewer nodes), yarn_mitten_630 round $w = 11$: 151M -> 1.44M nodes (105x), 16.2 ->
+      0.33 s (round $w = 17$: 15x fewer nodes), yarn_mitten_630 round $w = 11$: 151M -> 1.37M nodes (110x), 16.2 ->
       0.73 thread-s;
     - full DEMs: bb_90 ($d = 8$) 0.50 s -> 0.46 s; mitten_270 hef ($d = 7$) 5.5 s -> 2.6 s; mitten_150 custom
       ($d = 7$) 0.56 s -> 0.57 s (round $w = 6$: 1.5x fewer nodes, but 1.4x the CC work); `method=3`: gross circuit

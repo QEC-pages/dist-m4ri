@@ -365,7 +365,13 @@ def _format_duration(t: float) -> str:
 
 
 def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
-    """Parses codeword and hit statistics from dist_m4ri stderr output."""
+    """
+    Parses codeword and hit statistics from dist_m4ri stderr output (debug & 1), and with debug & 8 the CC rounds:
+    "cc_rounds", a list with an entry for each completed CC round, {"w": weight, "work": the CC thread time in s,
+    "predicted": the predicted work (None if not known), "time": the wall time of the round in s, "threads": the CC
+    threads (at the end of the round in method=3), "nodes": the calls of the CC recursion (None from binaries before
+    0.15.0)}, and "cc_nodes", the total of the nodes of these rounds.
+    """
     import re
     stats: Dict[str, Any] = {"extra_weights": [], "rw_converged": False, "hit_warnings": []}
     if not stderr:
@@ -440,6 +446,16 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
             elif m_n:
                 stats["rounds"] = {"D": 0, "L": 0, "score": float(m_n.group(1))}
             continue
+        if line_s.startswith("# CC round w=") and " work: " in line_s:  # debug & 8: a completed CC round
+            m_cc = re.match(r"# CC round w=(\d+) work: ([0-9.eE+-]+) thread-s measured, (unknown|([0-9.eE+-]+) "
+                            r"thread-s) predicted \(([0-9.]+)s(?: on (\d+) threads|, (\d+) CC threads at the end)\)"
+                            r"(?:, (\d+) nodes)?", line_s)
+            if m_cc:
+                g = m_cc.groups()
+                stats.setdefault("cc_rounds", []).append({
+                    "w": int(g[0]), "work": float(g[1]), "predicted": float(g[3]) if g[3] else None,
+                    "time": float(g[4]), "threads": int(g[5] or g[6]), "nodes": int(g[7]) if g[7] else None})
+            continue
         if "RW convergence reached" in line_s:  # progress line (debug & 2) or the stop reason (debug & 1)
             stats["rw_converged"] = True
         if line_s.startswith("# codewords accumulated: total=0"):
@@ -487,6 +503,9 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 })
     if hit_warning is not None:
         stats["hit_warnings"].append(" ".join(hit_warning))
+    cc_rounds = stats.get("cc_rounds")
+    if cc_rounds and all(r["nodes"] is not None for r in cc_rounds):
+        stats["cc_nodes"] = sum(r["nodes"] for r in cc_rounds)
     return stats
 
 
@@ -5028,6 +5047,8 @@ def compute_model_lower_bound(
     verbose: bool = False,
     nothrottle: bool = False,
     pairs: int = -1,
+    sort_rows: Optional[bool] = None,
+    cc_prune: Optional[int] = None,
     return_info: bool = False,
     **kwargs
 ) -> Any:
@@ -5066,6 +5087,9 @@ def compute_model_lower_bound(
         method: Solver method for the model (1=RW, 2=CC, 3=Bracketing default); only CC certifies a bound.
         threads / timeout / num_steps / seed / nothrottle / pairs: As for compute_dem_distance(), for each run of the
             binary (at most three).
+        sort_rows / cc_prune: The row order and the CC search of the binary (see run_dist_m4ri(); None, the default:
+            the binary's defaults, i.e., the rows of the model sorted by weight, and the branch and bound), for each
+            run.  The bound and the cache keys do not depend on them.
         dstop: Stop target (see compute_dem_distance()): the runs end once CC has certified dmin >= dstop.
         wmax: Maximum weight of the CC rounds on the model (0: until the bounds meet or the timeout).
         minority: If True, the groups without a final data measurement (e.g., the chains of the minority-basis
@@ -5141,7 +5165,7 @@ def compute_model_lower_bound(
             wmin=wmin, wmax=wmax, smax=0, start_list=None, dW=-1, maxC=0, finC=None, outC=None, need_cws=False,
             eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
             chunk_size=0, ksub=0, kwin=0, win_mode=0, min_hits=None, cov_cws=100, refresh=0, trust_start=False,
-            pairs=pairs)
+            pairs=pairs, sort_rows=sort_rows, cc_prune=cc_prune)
         return list(res["d_info"])
 
     if full["trivial"]:
@@ -5936,9 +5960,9 @@ Required input (at least one matrix/model specification):
                         distance; it ignores the timing within the rounds (not tight in general, e.g.,
                         5 for the bb_72 circuit of distance 6).  The binary runs on the model with the
                         measured-basis rows, then (with --model-minority) with all rows from that bound
-                        (RW first; method, threads, timeout, steps, dstop, wmax, and seed apply to each
-                        run).  The bound is stored as dmin in the cache record of the DEM, and the
-                        bounds of the circuit are printed.
+                        (RW first; method, threads, timeout, steps, dstop, wmax, seed, nothrottle,
+                        pairs, sort_rows, and cc_prune apply to each run).  The bound is stored as dmin
+                        in the cache record of the DEM, and the bounds of the circuit are printed.
   --model-minority      With --model-lb, also the chains of the minority-basis checks are rows of the
                         model (also model_minority=1; default: off).  With depolarizing-type noise,
                         they do not raise the bound (a lightest model codeword has a version without
@@ -6501,6 +6525,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 verbose=args["verbose"],
                 nothrottle=args["nothrottle"],
                 pairs=args["pairs"],
+                sort_rows=args["sort_rows"],
+                cc_prune=args["cc_prune"],
                 return_info=True
             )
             if args["verbose"]:

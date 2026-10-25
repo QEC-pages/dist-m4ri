@@ -472,6 +472,8 @@ typedef struct {
   const int *fix;      /* the fixed levels 1..nfix of the work unit, see `cc_pack()` */
   int nfix;
   long long nodes;     /* calls of the recursion (cc_walk() or cc_bnb()), added to ctx->cc_nodes after each round */
+  int count_w;         /* the nodes of weight w >= count_w are counted: a node at a fixed level is visited by all the
+                        * work units with the same earlier digits, and counted in the one whose later digits are 0 */
   /* the branch and bound (cc_prune >= 1, see cc_bnb()): a column u is available if u > col_min and u is neither in
    * the cluster S nor in the forbidden set F */
   int prune;           /* cc_prune: 1, or 2 with the coverage and fractional cover bounds */
@@ -593,7 +595,7 @@ static int cc_walk(cc_walk_t * const t, const int sw, const int r0, const uint64
   const int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
   if (cur_dmax > 0 && p->dW >= 0) current_limit = minint(t->w_limit, cur_dmax + p->dW);
   if (w >= current_limit) return 0;
-  t->nodes++;
+  if (w >= t->count_w) t->nodes++;
   const csr_t * const mH = t->mH;
   const csr_t * const mHT = t->mHT;
   /* the positions in mH of the columns of the row r0 to add: all of them, or one at a fixed level of the work unit */
@@ -665,6 +667,8 @@ static void cc_walk_unit(cc_walk_t * const t, const int col, const int w_limit, 
   t->w_limit = w_limit;
   t->fix = fix;
   t->nfix = nfix;
+  t->count_w = nfix + 1; /* (see cc_walk_t: count_w - 1 = the first fixed level with only zero digits from there on) */
+  while (t->count_w > 1 && fix[t->count_w - 2] == 0) t->count_w--;
   cc_walk(t, pe - pb, mHT->i[pb], t->hs->hc[col]);
   t->w = 0;
   bit_flip(t->E, col);
@@ -872,7 +876,7 @@ static int cc_bnb(cc_walk_t * const t, const int sw, const uint64_t h) {
   if (cur_dmax > 0 && p->dW >= 0) current_limit = minint(t->w_limit, cur_dmax + p->dW);
   const int R = current_limit - w; /* the number of columns left */
   if (R <= 0 || sw > R * t->max_col_wt) return 0; /* b1 */
-  t->nodes++;
+  if (w >= t->count_w) t->nodes++;
   const bool fixed = (w <= t->nfix); /* a fixed level of the work unit */
   if (R == 1 && !fixed) return bnb_leaf(t, sw, h);
   /* the unsatisfied rows, and the branching row: the one with the fewest available columns, the first in row order */
@@ -991,6 +995,8 @@ static void cc_bnb_unit(cc_walk_t * const t, const int col, const int idx, const
   t->w_limit = w_limit;
   t->fix = fix;
   t->nfix = nfix;
+  t->count_w = nfix + 1; /* (see cc_walk_t: count_w - 1 = the first fixed level with only zero digits from there on) */
+  while (t->count_w > 1 && fix[t->count_w - 2] == 0) t->count_w--;
   cc_bnb(t, pe - pb, t->hs->hc[col]);
   t->w = 0;
   for (int k = pb; k < pe; k++) bit_flip(t->S, mHT->i[k]);

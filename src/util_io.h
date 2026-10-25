@@ -922,7 +922,8 @@ void print_short_help(const char *prog);
   "    4    : Periodic status (after 1, 2, 4, ... s, then every 60 s): bounds,\n" \
   "           RW steps and rate, <n>, progress of the current CC round\n" \
   "    8    : Thread allocation and timing: throttling, CC round planning and\n" \
-  "           re-planning, waits for RW, predicted vs measured CC work\n" \
+  "           re-planning, waits for RW, predicted vs measured CC work, and the\n" \
+  "           nodes of each CC round (calls of the recursion)\n" \
   "    16   : Code parameters rank(H), rank(L) or rank(G), and k (dense\n" \
   "           elimination at startup, slow for large matrices)\n" \
   "    32   : Support (1-based) of each new lightest codeword (RW, CC, finC)\n" \

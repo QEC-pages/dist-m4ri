@@ -1258,6 +1258,26 @@ assert_output "$BIN_FORK method=2 $QX97 dmin=6 threads=4 cc_prune=3" 255 "" \
     "invalid 'cc_prune=3': cc_prune should be 0, 1, or 2"
 rm -f "$CWS110" "$CWS110B"
 
+# Test 111: the number of nodes of a completed CC round (debug&8: the calls of the CC recursion) does not depend on the
+# threads: a node at a fixed level of the work units, visited by all the units with the same earlier branches, is
+# counted once (QX150 at the supplied dmin=6, completed with outC; 1 thread, 5 or 25 work units per start column, and
+# method=3 without RW steps)
+CWS111=$(mktemp --suffix=.nz)
+for pr in 0 1; do
+    N111=""
+    for run in "method=2 threads=1" "method=2 threads=8 nothrottle=1" "method=2 threads=32 nothrottle=1" \
+               "method=3 steps=0 threads=8 nothrottle=1"; do
+        N111="$N111 $($BIN_FORK $run $QX97 dmin=6 outC=$CWS111 cc_prune=$pr debug=8 2>&1 | \
+            sed -n 's/^# CC round w=6 work: .*, \([0-9][0-9]*\) nodes$/\1/p')"
+    done
+    echo "Running Test 111: the nodes of the CC round w=6 with cc_prune=$pr:$N111"
+    if ! echo "$N111" | grep -q '^ \([0-9][0-9]*\) \1 \1 \1$'; then
+        echo "  [FAIL] Test 111: the number of nodes depends on the threads (cc_prune=$pr):$N111"
+        FAILED=1
+    fi
+done
+rm -f "$CWS111"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

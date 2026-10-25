@@ -212,7 +212,7 @@ finds the same codewords is in [`doc/cc_completeness.tex`](doc/cc_completeness.t
 - The gain grows with the weight. E.g., with `method=2` on 128 threads (the rounds up to the distance $d$): the $X$
   sector of `yarn_mitten_300` ($d = 14$) in 0.23 s instead of 1.7 s (32 times fewer nodes in the round $w = 13$),
   `yarn_ablp_560` ($d = 14$) in 0.20 s instead of 3.7 s, and double gross ($d = 18$) in 0.33 s instead of 1.4 s; the
-  round $w = 11$ of `yarn_mitten_630` with 105 times fewer nodes (22 times less CC work). The full DEMs of the gross
+  round $w = 11$ of `yarn_mitten_630` with 110 times fewer nodes (22 times less CC work). The full DEMs of the gross
   circuit ($d = 10$) and of the custom `mitten_270` circuit ($d = 9$) are certified in 79 s and 141 s instead of
   189 s and 197 s (`method=3`). For DEMs at small weights ($w \le 7$), the fewer nodes cost about as much time.
 
@@ -809,7 +809,8 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
 - `4` **periodic status** after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate,
   $\langle n\rangle$, and the progress of the current CC round (or why no CC round runs).
 - `8` **thread allocation and timing**: throttling, the planning and re-planning of CC rounds, waits for RW, and the
-  predicted vs measured CC work of each round, with its number of nodes (calls of the CC recursion; see `cc_prune`).
+  predicted vs measured CC work of each round, with its number of nodes (calls of the CC recursion; see `cc_prune`),
+  which does not depend on the number of threads.
 - `16` **code parameters**: $\mathrm{rank}\,H$, $\mathrm{rank}\,L$ (or $\mathrm{rank}\,G$), and $k$, by dense
   elimination at startup (slow for large matrices).
 - `32` **codewords**: the support (1-based columns) of each new lightest codeword (RW, CC, `finC`).
@@ -953,7 +954,9 @@ interoperability without manual threading overhead.
     from `dmin` (CC on all rows alone would be much slower: gross 75 s for 7, instead of 1.8 s for 8). The bound is
     stored as `dmin` in the cache record of the DEM (with `"dmin_model"`), so that `compute_dem_distance()` starts CC
     from it, and the CLI prints the bounds of the circuit. With `return_info=True`, the info has the model (`"H"`,
-    `"L"`, and `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs.
+    `"L"`, and `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs. The
+    options `method`, `threads`, `timeout`, `num_steps`, `dstop`, `wmax`, `seed`, `nothrottle`, `pairs`, `sort_rows`,
+    and `cc_prune` apply to each run of the binary (also in the CLI).
 - `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ..., mask_out=None)` /
   `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a
   list `mask_out` receives one entry per detector: `True` if it is stripped; `compute_dem_distance()` uses it for the
@@ -1006,7 +1009,12 @@ interoperability without manual threading overhead.
   [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it.
 - CC search `cc_prune` of `run_dist_m4ri()` and of all `compute_*_distance()` functions (CLI: `cc_prune=0|1|2` or
   `--cc-prune N`; default: `None`, the binary's default 1, the branch and bound): passed to the binary (see
-  [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it.
+  [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it. Also for
+  `compute_model_lower_bound()` (with `sort_rows`). With `debug=8` (bit 8 of the binary), `_last_run_stats["cc_rounds"]`
+  lists the completed CC rounds of the last run, each with its weight `"w"`, CC thread time `"work"` and predicted work
+  `"predicted"` (in thread-seconds; `None` if not known), wall time `"time"`, number of CC threads `"threads"`, and
+  number of nodes `"nodes"` (the calls of the CC recursion), and `"cc_nodes"` is their total; the node counts do not
+  depend on the number of threads (e.g., for benchmarks of `cc_prune`).
 - RW window size `win_hyb` of all `compute_*_distance()` functions (CLI: `win_hyb=N`; default: 0, i.e., 256 columns
   for a DEM and 512 for matrices): passed to the binary if nonzero (see
   [RW Algorithm](#1-multithreaded-rw-algorithm-method1)); the cache key does not depend on it. With `verbose=True`

@@ -1268,6 +1268,46 @@ def test_cc_prune_option(tmp_path, capsys):
         dist_m4ri.clear_distance_cache()
 
 
+def test_cc_round_stats(capsys):
+    # with debug=8 (bit 8 of the binary), _last_run_stats["cc_rounds"] lists the completed CC rounds (weight, CC thread
+    # time, predicted work, wall time, CC threads, and nodes: the calls of the CC recursion), and "cc_nodes" is the
+    # total of the nodes; the lines of binaries before 0.15.0 have no nodes (no "cc_nodes").  The number of nodes of a
+    # completed round does not depend on the threads (surf_d5: the rounds w=1..4 are completed, the round w=5 stops at
+    # the first codeword; method=2 or method=3 without RW steps)
+    stats = dist_m4ri._parse_stderr_stats(
+        "# CC round w=3: started 2 more threads, 4 in total (work not known)\n"
+        "# CC round w=3 work: 0.00125 thread-s measured, unknown predicted (0.001s on 4 threads), 1956 nodes\n"
+        "# CC round w=4 started: 8 CC threads, 0 RW threads (bounds [4, 0], rem_rw=0, rem_time=0.00s, est 0.002 "
+        "thread-s)\n"
+        "# CC round w=4 work: 1.5e-05 thread-s measured, 0.002 thread-s predicted (0.004s, 8 CC threads at the end), "
+        "24644 nodes\n")
+    assert stats["cc_rounds"] == [
+        {"w": 3, "work": 0.00125, "predicted": None, "time": 0.001, "threads": 4, "nodes": 1956},
+        {"w": 4, "work": 1.5e-05, "predicted": 0.002, "time": 0.004, "threads": 8, "nodes": 24644}]
+    assert stats["cc_nodes"] == 1956 + 24644
+    old = dist_m4ri._parse_stderr_stats(
+        "# CC round w=3 work: 0.001 thread-s measured, unknown predicted (0.001s on 2 threads)\n")
+    assert old["cc_rounds"][0]["nodes"] is None and "cc_nodes" not in old
+    assert "cc_rounds" not in dist_m4ri._parse_stderr_stats("# codewords accumulated: total=0\n")
+    nodes = {}
+    for method, threads in ((2, 1), (2, 2), (3, 2)):
+        res = dist_m4ri.run_dist_m4ri(method=method, finH=S5_H, finL=S5_L, wmax=5, threads=threads, debug=8,
+                                      steps=0 if method == 3 else None)
+        assert tuple(res) == (5, 5, 0)
+        capsys.readouterr()
+        stats = dist_m4ri._last_run_stats
+        rounds = stats["cc_rounds"]
+        assert [r["w"] for r in rounds] == [1, 2, 3, 4]
+        assert all(1 <= r["threads"] <= threads and r["time"] >= 0.0 and r["work"] >= 0.0 for r in rounds)
+        assert rounds[0]["nodes"] == 0 and all(r["nodes"] > 0 for r in rounds[1:])
+        assert stats["cc_nodes"] == sum(r["nodes"] for r in rounds)
+        nodes[(method, threads)] = [r["nodes"] for r in rounds]
+    assert nodes[(2, 1)] == nodes[(2, 2)] == nodes[(3, 2)]
+    dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, threads=2, debug=1)
+    capsys.readouterr()
+    assert "cc_rounds" not in dist_m4ri._last_run_stats and "cc_nodes" not in dist_m4ri._last_run_stats
+
+
 def test_win_hyb_option(capsys):
     # win_hyb (window size of the hybrid RW steps, n >= 500; 0, the default: 256 columns for a DEM, 512 for matrices)
     # is passed to the binary if nonzero by run_dist_m4ri(), the compute_*_distance() functions, and the CLI; the
@@ -1404,6 +1444,12 @@ def test_model_lower_bound(tmp_path, capsys):
         b, info = dist_m4ri.compute_model_lower_bound(triv, threads=2, cache_file=None, return_info=True)
         assert b == 1 and info["trivial"] == 1 and (info["groups"], info["groups_final"]) == (1, 1)
         assert "flip an observable but no group of detectors" in capsys.readouterr().err
+        # sort_rows and cc_prune are passed to each run of the binary (the bound does not depend on them)
+        dist_m4ri.clear_distance_cache()  # (the model of the first runs is cached)
+        b = dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=None, minority=True, sort_rows=False,
+                                                cc_prune=0, debug=dist_m4ri.PY_DBG_COMMANDS)
+        runs = [ln for ln in capsys.readouterr().out.splitlines() if "[dist_m4ri] Running:" in ln]
+        assert b == 3 and len(runs) >= 2 and all("sort_rows=0" in ln and "cc_prune=0" in ln for ln in runs)
         # CLI: the bounds of the circuit (without the cache: the bound alone), the model files; errors and warnings
         assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--no-cache", "threads=2", "--out-model",
                                str(tmp_path / "cli")]) == 0
@@ -1415,6 +1461,11 @@ def test_model_lower_bound(tmp_path, capsys):
                                "--out-model", str(tmp_path / "clim")]) == 0
         assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
         assert mmread(str(tmp_path / "clim_HR.mtx")).shape[0] == 8  # (also the minority-basis rows)
+        assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--no-cache", "threads=2", "sort_rows=1", "--cc-prune",
+                               "2", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        out = capsys.readouterr().out.strip().splitlines()
+        runs = [ln for ln in out if "[dist_m4ri] Running:" in ln]
+        assert out[-1] == "3 0 0" and runs and all("sort_rows=1" in ln and "cc_prune=2" in ln for ln in runs)
         assert dist_m4ri.main([f"fdem={path}", "model_minority=1", "--no-cache", "threads=2", "method=2"]) == 0
         assert "# Warning: --model-minority: only used with --model-lb; ignored" in capsys.readouterr().err
         dist_m4ri.enable_distance_cache()  # (--no-cache disabled it)
