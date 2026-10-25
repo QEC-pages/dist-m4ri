@@ -550,3 +550,5 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
       DEMs / circuits, as an alternative to code-sized model bounds
 - [ ] **Optimize pair $p=2$ construction**: only start $i+j$ pairs with $i$ a verified codeword (non-trivial)
 - [ ] **examine symmetry** of `model` check matrices to get guaranteed lower bounds faster (`--model-lb` option)
+- [ ] **Examine CC speed-up** from G. Lee, in "Bicycle Race: small two-block
+      codes on the Pareto frontier," arXiv:2610.13880 (2026).
