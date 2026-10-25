@@ -170,7 +170,7 @@ documentation.
 
 If you use this program, please cite:
 
-*   [DKP17] A. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes,"
+*   [DKP17] I. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes,"
     *IEEE Transactions on Information Theory*, vol. 63, no. 7, pp. 4675-4690, 2017.
     [doi:10.1109/TIT.2017.2690381](https://doi.org/10.1109/TIT.2017.2690381).
 

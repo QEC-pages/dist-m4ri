@@ -8,7 +8,7 @@
  * (2) depth-first codeword enumeration (connected cluster) algorithm
  * (Lower bound or actual distance if a codeword is found.)  
  * 
- * A. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..."
+ * I. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..."
  * in IEEE Trans. Inf. Th., vol. 63, p. 4675 (2017). 
  * doi: 10.1109/TIT.2017.2690381
  *

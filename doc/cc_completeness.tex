@@ -1,0 +1,502 @@
+% doc/cc_completeness.tex -- completeness of the connected-cluster (CC) search orders of dist_m4ri
+% Build: pdflatex cc_completeness.tex (twice, for the references)
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\Ftwo}{\mathbb{F}_2}
+\DeclareMathOperator{\supp}{supp}
+\DeclareMathOperator{\rank}{rank}
+\newcommand{\Tr}{\mathcal{T}}   % trivial codewords
+\newcommand{\Kc}{\mathcal{K}}   % completions
+\newcommand{\Wr}{\mathcal{W}}   % reported weights
+\newcommand{\ttt}[1]{\texttt{#1}}
+
+\begin{document}
+
+\title{Completeness of the connected-cluster search orders in \ttt{dist\_m4ri}:\\
+any unsatisfied row, forbidden sets, and admissible bounds}
+\author{Notes for \ttt{dist-m4ri}}
+\date{October 2026}
+\maketitle
+
+\begin{abstract}
+The connected-cluster (CC) algorithm of Dumer, Kovalev, and Pryadko~\cite{DKP17} certifies lower bounds on the
+distance by enumerating irreducible clusters: starting from a column of the parity-check matrix, a cluster is extended,
+one column at a time, by a column of an unsatisfied row. Up to version 0.14.7, \ttt{dist\_m4ri} always extends a
+cluster by the columns of the \emph{first} unsatisfied row in row order. We formulate the modified order of the
+branch-and-bound search of Ref.~\cite{LOMKZ26} (App.~B), used in Ref.~\cite{Lee26} (App.~C.4): branching on an
+\emph{arbitrary} unsatisfied row, in particular on the one with the fewest available columns; a \emph{forbidden set}
+which excludes the columns of the earlier sibling branches; and pruning by \emph{admissible lower bounds} on the number
+of missing columns. Theorem~\ref{thm:main} states that the search reports every irreducible codeword of weight at most
+$W$ which contains the start column and avoids the initial forbidden set, and that it reports it exactly once if the
+forbidden set is used. The current order is the special case without the forbidden set, where every irreducible
+codeword is reported at least once. The corollaries cover the certification of the distance by increasing weights, the
+hit counts, start lists, orbit exclusion under a group of code automorphisms, the hash table used for the last two
+extensions of a cluster, and the work units of the multithreaded search.
+\end{abstract}
+
+\section{Setting and notation}\label{sec:setting}
+
+Let $H\in\Ftwo^{m\times n}$ be a parity-check matrix with columns $h_1,\dots,h_n\in\Ftwo^m$. The columns are the
+variable nodes of a code (or the error mechanisms of a detector error model, DEM), and the rows are its checks (or
+detectors). We write $[n]=\{1,\dots,n\}$ with its natural order. For a row $r\in[m]$ let
+$N(r)=\{j\in[n]:H_{rj}=1\}$, and for a column $j$ let $R(j)=\{r\in[m]:H_{rj}=1\}$; $\Delta=\max_j|R(j)|$ is the
+maximum column weight. A set $S\subseteq[n]$ is identified with its indicator vector $1_S\in\Ftwo^n$. The
+\emph{syndrome} of $S$ is
+\[
+  \sigma(S)=\sum_{j\in S}h_j=H\,1_S\in\Ftwo^m ,
+\]
+and $U(S)=\supp\sigma(S)=\{r\in[m]:|N(r)\cap S|\text{ is odd}\}$ is the set of \emph{unsatisfied rows} of $S$. For
+disjoint sets $A,B\subseteq[n]$,
+\begin{equation}\label{eq:additive}
+  \sigma(A\cup B)=\sigma(A)+\sigma(B).
+\end{equation}
+
+A set $C\subseteq[n]$ is a \emph{codeword} if $\sigma(C)=0$, i.e., $1_C\in\ker H$. Let $\Tr\subseteq\ker H$ be a
+linear subspace, the \emph{trivial} codewords. A codeword $C$ is \emph{nontrivial} if $1_C\notin\Tr$, and the
+\emph{distance} is $d=\min\{|C|: C\text{ a nontrivial codeword}\}$. For a classical code $\Tr=\{0\}$; for one sector
+of a CSS code with $H=H_X$, $\Tr$ is the row space of $H_Z$; for a DEM with the observable matrix $L$,
+$\Tr=\ker H\cap\ker L$. In \ttt{dist\_m4ri} nontriviality is tested as $L\,1_C\neq0$ with a matrix $L$ such that
+$\ker H\cap\ker L=\Tr$. Only the linearity of $\Tr$ is used below.
+
+\section{Irreducible codewords}\label{sec:irreducible}
+
+\begin{definition}[irreducible codewords~\cite{DKP17}]\label{def:irreducible}
+A nonempty codeword $C$ is \emph{reducible} if $C=A\cup B$ for two disjoint nonempty codewords $A$ and $B$; otherwise
+it is \emph{irreducible}.
+\end{definition}
+
+\begin{lemma}[equivalent forms]\label{lem:forms}
+Let $C$ be a nonempty codeword, and let $H_C$ be the $m\times|C|$ submatrix of the columns of $H$ in $C$.
+\begin{enumerate}[label=(\alph*)]
+  \item $C$ is reducible if and only if some nonempty proper subset $S\subsetneq C$ is a codeword.
+  \item $\rank H_C\le|C|-1$, and $C$ is reducible if and only if $\rank H_C\le|C|-2$. Thus $C$ is irreducible if and
+    only if $\rank H_C=|C|-1$.
+  \item If $C$ is nontrivial, then $C$ is reducible if and only if $C=A\cup B$ with a nontrivial codeword $A$ and a
+    nonempty codeword $B$ disjoint from $A$ (``a codeword and a zero-syndrome vector with disjoint supports'').
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+(a) If $S\subsetneq C$ is a nonempty codeword, then $B=C\setminus S$ is nonempty and $\sigma(B)=\sigma(C)+\sigma(S)=0$
+by~\eqref{eq:additive}, so $C=S\cup B$ is reducible. The converse is immediate from the definition.
+
+(b) The all-ones vector $\mathbf{1}\in\Ftwo^{|C|}$ lies in $\ker H_C$ since $\sigma(C)=0$, so
+$\dim\ker H_C=|C|-\rank H_C\ge1$. If $\dim\ker H_C\ge2$, there is $x\in\ker H_C\setminus\{0,\mathbf{1}\}$; its support
+is a nonempty proper subset of $C$ with zero syndrome. Conversely, the indicator vector of a nonempty proper subset of
+$C$ with zero syndrome lies in $\ker H_C\setminus\{0,\mathbf{1}\}$, so that $\dim\ker H_C\ge2$. Combine with~(a).
+
+(c) If $C=A\cup B$ with disjoint codewords, then $1_C=1_A+1_B$; since $\Tr$ is linear and $1_C\notin\Tr$, at least one
+of $1_A$ and $1_B$ is not in $\Tr$; call that set $A$. The converse holds since a nontrivial codeword is nonempty.
+\end{proof}
+
+\begin{lemma}[minimum-weight codewords are irreducible]\label{lem:minweight}
+A reducible nontrivial codeword $C$ contains a nontrivial codeword of weight at most $|C|-1$. In particular, every
+nontrivial codeword of weight $d$ is irreducible.
+\end{lemma}
+
+\begin{proof}
+By Lemma~\ref{lem:forms}(c), $C=A\cup B$ with $A$ nontrivial and $B$ nonempty and disjoint from $A$, so
+$|A|\le|C|-1$. A nontrivial codeword of weight $d$ cannot contain a nontrivial codeword of smaller weight.
+\end{proof}
+
+\begin{lemma}[parity]\label{lem:parity}
+Let $C$ be a codeword, $S\subseteq C$, and $r\in U(S)$. Then $|N(r)\cap(C\setminus S)|$ is odd; in particular,
+$N(r)\cap(C\setminus S)\neq\emptyset$.
+\end{lemma}
+
+\begin{proof}
+By~\eqref{eq:additive}, $\sigma(C\setminus S)=\sigma(C)+\sigma(S)=\sigma(S)$, whose entry in the row $r$ is $1$.
+\end{proof}
+
+\begin{remark}[connectivity]\label{rem:connected}
+Call two columns adjacent if they share a row. An irreducible codeword is connected: the columns of a connected
+component of a codeword share no row with the other columns, so each component is itself a codeword. The clusters of
+the search below are connected as well, since each added column lies in a row $r\in U(S)$, and $|N(r)\cap S|$ is odd,
+hence positive. The converse fails: the disjoint union of two codewords which share a row (each meeting it an even
+number of times) is connected and reducible. Such codewords are found, e.g., in the rounds $w\ge d+3$ of the CC search
+on circuit DEMs, which have many trivial codewords of weight~3. Therefore a test of connectivity does not detect them,
+while the rank test of Lemma~\ref{lem:forms}(b) does.
+\end{remark}
+
+\section{The search}\label{sec:search}
+
+A \emph{node} is a pair $(S,F)$ of disjoint subsets of $[n]$ with $S\neq\emptyset$ and $\sigma(S)\neq0$; $S$ is the
+\emph{cluster} and $F$ the \emph{forbidden set}. A column $u$ is \emph{available} at $(S,F)$ if $u\notin S\cup F$, and
+\[
+  A_r(S,F)=N(r)\setminus(S\cup F)
+\]
+is the set of available columns of the row $r$.
+
+\begin{definition}[completions, admissible bounds]\label{def:admissible}
+The \emph{completions} of a node $(S,F)$ are the sets
+\[
+  \Kc(S,F)=\{T\subseteq[n]\setminus(S\cup F):\ \sigma(T)=\sigma(S)\},
+\]
+i.e., the sets $T$ of available columns for which $S\cup T$ is a codeword, and
+$\lambda(S,F)=\min\{|T|:T\in\Kc(S,F)\}$, with $\lambda(S,F)=\infty$ if $\Kc(S,F)=\emptyset$. A function $\beta$ from
+the nodes to $\mathbb{Z}_{\ge0}\cup\{\infty\}$ is an \emph{admissible bound} if $\beta(S,F)\le\lambda(S,F)$ for every
+node $(S,F)$.
+\end{definition}
+
+The pointwise maximum of admissible bounds is admissible, and so is a bound which is evaluated only at some nodes and
+set to $0$ at the others (e.g., only where it can prune).
+
+\begin{lemma}[admissible bounds]\label{lem:bounds}
+For a node $(S,F)$ let $U=U(S)$, and for an available column $u$ let $c_u=|R(u)\cap U|$ be the number of unsatisfied
+rows which contain $u$. The following functions are admissible bounds:
+\begin{enumerate}[label=(\alph*)]
+  \item \emph{dead end}: $\beta_0=\infty$ if $A_r(S,F)=\emptyset$ for some $r\in U$, and $\beta_0=0$ otherwise;
+  \item \emph{syndrome weight}: $\beta_1=\lceil|U|/\Delta\rceil$;
+  \item \emph{packing}: $\beta_2=|P|$ for any set $P\subseteq U$ of unsatisfied rows whose sets $A_r(S,F)$, $r\in P$,
+    are pairwise disjoint (e.g., a packing found greedily, the rows with the fewest available columns first);
+  \item \emph{coverage}: $\beta_3=$ the least $t$ such that the $t$ largest of the values $c_u$ of the available
+    columns $u$ sum to at least $|U|$ ($\beta_3=\infty$ if all of them sum to less than $|U|$);
+  \item \emph{fractional cover}: $\beta_4=\bigl\lceil\sum_{r\in U}1/\mu_r\bigr\rceil$ with
+    $\mu_r=\max_{u\in A_r(S,F)}c_u$ ($\beta_4=\infty$ if $A_r(S,F)=\emptyset$ for some $r\in U$).
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+If $\Kc(S,F)=\emptyset$, then $\lambda(S,F)=\infty$ and there is nothing to prove. Let $T\in\Kc(S,F)$. For every
+$r\in U$, the entry $r$ of $\sigma(T)=\sigma(S)$ is $1$, so $|N(r)\cap T|$ is odd and at least $1$, and
+$N(r)\cap T\subseteq A_r(S,F)$ since $T$ contains no column of $S\cup F$.
+(a) Hence $A_r(S,F)\neq\emptyset$ for every $r\in U$.
+(c) Choosing a column $u_r\in N(r)\cap T\subseteq A_r(S,F)$ for each $r\in P$ gives $|P|$ distinct columns of $T$.
+(b), (d) Counting the incidences between $T$ and $U$ in two ways,
+\[
+  |U|\le\sum_{r\in U}|N(r)\cap T|=\sum_{u\in T}c_u\le(\text{the sum of the }|T|\text{ largest values }c_u)\le\Delta|T|.
+\]
+(e) For an available column $u$ and a row $r\in U\cap R(u)$, $u\in A_r(S,F)$, so that $\mu_r\ge c_u$; hence
+$\sum_{r\in U\cap R(u)}1/\mu_r\le c_u/c_u=1$ (and the sum is empty if $c_u=0$). Therefore
+\[
+  |T|\ \ge\ \sum_{u\in T}\ \sum_{r\in U\cap R(u)}\frac1{\mu_r}\ =\ \sum_{r\in U}\frac{|N(r)\cap T|}{\mu_r}\
+  \ge\ \sum_{r\in U}\frac1{\mu_r},
+\]
+and $|T|$ is an integer.
+\end{proof}
+
+\paragraph{The algorithm.} The search has the following parameters:
+\begin{itemize}
+  \item a weight limit $W\ge1$ and a set $\Wr\subseteq\{1,\dots,W\}$ of \emph{reported weights} ($\Wr=\{W\}$ in the
+    round $W$ of \ttt{dist\_m4ri});
+  \item a \emph{choice rule} $\rho$, which assigns to each node $(S,F)$ an unsatisfied row $\rho(S,F)\in U(S)$;
+  \item for each node, an ordering $(v_1,\dots,v_q)$ of the set $A_{\rho(S,F)}(S,F)$ (e.g., by column index);
+  \item a flag $\varepsilon\in\{0,1\}$: \emph{sibling exclusion} (the forbidden set) on or off;
+  \item an admissible bound $\beta$.
+\end{itemize}
+The choice rule and the ordering must be functions of the node $(S,F)$; they may depend on $S$ and $F$ in any way,
+e.g., through the numbers $|A_r(S,F)|$.
+
+\medskip
+\noindent\textup{\textsc{Search}}$(S,F)$ \quad (called on nodes $(S,F)$ with $|S|<W$):
+\begin{enumerate}[label=\arabic*.,leftmargin=2.5em]
+  \item (Pruning.) If $|S|+\beta(S,F)>W$, return.
+  \item (Branching row.) Let $r=\rho(S,F)$, and let $(v_1,\dots,v_q)$ be the ordering of $A_r(S,F)$.
+  \item For $i=1,\dots,q$:
+  \begin{enumerate}[label=(\alph*)]
+    \item $S_i=S\cup\{v_i\}$; $F_i=F\cup\{v_1,\dots,v_{i-1}\}$ if $\varepsilon=1$, and $F_i=F$ if $\varepsilon=0$;
+    \item if $\sigma(S_i)=0$: report $S_i$ if $|S_i|\in\Wr$, and do not search below $S_i$;
+    \item otherwise, if $|S_i|<W$: call \textup{\textsc{Search}}$(S_i,F_i)$.
+  \end{enumerate}
+\end{enumerate}
+The \emph{search from} a start column $v$ with an initial forbidden set $F_0\not\ni v$ reports $\{v\}$ if
+$\sigma(\{v\})=0$ and $1\in\Wr$; if $\sigma(\{v\})\neq0$ and $W\ge2$, it calls \textup{\textsc{Search}}$(\{v\},F_0)$.
+
+In step~3(a), the columns $v_1,\dots,v_{i-1}$ are forbidden in the branch $i$ whatever happened in their own branches
+(searched, pruned, reported, or ended at a zero syndrome).
+
+\paragraph{Instances.}
+\begin{itemize}
+  \item \emph{The current order} (\ttt{cc\_walk()} and \ttt{start\_CC\_recurs\_mt()} in \ttt{dist\_m4ri}~0.14.7,
+    the irreducible-cluster principle of~\cite{DKP17}): $\rho_{\rm first}(S,F)=\min U(S)$, the first unsatisfied row
+    in the row order of $H$ (rows sorted by weight with \ttt{sort\_rows=1}); $\varepsilon=0$; $\beta=\beta_1$ (tested
+    before a child is searched, which is the same as step~1 of the child); the columns in increasing order; and
+    $F_0=\{u\in[n]:u<v\}$, i.e., clusters grow by columns larger than the start column.
+  \item \emph{The branch and bound} of~\cite{LOMKZ26} (\ttt{cc\_prune=1}): $\rho_{\min}(S,F)$ is an unsatisfied row
+    with the fewest available columns, $|A_r(S,F)|$ minimal (ties broken by the row order); $\varepsilon=1$; and
+    $\beta=\max(\beta_0,\beta_1,\beta_2)$, with $\beta_2$ computed greedily and only where it can prune
+    ($|U(S)|>W-|S|$) and $W-|S|\ge3$. With \ttt{cc\_prune=2}, also $\beta_3$ and $\beta_4$.
+  \item \emph{Unlimited clusters} from a start list (\ttt{start=}): $F_0=\emptyset$, or the earlier start columns
+    (Proposition~\ref{prop:start}), or the earlier orbits (Proposition~\ref{prop:orbits}).
+\end{itemize}
+
+\section{Main theorem}\label{sec:main}
+
+\begin{theorem}[completeness and uniqueness]\label{thm:main}
+Fix the parameters of the search, a start column $v$, and an initial forbidden set $F_0\not\ni v$. Let $C$ be an
+irreducible codeword with $|C|\in\Wr$ (so that $|C|\le W$), $v\in C$, and $C\cap F_0=\emptyset$. Then:
+\begin{enumerate}[label=(\roman*)]
+  \item the search from $v$ reports $C$;
+  \item if $\varepsilon=1$, the search from $v$ reports no set more than once; in particular, it reports $C$ exactly
+    once;
+  \item every set $R$ reported by the search from $v$ is a codeword with $|R|\in\Wr$, $v\in R$, and
+    $R\cap F_0=\emptyset$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+\emph{(iii) Soundness.} Along the calls, the cluster grows by one available column at a time, the forbidden set does
+not decrease, and $S_i\cap F_i=\emptyset$: indeed $v_i\notin S\cup F$, and $v_1,\dots,v_{i-1}$ are available at
+$(S,F)$, hence not in $S$, and distinct from $v_i$. A reported set is $\{v\}$ or a set $S_i$ with $\sigma(S_i)=0$ and
+$|S_i|\in\Wr$. It contains $v$, and none of its columns is in $F_0$: each was available when it was added, i.e., not
+in the current forbidden set, which contains $F_0$, and $v\notin F_0$.
+
+\emph{(i) Existence.} If $|C|=1$, then $C=\{v\}$ and $\sigma(\{v\})=0$, and $\{v\}$ is reported. Let $|C|\ge2$. We
+show by induction on $t=0,1,\dots$ that either $C$ has been reported, or \textup{\textsc{Search}} is called on a node
+$(S_t,F_t)$ with
+\begin{equation}\label{eq:invariant}
+  v\in S_t\subsetneq C,\qquad |S_t|=t+1,\qquad F_t\cap C=\emptyset .
+\end{equation}
+For $t=0$: $\{v\}\subsetneq C$ is nonempty, so $\sigma(\{v\})\neq0$ by Lemma~\ref{lem:forms}(a), and $W\ge|C|\ge2$;
+hence \textup{\textsc{Search}}$(\{v\},F_0)$ is called, and $(S_0,F_0)=(\{v\},F_0)$ satisfies~\eqref{eq:invariant}.
+
+For the induction step, let $(S,F)=(S_t,F_t)$ satisfy~\eqref{eq:invariant}, and let $T=C\setminus S\neq\emptyset$.
+\begin{itemize}
+  \item $T$ is a completion of $(S,F)$: $T\cap S=\emptyset$, $T\cap F\subseteq C\cap F=\emptyset$, and
+    $\sigma(T)=\sigma(C)+\sigma(S)=\sigma(S)$ by~\eqref{eq:additive}. Hence
+    $\beta(S,F)\le\lambda(S,F)\le|T|=|C|-|S|\le W-|S|$, and step~1 does not return.
+  \item The row $r=\rho(S,F)$ is unsatisfied, so $N(r)\cap T\neq\emptyset$ by Lemma~\ref{lem:parity}. The columns of
+    $T$ are available, so $N(r)\cap T\subseteq A_r(S,F)=\{v_1,\dots,v_q\}$. Let $j$ be the least index with $v_j\in C$.
+    Then $S_j=S\cup\{v_j\}\subseteq C$, and $F_j\cap C=\emptyset$, since $F_j\subseteq F\cup\{v_1,\dots,v_{j-1}\}$ and
+    $v_1,\dots,v_{j-1}\notin C$ by the choice of $j$.
+  \item If $S_j=C$, then $\sigma(S_j)=0$ and $|S_j|=|C|\in\Wr$, so $C$ is reported in step~3(b).
+  \item If $S_j\subsetneq C$, then $\sigma(S_j)\neq0$ by Lemma~\ref{lem:forms}(a), since $C$ is irreducible, and
+    $|S_j|<|C|\le W$; hence \textup{\textsc{Search}}$(S_j,F_j)$ is called in step~3(c), and
+    $(S_{t+1},F_{t+1})=(S_j,F_j)$ satisfies~\eqref{eq:invariant}.
+\end{itemize}
+Since $|S_t|=t+1<|C|$ in~\eqref{eq:invariant}, the induction ends after at most $|C|-1$ steps, with the report of $C$.
+
+\emph{(ii) Uniqueness.} Let $\varepsilon=1$. A report is produced by a \emph{report event}: a call
+\textup{\textsc{Search}}$(S,F)$ together with an index $i$ in step~3(b), or the start step, which reports $\{v\}$
+and calls nothing else. A report event determines the sequence of branch indices taken from the start. Let
+$e\neq e'$ be two report events of the search from $v$, and let \textup{\textsc{Search}}$(S,F)$ be the last call
+common to both sequences, where they continue with the indices $i$ and $i'$. Then $i\neq i'$: if both events occur in
+this call, they differ in the index; and if $e$ reports $S_i$ in this call, then $e'$ cannot lie below the branch $i$,
+since nothing is searched below a set with zero syndrome. Suppose $i<i'$. The set reported by $e$ contains
+$S_i\ni v_i$, since a cluster only grows along the calls. In the branch $i'$ and below it, $v_i\in F_{i'}$ is
+forbidden, since the forbidden sets do not decrease, so $v_i$ is never added there, and $v_i\notin S\cup\{v_{i'}\}$.
+Hence $v_i$ is not in the set reported by $e'$, and the two reported sets differ.
+\end{proof}
+
+\begin{remark}\label{rem:mult}
+Without the forbidden set ($\varepsilon=0$), a codeword can be reported several times: if it meets the branching row
+of a node in three columns which are not yet in the cluster, each of the three branches can lead to it. For instance,
+the current order records 2084 hits for the 1884 codewords of weight 12 of the gross code $[[144,12,12]]$, and the
+branch and bound records each of them once.
+\end{remark}
+
+\begin{remark}[what the proof uses]\label{rem:uses}
+The proof uses only Lemma~\ref{lem:parity} for the chosen row, the admissibility of $\beta$, the irreducibility of
+$C$, and the invariant $F_t\cap C=\emptyset$. Hence Theorem~\ref{thm:main} holds for every choice rule (the first
+unsatisfied row, the row with the fewest available columns, or any other), for every ordering of the available
+columns, and for every admissible bound. These choices change only the shape and the size of the search tree.
+\end{remark}
+
+\begin{remark}[branching factor]\label{rem:branching}
+At every node, the number of branches is $q=|A_{\rho(S,F)}(S,F)|\le|N(\rho(S,F))|-1\le\max_r|N(r)|-1$, since the
+chosen row is unsatisfied and therefore contains a column of $S$; this bound, and every bound on the size of the
+search tree derived from it, holds for every choice rule. The rule $\rho_{\min}$ branches at each node on
+$\min_{r\in U(S)}|A_r(S,F)|\le|A_{\rho_{\rm first}(S,F)}(S,F)|$ columns, i.e., never on more columns than the first
+unsatisfied row offers at the same node, and it detects a dead end (the minimum $0$) at once. The total number of calls
+is not monotone in these local choices, since another row leads to other clusters below the node. In a prototype
+(October 2026, see \ttt{todo.md}), $\rho_{\min}$ alone (with $\varepsilon=0$ and $\beta=\beta_1$) reduced the number of
+calls by factors of 1.05--1.7 on seven codes and DEMs, and increased it on none; together with the forbidden set and
+the packing bound $\beta_2$, by factors of 1.7--66.
+\end{remark}
+
+\section{Consequences}\label{sec:consequences}
+
+\begin{corollary}[all start columns]\label{cor:roots}
+Run the search from every start column $v\in[n]$ with $F_0(v)=\{u\in[n]:u<v\}$. Every irreducible codeword $C$ with
+$|C|\in\Wr$ is reported from $v=\min C$, at least once, and exactly once if $\varepsilon=1$; it is not reported from
+any other start column.
+\end{corollary}
+
+\begin{proof}
+From $v=\min C$: $C\cap F_0(v)=\emptyset$, and Theorem~\ref{thm:main} applies. From $v\notin C$: every set reported
+from $v$ contains $v$. From $v\in C$ with $v>\min C$: $\min C\in F_0(v)$, while the sets reported from $v$ avoid
+$F_0(v)$.
+\end{proof}
+
+With $\Wr=\{W\}$, only the start columns $v\le n-W+1$ need to be searched, since a set of weight $W$ with the
+smallest column $v$ has $W-1$ columns larger than $v$. The expert options \ttt{cbeg} and \ttt{cend} restrict the start
+columns to an interval; then exactly the irreducible codewords $C$ with $\min C$ in the interval are reported.
+
+\begin{corollary}[distance by increasing weights]\label{cor:ladder}
+Let $w_0\ge1$ be such that there is no nontrivial codeword of weight less than $w_0$. For $w=w_0,w_0+1,\dots$, run the
+searches of Corollary~\ref{cor:roots} with $W=w$ and $\Wr=\{w\}$ (the \emph{round} $w$), and test every reported set
+for nontriviality.
+\begin{enumerate}[label=(\alph*)]
+  \item If the rounds $w_0,\dots,W$ report no nontrivial codeword, then $d>W$.
+  \item If $w^*$ is the first round which reports a nontrivial codeword, then $d=w^*$, and every nontrivial codeword
+    of weight $d$ is reported in the round $w^*$, exactly once if $\varepsilon=1$.
+\end{enumerate}
+\end{corollary}
+
+\begin{proof}
+By Lemma~\ref{lem:minweight}, every nontrivial codeword of weight $d$ is irreducible, and $d\ge w_0$ by assumption;
+by Corollary~\ref{cor:roots}, it is reported in the round $d$. (a) Hence $d\notin\{w_0,\dots,W\}$, i.e., $d>W$.
+(b) The nontrivial codeword reported in the round $w^*$ gives $d\le w^*$, and $d<w^*$ is excluded since the round $d$
+would report a nontrivial codeword. The rest follows from Corollary~\ref{cor:roots}.
+\end{proof}
+
+In \ttt{dist\_m4ri}, $w_0$ is the supplied \ttt{dmin} (default $1$). The option \ttt{noscan=1} runs the single round
+$w=\ttt{wmax}$, which is certified only if $w_0=\ttt{wmax}$ is supplied: a round $w$ reports only codewords of weight
+$w$, and it does not search below a zero-syndrome cluster of smaller weight (step~3(b)), which can lose only reducible
+codewords of weight $w$ (Lemma~\ref{lem:forms}(a)), and no irreducible ones.
+
+\begin{remark}[reducible codewords and the rank filter]\label{rem:reducible}
+In a round $w>d$, a reducible codeword of weight $w$ is reported only if the search reaches it along a branch on which
+no cluster before the last one has zero syndrome; whether this happens depends on the choice rule, the orderings, and
+$\varepsilon$. If every reported set $R$ is accepted only if $\rank H_R=|R|-1$ (Lemma~\ref{lem:forms}(b)), then the
+accepted sets of the round $w$ are exactly the irreducible codewords of weight $w$ (Corollary~\ref{cor:roots}),
+independently of the choice rule and the orderings, and with $\varepsilon=1$ each of them is accepted exactly once:
+the CC search contributes exactly one hit to each codeword it finds. The test costs a Gaussian elimination of $|R|$
+columns restricted to the at most $|R|\Delta$ rows they touch, and it is applied only to the reported sets.
+\end{remark}
+
+\begin{proposition}[start lists]\label{prop:start}
+Let $Q=\{q_1<\dots<q_k\}\subseteq[n]$ be a list of start columns, searched with unlimited clusters, and let $C$ be an
+irreducible codeword with $|C|\in\Wr$ and $C\cap Q\neq\emptyset$.
+\begin{enumerate}[label=(\alph*)]
+  \item With $F_0(q_j)=\emptyset$ for all $j$, $C$ is reported from every $q_j\in C$, and from no other start column;
+    with $\varepsilon=1$, it is reported exactly $|C\cap Q|$ times.
+  \item With $F_0(q_j)=\{q_1,\dots,q_{j-1}\}$, $C$ is reported from $q_j$ with $j=\min\{i:q_i\in C\}$, and from no
+    other start column; with $\varepsilon=1$, it is reported exactly once.
+\end{enumerate}
+Thus both variants report the same irreducible codewords, those which meet $Q$; forbidding the earlier start columns
+changes only the multiplicities. In particular, every conclusion about $d$ drawn from~(a), e.g., under a symmetry
+which maps every nontrivial codeword of weight $d$ to one which meets $Q$, holds for~(b).
+\end{proposition}
+
+\begin{proof}
+(a) Theorem~\ref{thm:main} with $F_0=\emptyset$ for each $q_j\in C$; the sets reported from $q_j$ contain $q_j$.
+(b) For $j=\min\{i:q_i\in C\}$, $C\cap F_0(q_j)=\emptyset$, and Theorem~\ref{thm:main} applies. The sets reported from
+$q_i\notin C$ contain $q_i$; and if $q_i\in C$ with $i>j$, then $q_j\in C\cap F_0(q_i)$, while the sets reported from
+$q_i$ avoid $F_0(q_i)$.
+\end{proof}
+
+\begin{proposition}[orbit exclusion]\label{prop:orbits}
+Let $\Gamma$ be a group of permutations of $[n]$ which act on $\Ftwo^n$ by permuting the coordinates, with
+$g(\ker H)=\ker H$ and $g(\Tr)=\Tr$ for all $g\in\Gamma$. Let $O_1,\dots,O_k$ be the orbits of $\Gamma$ on $[n]$, let
+$q_j\in O_j$, and search from each $q_j$ with unlimited clusters and $F_0(q_j)=O_1\cup\dots\cup O_{j-1}$.
+\begin{enumerate}[label=(\alph*)]
+  \item For every irreducible codeword $C$ with $|C|\in\Wr$, there is $g\in\Gamma$ such that $g(C)$ is reported;
+    $g(C)$ is an irreducible codeword of weight $|C|$, and it is nontrivial if and only if $C$ is.
+  \item Every reported set is reported from exactly one start column, and with $\varepsilon=1$ exactly once.
+\end{enumerate}
+Consequently, Corollary~\ref{cor:ladder}(a) holds for these searches, and so does~(b) with ``every nontrivial codeword
+of weight $d$ is reported'' replaced by ``an image under $\Gamma$ of every nontrivial codeword of weight $d$ is
+reported''.
+\end{proposition}
+
+\begin{proof}
+For $A\subseteq[n]$ and $g\in\Gamma$, $1_{g(A)}=g(1_A)$, so $g(A)$ is a codeword if and only if $A$ is. Hence $g$
+maps the nonempty proper subsets of $C$ with zero syndrome to those of $g(C)$, and $g(C)$ is irreducible by
+Lemma~\ref{lem:forms}(a); since $g(\Tr)=\Tr$, it is nontrivial if and only if $C$ is.
+(a) Let $j=\min\{i:C\cap O_i\neq\emptyset\}$, $u\in C\cap O_j$, and $g\in\Gamma$ with $g(u)=q_j$. Since
+$g(O_i)=O_i$, we have $g(C)\cap O_i=g(C\cap O_i)=\emptyset$ for $i<j$, so $g(C)\cap F_0(q_j)=\emptyset$ and
+$q_j\in g(C)$; Theorem~\ref{thm:main} applies.
+(b) A set reported from $q_i$ contains $q_i$ and avoids $O_1,\dots,O_{i-1}$, so that $i=\min\{i':R\cap O_{i'}\neq
+\emptyset\}$ is determined by the reported set $R$; within one start column, use Theorem~\ref{thm:main}(ii).
+For the consequence, repeat the proof of Corollary~\ref{cor:ladder} with an image $g(C)$ of a nontrivial codeword $C$
+of weight $d$, which is again nontrivial, irreducible, and of weight $d$.
+\end{proof}
+
+For a CSS code, the conditions on $\Gamma$ hold if every $g\in\Gamma$ maps the row spaces of $H_X$ and $H_Z$ to
+themselves; they can be verified for each generator by the rank tests $\rank[H;Hg]=\rank H$, and the same for $H_Z$
+(or for $[H;L]$ when only $L$ is given), where $Hg$ is $H$ with its columns permuted by $g$. With trivial orbits (the
+trivial group, $k=n$, $q_j=j$), Proposition~\ref{prop:orbits} is Corollary~\ref{cor:roots}.
+
+\section{Implementation details covered by the theorem}\label{sec:impl}
+
+\begin{proposition}[the last two extensions by a hash table]\label{prop:hash}
+Let $\Wr=\{W\}$, and let $(S,F)$ be a node with $|S|=W-2$ which is not pruned in step~1; let $r=\rho(S,F)$ and let
+$(v_1,\dots,v_q)$ be the ordering of $A_r(S,F)$. The sets reported by \textup{\textsc{Search}}$(S,F)$, including its
+descendants, are exactly the sets $S\cup\{v_i,u\}$ for the pairs $(i,u)$ with $i\in[q]$ and
+\begin{equation}\label{eq:pair}
+  u\notin S\cup F\cup\{v_i\},\qquad h_u=\sigma(S)+h_{v_i}\neq0 ,
+\end{equation}
+each exactly once, and different pairs give different sets, for $\varepsilon=0$ and for $\varepsilon=1$. Likewise,
+for a node $(S,F)$ with $|S|=W-1$ which is not pruned, the reported sets are the sets $S\cup\{u\}$ with
+$u\notin S\cup F$ and $h_u=\sigma(S)$.
+\end{proposition}
+
+\begin{proof}
+Consider the branch $i$: $S_i=S\cup\{v_i\}$ and $F_i\subseteq F\cup\{v_1,\dots,v_{i-1}\}$. If $\sigma(S_i)=0$, the
+branch reports nothing ($|S_i|=W-1\notin\Wr$) and searches nothing, and no $u$ satisfies~\eqref{eq:pair}. Otherwise
+\textup{\textsc{Search}}$(S_i,F_i)$ is called. If it is pruned, then $\lambda(S_i,F_i)\ge\beta(S_i,F_i)>1$, so no
+available $u$ has $h_u=\sigma(S_i)$, since $\{u\}$ would be a completion of size $1$; nothing is lost. If it is not
+pruned, it branches over $A_{r'}(S_i,F_i)$ with $r'=\rho(S_i,F_i)\in U(S_i)$, and reports $S_i\cup\{u\}$ exactly for
+the $u$ in this set with $\sigma(S_i\cup\{u\})=0$, i.e., $h_u=\sigma(S_i)$. Since $r'\in\supp\sigma(S_i)$, every $u$
+with
+$h_u=\sigma(S_i)$ lies in $N(r')$; so these are all the columns $u\notin S_i\cup F_i$ with $h_u=\sigma(S_i)$. Finally,
+$F_i\setminus F\subseteq\{v_1,\dots,v_{i-1}\}\subseteq N(r)$, while $h_u=\sigma(S)+h_{v_i}$ has the entry $1+1=0$ in
+the row $r$ (as $r\in U(S)$ and $v_i\in N(r)$), so $u\notin N(r)$ and $u\notin F_i\setminus F$. Hence the condition
+$u\notin S_i\cup F_i$ is the same as $u\notin S\cup F\cup\{v_i\}$, for both values of $\varepsilon$. Two pairs
+$(i,u)\neq(i',u')$ with $i\neq i'$ give different sets, since $\{v_i,u\}=\{v_{i'},u'\}$ would imply $u=v_{i'}\in N(r)$;
+and pairs with $i=i'$ and $u\neq u'$ obviously give different sets. The case $|S|=W-1$ is the same argument for a
+single level.
+\end{proof}
+
+\ttt{dist\_m4ri} finds the columns $u$ of~\eqref{eq:pair} without the branching over $A_{r'}(S_i,F_i)$: with random
+values $z_1,\dots,z_m\in\{0,1\}^{64}$ and the hash $\zeta(x)=\bigoplus_{r\in\supp x}z_r$ of a vector $x\in\Ftwo^m$,
+which satisfies $\zeta(x+y)=\zeta(x)\oplus\zeta(y)$, the nonzero columns of $H$ are stored by their hashes, and the
+columns with $h_u=\sigma(S)+h_{v_i}$ are among those returned by a lookup of $\zeta(\sigma(S))\oplus\zeta(h_{v_i})$.
+Every candidate is verified exactly, so that hash collisions cause no error, and equal vectors have equal hashes, so
+that no column is missed. By Proposition~\ref{prop:hash}, the hash implementation reports the same sets as the search,
+for both orders, and the condition $u\notin S\cup F\cup\{v_i\}$ is all that is needed for the forbidden set.
+
+\begin{proposition}[work units]\label{prop:units}
+Fix a start column and an integer $L\ge0$, and let $B\ge\max_r|N(r)|$, so that $q\le B$ at every node. For a vector of
+digits $\delta\in[B]^L$, the \emph{unit} $\delta$ is the search from the start column in which every call at depth
+$\ell-1<L$ (the depth of a call on $(S,F)$ is $|S|-1$) takes only the branch $i=\delta_\ell$, or none if
+$\delta_\ell>q$, with $S_i$ and $F_i$ as in step~3(a); in particular, $v_1,\dots,v_{\delta_\ell-1}$ are forbidden in
+it. Then every report event of the full search at a call of depth at least $L$ occurs in exactly one unit, and the
+units have no other report events except at calls of depth less than $L$. With $\Wr=\{W\}$ and $L\le W-2$, all report
+events are at calls of depth $W-2\ge L$, so that the units together report exactly the sets reported by the full
+search, with the same multiplicities.
+\end{proposition}
+
+\begin{proof}
+A call of the full search at depth $t$ is identified by its sequence of branch indices $(i_1,\dots,i_t)$. Since the
+pruning, the choice rule, and the orderings are functions of the node, the unit $\delta$ makes exactly the calls of the
+full search whose sequences are prefixes of $\delta$ (depth less than $L$) or begin with $\delta$ (depth at least $L$).
+A report event at a call of depth $t\ge L$ therefore occurs in the unit $(i_1,\dots,i_L)$ and in no other unit.
+\end{proof}
+
+\ttt{dist\_m4ri} uses $B$ equal to the maximum row weight of $H$ and at most $L=\min(3,W-3)$ fixed levels, so that
+the calls with $|S|=W-2$, where the hash table of Proposition~\ref{prop:hash} is used, are never at fixed levels.
+
+\begin{remark}[threads and a decreasing weight limit]\label{rem:threads}
+The search tree is determined by the nodes and the deterministic rules, so that the units can be processed by any
+number of threads in any order. When a codeword is found, \ttt{dist\_m4ri} may lower the weight limit during a round
+to the current upper bound plus \ttt{dW}. This only prunes more: for a codeword $C$ with $|C|$ at most the final limit,
+every call on the branch of Theorem~\ref{thm:main} passes step~1 for every limit $W\ge|C|$, and its report event is
+unique as before.
+\end{remark}
+
+\begin{thebibliography}{9}
+\bibitem{DKP17}
+I.~Dumer, A.~A.~Kovalev, and L.~P.~Pryadko, ``Distance verification for classical and quantum LDPC codes,''
+\emph{IEEE Trans. Inf. Theory} \textbf{63}(7), 4675 (2017), doi:10.1109/TIT.2017.2690381, arXiv:1611.07164.
+\bibitem{LOMKZ26}
+J.~Y.~Lee, K.~Okada, N.~Maskara, K.~Kasai, and H.~Zhou, ``Design principles for ultra-high-rate quantum codes,''
+arXiv:2609.30069 (2026), Appendix~B.
+\bibitem{Lee26}
+G.~Lee, ``Bicycle Race: small two-block codes on the Pareto frontier,'' arXiv:2610.13880 (2026), Appendix~C.4.
+\end{thebibliography}
+
+\end{document}
