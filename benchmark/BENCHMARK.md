@@ -15,7 +15,9 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 > circuits from the follow-up runs of 0.14.1 (Section 6); the values marked "(s)" are from shorter runs of earlier
 > versions on the stripped DEMs, and they are provisional. The values of the codes and circuits added on 2026-10-20 (the
 > `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise BB circuits) and the re-runs of
-> the uniform-noise gross circuit and of the torus circuits (Section 2.5) are from short runs of 0.14.7.
+> the uniform-noise gross circuit and of the torus circuits (Section 2.5) are from short runs of 0.14.7. The distances
+> of the larger codes of Section 1 (the `yarn_*` codes with $d \ge 16$, `bb_360`, and `bb_756`) are from the
+> branch-and-bound CC search of 0.15.0 (Section 9).
 
 ## Directory Structure
 
@@ -105,7 +107,7 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 | `bb_108_8_10` | $[[108, 8, 10]]$ | $54 \times 108$ | $\ell=9, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
 | `gross_144_12_12` | $[[144, 12, 12]]$ | $72 \times 144$ | $\ell=12, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
 | `double_gross_288_12_18` | $[[288, 12, 18]]$ | $144 \times 288$ | $\ell=12, m=12$, $A=x^3+y^2+y^7$, $B=y^3+x+x^2$ |
-| `bb_360_12_24` | $[[360, 12, \le 24]]$ | $180 \times 360$ | $\ell=30, m=6$, $A=x^9+y+y^2$, $B=y^3+x^{25}+x^{26}$ |
+| `bb_360_12_24` | $[[360, 12, 24]]$ | $180 \times 360$ | $\ell=30, m=6$, $A=x^9+y+y^2$, $B=y^3+x^{25}+x^{26}$ |
 | `bb_756_16_34` | $[[756, 16, \le 34]]$ | $378 \times 756$ | $\ell=21, m=18, A=x^3+y^{10}+y^{17}, B=y^5+x^3+x^{19}$ |
 | `mitten_90_18_6_C3xS3` | $[[90, 18, 6]]$ | $36 \times 90$ | $G = C_3 \times S_3$ ($|G|=18$, `seed=2`) |
 | `mitten_150_30_8_C5xS3` | $[[150, 30, 8]]$ | $60 \times 150$ | $G = C_5 \times S_3$ ($|G|=30$, `seed=2`) |
@@ -115,17 +117,17 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 | `yarn_mitten_150_30_10` | $[[150, 30, 10]]$ | $60 \times 150$ | $G = C_5 \times S_3$ |
 | `yarn_mitten_200_40_12` | $[[200, 40, 12]]$ | $80 \times 200$ | $G = C_4 \times D_{10}$ |
 | `yarn_mitten_300_60_14` | $[[300, 60, 14]]$ | $120 \times 300$ | $G = C_{10} \times S_3$ |
-| `yarn_mitten_500_100_16` | $[[500, 100, \le 16]]$ | $200 \times 500$ | $G = C_5 \times (C_5 \rtimes C_4)$ |
-| `yarn_mitten_540_108_18` | $[[540, 108, \le 18]]$ | $216 \times 540$ | $G = (C_9 \rtimes C_3) \rtimes C_4$ |
-| `yarn_mitten_630_126_20` | $[[630, 126, \le 20]]$ | $252 \times 630$ | $G = C_7 \rtimes C_{18}$ |
-| `yarn_mitten_780_156_22` | $[[780, 156, \le 22]]$ | $312 \times 780$ | $G = C_{13} \times A_4$ |
+| `yarn_mitten_500_100_16` | $[[500, 100, 16]]$ | $200 \times 500$ | $G = C_5 \times (C_5 \rtimes C_4)$ |
+| `yarn_mitten_540_108_18` | $[[540, 108, 18]]$ | $216 \times 540$ | $G = (C_9 \rtimes C_3) \rtimes C_4$ |
+| `yarn_mitten_630_126_20` | $[[630, 126, 20]]$ | $252 \times 630$ | $G = C_7 \rtimes C_{18}$ |
+| `yarn_mitten_780_156_22` | $[[780, 156, 22]]$ | $312 \times 780$ | $G = C_{13} \times A_4$ |
 | `yarn_mitten_975_195_24` | $[[975, 195, \le 24]]$ | $390 \times 975$ | $G = C_5 \times (C_{13} \rtimes C_3)$ |
 | `yarn_smitten_300_60_9` | $[[300, 60, 10]]$ | $120 \times 300$ | structured, $G = C_{10} \times S_3$ |
 | `yarn_smitten_330_66_12` | $[[330, 66, 12]]$ | $132 \times 330$ | structured, $G = C_{11} \times S_3$ |
 | `yarn_smitten_600_120_14` | $[[600, 120, 14]]$ | $240 \times 600$ | structured, $G = C_5 \times S_4$ |
-| `yarn_smitten_600_120_16` | $[[600, 120, \le 16]]$ | $240 \times 600$ | structured, $G = C_5 \times S_4$ |
-| `yarn_smitten_840_168_18` | $[[840, 168, \le 17]]$ | $336 \times 840$ | structured, $G = C_7 \times S_4$ |
-| `yarn_smitten_1200_240_20` | $[[1200, 240, \le 20]]$ | $480 \times 1200$ | structured, $|G| = 240$ |
+| `yarn_smitten_600_120_16` | $[[600, 120, 16]]$ | $240 \times 600$ | structured, $G = C_5 \times S_4$ |
+| `yarn_smitten_840_168_18` | $[[840, 168, 17]]$ | $336 \times 840$ | structured, $G = C_7 \times S_4$ |
+| `yarn_smitten_1200_240_20` | $[[1200, 240, 20]]$ | $480 \times 1200$ | structured, $|G| = 240$ |
 | `yarn_ablp_560_112_14` | $[[560, 112, 14]]$ | $224 \times 560$ | abelian lifted product, $|G| = 112$ |
 
 Distances computed with `dist_m4ri`:
@@ -137,8 +139,8 @@ Distances computed with `dist_m4ri`:
 | `bb_108_8_10` | – | 10 |
 | `gross_144_12_12` | 12 | 12 |
 | `double_gross_288_12_18` | 18 | 18 |
-| `bb_360_12_24` | – | [18, 24] |
-| `bb_756_16_34` | – | [17, 34] |
+| `bb_360_12_24` | – | 24 |
+| `bb_756_16_34` | – | [26, 34] |
 | `mitten_90_18_6_C3xS3` | 6 | 6 |
 | `mitten_150_30_8_C5xS3` | 8 | 8 |
 | `mitten_210_42_8_C7xS3` | **6** | 8 |
@@ -147,17 +149,17 @@ Distances computed with `dist_m4ri`:
 | `yarn_mitten_150_30_10` | 10 | 10 |
 | `yarn_mitten_200_40_12` | 12 | 12 |
 | `yarn_mitten_300_60_14` | 14 | 14 |
-| `yarn_mitten_500_100_16` | [15, 16] | [15, 16] |
-| `yarn_mitten_540_108_18` | [15, 18] | [15, 18] |
-| `yarn_mitten_630_126_20` | [15, 20] | [15, 20] |
-| `yarn_mitten_780_156_22` | [15, 22] | [15, 22] |
-| `yarn_mitten_975_195_24` | [14, 24] | [14, 24] |
+| `yarn_mitten_500_100_16` | 16 | 16 |
+| `yarn_mitten_540_108_18` | 18 | 18 |
+| `yarn_mitten_630_126_20` | 20 | 20 |
+| `yarn_mitten_780_156_22` | 22 | 22 |
+| `yarn_mitten_975_195_24` | [23, 24] | 24 |
 | `yarn_smitten_300_60_9` | **10** | **10** |
 | `yarn_smitten_330_66_12` | 12 | 12 |
 | `yarn_smitten_600_120_14` | 14 | 14 |
-| `yarn_smitten_600_120_16` | [15, 16] | [15, 16] |
-| `yarn_smitten_840_168_18` | **[15, 17]** | [15, 18] |
-| `yarn_smitten_1200_240_20` | [14, 20] | [14, 20] |
+| `yarn_smitten_600_120_16` | 16 | 16 |
+| `yarn_smitten_840_168_18` | **17** | 18 |
+| `yarn_smitten_1200_240_20` | 20 | 20 |
 | `yarn_ablp_560_112_14` | 14 | 14 |
 
 - $d_X$ ($d_Z$) is the minimum weight of an $X$-type ($Z$-type) logical operator, i.e., of a vector $c$ with
@@ -172,13 +174,16 @@ Distances computed with `dist_m4ri`:
   minimum-weight logical operators ($X$ / $Z$, enumerated by CC): 66 / 90 (`mitten_90`), 180 / 120 (`mitten_150`),
   84 / 42 (`mitten_210`), 216 / 648 (`mitten_270`), and 132 / 132 (`mitten_330`).
 - For `bb_360` and `bb_756`, the published distances are upper bounds (the codewords found by `dist_m4ri` have the
-  same weights), and the lower bounds are from 60 s runs.
+  same weights). 0.15.0 certified $d = 24$ for `bb_360` in 3.2 min and raised the lower bound of `bb_756` from 17
+  (60 s runs) to 26 in 12 min (Section 9.3).
 - The `yarn_*` codes (2026-10-20): `method=3` of 0.14.7 with a timeout of 20 s per sector on 128 threads. The upper
-  bounds are the nominal distances, except for `yarn_smitten_840_168_18`.
+  bounds are the nominal distances, except for `yarn_smitten_840_168_18`. The codes with $d \ge 16$ were certified by
+  0.15.0 (2026-10-25, `method=3` on 128 threads, Section 9.3): from 1 s per sector for `yarn_mitten_500_100_16` to
+  59 min for $d_Z$ of `yarn_mitten_975_195_24`, whose $d_X$ is in $[23, 24]$ (the round $w = 23$ was not run).
   - `yarn_smitten_300_60_9` has distance **10**, not 9, certified by CC in both sectors (also by the single-threaded
     `dist_m4ri_old method=2 wmax=9`: no codeword of weight at most 9).
-  - `yarn_smitten_840_168_18`: RW found 7 distinct $X$-type logical operators of weight 17, valid in an independent
-    check over GF(2), so that $d_X \le 17$ (nominal 18).
+  - `yarn_smitten_840_168_18` has distance **17**, not 18: RW found 7 distinct $X$-type logical operators of weight 17,
+    valid in an independent check over GF(2), and 0.15.0 certified $d_X = 17$ and $d_Z = 18$.
 
 ---
 
@@ -1076,3 +1081,89 @@ The runs of Sections 8.1–8.4 and 8.6 with 0.14.6 (the columns 0.14.6 above):
   those of 0.14.5 itself at that time: on the gross circuit (full DEM, default parameters, 100k RW steps), five runs
   of each version, alternating, took 10.7 s (0.14.6) and 11.2 s (0.14.5) in the median, against 10.3 s for 0.14.5 in
   the runs of Section 8.4.
+
+---
+
+## 9. Branch-and-Bound CC Search of 0.15.0 (2026-10-25)
+
+`dist_m4ri` 0.15.0 (commit `2edf8d7`) against 0.14.8 (`d43bf47`), on the server of Section 4 (idle), with the inputs of
+Sections 1 and 5.1: 408 runs in 2.8 hours, the two versions alternating case by case. 0.15.0 replaces the CC walk of
+the earlier versions (all columns of the first unsatisfied row; `cc_prune=0`) by a branch and bound (`cc_prune=1`, the
+default; README, Section 2): each branch forbids the columns of its earlier siblings, the branching row is the
+unsatisfied row with the fewest available columns, and the packing bound prunes the clusters which cannot be completed
+within the weight limit. `doc/cc_completeness.tex` proves that it finds every irreducible codeword up to the weight
+limit (in particular, every minimum-weight codeword). Distance only (no `outC`), `nothrottle=1` on 128 threads. Both
+versions give the same distances in all runs. The raw data and scripts are in `scratch/bench_0.15.0/` (not in the
+repository).
+
+### 9.1 Wall time
+
+`method=2` (CC alone, up to the first codeword) and `method=3` (the exact distance) on 128 threads, median of three
+runs (two for the gross and `mitten_270` custom circuits), and `method=2` on one thread (one run); in parentheses: the
+speedup of 0.15.0. The codes are given by the matrix `finH`; the circuits by their full DEMs (Section 5.1).
+
+| Input | $d$ | CC alone, 128 threads | `method=3`, 128 threads | CC alone, one thread |
+| :--- | :---: | :--- | :--- | :--- |
+| `yarn_smitten_600_120_14`, $H_X$ | 14 | 3.56 → 0.12 s (**29x**) | 3.35 → 0.14 s (24x) | 271 → 7.7 s (**35x**) |
+| `yarn_ablp_560_112_14`, $H_X$ | 14 | 3.48 → 0.19 s (18x) | 3.55 → 0.25 s (14x) | 277 → 13.4 s (21x) |
+| `yarn_mitten_300_60_14`, $H_X$ | 14 | 1.63 → 0.21 s (7.6x) | 1.68 → 0.22 s (7.5x) | 134 → 15.1 s (8.9x) |
+| `double_gross_288_12_18`, $H_X$ | 18 | 1.28 → 0.31 s (4.2x) | 1.37 → 0.34 s (4.0x) | 103 → 24.6 s (4.2x) |
+| `yarn_smitten_330_66_12`, `yarn_mitten_200_40_12` | 12 | 2.5x, 1.9x | 2.2x, 1.7x | |
+| the other codes of Section 1 with $d \le 12$ | 4–12 | 0.82–1.21x (20–30 ms) | 0.84–1.11x | gross: 0.90x (0.06 s) |
+| gross circuit | 10 | | 191 → 77 s (**2.5x**) | |
+| `mitten_270` custom circuit | 9 | | 193 → 137 s (1.4x) | |
+| `mitten_270` hef circuit | 7 | 5.34 → 2.54 s (2.1x) | 3.79 → 2.06 s (1.8x) | 475 → 151 s (3.2x) |
+| `bb_90`, `bb_108` circuits | 8 | 1.11x, 1.12x | 1.05x, 1.02x | `bb_90`: 1.14x |
+| the other circuits of Section 5.1 | 4–7 | 0.93–0.99x | 0.95–1.01x | `mitten_150` custom: 0.87x |
+
+- The gain grows with the weight of the last CC round: 4–35x for the codes with $d = 14$–18, about 2x for $d = 12$
+  and for the circuits with $d = 9$–10 (whose CC rounds dominate `method=3`).
+- The small codes take 20–30 ms, mostly the start-up: their CC work (at most 0.6 thread-s) ranges from 5x lower
+  (`yarn_smitten_300`) to 1.5x higher (`mitten_90`, about 1 ms). `yarn_mitten_150` takes about 5 ms more
+  (0.82–0.87x), although its CC work is 40% lower.
+- The circuits with $d \le 7$: 0.93–0.99x on 128 threads, except `mitten_270` hef (2.1x); on one thread,
+  `mitten_150` custom is at 0.87x (the round $w = 6$ has 1.5x fewer nodes, but they cost more).
+
+### 9.2 Threads, load balance, and predicted work
+
+- On 128 threads, the CC thread time of the same rounds is 1.41–1.50x that on one thread with 0.15.0 (double gross and
+  the three codes with $d = 14$), and 1.52–1.59x with 0.14.8 (SMT and memory): the branch and bound scales at least as
+  well as the walk. The wall-time speedups $T(1)/T(128)$ are 64–80 for 0.15.0 and 76–83 for 0.14.8 (the runs of
+  0.15.0 take only 0.12–0.31 s on 128 threads).
+- Load balance: in all CC rounds of 20 s to 42 min (Section 9.3, the gross and `mitten_270` custom circuits), the CC
+  thread time is 0.98–1.00 of 128 threads times the wall time of the round.
+- The work of a round predicted from the earlier rounds was within 1–3% of the measured one for the long rounds (e.g.,
+  `yarn_mitten_975`, $w = 23$: $3.16 \cdot 10^5$ thread-s predicted, $3.19 \cdot 10^5$ measured), so that `method=3`
+  ends a round which cannot finish before the timeout.
+- 1.7–2.9 million nodes per thread-second (0.34–0.57 µs per node), fewer for the larger codes and weights. With
+  `debug&8`, 0.15.0 prints the nodes of each CC round, which do not depend on the number of threads.
+
+### 9.3 Distances of the larger codes of Section 1
+
+`method=3` of 0.15.0 on 128 threads (`nothrottle=1`), one run per sector, with timeouts of 10–60 min. Before: the
+brackets of Section 1 (short runs of 0.14.7: 20 s per sector for the `yarn_*` codes, 60 s for the BB codes). In all
+runs, RW found the upper bound (codewords of the nominal weight, of weight 17 for $d_X$ of `yarn_smitten_840`), and CC
+the lower bound. Last CC round: of the slower sector.
+
+| Code | before | 0.15.0: $d_X$, $d_Z$ | time | last CC round: $w$, thread-s, nodes |
+| :--- | :--- | :--- | ---: | :--- |
+| `yarn_mitten_500_100_16` | [15, 16] | **16**, **16** | 1.0 s, 1.1 s | 15, 87, $2.3 \cdot 10^8$ |
+| `yarn_smitten_600_120_16` | [15, 16] | **16**, **16** | 1.2 s, 1.4 s | 15, 118, $3.0 \cdot 10^8$ |
+| `yarn_smitten_840_168_18` | [15, 17], [15, 18] | **17**, **18** | 3.3 s, 8.9 s | 17, 777, $1.7 \cdot 10^9$ |
+| `yarn_mitten_540_108_18` | [15, 18] | **18**, **18** | 9.6 s, 9.0 s | 17, 857, $2.0 \cdot 10^9$ |
+| `yarn_smitten_1200_240_20` | [14, 20] | **20**, **20** | 56 s, 58 s | 19, 4990, $1.0 \cdot 10^{10}$ |
+| `yarn_mitten_630_126_20` | [15, 20] | **20**, **20** | 91 s, 82 s | 19, 8360, $1.8 \cdot 10^{10}$ |
+| `yarn_mitten_780_156_22` | [15, 22] | **22**, **22** | 11 min, 9.3 min | 21, $6.05 \cdot 10^4$, $1.2 \cdot 10^{11}$ |
+| `yarn_mitten_975_195_24` | [14, 24] | [23, 24], **24** | 20 min, 59 min | 23, $3.19 \cdot 10^5$, $5.5 \cdot 10^{11}$ |
+| `bb_360_12_24` | [18, 24] | **24** (one sector) | 3.2 min | 23, $1.6 \cdot 10^4$, $4.4 \cdot 10^{10}$ |
+| `bb_756_16_34` | [17, 34] | [26, 34] (one sector) | 12 min | 25, $5.88 \cdot 10^4$, $1.4 \cdot 10^{11}$ |
+
+- All nominal distances are confirmed, except that of `yarn_smitten_840_168_18`, which is **17** (Section 1).
+- The work of a CC round grows by a factor of 2.8–3.5 per weight for the `yarn_*` codes (2.4–2.9 for the BB codes);
+  with the walk of 0.14.8, the nodes of the `yarn_*` codes with $d = 14$ grow by about 5 per weight (e.g.,
+  `yarn_mitten_300`, $w = 12 \to 13$: 3.7x with 0.15.0, 4.9x with 0.14.8). In the round $w = 11$ of
+  `yarn_mitten_630`, 0.15.0 visits 110x fewer nodes (1.37M against 151M).
+- `yarn_mitten_975_195_24`: for $d_X$, the round $w = 23$ (about $3.5 \cdot 10^5$ thread-s, 46 min on 128 threads)
+  did not fit in the timeout of the run.
+- `bb_756_16_34`: the rounds $w = 26$ and 27 would take about 21 and 56 min (2.7x per weight), and the distance 34 is
+  out of reach.

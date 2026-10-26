@@ -582,8 +582,11 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - **Implemented in 0.15.0** (M2 of `scratch/cc_bnb/PLAN.md`): `cc_bnb()` in `dist_m4ri.c` as described below,
     `cc_prune=0|1|2` (default 1), the start-list exclusion, nodes per round with `debug&8` (exact: independent of the
     threads and work units; Python: `_last_run_stats["cc_rounds"]`), the Python pass-through (also
-    `compute_model_lower_bound()`), Tests 110 and 111. Open: M3 (benchmark on an idle machine, 1 and 128 threads,
-    BENCHMARK.md) and M4 (per-node cost, then the default of `cc_prune=2`).
+    `compute_model_lower_bound()`), Tests 110 and 111. M3 benchmark (2026-10-25): `benchmark/BENCHMARK.md` Section 9
+    (4–35x for $d = 14$–18; the distances of the `yarn_*` codes with $d \ge 16$ and of `bb_360` certified, up to
+    $d = 24$). Open: M4 (per-node cost, then the default of `cc_prune=2`); later runs: $d_X$ of `yarn_mitten_975`
+    (the round $w = 23$, about 46 min), an independent check of the new distances with `cc_prune=0`, the start-list
+    A/B, and the row-weight-12 GB code $[[254, 16, \le 24]]$.
   - First measurements (2026-10-25, 128 threads, idle server, one run each; `scratch/cc_bnb/m2/`; the node counts
     again with the exact counter, `nodes_count_w.sh`, as the nodes at the fixed levels of the work units were counted
     once per unit before): the same codewords as 0.14.8 in all 16 runs of `scratch/cc_bnb/m0/` (each codeword once);
