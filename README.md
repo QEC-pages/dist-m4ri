@@ -256,6 +256,9 @@ Expert parameters (each prints a `# WARNING:` to `stderr`; see
   weights. The result is **not** a lower bound unless `dmin=wmax` is also supplied.
 - `start=[list]`: Comma-separated list of CC start columns (0-based), e.g. `start=0,48,96`. Clusters grown from a
   listed column are **not** limited to larger column indices (for quasi-cyclic or otherwise symmetric codes).
+- `start_scan=[0|1]` (with `start`, since version 0.15.1): 1: a cluster grown from a listed column $c$ only uses the
+  columns $j > c$, as in the scan of all columns (e.g., `start=0,l start_scan=1` for the two blocks of a two-block
+  group-algebra code over an abelian group).
 - `cbeg=[int]`, `cend=[int]`: Range $[c_{\text{beg}}, c_{\text{end}}]$ of CC start columns, for splitting one CC
   calculation into several runs which together cover all columns $0, \dots, n-1$.
 
@@ -270,6 +273,7 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
 |-----------------|--------------------------------------------|-----------------|------------------------------|
 | (default)       | all, $0 \le i \le n-1$                     | columns $j > i$ | always                       |
 | `start=a,b,c`   | listed columns only                        | unlimited       | under a code symmetry only   |
+| `start=a,b,c start_scan=1` | listed columns only             | columns $j > i$ | under a code symmetry only   |
 | `cbeg`, `cend`  | $c_{\text{beg}} \le i \le c_{\text{end}}$  | columns $j > i$ | after combining split runs   |
 | `noscan=1`      | all, $0 \le i \le n-1$                     | columns $j > i$ | only if `dmin=wmax` is given |
 
@@ -281,6 +285,19 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
   with circulant blocks of size $\ell$ (columns ordered block by block), simultaneous cyclic shifts of all blocks are
   a symmetry, and it is sufficient to list one column per block, e.g., `start=0,48,96` for three blocks with
   $\ell = 48$. Cannot be combined with `cbeg`/`cend`.
+- **`start=a,b,c start_scan=1`** (since version 0.15.1; codes only, not with `fdem`): the clusters grown from a listed
+  column $c$ use only the columns $j > c$, as in the scan of all columns. The reported $d_{\min}$ is valid if a code
+  symmetry maps every minimum-weight codeword to one whose **smallest** column is listed. This holds if the listed
+  columns are the smallest columns of the orbits of a group of code automorphisms, one column per orbit: a codeword
+  meets some orbits, and an automorphism maps one of its columns in the orbit with the smallest listed column onto
+  that column, which is then the smallest column of the image (the columns below it belong to the earlier orbits,
+  which the image does not meet). The later start columns then need much less work than with `start` alone (all
+  columns below them are excluded), and the least if each orbit is a range of consecutive columns, e.g.,
+  `start=0,l start_scan=1` for the two blocks (the orbits of the translations) of a two-block group-algebra code of
+  length $2\ell$ over an abelian group, such as the BB codes: from column $\ell$, only the block $\ell, \dots,
+  2\ell-1$ (2x less CC work than `start=0,l`, e.g., 2.1 against 4.4 thread-s for double gross up to $w = 17$). For
+  other groups, renumber the columns so that each orbit is a range of consecutive columns, with the largest orbits
+  first, and list the first column of each range.
 - **`cbeg=[int]`, `cend=[int]`** (split runs): CC starts only from columns $c_{\text{beg}} \le i \le c_{\text{end}}$
   (default `-1`: column $0$, respectively, column $n-1$), still growing clusters using only columns $j > i$. Thus the
   $d_{\min}$ of a single run only covers codewords whose smallest column is in $[c_{\text{beg}}, c_{\text{end}}]$. To
@@ -302,10 +319,12 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
   valid: $d_{\min}$ and `rw_steps` are merged as well, and an existing exact start-list record is copied to the main
   record (and the cache file is saved) even if no calculation is needed. For DEM input, the start columns index the
   error mechanisms in their order in the flattened DEM (after the `pmin` cutoff). For CSS codes, the same list is
-  used in both sectors.
-- **Clusters from a listed column skip the columns listed before it** (since version 0.15.0, with `cc_prune=1` or `2`):
-  all codewords containing those columns have already been enumerated from them, so that each codeword is found once,
-  from the first listed column it contains (see [`doc/cc_completeness.tex`](doc/cc_completeness.tex)).
+  used in both sectors. `start_scan=True` (CLI: `start_scan=1` or `--start-scan`) passes `start_scan=1`, with the
+  separate key `<key>:start=a,b,c:scan`; it is ignored with a warning without a start list and for a DEM.
+- **Clusters from a listed column skip the columns listed before it** (since version 0.15.0, with `cc_prune=1` or `2`,
+  and `start_scan=0`): all codewords containing those columns have already been enumerated from them, so that each
+  codeword is found once, from the first listed column it contains (see
+  [`doc/cc_completeness.tex`](doc/cc_completeness.tex)).
 
 ### 3. Bracketing Mode (`method=3`, default)
 Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to
@@ -421,7 +440,8 @@ By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid ov
 - **CC Work Units**: A CC round at weight $w$ hands out its start columns $i$ one at a time. The clusters from the
   first start columns, which can grow to all larger columns, are the largest share of a round (about $w/n$ for the
   first one), which limits the speedup to about $n/w$ threads: e.g., 16 threads for the $[[288,12,18]]$ code at
-  $w=15$. Rounds predicted to take more than 1 ms on all threads, with fewer than about 4 such shares per thread, are
+  $w=15$. Rounds predicted to take more than 1 ms on all threads (with an expert `start` list of fewer columns than
+  threads: 1 ms on each listed column, since 0.15.1), with fewer than about 4 such shares per thread, are
   therefore split into $B^L$ work units per start column ($L = 1, 2$, or $3$ levels, $L \le w-3$, $B$ the maximum row
   weight of $H$): a unit fixes the column added at each of the first $L$ cluster extensions (empty units, where a row
   has fewer columns, are skipped). The number of units is limited by the predicted work of the round (at most $10^4$
@@ -698,10 +718,10 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
    `=VALUE` are ignored, aliases such as `dest` or `batch` work, and `debug` gives the debug bitmap). An unknown name
    gives the closest names on `stderr`, and the exit code `1`. The section "Option groups" of the full help lists
    groups of related parameters: `windows` (`kwin`, `win_mode`, `win_hyb`), `stopping`, `bounds`, `dem`, `matrices`,
-   `codewords`, `threading`, `expert` (the CC options whose results rely on assumptions: `noscan`, `start`, `cbeg`,
-   `cend`), and `experimental` (`ksub`, `refresh`). A group name, also as singular or plural (e.g.,
-   `dist_m4ri -h window`), gives all entries of the group, and a parameter of a group also the other entries of its
-   group, as "see also" (e.g., `--help kwin` gives the three window entries).
+   `codewords`, `threading`, `expert` (the CC options whose results rely on assumptions: `noscan`, `start`,
+   `start_scan`, `cbeg`, `cend`), and `experimental` (`ksub`, `refresh`). A group name, also as singular or plural
+   (e.g., `dist_m4ri -h window`), gives all entries of the group, and a parameter of a group also the other entries of
+   its group, as "see also" (e.g., `--help kwin` gives the three window entries).
 
 `--help`, `--morehelp`, and `--version` print to `stdout`. Conflicting inputs: `fdem` together with matrix files
 (`finH`, `finG`, `finL`, `fin`), `pmin`, `outD`, or `drop` (other than `drop=0`) without `fdem`, and `drop` with
@@ -713,7 +733,7 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.15.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.15.1): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -762,6 +782,7 @@ Extra parameters (see --morehelp for details):
   smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)
   noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)
   start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48
+  start_scan=[0|1] (0)   Expert, with start: clusters from column c use only columns > c
   cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs
   irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)
   sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)
@@ -1029,8 +1050,10 @@ interoperability without manual threading overhead.
   `"rw_hits_single"`); the information-set estimate (`rw_infoset_find_prob()`, `rw_infoset_estimate()`: argument
   `pairs_l`) includes the pairs.
 - Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
-  separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
-  results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
+  separate cache record `<key>:start=a,b,c`), `start_scan=True` (CLI: `start_scan=1` or `--start-scan`; with `start`,
+  clusters from a listed column $c$ use only the columns $j > c$; cache record `<key>:start=a,b,c:scan`; not for a DEM),
+  and `trust_start=True` (CLI: `--trust-start`; accept the start-list results as valid and copy them to the main cache
+  record). The binary options `noscan`, `cbeg`, and `cend` are
   disabled in Python (ignored with a warning to `stderr`); see
   [Restricting the CC Search](#restricting-the-cc-search-expert-options). The expert option `irred=0` of the binary
   is not available either (the CLI ignores it with a warning): the codewords recorded and cached are irreducible (see

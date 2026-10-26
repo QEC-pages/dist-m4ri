@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.15.0" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.15.1" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.15.0" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.15.1" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -1277,6 +1277,48 @@ for pr in 0 1; do
     fi
 done
 rm -f "$CWS111"
+
+# Test 112: start_scan=1 (expert, with start): a cluster grown from a listed column c only uses the columns > c, as in
+# the scan.  With all columns listed, the same codewords and hits as the scan (QX150 at the supplied dmin=6, also
+# with cc_prune=0, and with smax=1, the old kernel).  The BB code gross ([[144,12,12]], a two-block group-algebra code
+# over the abelian group C12 x C6, l = 72): start=0,72 start_scan=1 gives d = 12 with fewer CC nodes than start=0,72.
+# Errors: a value other than 0 or 1, no start list, fdem
+CWS112=$(mktemp --suffix=.nz)
+ALL112=$(seq -s, 0 149)
+cc112() { # the codewords found (a checksum of the sorted list) and the totals of the codewords and of their hits
+    $BIN_FORK method=2 $QX97 dmin=6 outC=$CWS112 threads=4 "$@" debug=1 2>&1 >/dev/null | \
+        sed -n 's/^# codewords accumulated: \(total=[0-9]*, min_w=[0-9]*: cws=[0-9]*, total_hits=[0-9]*\),.*/\1/p'
+    grep -v '^%' "$CWS112" | sort | cksum
+}
+for opt in "cc_prune=1" "cc_prune=0" "smax=1"; do
+    A112=$(cc112 $opt)
+    B112=$(cc112 $opt start=$ALL112 start_scan=1)
+    echo "Running Test 112: start_scan=1 with all 150 columns listed, $opt: $(echo "$A112" | head -1)"
+    if [ -z "$A112" ] || [ "$A112" != "$B112" ]; then
+        echo "  [FAIL] Test 112: start_scan=1 with all columns listed differs from the scan ($opt): $B112"
+        FAILED=1
+    fi
+done
+rm -f "$CWS112"
+GROSS112="finH=$WS_ROOT/benchmark/css/gross_144_12_12_Hx.mtx finG=$WS_ROOT/benchmark/css/gross_144_12_12_Hz.mtx"
+assert_output "$BIN_FORK method=2 $GROSS112 start=0,72 start_scan=1 threads=4 debug=8" 0 "^12 12 0$" \
+    "^# searching w=11 with 4 CC threads, start list \(2 columns, start_scan=1\)"
+N112=""
+for opt in "" "start_scan=1"; do
+    N112="$N112 $($BIN_FORK method=2 $GROSS112 wmax=11 start=0,72 $opt threads=4 debug=8 2>&1 | \
+        sed -n 's/^# CC round w=11 work: .*, \([0-9][0-9]*\) nodes$/\1/p')"
+done
+echo "Running Test 112: the nodes of the CC round w=11 of gross with start=0,72, without and with start_scan=1:$N112"
+read -r N112A N112B N112C <<< "$N112"
+if [ -z "$N112B" ] || [ -n "$N112C" ] || [ "$N112B" -ge "$N112A" ]; then
+    echo "  [FAIL] Test 112: start_scan=1 did not reduce the nodes:$N112"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 start=0,7 start_scan=2" 255 "" \
+    "invalid 'start_scan=2': start_scan should be 0 or 1"
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 start_scan=1" 255 "" "start_scan=1 needs a start list"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 start=0,7 start_scan=1" 255 "" \
+    "start_scan=1 is not available with fdem"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

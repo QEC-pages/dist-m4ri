@@ -540,6 +540,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] **Orbit exclusion** (for the programs which construct codes with known symmetries; needs the forbidden set of
   the **Branch-and-bound CC** below): the CC search from the $j$-th start column forbids all columns of the orbits of
   the earlier start columns.
+  - **Partly done in 0.15.1:** `start_scan=1` (expert, with `start`): a cluster grown from a listed column $c$ only
+    uses the columns $> c$, which is valid if the listed columns are the smallest columns of the orbits (one per orbit:
+    every column below a listed one is in an earlier orbit), and it is exactly the orbit exclusion if each orbit is a
+    range of consecutive columns, e.g., `start=0,l start_scan=1` for the two blocks of a 2BGA code over an abelian
+    group (2x less CC work than `start=0,l`), or after renumbering the columns by orbits (largest first) in the program
+    which builds the code. `scratch/bench_0.15.1_scan/`. Still open: the inputs below (orbits in any column order,
+    verified generators), and the work-unit split for few start columns (`scratch/symmetry/REPORT.md`).
   - Input, one of:
     - `orbits=FILE`: an orbit label for each column ($n$ integers, in the original 0-based column order), and one start
       column per orbit (from `start=`, by default the smallest column of each orbit). Trusted, as `start`: a

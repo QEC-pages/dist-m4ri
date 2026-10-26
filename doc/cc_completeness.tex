@@ -426,6 +426,18 @@ themselves; they can be verified for each generator by the rank tests $\rank[H;H
 (or for $[H;L]$ when only $L$ is given), where $Hg$ is $H$ with its columns permuted by $g$. With trivial orbits (the
 trivial group, $k=n$, $q_j=j$), Proposition~\ref{prop:orbits} is Corollary~\ref{cor:roots}.
 
+\begin{remark}[the scan rule, \ttt{start\_scan=1}]\label{rem:scan}
+Let $q_j=\min O_j$, with the orbits numbered so that $q_1<\dots<q_k$. Every column $u<q_j$ lies in
+$O_1\cup\dots\cup O_{j-1}$, since its orbit has a smallest column $\le u<q_j$. Hence the searches from the $q_j$ with
+$F_0(q_j)=\{u:u<q_j\}$ (the clusters from $q_j$ use only the columns $>q_j$, as in the scan of all columns; the
+expert option \ttt{start\_scan=1} of version 0.15.1 with \ttt{start} listing the $q_j$) forbid subsets of the sets
+$F_0(q_j)$ of Proposition~\ref{prop:orbits}, and the proposition still holds: in~(a), $g(C)$ meets none of
+$O_1,\dots,O_{j-1}$, and so contains no column $u<q_j$; in~(b), the start column of a reported set is its smallest
+column. The forbidden sets are those of Proposition~\ref{prop:orbits} if each orbit is a range of consecutive columns,
+e.g., for the two blocks of a two-block group-algebra code over an abelian group, on each of which the translations act
+transitively ($q_1=0$, $q_2=\ell$); a permutation of the columns into such ranges gives this for any group.
+\end{remark}
+
 \section{Implementation details covered by the theorem}\label{sec:impl}
 
 \begin{proposition}[the last two extensions by a hash table]\label{prop:hash}

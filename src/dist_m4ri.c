@@ -346,7 +346,8 @@ static inline int cc_unit_last(const distfork_ctx_t * const ctx, const int w, co
 }
 
 #define CC_SPLIT_UNITS_PER_THREAD 4.0 /* aim at >= 4 work units of the size of the largest one per CC thread */
-#define CC_SPLIT_MIN_WORK 1e-3        /* rounds predicted to take < 1 ms on all threads: whole start indices */
+#define CC_SPLIT_MIN_WORK 1e-3        /* rounds predicted to take < 1 ms on all threads (on the start indices of an
+                                       * expert `start` list, if they are fewer): whole start indices */
 #define CC_SPLIT_CLAIMS_PER_WORK 1e4  /* at most 10^4 work units per thread-second of predicted work */
 #define CC_SPLIT_CLAIMS_UNKNOWN 65536 /* at most this many work units if the work of the round is not known */
 
@@ -355,7 +356,8 @@ static inline int cc_unit_last(const distfork_ctx_t * const ctx, const int w, co
  * gives CC_SPLIT_UNITS_PER_THREAD units per thread, where the largest unit is taken as the unit size: whole start
  * indices count as n/w units (the clusters from the first start column are about w/n of the round; the columns of the
  * expert `start` list are alike, with unlimited clusters), and each fixed level divides the units by the typical
- * number of branches.  L = 0 for short rounds, and L <= min(3, w-3), so that at least two levels of a unit are free.
+ * number of branches.  L = 0 for short rounds (with a short `start` list, only if they are short on its start indices,
+ * which are then all that can work in parallel), and L <= min(3, w-3), so that at least two levels of a unit are free.
  * The number of units (each one claim of the shared counter, empty units included) is limited by the predicted work,
  * and all units must have an index < INT_MAX - num_threads (over-claims at the end of the round). */
 static int cc_round_levels(const distfork_ctx_t * const ctx, const int w, const int beg, const int end,
@@ -364,7 +366,8 @@ static int cc_round_levels(const distfork_ctx_t * const ctx, const int w, const 
   const int n_start = end - beg + 1;
   const int lmax = minint(CC_SPLIT_MAX_LEVELS, w - 3);
   if (nthr <= 1 || n_start <= 0 || lmax <= 0 || ctx->cc_B <= 1) return 0;
-  if (est > 0.0 && est < CC_SPLIT_MIN_WORK * nthr) return 0;
+  const int busy = (ctx->p->start_num > 0) ? minint(nthr, n_start) : nthr; /* threads busy with whole start indices */
+  if (est > 0.0 && est < CC_SPLIT_MIN_WORK * busy) return 0;
   const double max_units = (est > 0.0) ? CC_SPLIT_CLAIMS_PER_WORK * est : CC_SPLIT_CLAIMS_UNKNOWN;
   double units = (ctx->p->start_num > 0) ? (double)n_start : (double)n_start / w;
   int lev = 0;
@@ -663,7 +666,7 @@ static void cc_walk_unit(cc_walk_t * const t, const int col, const int w_limit, 
   bit_flip(t->E, col);
   t->cols[0] = col;
   t->w = 1;
-  t->col_min = (t->ctx->p->start_num > 0) ? -1 : col;
+  t->col_min = (t->ctx->p->start_num > 0 && !t->ctx->p->start_scan) ? -1 : col;
   t->w_limit = w_limit;
   t->fix = fix;
   t->nfix = nfix;
@@ -972,12 +975,13 @@ static void bnb_acnt_setup(cc_walk_t * const t, const int c) {
 /* The CC work unit from the start column `col` with the branch and bound (cc_prune >= 1, w_limit > 1, see cc_bnb()):
  * the clusters use only the columns u > col, or with the expert `start` list (unlimited clusters), all columns except
  * those listed before `col` (`idx`: its position in the list), which are forbidden: a codeword which contains one of
- * them is found from the first one it contains (doc/cc_completeness.tex, Proposition "start lists") */
+ * them is found from the first one it contains (doc/cc_completeness.tex, Proposition "start lists").  With
+ * start_scan=1, the listed start columns use only the larger columns, as in the scan of all columns. */
 static void cc_bnb_unit(cc_walk_t * const t, const int col, const int idx, const int w_limit, const int * const fix,
                         const int nfix) {
   const params_t * const p = t->ctx->p;
   const csr_t * const mHT = t->mHT;
-  const bool list = (p->start_num > 0);
+  const bool list = (p->start_num > 0 && !p->start_scan);
   t->col_min = list ? -1 : col;
   bnb_acnt_setup(t, t->col_min);
   t->fsp = 0;
@@ -1038,8 +1042,9 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   }
   const colmask_t * const mL = p->maskL; /* NULL for a classical code */
   /* Clusters are grown only to columns larger than the start column, except with the expert `start`
-   * list, where clusters are unlimited (columns already in `err` are skipped via `one_ordered_search`). */
-  const int col_min = (p->start_num > 0) ? -1 : urr->vec[0];
+   * list, where clusters are unlimited (columns already in `err` are skipped via `one_ordered_search`),
+   * unless start_scan=1. */
+  const int col_min = (p->start_num > 0 && !p->start_scan) ? -1 : urr->vec[0];
 
   /* Leaf level: w + 1 == current_limit */
   if (w + 1 == current_limit) {
@@ -2552,8 +2557,8 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       char units[64] = "";
       if (lev > 0) snprintf(units, sizeof(units), ", %d work units per start column", ctx->cc_R[lev]);
       if (ctx->p->start_num > 0) {
-        fprintf(stderr, "# searching w=%d with %d CC threads, start list (%d columns)%s%s\n",
-                w, ctx->spawned, ctx->p->start_num, units, note);
+        fprintf(stderr, "# searching w=%d with %d CC threads, start list (%d columns%s)%s%s\n",
+                w, ctx->spawned, ctx->p->start_num, ctx->p->start_scan ? ", start_scan=1" : "", units, note);
       } else {
         fprintf(stderr, "# searching w=%d with %d CC threads, columns [%d, %d]%s%s\n",
                 w, ctx->spawned, beg, end, units, note);

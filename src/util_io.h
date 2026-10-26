@@ -76,6 +76,8 @@ typedef struct{
   int *start_list; /** sorted list of distinct CC start columns from `start=a,b,c` (NULL: not set).
                        Clusters grown from a listed column are not limited to larger column indices */
   int start_num;   /** number of entries in `start_list` (0: not set, all columns are used) */
+  int start_scan;  /** 1: a cluster grown from a listed start column c only uses the columns > c, as in the scan of
+                       all columns (orbit exclusion when the listed columns are the smallest ones of the orbits) */
   int cbeg; /** first CC start column for split runs (-1: column 0) */
   int cend; /** last CC start column for split runs (-1: column n-1) */
   //  int linear; /* not supported */
@@ -535,7 +537,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.15.0"
+#define DIST_M4RI_VERSION "0.15.1"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -549,10 +551,10 @@ void print_short_help(const char *prog);
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
   "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
-  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, sort_rows,\n" \
-  "  cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
-  "  ksub, kwin (win), win_mode, win_hyb, pairs, min_hits, cov_cws, refresh,\n" \
-  "  finC, outC, maxC, dW, irred, seed, debug\n\n" \
+  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, start_scan,\n" \
+  "  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n" \
+  "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, min_hits,\n" \
+  "  cov_cws, refresh, finC, outC, maxC, dW, irred, seed, debug\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -600,6 +602,7 @@ void print_short_help(const char *prog);
   "  smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)\n" \
   "  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)\n" \
   "  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48\n" \
+  "  start_scan=[0|1] (0)   Expert, with start: clusters from column c use only columns > c\n" \
   "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
   "  irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)\n" \
   "  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)\n" \
@@ -763,8 +766,8 @@ void print_short_help(const char *prog);
   "                     columns).  2: also the coverage and fractional cover bounds\n" \
   "                     (fewer nodes, more work per node).  All values find the\n" \
   "                     same codewords and distances (doc/cc_completeness.tex);\n" \
-  "                     with the expert start list, cc_prune=1 and 2 forbid the\n" \
-  "                     columns listed before the start column.\n" \
+  "                     with the expert start list (and start_scan=0), cc_prune=1\n" \
+  "                     and 2 forbid the columns listed before the start column.\n" \
   "  noscan=[0|1]       Expert option: 1: run CC only at weight w = wmax, skipping\n" \
   "                     the scan over weights w < wmax (default: 0). Only valid for\n" \
   "                     method=2. WARNING: lower weights are not checked, so a\n" \
@@ -773,10 +776,22 @@ void print_short_help(const char *prog);
   "  start=[list]       Expert option: comma-separated list of CC start columns,\n" \
   "                     e.g., start=0,48,96 (default: -1 = all columns). Clusters\n" \
   "                     grown from a listed column are NOT limited to larger column\n" \
-  "                     indices. Use, e.g., one column per block of a quasi-cyclic\n" \
-  "                     code. WARNING: dmin is valid only if a code symmetry maps\n" \
-  "                     every minimum-weight codeword to one containing a listed\n" \
-  "                     column. Cannot be combined with cbeg/cend.\n" \
+  "                     indices (unless start_scan=1). Use, e.g., one column per\n" \
+  "                     block of a quasi-cyclic code. WARNING: dmin is valid only\n" \
+  "                     if a code symmetry maps every minimum-weight codeword to one\n" \
+  "                     containing a listed column. Cannot be combined with\n" \
+  "                     cbeg/cend.\n" \
+  "  start_scan=[0|1]   Expert option, with start (default: 0).  1: a cluster grown\n" \
+  "                     from a listed column c only uses the columns > c, as in the\n" \
+  "                     scan of all columns (see cbeg).  WARNING: dmin is valid\n" \
+  "                     only if a code symmetry maps every minimum-weight codeword\n" \
+  "                     to one whose smallest column is listed, e.g., if the listed\n" \
+  "                     columns are the smallest columns of the orbits of a group of\n" \
+  "                     code automorphisms, one per orbit (start=0,l for the two\n" \
+  "                     blocks of a two-block group-algebra code of length 2l over\n" \
+  "                     an abelian group).  The later start columns then need less\n" \
+  "                     work, the least if each orbit is a range of consecutive\n" \
+  "                     columns.  Not with fdem.\n" \
   "  cbeg=[int]         Expert option for split runs: first CC start column\n" \
   "                     (default: -1 = column 0). A cluster started at column i\n" \
   "                     only uses columns > i, so every codeword is found starting\n" \
@@ -955,7 +970,7 @@ void print_short_help(const char *prog);
   "  matrices, matrix   finH, finG, finL, fin, classical\n" \
   "  codewords          outC, finC, maxC, dW, irred\n" \
   "  threading          threads, nothrottle, chunk_size\n" \
-  "  expert             noscan, start, cbeg, cend\n" \
+  "  expert             noscan, start, start_scan, cbeg, cend\n" \
   "  experimental       ksub, refresh\n\n" \
   "Help options:\n" \
   "  -h, --help         Display help for commonly used parameters (fits 80 rows);\n" \

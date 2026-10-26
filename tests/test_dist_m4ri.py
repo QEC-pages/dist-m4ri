@@ -659,7 +659,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.15.0" in captured.out
+    assert "0.15.1" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -670,7 +670,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.15.0" in captured.out
+    assert "0.15.1" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -689,7 +689,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.15.0" in older_warn
+    assert "expected >= 0.15.1" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1181,6 +1181,55 @@ def test_run_dist_m4ri_start_list_and_disabled_options(capsys):
     for opt in ("noscan=1", "cbeg=3", "cend=7"):
         assert f"{opt} is disabled in the Python interface" in captured.err
     assert "WARNING: start=0,41 (expert option)" in captured.err
+
+
+def test_start_scan_option(tmp_path, capsys):
+    # start_scan=True (expert, with start; since version 0.15.1) is passed as start_scan=1: a cluster grown from a
+    # listed column c only uses the columns > c, as in the scan.  With all columns listed, it finds the same codewords
+    # as the scan (QX150 at the supplied dmin=6); the compute_*_distance() functions and the CLI pass it on, with the
+    # cache key suffix ':start=...:scan'; without a start list, or for a DEM, it is ignored with a warning
+    H, G = os.path.join(EXAMPLES_DIR, "QX150.mtx"), os.path.join(EXAMPLES_DIR, "QZ150.mtx")
+    cws = {}
+    for scan in (False, True):
+        out = str(tmp_path / f"cws_{scan}.nz")
+        res = dist_m4ri.run_dist_m4ri(method=2, finH=H, finG=G, dmin=6, outC=out, threads=2, start_scan=scan,
+                                      start=list(range(150)) if scan else None, verbose=True)
+        assert tuple(res) == (6, 6, 0)
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        assert ("start_scan=1" in run_line) == scan
+        assert ("WARNING: start=0,1,2,3,4,5,6,7,... start_scan=1 (expert options)" in captured.err) == scan
+        cws[scan] = sorted(tuple(cw) for cw in dist_m4ri.read_sparse_vectors(out))
+    assert len(cws[False]) == 500 and cws[False] == cws[True]
+    dist_m4ri.run_dist_m4ri(method=2, finH=H, finG=G, dmin=6, wmax=6, threads=2, start_scan=True)
+    assert "start_scan=1 has no effect without a start list" in capsys.readouterr().err
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    with pytest.raises(ValueError, match="start_scan=1 is not available with fdem"):
+        dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, start=[0, 7], start_scan=True)
+    dist_m4ri.clear_distance_cache()
+    try:
+        dist_m4ri.compute_quantum_distance(H, G=G, method=2, wmax=6, threads=2, start=[0, 75], start_scan=True,
+                                           debug=dist_m4ri.PY_DBG_COMMANDS)
+        captured = capsys.readouterr()
+        assert "start=0,75 start_scan=1" in captured.out and "start_scan=1 (expert options)" in captured.err
+        assert dist_m4ri.get_cached_distance(H=H, G=G, start=[0, 75], start_scan=True) is not None
+        assert dist_m4ri.get_cached_distance(H=H, G=G, start=[0, 75]) is None
+        dist_m4ri.compute_dem_distance(dem=dem_file, method=2, wmax=3, threads=2, start=[0, 7], start_scan=True,
+                                       debug=dist_m4ri.PY_DBG_COMMANDS)
+        captured = capsys.readouterr()
+        assert "start_scan=1 is not available for a DEM (ignored)" in captured.err
+        assert "start_scan=" not in captured.out
+        assert dist_m4ri.parse_cli_args(["start_scan=1"])["start_scan"] is True
+        assert dist_m4ri.parse_cli_args(["--start-scan"])["start_scan"] is True
+        assert dist_m4ri.parse_cli_args([])["start_scan"] is False
+        assert dist_m4ri.main([f"finH={H}", f"finG={G}", "method=2", "wmax=6", "threads=2", "start=0,75",
+                               "start_scan=1", "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "start=0,75 start_scan=1" in capsys.readouterr().out
+        assert dist_m4ri.main([f"finH={H}", "start=0,75", "start_scan=2", "--no-cache"]) == 1
+        assert "invalid 'start_scan=2': start_scan should be 0 or 1" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
 
 
 def test_sort_rows_option(tmp_path, capsys):

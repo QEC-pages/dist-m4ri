@@ -32,7 +32,7 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 _codedistance_mod = None
 _stim_mod = None
 
-__version__ = "0.15.0"
+__version__ = "0.15.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -686,14 +686,16 @@ def get_cached_distance(
     basis: Optional[str] = None,
     rounds: Optional[int] = None,
     p_noise: float = 0.001,
-    force_noise: bool = False
+    force_noise: bool = False,
+    start_scan: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Retrieves the cached distance entry (including bounds and cumulative rw_steps)
     for a given code matrix, CSS code, or DEM.
 
     If the expert CC start-column list `start` is given (see compute_classical_distance), the
-    separate start-list record (cache key suffix ':start=a,b,c') is returned instead of the main record.
+    separate start-list record (cache key suffix ':start=a,b,c', or ':start=a,b,c:scan' with start_scan=True) is
+    returned instead of the main record.
 
     For a CSS code (Hx and Hz, optionally Lx / Lz), the entry is assembled from the records of its two sectors,
     the quantum codes (H=Hx, G=Hz) -> dZ and (H=Hz, G=Hx) -> dX (shared with compute_quantum_distance()): the fields
@@ -710,7 +712,7 @@ def get_cached_distance(
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     if eff_cache_file:
         load_distance_cache(eff_cache_file)
-    sfx = _start_key_suffix(_normalize_start_list(start))
+    sfx = _start_key_suffix(_scan_start_list(_normalize_start_list(start), start_scan))
 
     if H is not None:
         entry = _distance_cache.get(_matrix_cache_key(H, G, L, classical=(G is None and L is None)) + sfx)
@@ -1090,6 +1092,10 @@ def check_finc_outc(finC: Optional[str], outC: Optional[str], verbose: bool = Fa
 #   key '<key>:start=a,b,c' (sorted, distinct columns).  Only dmax and the codewords are merged into the main
 #   record, unless the expert option trust_start is set (then dmin and rw_steps are merged as well, and an
 #   existing exact start-list record is copied to the main record even if no calculation is needed).
+# - start_scan (since version 0.15.1, with start): a cluster grown from a listed column c only uses the columns > c,
+#   as in the scan of all columns; valid if a code symmetry maps every codeword to one whose smallest column is
+#   listed, e.g., the smallest columns of the orbits of a group of code automorphisms (start=0,l for the two blocks
+#   of a two-block group-algebra code over an abelian group).  Cached under '<key>:start=a,b,c:scan'.
 # - noscan, cbeg, cend: disabled in the Python interface (ignored with a warning to stderr); use the dist_m4ri
 #   binary directly (noscan: CC only at w=wmax; cbeg/cend: start-column range for split multi-run use, where
 #   each column is eventually listed in one of the runs).
@@ -1142,11 +1148,28 @@ def _normalize_start_list(start: Any) -> Optional[List[int]]:
     return sorted(set(vals))
 
 
+class _StartList(list):
+    """A normalized CC start list (sorted distinct columns, see _normalize_start_list()) with the expert flag `scan`
+    (start_scan=1 of the binary: a cluster grown from a listed column c only uses the columns > c), which selects
+    its own cache key (see _start_key_suffix())."""
+    scan: bool = False
+
+
+def _scan_start_list(start_list: Optional[List[int]], start_scan: bool) -> Optional[List[int]]:
+    """The start list with the flag `scan` set if start_scan (None or the list itself otherwise)."""
+    if not start_list or not start_scan:
+        return start_list
+    out = _StartList(start_list)
+    out.scan = True
+    return out
+
+
 def _start_key_suffix(start_list: Optional[List[int]]) -> str:
-    """Returns the cache key suffix ':start=a,b,c' for a normalized start list ('' if unset)."""
+    """Returns the cache key suffix ':start=a,b,c' for a normalized start list ('' if unset), with ':scan' for
+    start_scan."""
     if not start_list:
         return ""
-    return ":start=" + ",".join(str(c) for c in start_list)
+    return ":start=" + ",".join(str(c) for c in start_list) + (":scan" if getattr(start_list, "scan", False) else "")
 
 
 def _format_start_list(start_list: List[int], max_show: int = 8) -> str:
@@ -1178,6 +1201,13 @@ def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) 
 
 def _start_warning_text(start_list: List[int]) -> str:
     """Returns the stderr warning for a CC start list (same wording as the dist_m4ri binary)."""
+    if getattr(start_list, "scan", False):
+        return (
+            f"# WARNING: start={_format_start_list(start_list)} start_scan=1 (expert options): CC clusters are grown "
+            f"only from {len(start_list)} listed column(s), each with\n"
+            f"#   the larger columns only; dmin is valid only if a code symmetry maps every minimum-weight codeword\n"
+            f"#   to one whose smallest column is listed\n"
+        )
     return (
         f"# WARNING: start={_format_start_list(start_list)} (expert option): CC clusters are grown only from "
         f"{len(start_list)} listed column(s)\n"
@@ -1235,23 +1265,28 @@ def _prepare_start_option(
     noscan: Any = 0,
     cbeg: Any = None,
     cend: Any = None,
-    solver: str = "dist_m4ri"
+    solver: str = "dist_m4ri",
+    start_scan: bool = False
 ) -> Optional[List[int]]:
     """
     Validates the expert CC options of a compute_*_distance() call and issues the warnings to stderr.
 
     Returns:
-        The normalized start list, or None if unset (or not applicable to the selected solver).
+        The normalized start list (with the flag `scan` for start_scan, see _StartList), or None if unset (or not
+        applicable to the selected solver).
     """
     _warn_disabled_options(noscan, cbeg, cend)
     start_list = _normalize_start_list(start)
     if start_list is None:
         if trust_start:
             sys.stderr.write("# Warning: trust_start=1 has no effect without a start list\n")
+        if start_scan:
+            sys.stderr.write("# Warning: start_scan=1 has no effect without a start list\n")
         return None
     if solver == "codedistance":
         sys.stderr.write(f"# Warning: start={_format_start_list(start_list)} is ignored with solver='codedistance'\n")
         return None
+    start_list = _scan_start_list(start_list, start_scan)
     msg = _start_warning_text(start_list)
     if _use_distance_cache and trust_start:
         msg += "#   trust_start=1: start-list results are accepted as valid and copied to the main cache record\n"
@@ -1450,7 +1485,8 @@ def run_dist_m4ri(
     verbose: bool = False,
     stop_event: Optional[threading.Event] = None,
     warn_start: bool = True,
-    warn_ksub: bool = True
+    warn_ksub: bool = True,
+    start_scan: bool = False
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
@@ -1486,8 +1522,8 @@ def run_dist_m4ri(
             is found once, and pruning by lower bounds on the number of columns needed: an unsatisfied row without
             available columns, a packing of unsatisfied rows with disjoint sets of available columns); 2, also the
             coverage and fractional cover bounds.  The same codewords and distances (doc/cc_completeness.tex); with
-            the expert start list, cc_prune=1 and 2 forbid the columns listed before the start column.  The cache key
-            does not depend on it.
+            the expert start list (and start_scan=False), cc_prune=1 and 2 forbid the columns listed before the start
+            column.  The cache key does not depend on it.
 
     RW windows:
         kwin / win_mode: A window of kwin columns in every RW step (win_mode=0: a Tanner graph ball, 1: an index
@@ -1525,6 +1561,13 @@ def run_dist_m4ri(
             column indices.  WARNING: the returned dmin (and an exact result) is valid only if a code
             symmetry maps every minimum-weight codeword to one containing a listed column (e.g., one
             column per block of a quasi-cyclic code); dmax is always valid.
+        start_scan: With start (expert option, since version 0.15.1): passed as start_scan=1, so that a cluster
+            grown from a listed column c only uses the columns > c, as in the scan of all columns (not with fdem).
+            WARNING: dmin is then valid only if a code symmetry maps every minimum-weight codeword to one whose
+            smallest column is listed, e.g., if the listed columns are the smallest columns of the orbits of a
+            group of code automorphisms, one per orbit (start=[0, l] for the two blocks of a two-block
+            group-algebra code of length 2l over an abelian group).  The later start columns then need much less
+            work, the least if each orbit is a range of consecutive columns.
         warn_start: If True (default), issue the start-list warning to stderr.
         noscan / cbeg / cend: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
@@ -1552,6 +1595,11 @@ def run_dist_m4ri(
 
     start_list = _normalize_start_list(start)
     _warn_disabled_options(noscan, cbeg, cend)
+    if start_scan and not start_list:
+        sys.stderr.write("# Warning: start_scan=1 has no effect without a start list\n")
+    if start_scan and start_list and fdem:
+        raise ValueError("start_scan=1 is not available with fdem (the equal columns of a DEM are merged)")
+    start_list = _scan_start_list(start_list, start_scan)
     if start_list and warn_start:
         sys.stderr.write(_start_warning_text(start_list))
     if warn_ksub:
@@ -1592,6 +1640,7 @@ def run_dist_m4ri(
     if timeout is not None and timeout >= 0: cmd.append(f"timeout={timeout}")
     if smax is not None: cmd.append(f"smax={smax}")
     if start_list: cmd.append("start=" + ",".join(str(c) for c in start_list))
+    if start_list and start_scan: cmd.append("start_scan=1")
     if css is not None: cmd.append(f"css={css}")
     if classical >= 0: cmd.append(f"classical={classical}")
     if dW >= 0: cmd.append(f"dW={dW}")
@@ -3688,6 +3737,7 @@ def _cached_code_distance(
             wmax=wmax,
             smax=smax,
             start=start_list,
+            start_scan=bool(getattr(start_list, "scan", False)),
             warn_start=False,
             warn_ksub=False,
             dexp=d_exp,
@@ -3794,6 +3844,7 @@ def compute_classical_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     **kwargs
@@ -3829,6 +3880,10 @@ def compute_classical_distance(
         trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
             rw_steps into the main cache record, and copy an existing exact start-list record to the
             main record even if no calculation is needed (default: False).
+        start_scan: Expert option, with start (default: False): a cluster grown from a listed column c only
+            uses the columns > c (see run_dist_m4ri()), e.g., start=[0, l] for the two blocks of a two-block
+            group-algebra code over an abelian group; cached under the key suffix ':start=a,b,c:scan' (not for a
+            DEM: ignored with a warning).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
         sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
@@ -3869,7 +3924,7 @@ def compute_classical_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_classical_distance, kwargs)
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
 
     if solver == "codedistance":
@@ -3957,6 +4012,7 @@ def compute_quantum_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     **kwargs
@@ -3995,6 +4051,10 @@ def compute_quantum_distance(
         trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
             rw_steps into the main cache record, and copy an existing exact start-list record to the
             main record even if no calculation is needed (default: False).
+        start_scan: Expert option, with start (default: False): a cluster grown from a listed column c only
+            uses the columns > c (see run_dist_m4ri()), e.g., start=[0, l] for the two blocks of a two-block
+            group-algebra code over an abelian group; cached under the key suffix ':start=a,b,c:scan' (not for a
+            DEM: ignored with a warning).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
         sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
@@ -4035,7 +4095,7 @@ def compute_quantum_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_quantum_distance, kwargs)
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
 
     if G is None and L is None:
@@ -4170,6 +4230,7 @@ def compute_css_distance(
     cov_cws: int = 100,
     refresh: int = 0,
     trust_start: bool = False,
+    start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     **kwargs
@@ -4207,6 +4268,10 @@ def compute_css_distance(
         trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
             rw_steps into the main cache record, and copy an existing exact start-list record to the
             main record even if no calculation is needed (default: False).
+        start_scan: Expert option, with start (default: False): a cluster grown from a listed column c only
+            uses the columns > c (see run_dist_m4ri()), e.g., start=[0, l] for the two blocks of a two-block
+            group-algebra code over an abelian group; cached under the key suffix ':start=a,b,c:scan' (not for a
+            DEM: ignored with a warning).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
         sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
@@ -4260,7 +4325,7 @@ def compute_css_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max  # an upper bound on d = min(dX, dZ), not on either sector
     _check_kwargs(compute_css_distance, kwargs)
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
 
     if solver == "codedistance":
@@ -4652,6 +4717,7 @@ def compute_dem_distance(
     p_noise: float = 0.001,
     force_noise: bool = False,
     trust_start: bool = False,
+    start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     **kwargs
@@ -4686,6 +4752,10 @@ def compute_dem_distance(
         trust_start: Expert option: accept the start-list results as valid, i.e., also merge dmin and
             rw_steps into the main cache record, and copy an existing exact start-list record to the
             main record even if no calculation is needed (default: False).
+        start_scan: Expert option, with start (default: False): a cluster grown from a listed column c only
+            uses the columns > c (see run_dist_m4ri()), e.g., start=[0, l] for the two blocks of a two-block
+            group-algebra code over an abelian group; cached under the key suffix ':start=a,b,c:scan' (not for a
+            DEM: ignored with a warning).
         cbeg / cend / noscan: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
         sort_rows: Row order of H in the binary (see run_dist_m4ri()): True sorts the rows by increasing weight
@@ -4780,7 +4850,10 @@ def compute_dem_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_dem_distance, kwargs)
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver)
+    if start_scan:  # (the binary merges the equal columns of a DEM, which changes the order of the columns)
+        sys.stderr.write("# Warning: start_scan=1 is not available for a DEM (ignored)\n")
+        start_scan = False
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
     _warn_disabled_simple_full(simple, full)
 
@@ -5249,6 +5322,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "cbeg": None,
         "cend": None,
         "trust_start": False,
+        "start_scan": False,
         "css": None,
         "dexp": 0,
         "steps": None,
@@ -5367,6 +5441,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
         if arg in ("--trust-start", "-trust-start", "--trust_start", "-trust_start", "trust_start", "trust-start"):
             args["trust_start"] = True
+            i += 1
+            continue
+
+        if arg in ("--start-scan", "-start-scan", "--start_scan", "-start_scan", "start_scan", "start-scan"):
+            args["start_scan"] = True
             i += 1
             continue
 
@@ -5558,6 +5637,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["trust_start"] = (
                     bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
                 )
+            elif key_lower in ("start_scan", "start-scan", "startscan"):
+                if val not in ("0", "1"):
+                    raise ValueError(f"invalid '{arg}': start_scan should be 0 or 1")
+                args["start_scan"] = val == "1"
             elif key_lower == "cbeg":
                 args["cbeg"] = int(val)
             elif key_lower == "cend":
@@ -5742,9 +5825,9 @@ Allowed parameters:
   --out-dem, --out-stim, --p-noise, --force-noise, --model-lb, --model-minority,
   --out-model, method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax,
   timeout, threads, nothrottle, chunk_size (batch), ksub, kwin (win), win_mode,
-  win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, cbeg, cend,
-  finC, outC, maxC, expand, dW, irred, seed, debug, solver, cache, --no-cache,
-  --verbose, --cws, --trust-start, sort_rows, cc_prune
+  win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, start_scan,
+  cbeg, cend, finC, outC, maxC, expand, dW, irred, seed, debug, solver, cache,
+  --no-cache, --verbose, --cws, --trust-start, sort_rows, cc_prune
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5810,7 +5893,7 @@ Codeword collection & caching:
 
 Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
-  start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (see --morehelp)
+  start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (also start_scan=1; see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
   noscan, cbeg, cend    Disabled in Python (ignored with a warning; also irred=0): use the dist_m4ri binary
   sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
@@ -6126,8 +6209,8 @@ Connected Cluster (CC) search options:
                         rows with disjoint sets of available columns).  2: also the coverage and
                         fractional cover bounds (fewer nodes, more work per node).  All values
                         find the same codewords and distances (doc/cc_completeness.tex); with the
-                        expert start list, cc_prune=1 and 2 forbid the columns listed before the
-                        start column.  The cache key does not depend on it.
+                        expert start list (and start_scan=0), cc_prune=1 and 2 forbid the columns
+                        listed before the start column.  The cache key does not depend on it.
   start=LIST            Expert option: comma-separated list of CC start columns (0-based), e.g.,
                         start=0,48,96 (default: -1 = all columns; start=N is a one-element list).
                         CC clusters are grown only from the listed columns, and they are NOT
@@ -6140,6 +6223,15 @@ Connected Cluster (CC) search options:
                         codewords are merged into the main cache record.  (Before version 0.10.0,
                         start=N limited CC to clusters started at column N using only larger
                         columns; this is now cbeg=N cend=N of the dist_m4ri binary.)
+  start_scan=0|1        Expert option, with start (also --start-scan; default: 0): 1: a cluster grown
+                        from a listed column c only uses the columns > c, as in the scan of all
+                        columns.  WARNING: dmin is then valid only if a code symmetry maps every
+                        minimum-weight codeword to one whose smallest column is listed, e.g., if
+                        the listed columns are the smallest columns of the orbits of a group of code
+                        automorphisms, one per orbit (start=0,l for the two blocks of a two-block
+                        group-algebra code of length 2l over an abelian group).  The later start
+                        columns then need much less work, the least if each orbit is a range of
+                        consecutive columns.  Cached under '<key>:start=a,b,c:scan'.  Not for a DEM.
   --trust-start         Expert option (also trust_start=1): accept the start-list results as valid,
                         i.e., also merge dmin and rw_steps into the main cache record, and copy an
                         existing exact start-list record to the main record even if no calculation
@@ -6229,7 +6321,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   codewords             --cws, outC, finC, maxC, dW, irred, expand
   threading             threads, nothrottle, chunk_size
   cache                 cache, --no-cache, --trust-start
-  expert                start, --trust-start, noscan
+  expert                start, start_scan, --trust-start, noscan
   experimental          ksub, refresh
 
 Help options:
@@ -6597,7 +6689,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 out_dir=args["out_dir"],
                 out_dem=args["out_dem"],
                 out_stim=args["out_stim"],
-                trust_start=args["trust_start"]
+                trust_start=args["trust_start"],
+                start_scan=args["start_scan"]
             )
             dist, d_info = res[0], res[1]  # (compute_*_distance() writes the codewords to outC)
 
@@ -6658,7 +6751,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
-                trust_start=args["trust_start"]
+                trust_start=args["trust_start"],
+                start_scan=args["start_scan"]
             )
             dist, dx_info, dz_info = res[0], res[1], res[2]  # (the sector files outC_X / outC_Z are written by
             # compute_css_distance())
@@ -6744,7 +6838,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
-                trust_start=args["trust_start"]
+                trust_start=args["trust_start"],
+                start_scan=args["start_scan"]
             )
             dist, d_info = res[0], res[1]  # (compute_*_distance() writes the codewords to outC)
 
@@ -6799,7 +6894,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
-                trust_start=args["trust_start"]
+                trust_start=args["trust_start"],
+                start_scan=args["start_scan"]
             )
             dist, d_info = res[0], res[1]  # (compute_*_distance() writes the codewords to outC)
 

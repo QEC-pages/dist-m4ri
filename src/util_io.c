@@ -39,6 +39,7 @@ params_t prm={
   .cc_prune=1,
   .start_list=NULL,
   .start_num=0,
+  .start_scan=0,
   .cbeg=-1,
   .cend=-1,
   .seed=0,
@@ -902,6 +903,13 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, start_num=%d\n",argv[i],p->start_num);
     }
+    else if (sscanf(argv[i],"start_scan=%d",&dbg)==1){ /** clusters from a listed start column c use only columns > c */
+      if (dbg != 0 && dbg != 1)
+        ERROR("invalid '%s': start_scan should be 0 or 1\n", argv[i]);
+      p->start_scan=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, start_scan=%d\n",argv[i],p->start_scan);
+    }
     else if (sscanf(argv[i],"cbeg=%d",&dbg)==1){
       p->cbeg=dbg;
       if (p->debug & DBG_ARGS)
@@ -1166,6 +1174,12 @@ void var_init(int argc, char **argv, params_t * const p){
       ERROR("Cannot specify start along with cbeg or cend\n");
     }
   }
+  if (p->start_scan) { /* the scan rule refers to the order of the columns: not after merging the columns of a DEM */
+    if (p->start_num == 0)
+      ERROR("start_scan=1 needs a start list (start=...)\n");
+    if (p->fdem)
+      ERROR("start_scan=1 is not available with fdem (the equal columns of a DEM are merged)\n");
+  }
 
   if (p->method == 1) {
     if (p->cbeg >= 0 || p->cend >= 0 || p->start_num > 0) {
@@ -1408,11 +1422,18 @@ void var_init(int argc, char **argv, params_t * const p){
     fprintf(stderr, "# WARNING: start=");
     for (int k = 0; (k < p->start_num) && (k < 8); k++)
       fprintf(stderr, "%s%d", k ? "," : "", col_orig_index(p, p->start_list[k]));
-    fprintf(stderr,
-            "%s (expert option): CC clusters are grown only from %d listed column(s)\n"
-            "#   (not limited to larger column indices); dmin is valid only if a code symmetry maps every\n"
-            "#   minimum-weight codeword to one containing a listed column\n",
-            (p->start_num > 8) ? ",..." : "", p->start_num);
+    if (p->start_scan)
+      fprintf(stderr,
+              "%s start_scan=1 (expert options): CC clusters are grown only from %d listed column(s), each with\n"
+              "#   the larger columns only; dmin is valid only if a code symmetry maps every minimum-weight codeword\n"
+              "#   to one whose smallest column is listed\n",
+              (p->start_num > 8) ? ",..." : "", p->start_num);
+    else
+      fprintf(stderr,
+              "%s (expert option): CC clusters are grown only from %d listed column(s)\n"
+              "#   (not limited to larger column indices); dmin is valid only if a code symmetry maps every\n"
+              "#   minimum-weight codeword to one containing a listed column\n",
+              (p->start_num > 8) ? ",..." : "", p->start_num);
   }
   if (p->cbeg >= 0 || p->cend >= 0) {
     const int beg = (p->cbeg >= 0) ? p->cbeg : 0;
