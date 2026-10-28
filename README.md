@@ -1072,6 +1072,13 @@ interoperability without manual threading overhead.
   not check that the rows of $H$ and $G$ are orthogonal (in each sector of a CSS code with $G$, i.e., without `Lx` or
   `Lz`), and the same warning as from the binary is written to `stderr`. The result is valid only if $H G^T = 0$; the
   cache key does not depend on it. Without $G$ (or with `solver="codedistance"`), it has no effect (a warning).
+- Matrices given as NumPy arrays (or array-likes such as lists) or SciPy sparse matrices are written to temporary
+  MatrixMarket files for the binary (in `tmp/` of the current directory; kept with `PY_DBG_KEEP_FILES`), in the
+  coordinate pattern format: their nonzero entries over GF(2), i.e., the entries with an odd value (floats are
+  truncated, and the duplicate entries of a sparse matrix are summed). Since version 0.15.2, the wrapper formats these
+  files itself (up to 65536 entries, larger matrices with `scipy.io.mmwrite`): e.g., 0.3 ms instead of 10 ms for a
+  $36 \times 72$ matrix, and 1.1 ms instead of 13 ms for $499 \times 998$ (on a 128-core machine, where `mmwrite` has
+  a fixed cost of about 10 ms from the thread pool of its parallel writer).
 - The experimental RW option `ksub` of the `compute_*_distance()` functions and the CLI should not be used: with
   `ksub>0` (and `method=1` or `3`), the same warning as from the binary is written to `stderr`.
 - An unknown keyword argument of the `compute_*_distance()` functions (e.g., a misspelled option, or `steps=` for

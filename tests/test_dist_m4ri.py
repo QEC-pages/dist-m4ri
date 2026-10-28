@@ -49,6 +49,51 @@ def test_classical_distance_numpy():
     assert all(len(cw) == 3 for cw in cws)
 
 
+def test_matrix_writer(tmp_path):
+    # a numpy array (or an array-like) or a scipy sparse matrix is written to a temporary MatrixMarket coordinate
+    # pattern file of its entries over GF(2) (since version 0.15.2): an entry is 1 iff its value is odd (floats are
+    # truncated; the duplicate entries of a sparse matrix are summed first, without changing the caller's matrix); up
+    # to _MTX_PY_MAX_NNZ entries, the file is formatted in Python, larger matrices are written by scipy.io.mmwrite
+    def read_back(path):  # (the header, and the matrix as the dist_m4ri binary reads a pattern file)
+        with open(path) as f:
+            banner = f.readline().strip()
+            lines = [ln for ln in f if not ln.startswith("%")]
+        m, n, nnz = map(int, lines[0].split())
+        M = np.zeros((m, n), dtype=np.uint8)
+        for ln in lines[1:]:
+            i, j = map(int, ln.split())
+            M[i - 1, j - 1] += 1
+        assert len(lines) - 1 == nnz and M.max(initial=0) <= 1  # (no duplicate entries)
+        return banner, M
+
+    pattern = "%%MatrixMarket matrix coordinate pattern general"
+    A = np.array([[1, 2, 3, 0], [-1, 0, 5, 4], [0, 0, 0, 0]])
+    expect = np.array([[1, 0, 1, 0], [1, 0, 1, 0], [0, 0, 0, 0]], dtype=np.uint8)
+    for M in (A, A.astype(np.uint8), A % 2 != 0, A.astype(float), A.tolist(), A.T.copy().T, sp.csr_matrix(A),
+              sp.csc_matrix(A), sp.coo_array(A)):
+        banner, B = read_back(dist_m4ri._matrix_to_file(M, temp_dir=str(tmp_path)))
+        assert banner == pattern and np.array_equal(B, expect), type(M)
+    banner, B = read_back(dist_m4ri._matrix_to_file(np.array([[1.5, 2.9, -1.2]]), temp_dir=str(tmp_path)))
+    assert B.tolist() == [[1, 0, 1]]  # (floats truncated: 1, 2, -1)
+    N = sp.csr_matrix((np.array([1, 1, 1, 0]), np.array([1, 1, 2, 3]), np.array([0, 2, 3, 4])), shape=(3, 4))
+    assert not N.has_canonical_format  # (a duplicate entry in row 0, an explicit zero in row 2)
+    banner, M = read_back(dist_m4ri._matrix_to_file(N, temp_dir=str(tmp_path)))
+    assert banner == pattern and M.tolist() == [[0, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 0]]
+    assert N.nnz == 4 and not N.has_canonical_format
+    banner, M = read_back(dist_m4ri._matrix_to_file(np.zeros((2, 5), dtype=np.int8), temp_dir=str(tmp_path)))
+    assert banner == pattern and M.shape == (2, 5) and not M.any()
+    assert dist_m4ri._matrix_to_file(os.path.join(EXAMPLES_DIR, "QX40.mtx")) == os.path.join(EXAMPLES_DIR, "QX40.mtx")
+    with pytest.raises(ValueError, match="two dimensions"):
+        dist_m4ri._matrix_to_file(np.ones(4, dtype=np.int8), temp_dir=str(tmp_path))
+    big = np.random.default_rng(1).random((300, 400)) < 0.6  # more than _MTX_PY_MAX_NNZ entries: scipy.io.mmwrite
+    assert big.sum() > dist_m4ri._MTX_PY_MAX_NNZ
+    path = dist_m4ri._matrix_to_file(big, temp_dir=str(tmp_path))
+    banner, M = read_back(path)
+    assert banner == pattern and np.array_equal(M, big)
+    res = dist_m4ri.run_dist_m4ri(method=1, finH=path, classical=1, steps=20, threads=1, seed=1)
+    assert res[1] > 0  # (the binary reads the file: an upper bound from RW)
+
+
 def test_css_distance_files():
     hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     hz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")

@@ -1742,23 +1742,82 @@ def run_dist_m4ri(
     return parse_dist_m4ri_output(stdout)
 
 
+_MTX_PY_MAX_NNZ = 1 << 16  # temporary MatrixMarket files with up to this many entries are formatted in Python
+
+
+def _gf2_entries(matrix: Any) -> Tuple[int, int, Any, Any]:
+    """
+    The shape (m, n) and the nonzero entries (0-based row and column index arrays, in row-major order) of a binary
+    matrix given as a numpy array (or an array-like, e.g., a list of lists) or a scipy sparse matrix (or array): an
+    entry is nonzero iff its value is odd (floats are truncated to integers, and the duplicate entries of a sparse
+    matrix are summed first), as the dist_m4ri binary reads the integer entries of a MatrixMarket file.
+    """
+    import numpy as np
+
+    def odd(v: Any) -> Any:  # the mask of the odd entries
+        if v.dtype == np.bool_:
+            return v
+        if not np.issubdtype(v.dtype, np.integer):
+            v = v.astype(np.int64)
+        v = v & 1
+        return v.view(np.bool_) if v.itemsize == 1 else v != 0
+
+    if hasattr(matrix, "tocsr"):  # a scipy sparse matrix or array
+        csr = matrix.tocsr()
+        if not csr.has_canonical_format:  # duplicates summed and columns sorted (not in the caller's matrix)
+            csr = csr.copy() if csr is matrix else csr
+            csr.sum_duplicates()
+        m, n = csr.shape
+        keep = odd(csr.data)
+        rows = np.repeat(np.arange(m, dtype=np.int64), np.diff(csr.indptr))[keep]
+        return m, n, rows, csr.indices[keep]
+    A = np.asarray(matrix)
+    if A.ndim != 2:
+        raise ValueError(f"a matrix should have two dimensions, got the shape {A.shape}")
+    m, n = A.shape
+    if m == 0 or n == 0:
+        empty = np.zeros(0, dtype=np.int64)
+        return m, n, empty, empty
+    rows, cols = np.divmod(np.flatnonzero(odd(A)), n)  # (flatnonzero of a bool array is fast, unlike nonzero)
+    return m, n, rows, cols
+
+
+def _write_mtx_gf2(path: str, matrix: Any) -> None:
+    """
+    Writes a binary matrix (numpy array, array-like, or scipy sparse matrix; see _gf2_entries()) to the file `path` in
+    the MatrixMarket coordinate pattern format (the 1-based indices of the nonzero entries, in row-major order), which
+    the dist_m4ri binary reads.  With up to _MTX_PY_MAX_NNZ nonzero entries, the file is formatted in Python (e.g.,
+    about 1 ms for 6000 entries); larger matrices are written by scipy.io.mmwrite, which is faster per entry, but has a
+    fixed cost of about 10 ms per call on a 128-core machine (the thread pool of its parallel writer).
+    """
+    import numpy as np
+    m, n, rows, cols = _gf2_entries(matrix)
+    nnz = len(rows)
+    if nnz > _MTX_PY_MAX_NNZ:
+        from scipy.io import mmwrite
+        from scipy.sparse import coo_matrix
+        mmwrite(path, coo_matrix((np.ones(nnz, dtype=np.int8), (rows, cols)), shape=(m, n)), field="pattern",
+                symmetry="general")
+        return
+    rc = np.empty(2 * nnz, dtype=np.int64)  # the interleaved 1-based row and column indices
+    rc[0::2], rc[1::2] = rows, cols
+    rc += 1
+    with open(path, "w") as f:
+        f.write(f"%%MatrixMarket matrix coordinate pattern general\n{m} {n} {nnz}\n")
+        f.write(("%d %d\n" * nnz) % tuple(rc.tolist()))
+
+
 def _matrix_to_file(matrix, extension: str = ".mtx", temp_dir: str = "tmp") -> str:
-    """Helper to convert a matrix (numpy or scipy sparse) or file path to an MTX file path."""
+    """
+    The MatrixMarket file of a matrix for the dist_m4ri binary: a file path is returned as is; a numpy array (or an
+    array-like) or a scipy sparse matrix is written to a new temporary file in temp_dir with _write_mtx_gf2() (its
+    nonzero entries over GF(2), i.e., those with an odd value; before version 0.15.2, scipy.io.mmwrite wrote the int8
+    entries, which took 10-13 ms per matrix with up to 1000 columns on a 128-core machine).
+    """
     if isinstance(matrix, (str, Path)):
         return str(matrix)
-
-    import numpy as np
-    from scipy.io import mmwrite
-    from scipy.sparse import csr_matrix, issparse
-
     path = create_unique_file(directory=temp_dir, extension=extension)
-    if issparse(matrix):
-        csr = matrix.astype(np.int8)
-        mmwrite(path, csr, symmetry='general')
-    else:
-        mat_arr = np.asarray(matrix, dtype=np.int8)
-        csr = csr_matrix(mat_arr)
-        mmwrite(path, csr, symmetry='general')
+    _write_mtx_gf2(path, matrix)
     return path
 
 

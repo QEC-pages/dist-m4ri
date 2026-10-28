@@ -746,6 +746,19 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     $\ker H \setminus \mathrm{rowspace}\, G$: with `ortho=0`, the binary gives the bare distance of the subsystem code
     with the gauge generators $H$ and $G$ (in a build with `-DNDEBUG`, the default; otherwise `Lx_for_CSS_code()`
     verifies the orthogonality again); the code parameters of `debug=16` assume $H G^T = 0$.
+- [x] **Faster temporary matrix files in the Python wrapper** (0.15.2, 2026-10-28): `_matrix_to_file()` wrote each
+  matrix with `scipy.io.mmwrite`, which costs about 10 ms per call on the 128-core server also for small matrices (the
+  thread pool of its parallel writer), and for dense input, the conversion to CSR added up to 70 ms ($2999 \times
+  5998$). Now `_write_mtx_gf2()`: the nonzero entries over GF(2) (odd values; floats truncated; the duplicate entries of
+  a sparse matrix summed, as `mmwrite` did) from `np.flatnonzero` of a bool mask (about 10x faster than `np.nonzero` of
+  a uint8 array), formatted with one `%` operation in the coordinate pattern format; `scipy.io.mmwrite` (pattern) only
+  above 65536 entries, where it is faster. Per matrix (outside the sandbox, median of 30, `l x 2l` with row weight 12,
+  `scratch/matrix_writer/timing_writer.py`): $\ell = 36$: 10.4 -> 0.33 ms; $\ell = 499$: 13.1 -> 1.1 ms (CSR input:
+  11.7 -> 0.96 ms); $\ell = 997$: 19.5 -> 2.2 ms; $\ell = 2999$: 78.9 -> 9.1 ms (CSR: 11.7 -> 5.3 ms). End to end, a
+  short screening call `compute_quantum_distance(HX, G=HZ, method=1, num_steps=1, threads=1)` with numpy matrices and
+  the cache disabled (`e2e_screen.py`): $\ell = 72$: 29.0 -> 8.1 ms; $\ell = 499$: 44.5 -> 18.6 ms; $\ell = 997$:
+  81.4 -> 45.2 ms. The binary gives identical outputs on the files of both writers (13 cases: dense, list, CSR / CSC /
+  COO, a quantum pair, and a matrix above 65536 entries; `verify_writer.py`); `test_matrix_writer`.
 
 - [ ] see if linear algebra can be used to eliminate the possibility of
       non-trivial DEM code words stretching over multiple REPEAT rounds.      
