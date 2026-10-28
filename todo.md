@@ -591,9 +591,41 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     threads and work units; Python: `_last_run_stats["cc_rounds"]`), the Python pass-through (also
     `compute_model_lower_bound()`), Tests 110 and 111. M3 benchmark (2026-10-25): `benchmark/BENCHMARK.md` Section 9
     (4–35x for $d = 14$–18; the distances of the `yarn_*` codes with $d \ge 16$ and of `bb_360` certified, up to
-    $d = 24$). Open: M4 (per-node cost, then the default of `cc_prune=2`); later runs: $d_X$ of `yarn_mitten_975`
-    (the round $w = 23$, about 46 min), an independent check of the new distances with `cc_prune=0`, the start-list
-    A/B, and the row-weight-12 GB code $[[254, 16, \le 24]]$.
+    $d = 24$). M4 and the checks of 0.15.1 in 0.15.2 (below); later runs: $d_X$ of `yarn_mitten_975` (the round
+    $w = 23$, about 46 min) and the row-weight-12 GB code $[[254, 16, \le 24]]$.
+  - **Checks of 0.15.1** (2026-10-28, `scratch/bench_0.15.1_p0/`: 413 runs, 33 checks, mostly 128 threads): the same
+    codewords with `cc_prune=0`, 1, 2 (codes and DEMs, one to 128 threads, `method=2` and 3; `cc_prune=0` did not
+    finish the codewords of the gross DEM in 40 min), and node counts which do not depend on the threads;
+    `cc_prune=0` confirms the distances of BENCHMARK.md Section 9.3 up to $d = 18$ (`yarn_mitten_500` and
+    `yarn_smitten_600_120_16`: 16, 16; `yarn_smitten_840`: 17, 18; `yarn_mitten_540`: 18, 18), in 92–2319 s instead
+    of 1.3–10.6 s (55–220x; 228–1063x the nodes in the last round); the start-list exclusion saves 4–5% of the nodes
+    with two listed columns and 22–31% with eight (against the separate runs); `method=3` on the full DEMs:
+    `cc_prune=0` as fast as 0.14.7 (0.94–1.08x), the branch and bound 1.4–2.5x faster on the DEMs which take more than
+    1 s.
+  - **M4: per-node cost (0.15.2, 2026-10-28**; `scratch/reports/m4_per_node_0.15.2.md`): with callgrind (one thread),
+    the packing bound took about half of the instructions on codes, and the hash lookups of the last two levels about
+    40% on DEMs.
+    - `kfirst[r]`: the position of the first column after the start column in each row (updated with `acnt`), so that
+      the loops over the available columns of a row skip the columns before it; the packing sorts the rows only over
+      the range of their numbers of available columns, which the scan of the syndrome copies; at the last two levels,
+      the scan only looks for the branching row; local pointers in the inner loops. The same nodes and codewords;
+      speedups against 0.15.1 (both built with the makefile, idle server) on one thread: 1.05–1.06x on codes,
+      1.04–1.11x on DEMs; of the CC work on 128 threads: 1.00–1.05x on codes (the large rounds of `yarn_smitten_840`,
+      `yarn_mitten_540`, double gross), 1.11–1.26x on DEMs (gross, `mitten_150` custom, `mitten_270`).
+    - `cc_prune=2`: the cover bounds only with $R \ge 4$ (with $R = 3$, after the packing, they pruned few nodes of
+      the DEMs, e.g., 4% of the calls for `mitten_150` custom, and cost more than they saved), and the fractional sum
+      stops once the decision is known. Other node counts, the same codewords; speedups on one thread: 1.04–1.09x on
+      codes, 1.25–1.39x on DEMs; of the CC work on 128 threads: 1.03–1.06x on codes, 1.07–1.55x on DEMs (1.07x for
+      the gross DEM at $w \le 9$, where the cover bounds with $R = 3$ still paid off).
+    - Tested and dropped: the packing only with $R \ge 4$ (codes 1.2–1.3x slower), sorted lists of the unsatisfied
+      rows updated incrementally (slower), a weight filter before the hash lookups (DEMs 1.3–1.6x slower). Not
+      tried: `acnt` as `uint16_t`, $b_2$ repaired from the packing of the parent (would change the pruning).
+    - `cc_prune=2` against 1 after M4 (CC work, 128 threads): 0.89–0.99x for the largest rounds of the `yarn_*` codes
+      (`yarn_mitten_630`, $w \le 19$: 0.89x; `yarn_mitten_780`, $w \le 19$: 0.97x; `yarn_smitten_840` and
+      `yarn_mitten_540`, $w \le 16$, 17), 0.96–1.04x on the DEMs (gross, also two slices of its round $w = 10$;
+      `mitten_150` custom, `mitten_270`), 1.23–1.26x on the BB codes (double gross, $w \le 17$; `bb_360` and `bb_756`,
+      $w \le 22$); 15–35% fewer nodes on codes, about as many on DEMs. `cc_prune=1` stays the default (the cover bounds
+      likely help the `yarn_*` codes as their columns have the weights 3 and 6, while those of the BB codes all have 3).
   - First measurements (2026-10-25, 128 threads, idle server, one run each; `scratch/cc_bnb/m2/`; the node counts
     again with the exact counter, `nodes_count_w.sh`, as the nodes at the fixed levels of the work units were counted
     once per unit before): the same codewords as 0.14.8 in all 16 runs of `scratch/cc_bnb/m0/` (each codeword once);
@@ -647,16 +679,17 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     - 2: also the coverage bound $b_3$ (the least $t$ such that the $t$ largest $c_v$ sum to at least $|s|$, with
       $c_v$ the number of unsatisfied rows of the available column $v$) and the fractional cover bound
       $\sum_r 1/\max_{v \in A_r} c_v$ over the unsatisfied rows $r$ (a dual solution of the covering LP): 30–60% fewer
-      nodes than 1 at about the same time (±25%); the default if it wins after the per-node optimization;
+      nodes than 1 at about the same time (±25%); since 0.15.2 only with $R \ge 4$, and not the default (M4 above);
     - Python: `cc_prune` passed like `sort_rows`, CLI `--cc-prune`.
   - `start` list: the search from a listed column forbids the columns listed before it (valid without further
     assumptions; the prototype shows a small gain, gross 136K -> 129K nodes, double gross 1.15M -> 1.11M; keep it if
-    there is no slowdown), so that each codeword is found once.
+    there is no slowdown), so that each codeword is found once. Kept: 4–31% fewer nodes in the checks of 0.15.1.
   - CC hits: exactly one per codeword (needed for the RW miss estimate), as in all prototype runs with $F$; they enter
     `cnt` and `cw_hits_w` (the `min_hits` statistic) like `finC` codewords, not `cnt_u`/`cnt_w`. With `cc_prune=0`,
     codewords reached by several paths get more hits (gross: 2084 for 1884).
   - Per-node cost (a node costs about 2x a node of 0.14.7): one pass over the syndrome for the branching row and $b_2$,
-    `acnt` as `uint16_t`, a tuned threshold for $b_2$, maybe $b_2$ updated from the packing of the parent.
+    `acnt` as `uint16_t`, a tuned threshold for $b_2$, maybe $b_2$ updated from the packing of the parent. Done in
+    0.15.2 (M4 above): the scan copies `acnt` for $b_2$, and $R \ge 3$ stays the threshold of $b_2$.
   - `noscan=1` (the single round at `wmax`, certified with `dmin=wmax`) gets the same speed-up.
   - Tests: `cc_prune=0` and `1` give the same distances and the same irreducible codewords (`outC`) for the codes and
     DEMs of the benchmark, with `start`, `cbeg`/`cend`, `noscan`, `dmin`, `dW`, `maxC`, `method=3`, 1 or many threads;
@@ -701,3 +734,6 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 - [ ] see if linear algebra can be used to eliminate the possibility of
       non-trivial DEM code words stretching over multiple REPEAT rounds.      
+- [ ] native python interface (as opposed to calling external program) to speed
+      up multiple repeated calls?  Or, perhaps a simplified version only for
+      small time-out?

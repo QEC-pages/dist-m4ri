@@ -484,10 +484,13 @@ typedef struct {
   uint64_t *X;         /* the columns of S and F: bitset */
   int *acnt;           /* the number of available columns of each row of H */
   int acnt_col;        /* the value of col_min for which acnt is set up (INT_MIN: not set up) */
+  int *kfirst;         /* the position in mH of the first column u > col_min of each row (the columns of a row are
+                        * sorted, so that the loops over the available columns of a row start there) */
   int *fstk;           /* the forbidden columns in the order forbidden (unwound when the node returns) */
   int fsp;             /* their number */
   int *brl;            /* the branches of the nodes: max_row_wt entries per depth */
   int *ulist;          /* the unsatisfied rows of the current node */
+  int *uacnt;          /* their numbers of available columns (acnt), for the packing bound */
   int *ord;            /* the unsatisfied rows ordered by their available columns, for the packing bound */
   int *bcnt;           /* counts of the rows by their available columns (max_row_wt + 2 entries) */
   uint32_t *mark;      /* columns marked in generation `gen` (packing and coverage bounds) */
@@ -685,31 +688,38 @@ static void cc_walk_unit(cc_walk_t * const t, const int col, const int w_limit, 
  * in S or F.  With R = limit - |S| columns left, a node is pruned by admissible lower bounds on the number of columns
  * needed to complete S to a codeword: |s| > R * max_col_wt (b1, as in cc_walk()), an unsatisfied row without
  * available columns (dead end), more than R unsatisfied rows with pairwise disjoint sets of available columns (b2,
- * packing, found greedily), and with cc_prune=2 the coverage and fractional cover bounds.  Otherwise it branches on
- * the unsatisfied row with the fewest available columns (the first such row in the row order), over its available
- * columns v_1..v_q in column order: the branch i adds v_i to S, and v_i is forbidden in the later branches whatever
- * happened in its own (sibling exclusion).  Every irreducible codeword which contains the start column and avoids F_0
- * is found exactly once (one CC hit per codeword), reducible ones at most once.  The choice of the row and the order
- * of the branches depend only on the node, so that the work units (the fixed levels, see `cc_pack()`: the branch
- * fix[l] among the available columns of the row, with the earlier ones forbidden) partition the search.  The last two
- * levels use the column-syndrome hash, as in cc_walk_last2().
+ * packing, found greedily; with R >= 3), and with cc_prune=2 the coverage and fractional cover bounds (with R >= 4).
+ * Otherwise it branches on the unsatisfied row with the fewest available columns (the first such row in the row
+ * order), over its available columns v_1..v_q in column order: the branch i adds v_i to S, and v_i is forbidden in the
+ * later branches whatever happened in its own (sibling exclusion).  Every irreducible codeword which contains the
+ * start column and avoids F_0 is found exactly once (one CC hit per codeword), reducible ones at most once.  The
+ * choice of the row and the order of the branches depend only on the node, so that the work units (the fixed levels,
+ * see `cc_pack()`: the branch fix[l] among the available columns of the row, with the earlier ones forbidden)
+ * partition the search.  The last two levels use the column-syndrome hash, as in cc_walk_last2().
  * ------------------------------------------------------------------------------------------------------------------ */
 
 /* The column v becomes unavailable (added to S or to F) */
 static inline void bnb_take(cc_walk_t * const t, const int v) {
   const csr_t * const mHT = t->mHT;
+  const int * const ri = mHT->i, ke = mHT->p[v + 1];
+  int * const acnt = t->acnt;
   t->X[v >> 6] |= (uint64_t)1 << (v & 63);
-  for (int k = mHT->p[v]; k < mHT->p[v + 1]; k++) t->acnt[mHT->i[k]]--;
+  for (int k = mHT->p[v]; k < ke; k++) acnt[ri[k]]--;
 }
 
 /* The column v becomes available again */
 static inline void bnb_give(cc_walk_t * const t, const int v) {
   const csr_t * const mHT = t->mHT;
+  const int * const ri = mHT->i, ke = mHT->p[v + 1];
+  int * const acnt = t->acnt;
   t->X[v >> 6] &= ~((uint64_t)1 << (v & 63));
-  for (int k = mHT->p[v]; k < mHT->p[v + 1]; k++) t->acnt[mHT->i[k]]++;
+  for (int k = mHT->p[v]; k < ke; k++) acnt[ri[k]]++;
 }
 
 static inline bool bnb_avail(const cc_walk_t * const t, const int u) { return u > t->col_min && !bit_get(t->X, u); }
+
+/* bnb_avail() for a column u > col_min (from the position t->kfirst[r] on in its row r) */
+static inline bool bnb_free(const cc_walk_t * const t, const int u) { return !bit_get(t->X, u); }
 
 /* A new generation of the column marks (cleared when the counter wraps around) */
 static inline uint32_t bnb_next_gen(cc_walk_t * const t) {
@@ -729,37 +739,33 @@ static inline bool bnb_record_ok(const cc_walk_t * const t, const int extra) {
   return !(cur_dmax > 0 && ctx->p->dW >= 0 && minint(t->w_limit, cur_dmax + ctx->p->dW) < t->w + extra);
 }
 
-/* The packing bound b2 for the nu unsatisfied rows t->ulist: a greedy packing of rows with pairwise disjoint sets of
- * available columns, the rows with the fewest available columns first (in row order); returns its size once it
- * exceeds R, or once the rows left cannot make it exceed R */
-static int bnb_packing(cc_walk_t * const t, const int R, const int nu) {
-  const int B = t->max_row_wt;
-  int * const bcnt = t->bcnt;
-  for (int a = 0; a <= B + 1; a++) bcnt[a] = 0;
-  for (int i = 0; i < nu; i++) bcnt[t->acnt[t->ulist[i]] + 1]++;
-  for (int a = 1; a <= B + 1; a++) bcnt[a] += bcnt[a - 1]; /* the first position of the rows with a columns */
-  for (int i = 0; i < nu; i++) {
-    const int r = t->ulist[i];
-    t->ord[bcnt[t->acnt[r]]++] = r;
-  }
+/* The packing bound b2 for the nu unsatisfied rows t->ulist (t->uacnt: their amin..amax available columns): a greedy
+ * packing of rows with pairwise disjoint sets of available columns, the rows with the fewest available columns first
+ * (in row order); returns its size once it exceeds R, or once the rows left cannot make it exceed R */
+static int bnb_packing(cc_walk_t * const t, const int R, const int nu, const int amin, const int amax) {
+  int * const bcnt = t->bcnt; /* bcnt[a - amin]: first the number of the rows with a - 1 available columns */
+  const int * const ulist = t->ulist, * const uacnt = t->uacnt;
+  int * const ord = t->ord;
+  const int na = amax - amin + 1;
+  for (int a = 0; a <= na; a++) bcnt[a] = 0;
+  for (int i = 0; i < nu; i++) bcnt[uacnt[i] - amin + 1]++;
+  for (int a = 1; a <= na; a++) bcnt[a] += bcnt[a - 1]; /* then the first position of the rows with a */
+  for (int i = 0; i < nu; i++) ord[bcnt[uacnt[i] - amin]++] = ulist[i];
   const uint32_t g = bnb_next_gen(t);
-  const csr_t * const mH = t->mH;
+  uint32_t * const mark = t->mark; /* the columns of the rows packed so far (the available ones count) */
+  const uint64_t * const X = t->X;
+  const int * const rp = t->mH->p, * const ci = t->mH->i, * const kf = t->kfirst;
   int cnt = 0;
   for (int i = 0; i < nu; i++) {
-    const int r = t->ord[i];
-    bool disjoint = true;
-    for (int k = mH->p[r]; k < mH->p[r + 1]; k++) {
-      const int u = mH->i[k];
-      if (t->mark[u] == g && bnb_avail(t, u)) {
-        disjoint = false;
-        break;
-      }
+    const int r = ord[i], kb = kf[r], ke = rp[r + 1];
+    int k = kb;
+    while (k < ke && !(mark[ci[k]] == g && !bit_get(X, ci[k]))) k++;
+    if (k == ke) { /* disjoint from the rows packed so far */
+      if (++cnt > R || cnt + (nu - 1 - i) <= R) return cnt;
+      for (k = kb; k < ke; k++) mark[ci[k]] = g;
+    } else if (cnt + (nu - 1 - i) <= R) {
+      return cnt;
     }
-    if (disjoint) {
-      if (++cnt > R) return cnt;
-      for (int k = mH->p[r]; k < mH->p[r + 1]; k++) t->mark[mH->i[k]] = g;
-    }
-    if (cnt + (nu - 1 - i) <= R) return cnt;
   }
   return cnt;
 }
@@ -773,9 +779,9 @@ static bool bnb_cover(cc_walk_t * const t, const int R, const int nu) {
   int nt = 0;
   for (int i = 0; i < nu; i++) {
     const int r = t->ulist[i];
-    for (int k = mH->p[r]; k < mH->p[r + 1]; k++) {
+    for (int k = t->kfirst[r]; k < mH->p[r + 1]; k++) {
       const int u = mH->i[k];
-      if (!bnb_avail(t, u)) continue;
+      if (!bnb_free(t, u)) continue;
       if (t->mark[u] != g) {
         t->mark[u] = g;
         t->cv[u] = 0;
@@ -803,14 +809,18 @@ static bool bnb_cover(cc_walk_t * const t, const int R, const int nu) {
   for (int i = 0; i < nu; i++) {
     const int r = t->ulist[i];
     int mx = 0;
-    for (int k = mH->p[r]; k < mH->p[r + 1]; k++) {
+    for (int k = t->kfirst[r]; k < mH->p[r + 1]; k++) {
       const int u = mH->i[k];
-      if (bnb_avail(t, u) && t->cv[u] > mx) mx = t->cv[u];
+      if (bnb_free(t, u) && t->cv[u] > mx) mx = t->cv[u];
     }
     if (mx == 0) return true;
     sum += 1.0 / mx;
+    /* the partial sums grow, by at most 1 per row, so that the decision may be known early (the rounding errors are
+     * far smaller than the margins) */
+    if (sum > R + 1e-9) return true;
+    if (sum + (nu - 1 - i) < R + 1e-9 - 1e-7) return false;
   }
-  return sum > R + 1e-9; /* (the rounding errors are far smaller than the margin) */
+  return false;
 }
 
 /* The hash slot of the key (a syndrome hash, see cc_hash_t), NULL if no nonzero column has this hash */
@@ -850,9 +860,9 @@ static int bnb_leaf(cc_walk_t * const t, const int sw, const uint64_t h) {
 static int bnb_last2(cc_walk_t * const t, const int sw, const uint64_t h, const int r) {
   const cc_hash_t * const hs = t->hs;
   const csr_t * const mH = t->mH;
-  for (int i = mH->p[r]; i < mH->p[r + 1]; i++) {
+  for (int i = t->kfirst[r]; i < mH->p[r + 1]; i++) {
     const int v = mH->i[i];
-    if (!bnb_avail(t, v)) continue;
+    if (!bnb_free(t, v)) continue;
     const cc_hash_slot_t * const sl = cc_hash_find(hs, h ^ hs->hc[v]);
     if (!sl) continue;
     for (int k = sl->beg; k < sl->beg + sl->cnt; k++) {
@@ -884,33 +894,54 @@ static int cc_bnb(cc_walk_t * const t, const int sw, const uint64_t h) {
   if (R == 1 && !fixed) return bnb_leaf(t, sw, h);
   /* the unsatisfied rows, and the branching row: the one with the fewest available columns, the first in row order */
   const int nwords = (t->m + 63) >> 6;
-  int nu = 0, rbest = -1, abest = INT_MAX;
+  const int * const acnt = t->acnt;
+  int nu = 0, rbest = -1, abest = INT_MAX, amax = 0;
+  if (R == 2 && !fixed) { /* (only the branching row is needed) */
+    for (int k = 0; k < nwords; k++) {
+      uint64_t x = t->S[k];
+      while (x) {
+        const int r = (k << 6) + __builtin_ctzll(x);
+        x &= x - 1;
+        const int a = acnt[r];
+        if (a < abest) {
+          if (a == 0) return 0; /* a dead end */
+          abest = a;
+          rbest = r;
+        }
+      }
+    }
+    return bnb_last2(t, sw, h, rbest);
+  }
+  int * const ulist = t->ulist, * const uacnt = t->uacnt;
   for (int k = 0; k < nwords; k++) {
     uint64_t x = t->S[k];
     while (x) {
       const int r = (k << 6) + __builtin_ctzll(x);
       x &= x - 1;
-      t->ulist[nu++] = r;
-      if (t->acnt[r] < abest) {
-        abest = t->acnt[r];
+      const int a = acnt[r];
+      ulist[nu] = r;
+      uacnt[nu++] = a;
+      if (a < abest) {
+        abest = a;
         rbest = r;
       }
+      if (a > amax) amax = a;
     }
   }
   if (abest == 0) return 0; /* a dead end */
-  if (R == 2 && !fixed) return bnb_last2(t, sw, h, rbest);
   if (sw > R && R >= 3) { /* (the packing has at most |s| rows; with R <= 2, the hash levels are cheaper) */
-    if (bnb_packing(t, R, nu) > R) return 0;
-    if (t->prune >= 2 && bnb_cover(t, R, nu)) return 0;
+    if (bnb_packing(t, R, nu, abest, amax) > R) return 0;
+    /* (with R = 3, the cover bounds rarely prune what the packing leaves, and cost more than they save) */
+    if (t->prune >= 2 && R >= 4 && bnb_cover(t, R, nu)) return 0;
   }
   /* the branches: the available columns of the row rbest, in column order */
   const csr_t * const mH = t->mH;
   const csr_t * const mHT = t->mHT;
   int * const brl = t->brl + (size_t)w * (size_t)t->max_row_wt;
   int q = 0;
-  for (int k = mH->p[rbest]; k < mH->p[rbest + 1]; k++) {
+  for (int k = t->kfirst[rbest]; k < mH->p[rbest + 1]; k++) {
     const int u = mH->i[k];
-    if (bnb_avail(t, u)) brl[q++] = u;
+    if (bnb_free(t, u)) brl[q++] = u;
   }
   const int fsp0 = t->fsp;
   int i_beg = 0, i_end = q;
@@ -952,21 +983,26 @@ static int cc_bnb(cc_walk_t * const t, const int sw, const uint64_t h) {
   return res;
 }
 
-/* Set up t->acnt for col_min = c (S and F empty): the columns u > c of each row.  The start columns claimed by a worker
- * grow within a round, so that acnt is updated incrementally from a smaller c (the columns c' < u <= c are dropped);
- * otherwise (a new round, or the expert `start` list after other units) it is counted again. */
+/* Set up t->acnt and t->kfirst for col_min = c (S and F empty): the columns u > c of each row.  The start columns
+ * claimed by a worker grow within a round, so that both are updated incrementally from a smaller c (the columns
+ * c' < u <= c are dropped: they are the first columns > c' of their rows); otherwise (a new round, or the expert
+ * `start` list after other units) they are counted again. */
 static void bnb_acnt_setup(cc_walk_t * const t, const int c) {
   if (t->acnt_col == c) return;
   if (t->acnt_col != INT_MIN && t->acnt_col < c) {
     const csr_t * const mHT = t->mHT;
     for (int u = t->acnt_col + 1; u <= c; u++)
-      for (int k = mHT->p[u]; k < mHT->p[u + 1]; k++) t->acnt[mHT->i[k]]--;
+      for (int k = mHT->p[u]; k < mHT->p[u + 1]; k++) {
+        t->acnt[mHT->i[k]]--;
+        t->kfirst[mHT->i[k]]++;
+      }
   } else {
     const csr_t * const mH = t->mH;
     for (int r = 0; r < t->m; r++) {
       int k = mH->p[r];
       while (k < mH->p[r + 1] && mH->i[k] <= c) k++; /* (the columns of a row are sorted) */
       t->acnt[r] = mH->p[r + 1] - k;
+      t->kfirst[r] = k;
     }
   }
   t->acnt_col = c;
@@ -2093,13 +2129,16 @@ static void *worker_thread_func(void *arg) {
         walk.acnt_col = INT_MIN;
         walk.X = calloc((size_t)(nvar / 64 + 2), sizeof(uint64_t));
         walk.acnt = calloc((size_t)walk.m + 1, sizeof(int));
+        walk.kfirst = calloc((size_t)walk.m + 1, sizeof(int));
         walk.fstk = malloc(((size_t)nvar + 1) * sizeof(int));
         walk.brl = malloc((size_t)(wmax_alloc + 3) * (size_t)B * sizeof(int));
         walk.ulist = malloc(((size_t)walk.m + 1) * sizeof(int));
+        walk.uacnt = malloc(((size_t)walk.m + 1) * sizeof(int));
         walk.ord = malloc(((size_t)walk.m + 1) * sizeof(int));
         walk.bcnt = malloc(((size_t)B + 2) * sizeof(int));
         walk.mark = calloc((size_t)nvar + 1, sizeof(uint32_t));
-        if (!walk.X || !walk.acnt || !walk.fstk || !walk.brl || !walk.ulist || !walk.ord || !walk.bcnt || !walk.mark)
+        if (!walk.X || !walk.acnt || !walk.kfirst || !walk.fstk || !walk.brl || !walk.ulist || !walk.uacnt ||
+            !walk.ord || !walk.bcnt || !walk.mark)
           ERROR("memory allocation");
         if (walk.prune >= 2) {
           walk.cv = malloc(((size_t)nvar + 1) * sizeof(int));
@@ -2301,9 +2340,11 @@ static void *worker_thread_func(void *arg) {
   free(walk.cw);
   free(walk.X);
   free(walk.acnt);
+  free(walk.kfirst);
   free(walk.fstk);
   free(walk.brl);
   free(walk.ulist);
+  free(walk.uacnt);
   free(walk.ord);
   free(walk.bcnt);
   free(walk.mark);

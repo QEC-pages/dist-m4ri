@@ -17,7 +17,8 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 > `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise BB circuits) and the re-runs of
 > the uniform-noise gross circuit and of the torus circuits (Section 2.5) are from short runs of 0.14.7. The distances
 > of the larger codes of Section 1 (the `yarn_*` codes with $d \ge 16$, `bb_360`, and `bb_756`) are from the
-> branch-and-bound CC search of 0.15.0 (Section 9).
+> branch-and-bound CC search of 0.15.0 (Section 9; those up to $d = 18$ confirmed with the walk of the earlier
+> versions, Section 10.1).
 
 ## Directory Structure
 
@@ -455,12 +456,15 @@ Wall time and speedup $T(1)/T(p)$ of `dist_m4ri` for $p = 1, \dots, 128$ threads
 logical CPUs $0..p-1$ (socket 0 first, then socket 1, then the SMT siblings for $p > 64$; the gray line marks $p = 64$,
 one thread per physical core). Each run does a fixed amount of work: `method=1` a fixed number of RW `steps` with
 `min_hits=0`, `method=2` all CC rounds up to `wmax`, and `method=3` both (or, with the default parameters, the search
-for the exact distance). Versions (Section 5): 0.14.0, 0.12.2, 0.9.0 (pull request #26), and the legacy
-single-threaded `dist_m4ri_old` (one thread; built from the 0.14.0 sources, so that it shares the input stage, e.g.,
-the merging of equal columns and the dropping of detectors of a DEM). The runs of 0.9.0 were limited to 600 s per case
-and method (both older versions: 400 s on the full DEM), from many threads to few, so that some of the runs with few
-threads are missing; an open marker is a run stopped at the wall-clock limit. The times include reading the input
-(median of repeated runs for the fast cases).
+for the exact distance). Versions: 0.15.2 (2026-10-28, `scratch/bench_0.15.2_scaling/`) and those of Section 5: 0.14.0,
+0.12.2, 0.9.0 (pull request #26), and the legacy single-threaded `dist_m4ri_old` (one thread; built from the 0.14.0
+sources, so that it shares the input stage, e.g., the merging of equal columns and the dropping of detectors of a DEM).
+The runs of 0.9.0 were limited to 600 s per case and method (both older versions: 400 s on the full DEM), from many
+threads to few, so that some of the runs with few threads are missing; an open marker is a run stopped at the
+wall-clock limit. The times include reading the input (median of repeated runs for the fast cases). Since 0.14.4, an RW
+step also checks pairs of non-pivot columns (Section 8): a fixed number of steps takes 1.2–1.6 times longer with 0.15.2
+than with 0.14.0, but far fewer steps are needed to find a light codeword. The text below gives the times of 0.14.0,
+then (from "0.15.2:" on) those of 0.15.2.
 
 ![Scaling for the gross code](figures/scaling_gross_css.png)
 
@@ -468,14 +472,18 @@ threads are missing; an open marker is a run stopped at the wall-clock limit. Th
 `method=2`: `wmax=11`, `method=3`: default parameters). RW takes 50 s on one thread (as in 0.12.2; 0.9.0: 96 s) and
 scales almost linearly up to 64 threads (58x); the SMT siblings add another 40% (80x at 128 threads). CC up to $w = 11$
 takes 0.067 s on one thread, 3.3x less than 0.12.2 and 75x less than 0.9.0; beyond 8–16 threads, the run (15–25 ms) is
-limited by the start-up of the threads.
+limited by the start-up of the threads. 0.15.2: RW 76 s on one thread (the pairs; the same scaling), CC as with 0.14.0
+(0.067 s), and `method=3` 0.093 s on one thread instead of 0.16 s.
 
 ![Scaling for the double-gross code](figures/scaling_dgross_css.png)
 
 **double-gross** $[[288, 12, 18]]$, one sector (`steps=1000000`; `wmax=15`; `steps=500000 wmax=15`). RW scales to 80x
 at 128 threads (55 s on one thread; 0.9.0: 127 s). CC up to $w = 15$ takes 10 s on one thread, 3.9x less than 0.12.2
 (the last cluster extension is now looked up in a hash table), and 0.16 s on 128 threads (speedup 62); 0.9.0 needs
-472 s for this CC run on 128 threads. `method=3`: 0.46 s on 128 threads (0.12.2: 0.75 s; 0.9.0: 551 s).
+472 s for this CC run on 128 threads. `method=3`: 0.46 s on 128 threads (0.12.2: 0.75 s; 0.9.0: 551 s). 0.15.2: CC up
+to $w = 15$ takes 3.1 s on one thread, 3.2x less than 0.14.0 (the branch and bound, Section 9), and 0.072 s on 128
+threads; RW 79 s on one thread (the pairs); `method=3` (500000 steps) 43 s on one thread, as 0.14.0, and 0.63 s on 128
+threads.
 
 ![Scaling for the double-gross circuit DEM](figures/scaling_dgross_dem.png)
 
@@ -485,6 +493,9 @@ to 26208 columns by 0.14.0; `steps=300`; `wmax=5`; `steps=150 wmax=5`). RW takes
 matrix it is limited by the memory bandwidth (dense copies of $H$ and $H^T$ per thread), at most about 15–20x, at 64
 threads on both sockets, and the SMT siblings of socket 0 ($p = 96$) make it slower. CC up to $w = 5$ takes 0.61 s on
 one thread, 21x less than 0.12.2 (1.8x from merging, 11x from the faster CC), and 0.12–0.15 s from 16 threads on.
+0.15.2: RW 25 s on one thread (the pairs), at most 11x faster on many threads (0.14.0: 18x); CC up to $w = 5$ 0.80 s on
+one thread (0.63 s with `cc_prune=0`: on such small rounds the walk is faster than the branch and bound) and 0.13–0.20 s
+from 16 threads on.
 
 ![Scaling for the full DEM of the bb_72 circuit](figures/scaling_bb_dem_full.png)
 
@@ -494,6 +505,8 @@ DEM, merged): RW takes 5.6 s on one thread instead of 99 s (0.12.2) and 163 s (0
 threads instead of 2.1 s and 7.2 s. CC up to $w = 5$ takes 0.11 s on one thread, against 176 s for 0.12.2 on four
 threads and more than 400 s for 0.9.0 on 128 threads; on 128 threads, 0.088 s against 9.8 s for 0.12.2 (112x). The
 reduced problem is so small that more threads hardly help CC (0.08–0.11 s); the exact distance takes 0.09–0.24 s.
+0.15.2: RW 8.9 s on one thread (the pairs) and 0.27 s on 128 threads; CC as with 0.14.0 (0.12 s on one thread, 0.10 s
+on 128), the exact distance 0.34 s on one thread and 0.12 s on 128.
 
 ---
 
@@ -1167,3 +1180,101 @@ the lower bound. Last CC round: of the slower sector.
   did not fit in the timeout of the run.
 - `bb_756_16_34`: the rounds $w = 26$ and 27 would take about 21 and 56 min (2.7x per weight), and the distance 34 is
   out of reach.
+
+## 10. Checks of 0.15.1 and the Per-Node Cost of 0.15.2 (2026-10-28)
+
+`dist_m4ri` 0.15.1 (commit `6d7b2c9`, with the CC search of 0.15.0) on the server of Section 4, which was not idle
+(e.g., `method=3` took 94 s instead of the 77 s of Section 9.1 for the gross circuit): 413 runs, mostly on 128
+threads with `nothrottle=1`; then 0.15.2, which lowers the cost of a node of the branch and bound. The raw data and
+scripts are in `scratch/bench_0.15.1_p0/` and `scratch/reports/m4_per_node_0.15.2.md` (not in the repository).
+
+### 10.1 The distances of Section 9.3 with the walk (`cc_prune=0`)
+
+`method=2` up to $w = d - 1$ on 128 threads: no codeword up to this weight with any value of `cc_prune`, so that the
+walk of the earlier versions, which does not rely on the proof of `doc/cc_completeness.tex`, confirms the distances
+of Section 9.3 up to $d = 18$.
+
+| Code, sector | last round $w$ | `cc_prune=1` | `cc_prune=0` | nodes of the last round, `cc_prune=0` / 1 |
+| :--- | :---: | ---: | ---: | ---: |
+| `yarn_mitten_500_100_16`, $d_X$ / $d_Z$ | 15 | 1.4 s / 1.3 s | 112 s / 107 s | 341x / 323x |
+| `yarn_smitten_600_120_16`, $d_X$ / $d_Z$ | 15 | 1.5 s / 1.7 s | 98 s / 92 s | 275x / 228x |
+| `yarn_smitten_840_168_18`, $d_X$ | 16 | 3.6 s | 566 s | 618x |
+| `yarn_smitten_840_168_18`, $d_Z$ | 17 | 10.5 s | 2319 s | 1063x |
+| `yarn_mitten_540_108_18`, $d_X$ / $d_Z$ | 17 | 10.6 s / 10.3 s | 1751 s / 1455 s | 686x / 656x |
+
+- The ratio of the nodes grows with the weight, e.g., for $d_Z$ of `yarn_smitten_840`: 2.1x at $w = 5$, 109x at
+  $w = 12$, 1063x at $w = 17$.
+- `cc_prune=0`, 1, and 2 find the same codewords (`outC`) for gross, double gross, and `yarn_mitten_300` ($w = d$),
+  and for the DEMs of `surf_d3`, `bb_72` (up to $w = 8$: 1.28M codewords), and `mitten_270` hef, also with 1, 16, and
+  128 threads and with `method=3`; the nodes of each round do not depend on the number of threads. (`cc_prune=0` did
+  not finish the codewords of the gross DEM, $w \le 10$, within 40 min.)
+
+### 10.2 Start-list exclusion
+
+`method=2` up to $w = d - 1$ on 16 threads with a start list (`start=`) of the columns $0$ and $n/2$ (the first columns
+of the two blocks of these two-block codes) or $0, \dots, 7$, against separate runs from each listed column; the ratios
+list / separate (medians of 2–3 runs):
+
+| Code | 2 columns: nodes, CC work | 8 columns: nodes, CC work |
+| :--- | :--- | :--- |
+| gross | 0.95, 0.87 | 0.69, 0.70 |
+| double gross | 0.96, 0.92 | 0.78, 0.76 |
+| `bb_360_12_24` | 0.95, 0.94 | 0.71, 0.68 |
+
+The list finds the union of the codewords of the separate runs, each once (gross, $w = 12$: 293 and 810 codewords with
+2 and 8 columns; the separate runs find 314 and 1256).
+
+### 10.3 `method=3` on the full DEMs: 0.14.7 against 0.15.1
+
+Median wall time on 128 threads (24 full DEMs of the circuits of Sections 2 and 5.1); the circuits which take more than
+1 s:
+
+| Circuit | $d$ | 0.14.7 | 0.15.1 | 0.15.1, `cc_prune=0` |
+| :--- | :---: | ---: | ---: | ---: |
+| gross, SI1000 noise | 10 | 212 s | 94.3 s (2.25x) | 226 s |
+| gross, uniform noise | 10 | 182 s | 72.0 s (2.53x) | 189 s |
+| `yarn_mitten_150` hook-free, $Z$ / $X$ | 8 | 292 s / 116 s | 154 s / 62.4 s (1.9x) | 285 s / 115 s |
+| `mitten_270` custom | 9 | 209 s | 150 s (1.39x) | 203 s |
+| `torus_n200_k16_d16` | 8 | 124 s | 67.3 s (1.84x) | 123 s |
+| `torus_n200_k8_d17` | 8 | 31.9 s | 20.3 s (1.57x) | 31.5 s |
+| `shyps_225_16_8` | 8 | 16.3 s | 8.2 s (1.99x) | 16.1 s |
+| `mitten_270` hef | 7 | 4.07 s | 2.29 s (1.78x) | 4.00 s |
+
+- With `cc_prune=0`, 0.15.1 is as fast as 0.14.7 (0.94–1.08x on all 24 circuits), and so is 0.14.5 on the gross and
+  `mitten_270` custom circuits: the code of the walk did not change, and the speedup is that of the branch and bound.
+- The other 15 circuits (0.12–0.94 s) run at 0.89–1.06x the speed of 0.14.7 (mostly the start-up).
+
+### 10.4 Per-node cost (0.15.2)
+
+0.15.2 against 0.15.1 (both built with the makefile) with `method=2` on 128 threads, on the idle server; CC work: the CC
+thread time summed over the rounds. The results are the same, and with `cc_prune=1` also the nodes of every round;
+with `cc_prune=2`, the cover bounds are used only with at least 4 columns left (with 3, after the packing bound, they
+rarely prune on DEMs and cost more than they save).
+
+| Input | rounds | `cc_prune=1`: CC work | `cc_prune=2`: CC work |
+| :--- | :---: | :--- | :--- |
+| `yarn_smitten_840_168_18`, $d_Z$ | $w \le 16$ | 379 → 364 thread-s (1.04x) | 370 → 361 thread-s (1.03x) |
+| `yarn_mitten_540_108_18`, $d_X$ | $w \le 16$ | 368 → 350 thread-s (1.05x) | 367 → 347 thread-s (1.06x) |
+| double gross, $H_X$ | $w \le 17$ | 40.3 → 40.2 thread-s (1.00x) | 52.1 → 50.0 thread-s (1.04x) |
+| gross DEM | $w \le 8$ | 792 → 712 thread-s (1.11x) | 851 → 737 thread-s (1.16x) |
+| gross DEM | $w \le 9$ | 10158 → 9060 thread-s (1.12x) | 9822 → 9173 thread-s (1.07x) |
+| `mitten_270` custom DEM | $w \le 7$ | 786 → 625 thread-s (1.26x) | 945 → 639 thread-s (1.48x) |
+| `mitten_270` hef DEM | $w \le 6$ | 142 → 122 thread-s (1.16x) | 194 → 125 thread-s (1.55x) |
+| `mitten_150` custom DEM, `outC` | $w \le 8$ | 15.2K → 12.2K thread-s (1.25x) | 18.5K → 12.5K thread-s (1.48x) |
+
+- On one thread: 1.05–1.06x on codes and 1.04–1.11x on DEMs with `cc_prune=1` (`yarn_mitten_300`, double gross, gross;
+  `bb_72`, `mitten_270` hef, `mitten_150` custom), 1.04–1.09x and 1.25–1.39x with `cc_prune=2`. On 128 threads, the
+  gain on the DEMs is larger.
+- The same codewords (`outC`) as 0.15.1 for gross, `yarn_mitten_300`, `bb_72`, `surf_d3` with a start list, and
+  `mitten_150` custom ($w \le 8$: 74195 codewords), with both values of `cc_prune`.
+- `cc_prune=2` against `cc_prune=1` with 0.15.2 (CC work): 0.89x for `yarn_mitten_630_126_20` ($d_X$, $w \le 19$:
+  11681 against 13077 thread-s), 0.96–0.99x for `yarn_mitten_780_156_22` ($d_X$, $w \le 19$), `yarn_smitten_840`, and
+  `yarn_mitten_540` ($w \le 16$, 17), 1.01–1.04x on the DEMs above (0.96–1.00x on two slices of the start columns of
+  the round $w = 10$ of the gross DEM), but 1.23–1.26x for the BB codes: double gross ($w \le 17$), `bb_360_12_24`
+  ($w \le 22$: 11619 against 9454 thread-s, 91 s against 74 s), and `bb_756_16_34` ($w \le 22$: 6651 against 5281
+  thread-s). Thus `cc_prune=1` stays the default; `cc_prune=2` can save up to about 10% in the largest rounds of the
+  `yarn_*` codes, probably because their columns have the weights 3 and 6 (the cover bounds use the actual numbers of
+  unsatisfied rows of the columns, the syndrome-weight bound only the largest column weight), while all the columns of
+  the BB codes have the weight 3. With 0.15.1, `cc_prune=2` was ahead on the gross DEM for $w \ge 9$ (0.97x the CC work
+  of `cc_prune=1` for $w \le 9$, 0.77x the time for $w \le 10$ with `outC` in Section 10.1): there, the cover bounds
+  with 3 columns left still pay off.
