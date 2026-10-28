@@ -1598,12 +1598,16 @@ def test_model_lower_bound(tmp_path, capsys):
                                str(tmp_path / "cli")]) == 0
         assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
         assert os.path.isfile(str(tmp_path / "cli_HR.mtx")) and os.path.isfile(str(tmp_path / "cli_LR.mtx"))
-        from scipy.io import mmread
-        assert mmread(str(tmp_path / "cli_HR.mtx")).shape[0] == 4  # (the measured-basis rows only, the default)
+
+        def mtx_rows(path):  # the number of rows of a MatrixMarket file (its size line; scipy's mmread warns since 1.18)
+            with open(path) as f:
+                return int(next(ln for ln in f if not ln.startswith("%")).split()[0])
+
+        assert mtx_rows(tmp_path / "cli_HR.mtx") == 4  # (the measured-basis rows only, the default)
         assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--model-minority", "--no-cache", "threads=2",
                                "--out-model", str(tmp_path / "clim")]) == 0
         assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
-        assert mmread(str(tmp_path / "clim_HR.mtx")).shape[0] == 8  # (also the minority-basis rows)
+        assert mtx_rows(tmp_path / "clim_HR.mtx") == 8  # (also the minority-basis rows)
         assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--no-cache", "threads=2", "sort_rows=1", "--cc-prune",
                                "2", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
         out = capsys.readouterr().out.strip().splitlines()
