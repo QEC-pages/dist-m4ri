@@ -731,6 +731,21 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Prototype (`bb_irr=1`): with the filter, both kernels give the same codewords at every weight (surf_d3 DEM,
     $w = 3, \dots, 8$), each hit once; without it, the sets differ from $w = 6$ on by reducible ones only (e.g., 204
     reducible hits at $w = 6$ for 0.14.7, 66 for the branch and bound).
+- [x] **Fast orthogonality check and `ortho=0`** (0.15.2, 2026-10-28): the check $H G^T = 0$ of `finG`
+  (`csr_csr_mul_non_zero()` in `util_m4ri.c`) uses the columns of $H$ (its transpose): $O(\mathrm{nnz}(H) +
+  \mathrm{nnz}(G)\, w)$ operations, with $w$ the column weight of $H$, instead of $O(\mathrm{rows}(G)\,
+  \mathrm{nnz}(H))$; a column repeated in a row counts once, as in `mzd_from_csr()` (and the test of the compressed
+  form of $G$ no longer tests $H$). The same decisions as 0.15.1 and numpy for 120 random circulant pairs, orthogonal
+  or not (`scratch/m4_0.15.2/ortho_check.py`). A short run (`method=1 steps=1`, one thread, the minimum of 30 runs,
+  `ortho_time.py`) of a pair of $499 \times 998$ matrices of row weight 12: 23.3 ms -> 16.1 ms (15.1 ms with
+  `ortho=0`); $997 \times 1994$: 69.5 ms -> 41.0 ms (40.0 ms), i.e., the check takes about 1 ms instead of 29 ms. The
+  expert option `ortho=0` (binary, Python API and CLI) skips it, with a warning, e.g., to screen many codes which are
+  orthogonal by construction (Test 113, `test_ortho_option`).
+  - Not added: a switch for subsystem codes. For $H G^T \neq 0$, $L$ from `Lx_for_CSS_code()` spans a complement of
+    $\mathrm{rowspace}\, H$ in $\mathrm{rowspace}\, H + \ker G$, so that the codewords ($Hc = 0$, $Lc \neq 0$) are
+    $\ker H \setminus \mathrm{rowspace}\, G$: with `ortho=0`, the binary gives the bare distance of the subsystem code
+    with the gauge generators $H$ and $G$ (in a build with `-DNDEBUG`, the default; otherwise `Lx_for_CSS_code()`
+    verifies the orthogonality again); the code parameters of `debug=16` assume $H G^T = 0$.
 
 - [ ] see if linear algebra can be used to eliminate the possibility of
       non-trivial DEM code words stretching over multiple REPEAT rounds.      

@@ -91,6 +91,8 @@ typedef struct{
   int irred; /* 1 (default): only irreducible codewords are recorded, i.e., not the union of a codeword and a disjoint
               * nonzero zero-syndrome vector (CC codewords and RW pairs are filtered, finC codewords are replaced by an
               * irreducible nontrivial part); 0: expert, all codewords as before 0.14.8 */
+  int ortho; /* 1 (default): with finG, check that the rows of H and G are orthogonal (H G^T = 0); 0: expert, not
+              * checked (the caller guarantees it) */
   cw_vec_t *codewords; /* hash of codewords: the collection window (weight up to min_w + dW with outC or maxC)
                           and the representative set for `min_hits`, see codeword_add_maybe() */
   long long int num_cws; /* number of codewords in hash */
@@ -554,7 +556,7 @@ void print_short_help(const char *prog);
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, start_scan,\n" \
   "  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n" \
   "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, min_hits,\n" \
-  "  cov_cws, refresh, finC, outC, maxC, dW, irred, seed, debug\n\n" \
+  "  cov_cws, refresh, finC, outC, maxC, dW, irred, ortho, seed, debug\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -605,6 +607,7 @@ void print_short_help(const char *prog);
   "  start_scan=[0|1] (0)   Expert, with start: clusters from column c use only columns > c\n" \
   "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
   "  irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)\n" \
+  "  ortho=[0|1] (1)        Expert: 0 skips the check H G^T = 0 of finG (valid only if it holds)\n" \
   "  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)\n" \
   "  cc_prune=[0|1|2] (1)   CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
@@ -642,7 +645,15 @@ void print_short_help(const char *prog);
   "  finH=[file]        Parity check matrix H (for classical codes) or Hx (for\n" \
   "                     quantum CSS codes) in Matrix Market (.mmx / .mtx) format.\n" \
   "  finG=[file]        Generator / Hz matrix for quantum CSS codes in Matrix Market\n" \
-  "                     format. Used to verify orthogonality and construct logicals.\n" \
+  "                     format. Used to verify orthogonality (see ortho) and\n" \
+  "                     construct logicals.\n" \
+  "  ortho=[0|1]        Expert option: 1 (default) checks that the rows of H and G\n" \
+  "                     (finG) are orthogonal, H G^T = 0, and stops with an error\n" \
+  "                     otherwise; 0 skips the check (a WARNING is printed), e.g.,\n" \
+  "                     to screen many codes which are orthogonal by construction\n" \
+  "                     (the check takes O(nnz(G) times the column weight of H)\n" \
+  "                     operations).  The result is valid only if H G^T = 0.\n" \
+  "                     Ignored (with a WARNING) without finG.\n" \
   "  finL=[file]        Logical operator matrix Lx for quantum CSS codes in Matrix\n" \
   "                     Market format.\n" \
   "                     Note: For a quantum CSS code, either finL (Lx) or finG (Hz)\n" \
@@ -967,7 +978,7 @@ void print_short_help(const char *prog);
   "  stopping, stop     steps, wmin, timeout, min_hits, cov_cws\n" \
   "  bounds             dmin, dmax, dstop, dexp, wmax\n" \
   "  dem                fdem, pmin, merge, drop, outD\n" \
-  "  matrices, matrix   finH, finG, finL, fin, classical\n" \
+  "  matrices, matrix   finH, finG, finL, fin, classical, ortho\n" \
   "  codewords          outC, finC, maxC, dW, irred\n" \
   "  threading          threads, nothrottle, chunk_size\n" \
   "  expert             noscan, start, start_scan, cbeg, cend\n" \

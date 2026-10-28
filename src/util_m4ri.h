@@ -594,8 +594,11 @@ static inline int colmask_syndrome_non_zero(const colmask_t * const cm, const in
 
   /** 
    * @brief Check if the product of two sparse matrices A * B^T is non-zero.
-   * @param A First sparse matrix.
-   * @param B Second sparse matrix.
+   *
+   * Uses the columns of A (its transpose): O(nnz(A) + nnz(B) * column weight of A) operations.  A column repeated in
+   * a row counts once, as in mzd_from_csr().
+   * @param A First sparse matrix (compressed form).
+   * @param B Second sparse matrix (compressed form, the same number of columns).
    * @return 1 if the product is non-zero (matrices are not orthogonal), 0 otherwise.
    */  
   int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B);

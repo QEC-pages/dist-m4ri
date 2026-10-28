@@ -629,7 +629,7 @@ def test_cli_morehelp_topic(capsys):
     assert dist_m4ri.main(["--morehelp", "mthod"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "no help entry for 'mthod'; did you mean method?" in captured.err
+    assert "no help entry for 'mthod'; did you mean method" in captured.err  # (the closest name first, then ortho)
     assert dist_m4ri.main(["--morehelp", "maxC,xyz"]) == 1
     captured = capsys.readouterr()
     assert "maxC=N" in entries(captured.out)[1]
@@ -1312,6 +1312,55 @@ def test_cc_prune_option(tmp_path, capsys):
         assert "cc_prune=0" in capsys.readouterr().out
         assert dist_m4ri.main([f"finH={S5_H}", "cc_prune=3", "--no-cache"]) == 1
         assert "invalid 'cc_prune=3': cc_prune should be 0, 1, or 2" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_ortho_option(capsys):
+    # ortho=True (the default): the binary checks that H G^T = 0 (an error for QX40 as both H and G); ortho=False
+    # (expert, since version 0.15.2) passes ortho=0, which skips the check, with the warning of the binary also from the
+    # wrapper (the same result for the orthogonal pair QX150, QZ150); no effect without G (a warning); the
+    # compute_*_distance() functions and the CLI pass it on (the cache key does not depend on it)
+    X40 = os.path.join(EXAMPLES_DIR, "QX40.mtx")
+    H, G = os.path.join(EXAMPLES_DIR, "QX150.mtx"), os.path.join(EXAMPLES_DIR, "QZ150.mtx")
+    ortho_warning = "WARNING: ortho=0 (expert option): the rows of H and G are not checked for orthogonality"
+    with pytest.raises(RuntimeError, match="rows of H and G matrices are not orthogonal"):
+        dist_m4ri.run_dist_m4ri(method=1, finH=X40, finG=X40, steps=100, threads=1)
+    res = dist_m4ri.run_dist_m4ri(method=1, finH=X40, finG=X40, steps=100, threads=1, seed=1, ortho=False,
+                                  debug=dist_m4ri.PY_DBG_COMMANDS)
+    assert res[1] > 0
+    captured = capsys.readouterr()
+    assert "ortho=0" in captured.out and captured.err.count(ortho_warning) == 1
+    assert tuple(dist_m4ri.run_dist_m4ri(method=2, finH=H, finG=G, dmin=6, wmax=6, threads=2, ortho=False)) == (6, 6, 0)
+    assert tuple(dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, threads=2, ortho=False,
+                                         debug=dist_m4ri.PY_DBG_COMMANDS)) == (5, 5, 0)
+    captured = capsys.readouterr()
+    assert "ortho=0 has no effect without G" in captured.err and "ortho=" not in captured.out
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.compute_quantum_distance(H, G=G, method=2, dmin=6, wmax=6, threads=2, ortho=False,
+                                                  debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) == 6
+        captured = capsys.readouterr()
+        assert "ortho=0" in captured.out and captured.err.count(ortho_warning) == 1
+        dist_m4ri.clear_distance_cache()
+        res = dist_m4ri.compute_css_distance(H, G, method=2, dmin=6, wmax=6, threads=2, ortho=False,
+                                             debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None)
+        assert res[0] == 6
+        captured = capsys.readouterr()
+        assert captured.out.count("ortho=0") == 2 and captured.err.count(ortho_warning) == 1
+        dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["ortho=0"])["ortho"] is False
+        assert dist_m4ri.parse_cli_args([])["ortho"] is True
+        assert dist_m4ri.main([f"finH={H}", f"finG={G}", "method=2", "dmin=6", "wmax=6", "threads=2", "ortho=0",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        captured = capsys.readouterr()
+        assert "ortho=0" in captured.out and captured.err.count(ortho_warning) == 1
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        assert dist_m4ri.main([f"fdem={dem_file}", "method=2", "wmax=3", "threads=2", "ortho=0", "--no-cache"]) == 0
+        assert "ortho=0: only used for a quantum code with G" in capsys.readouterr().err
+        assert dist_m4ri.main([f"finH={H}", "ortho=2", "--no-cache"]) == 1
+        assert "invalid 'ortho=2': ortho should be 0 or 1" in capsys.readouterr().err
     finally:
         dist_m4ri.enable_distance_cache()
         dist_m4ri.clear_distance_cache()

@@ -43,6 +43,11 @@ All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthog
 $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
 The last condition is not required: it is sufficient that $L_X$, $L_Z$, and $L_X L_Z^T$ have the same full row rank
 $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits (printed with `debug=16`).
+With `finG`, the binary checks that $H_X H_Z^T = 0$ and stops with an error otherwise; since version 0.15.2, this takes
+$O(\mathrm{nnz}(H_Z)\, w)$ operations, where $w$ is the largest column weight of $H_X$ (e.g., about 1 ms instead of
+29 ms for $n = 1994$ and rows of weight 12). The expert option `ortho=0` skips the check (with a `# WARNING:` on
+`stderr`), e.g., to screen many codes which are orthogonal by construction; the result is then valid only if
+$H_X H_Z^T = 0$.
 
 ---
 
@@ -788,6 +793,7 @@ Extra parameters (see --morehelp for details):
   start_scan=[0|1] (0)   Expert, with start: clusters from column c use only columns > c
   cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs
   irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)
+  ortho=[0|1] (1)        Expert: 0 skips the check H G^T = 0 of finG (valid only if it holds)
   sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)
   cc_prune=[0|1|2] (1)   CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
@@ -1061,6 +1067,11 @@ interoperability without manual threading overhead.
   [Restricting the CC Search](#restricting-the-cc-search-expert-options). The expert option `irred=0` of the binary
   is not available either (the CLI ignores it with a warning): the codewords recorded and cached are irreducible (see
   [Codeword Export](#codeword-export-outc--finc)).
+- Expert option `ortho` of `run_dist_m4ri()`, `compute_quantum_distance()`, and `compute_css_distance()` (CLI:
+  `ortho=0|1`; default: `True`, since version 0.15.2): `ortho=False` passes `ortho=0` to the binary, which then does
+  not check that the rows of $H$ and $G$ are orthogonal (in each sector of a CSS code with $G$, i.e., without `Lx` or
+  `Lz`), and the same warning as from the binary is written to `stderr`. The result is valid only if $H G^T = 0$; the
+  cache key does not depend on it. Without $G$ (or with `solver="codedistance"`), it has no effect (a warning).
 - The experimental RW option `ksub` of the `compute_*_distance()` functions and the CLI should not be used: with
   `ksub>0` (and `method=1` or `3`), the same warning as from the binary is written to `stderr`.
 - An unknown keyword argument of the `compute_*_distance()` functions (e.g., a misspelled option, or `steps=` for
@@ -1069,7 +1080,7 @@ interoperability without manual threading overhead.
   give a warning on `stderr` (the input is selected in the order `fdem`, `Hx`/`Hz`, `finH`/`finG`/`finL`/`fin`; e.g.,
   matrices with `fdem`, `pmin`, `merge`, `expand`, `drop`, `outD`, or `--out-reduced` without `fdem`, `basis`,
   `--p-noise`, or `--force-noise` without a Stim circuit, `basis` without `drop=css`, `fin` with `finH`, `classical=1`
-  with `finG`), where the binary rejects some of these combinations with an error.
+  with `finG`, `ortho=0` without $G$), where the binary rejects some of these combinations with an error.
 - CLI help: `--help` (commonly used parameters, fits 80 rows) and `--morehelp` (all parameters); `--morehelp TOPIC`
   (also `--morehelp=TOPIC`, and `--help TOPIC` or `--help=TOPIC`) prints only the entries of the parameters `TOPIC`
   (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-`, `_`, and `=VALUE` are

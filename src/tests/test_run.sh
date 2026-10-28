@@ -1320,6 +1320,30 @@ assert_output "$BIN_FORK method=2 $QX97 dmin=6 start_scan=1" 255 "" "start_scan=
 assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 start=0,7 start_scan=1" 255 "" \
     "start_scan=1 is not available with fdem"
 
+# Test 113: the orthogonality check of finG (ortho=1, the default): H G^T = 0 is required (QX40 as both H and G is not
+# self-orthogonal: an error, also in dist_m4ri_old); ortho=0 (expert) skips the check, with a warning: the same result
+# for an orthogonal pair (QX150 with QZ150 at the supplied dmin=6), and no error for QX40 with itself (the result is not
+# valid; a build without -DNDEBUG verifies the orthogonality again when constructing L); ignored without finG (finL, a
+# DEM), with a warning; ortho is 0 or 1
+X113="finH=$EXAMPLES_DIR/QX40.mtx finG=$EXAMPLES_DIR/QX40.mtx"
+assert_output "$BIN_FORK method=1 steps=100 seed=1 threads=1 $X113 debug=0" 255 "" \
+    "rows of H and G matrices are not orthogonal"
+assert_output "$BIN method=1 steps=10 $X113 debug=0" 255 "" "rows of H and G matrices are not orthogonal"
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 wmax=6 threads=4 ortho=0 debug=0" 0 "^6 6 0$" \
+    "^# WARNING: ortho=0 \\(expert option\\): the rows of H and G are not checked for orthogonality$"
+ERR113=$($BIN_FORK method=1 steps=100 seed=1 threads=1 $X113 ortho=0 debug=0 2>&1 >/dev/null)
+echo "Running Test 113: ortho=0 with QX40 as both H and G"
+if ! echo "$ERR113" | grep -q "^# WARNING: ortho=0 (expert option)" || \
+        echo "$ERR113" | grep -q "rows of H and G matrices are not orthogonal"; then
+    echo "  [FAIL] Test 113: ortho=0 did not skip the orthogonality check: $ERR113"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=2 ortho=0 debug=0" 0 "^5 5 0$" \
+    "^# WARNING: ortho=0 is ignored without finG"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 ortho=0 debug=0" 0 "^3 3 0$" \
+    "^# WARNING: ortho=0 is ignored without finG"
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 wmax=6 ortho=2" 255 "" "invalid 'ortho=2': ortho should be 0 or 1"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

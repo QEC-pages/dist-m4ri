@@ -343,18 +343,48 @@ int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B){
     ERROR("matrix A shold be in compressed form");
   if(!B)
     ERROR("matrix B is NULL");
-  if(A->nz != -1)
+  if(B->nz != -1)
     ERROR("matrix B should be in compressed form");
   if (A->cols != B->cols) 
     ERROR("col count mismatch: A[%d,%d] and B[%d,%d]",
 	  A->rows,A->cols, B->rows, B->cols);
-  
-  for(int i=0; i < B->rows; i++){
-    const int begr = B->p[i];
-    if(sparse_syndrome_non_zero(A,B->p[i+1] - begr, & (B->i[begr])))
-      return 1;
+
+  /* for each row b of B, the parities of its overlaps with the rows of A, accumulated over the columns j of b from
+   * the rows of A with a nonzero in column j (the transpose of A): O(nnz(A) + nnz(B) * column weight of A) operations
+   * instead of O(rows(B) * nnz(A)).  A column repeated in a row counts once (the rows of both matrices are sorted), as
+   * in mzd_from_csr(), which gives the dense matrices used for the logical operators (Lx_for_CSS_code()). */
+  csr_t * const AT = csr_transpose(NULL, A);
+  unsigned char * const par = calloc((size_t)A->rows + 1, 1); /* bit 0: the parity, bit 1: touched by the row b */
+  int * const touched = malloc(((size_t)A->rows + 1) * sizeof(int));
+  if (!par || !touched)
+    ERROR("memory allocation");
+  int nonzero = 0;
+  for (int i = 0; (i < B->rows) && !nonzero; i++) {
+    int nt = 0;
+    for (int k = B->p[i]; k < B->p[i + 1]; k++) {
+      const int j = B->i[k];
+      if ((k > B->p[i]) && (j == B->i[k - 1]))
+        continue;
+      for (int t = AT->p[j]; t < AT->p[j + 1]; t++) {
+        const int r = AT->i[t];
+        if ((t > AT->p[j]) && (r == AT->i[t - 1]))
+          continue;
+        if (!(par[r] & 2)) {
+          par[r] = 2;
+          touched[nt++] = r;
+        }
+        par[r] ^= 1;
+      }
+    }
+    for (int t = 0; t < nt; t++) {
+      nonzero |= par[touched[t]] & 1;
+      par[touched[t]] = 0;
+    }
   }
-  return 0;
+  free(touched);
+  free(par);
+  csr_free(AT);
+  return nonzero;
 }
 
 /** 

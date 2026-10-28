@@ -56,6 +56,7 @@ params_t prm={
   .finC=NULL,
   .outC=NULL,
   .irred=1,
+  .ortho=1,
   .codewords=NULL,
   .num_cws=0,
   .min_w=INT_MAX,
@@ -972,6 +973,13 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, irred=%d\n",argv[i],p->irred);
     }
+    else if (sscanf(argv[i],"ortho=%d",&dbg)==1){
+      if ((dbg != 0) && (dbg != 1))
+        ERROR("invalid '%s': ortho should be 0 or 1\n", argv[i]);
+      p->ortho=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, ortho=%d\n",argv[i],p->ortho);
+    }
     else if (sscanf(argv[i],"cc_prune=%d",&dbg)==1){
       if ((dbg < 0) || (dbg > 2))
         ERROR("invalid '%s': cc_prune should be 0, 1, or 2\n", argv[i]);
@@ -1270,7 +1278,7 @@ void var_init(int argc, char **argv, params_t * const p){
       p->spaG=csr_mm_read(p->finG,p->spaG,0);
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read G <- file '%s'\n",p->finG);
-      if(csr_csr_mul_non_zero(p->spaH, p->spaG))
+      if(p->ortho && csr_csr_mul_non_zero(p->spaH, p->spaG))
 	 ERROR("rows of H and G matrices are not orthogonal");
       csr_dump(stderr, p->spaG, "G", p->debug);
     } 
@@ -1405,7 +1413,15 @@ void var_init(int argc, char **argv, params_t * const p){
     fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
   }
 
-  /* Warnings for the expert CC options and for the experimental ksub (printed regardless of `debug`) */
+  /* Warnings for the expert options (ortho and the CC options) and for the experimental ksub (printed regardless of
+   * `debug`) */
+  if (!p->ortho) {
+    if (p->spaG)
+      fprintf(stderr, "# WARNING: ortho=0 (expert option): the rows of H and G are not checked for orthogonality\n"
+                      "#   (H G^T = 0); the result is valid only if they are orthogonal\n");
+    else
+      fprintf(stderr, "# WARNING: ortho=0 is ignored without finG (the check H G^T = 0 needs G)\n");
+  }
   if (p->noscan) {
     const int d0 = (p->dmin > 1) ? p->dmin : 1;
     if (d0 < p->wmax)

@@ -1238,6 +1238,30 @@ def _warn_experimental_ksub(ksub: Any, method: int, solver: str = "dist_m4ri") -
         sys.stderr.write(_ksub_warning_text(ival))
 
 
+def _ortho_warning_text() -> str:
+    """Returns the stderr warning for the expert option ortho=0 (same wording as the dist_m4ri binary)."""
+    return (
+        "# WARNING: ortho=0 (expert option): the rows of H and G are not checked for orthogonality\n"
+        "#   (H G^T = 0); the result is valid only if they are orthogonal\n"
+    )
+
+
+def _warn_ortho(ortho: Any, has_g: bool, solver: str = "dist_m4ri") -> None:
+    """
+    Issues the warning for the expert option ortho=False to stderr: the dist_m4ri binary does not check that the rows
+    of H and G are orthogonal (if has_g: a matrix G is given), or the option has no effect (without G, or with the
+    codedistance solver).
+    """
+    if ortho:
+        return
+    if solver == "codedistance":
+        sys.stderr.write("# Warning: ortho=0 is ignored with solver='codedistance'\n")
+    elif has_g:
+        sys.stderr.write(_ortho_warning_text())
+    else:
+        sys.stderr.write("# Warning: ortho=0 has no effect without G (the check H G^T = 0 needs G)\n")
+
+
 def _check_kwargs(func: Callable[..., Any], kwargs: Dict[str, Any], aliases: Sequence[str] = ("win",)) -> None:
     """
     Raises TypeError for the keyword arguments in kwargs (the **kwargs of func) other than the accepted aliases
@@ -1486,7 +1510,9 @@ def run_dist_m4ri(
     stop_event: Optional[threading.Event] = None,
     warn_start: bool = True,
     warn_ksub: bool = True,
-    start_scan: bool = False
+    start_scan: bool = False,
+    ortho: bool = True,
+    warn_ortho: bool = True
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
@@ -1503,6 +1529,13 @@ def run_dist_m4ri(
             and prints a note, see _parse_stderr_stats()).  Ignored without fdem.
         outD: File to which the binary writes the detectors dropped from the DEM fdem (0-based; only the comment line
             '# N of M detectors dropped ...' if none, see read_drop_file()).  Ignored without fdem.
+
+    Orthogonality check:
+        ortho: If True (default), the binary checks that the rows of H and G (finG, or fin without finL) are
+            orthogonal (H G^T = 0) and stops with an error otherwise.  False (expert option, since version 0.15.2)
+            passes ortho=0: the check is skipped, e.g., to screen many codes which are orthogonal by construction; the
+            result is then valid only if H G^T = 0.  No effect without G.  The cache key does not depend on it.
+        warn_ortho: If True (default), issue the warning for ortho=False to stderr (see _warn_ortho()).
 
     Row order:
         sort_rows: Passed as sort_rows=1 (True) or sort_rows=0 (False); None (default): the binary's default, i.e.,
@@ -1604,6 +1637,9 @@ def run_dist_m4ri(
         sys.stderr.write(_start_warning_text(start_list))
     if warn_ksub:
         _warn_experimental_ksub(ksub, method)
+    has_g = not fdem and bool(finG or (fin and not finL))  # (fin=PREFIX: finG=PREFIX + 'Z.mtx' unless finL)
+    if warn_ortho:
+        _warn_ortho(ortho, has_g)
 
     finC = check_finc_outc(finC, outC, verbose=False)
 
@@ -1626,6 +1662,7 @@ def run_dist_m4ri(
     if finG: cmd.append(f"finG={finG}")
     if finL: cmd.append(f"finL={finL}")
     if fin: cmd.append(f"fin={fin}")
+    if has_g and not ortho: cmd.append("ortho=0")
     if finC: cmd.append(f"finC={finC}")
     if fdem: cmd.append(f"fdem={fdem}")
     if dmin > 0: cmd.append(f"dmin={dmin}")
@@ -3593,7 +3630,8 @@ def _cached_code_distance(
     sort_rows: Optional[bool] = None,
     win_hyb: int = 0,
     pairs: int = -1,
-    cc_prune: Optional[int] = None
+    cc_prune: Optional[int] = None,
+    ortho: bool = True
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
@@ -3602,7 +3640,8 @@ def _cached_code_distance(
     shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
     compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
     and the CC search cc_prune (see run_dist_m4ri()) do not change the result, nor the cache key; nor do the RW window
-    size win_hyb and the RW pairs (pairs) change the cache key.
+    size win_hyb, the RW pairs (pairs), and the expert option ortho (False: the binary does not check H G^T = 0) change
+    the cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -3740,6 +3779,8 @@ def _cached_code_distance(
             start_scan=bool(getattr(start_list, "scan", False)),
             warn_start=False,
             warn_ksub=False,
+            ortho=ortho,
+            warn_ortho=False,
             dexp=d_exp,
             steps=num_steps,
             threads=threads,
@@ -4015,6 +4056,7 @@ def compute_quantum_distance(
     start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
+    ortho: bool = True,
     **kwargs
 ) -> Any:
     """
@@ -4025,6 +4067,10 @@ def compute_quantum_distance(
         H: Parity check matrix (numpy array, scipy sparse matrix, or file path).
         G: Degeneracy generator matrix (numpy array, scipy sparse matrix, or file path).
         L: Logical operator matrix (numpy array, scipy sparse matrix, or file path).
+        ortho: Expert option (default: True; since version 0.15.2): False skips the check of the binary that the rows
+            of H and G are orthogonal (H G^T = 0; True: an error otherwise), e.g., to screen many codes which are
+            orthogonal by construction; a warning is printed to stderr, and the result is valid only if H G^T = 0.  No
+            effect without G.  The cache key does not depend on it.
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
@@ -4103,6 +4149,7 @@ def compute_quantum_distance(
             "Either G (dual generator matrix) or L (logical operator matrix) "
             "must be specified for quantum distance."
         )
+    _warn_ortho(ortho, G is not None, solver)
 
     if solver == "codedistance":
         if do_cws or outC:
@@ -4145,7 +4192,7 @@ def compute_quantum_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune
+        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, ortho=ortho
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -4233,6 +4280,7 @@ def compute_css_distance(
     start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
+    ortho: bool = True,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -4243,6 +4291,10 @@ def compute_css_distance(
         Hz: Z-stabilizer parity check matrix (required, at least one row).
         Lx: Optional X-logical operator matrix (alternative to Hz as finG).
         Lz: Optional Z-logical operator matrix (alternative to Hx as finG).
+        ortho: Expert option (default: True; since version 0.15.2): False skips the checks of the binary that the
+            rows of Hx and Hz are orthogonal (Hx Hz^T = 0, in each sector with G; True: an error otherwise), e.g., to
+            screen many codes which are orthogonal by construction; a warning is printed to stderr, and the result is
+            valid only if Hx Hz^T = 0.  No effect with both Lx and Lz.  The cache key does not depend on it.
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
@@ -4327,6 +4379,7 @@ def compute_css_distance(
     _check_kwargs(compute_css_distance, kwargs)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
+    _warn_ortho(ortho, Lx is None or Lz is None, solver)  # (G of the sectors: Hz unless Lx, Hx unless Lz)
 
     if solver == "codedistance":
         if do_cws or outC:
@@ -4394,7 +4447,7 @@ def compute_css_distance(
             seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
             kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
             cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
-            pairs=pairs, cc_prune=cc_prune
+            pairs=pairs, cc_prune=cc_prune, ortho=ortho
         )
         _last_css_stats[s] = dict(_last_run_stats)
 
@@ -5338,6 +5391,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "out_reduced": None,
         "sort_rows": None,
         "cc_prune": None,
+        "ortho": True,
         "noscan": 0,
         "irred": None,
         "classical": -1,
@@ -5679,6 +5733,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 if val not in ("0", "1", "2"):
                     raise ValueError(f"invalid '{arg}': cc_prune should be 0, 1, or 2")
                 args["cc_prune"] = int(val)
+            elif key_lower == "ortho":
+                if val not in ("0", "1"):
+                    raise ValueError(f"invalid '{arg}': ortho should be 0 or 1")
+                args["ortho"] = val == "1"
             elif key_lower == "drop":  # (the values take precedence over files with these names, as in the binary)
                 if val.lower() in ("1", "true", "yes", "on", "auto"):
                     args["drop"] = True  # drop=auto
@@ -5827,7 +5885,7 @@ Allowed parameters:
   timeout, threads, nothrottle, chunk_size (batch), ksub, kwin (win), win_mode,
   win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, start_scan,
   cbeg, cend, finC, outC, maxC, expand, dW, irred, seed, debug, solver, cache,
-  --no-cache, --verbose, --cws, --trust-start, sort_rows, cc_prune
+  --no-cache, --verbose, --cws, --trust-start, sort_rows, cc_prune, ortho
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -5895,10 +5953,10 @@ Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
   start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (also start_scan=1; see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
-  noscan, cbeg, cend    Disabled in Python (ignored with a warning; also irred=0): use the dist_m4ri binary
+  noscan, cbeg, cend    Disabled in Python (ignored with a warning; also irred=0, --simple, --full)
+  ortho=0|1 (1)         Expert: 0 skips the check H G^T = 0 of G (valid only if it holds)
   sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
   cc_prune=0|1|2 (1)    CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds
-  --simple, --full      Disabled (ignored with a warning): the DEM has all detectors (see drop)
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500, alias: batch)
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
@@ -5941,6 +5999,13 @@ Required input (at least one matrix/model specification):
   Hx=FILE, Hz=FILE      CSS check matrices Hx and Hz, both required: computes both dX and dZ, and
                         d = min(dX, dZ) (finH=Hx with finG=Hz gives dZ only).
   Lx=FILE, Lz=FILE      Alternative syntax for specifying CSS logical operator matrices.
+  ortho=0|1             Expert option (default: 1): 1, the dist_m4ri binary checks that the rows of H
+                        and G (finG, fin without finL, or Hx and Hz in each sector of a CSS code without
+                        Lx or Lz) are orthogonal, H G^T = 0, and stops with an error otherwise; 0 skips
+                        the check (a warning is printed), e.g., to screen many codes which are
+                        orthogonal by construction (the check takes O(nnz(G) times the column weight
+                        of H) operations).  The result is valid only if H G^T = 0.  The cache key does
+                        not depend on it.  No effect without G (a warning).
   pmin=PROB             Minimum error probability threshold for DEM parsing (default: 0.0).
                         Error mechanisms with probability < pmin are filtered out.  The column
                         indices (start, finC, outC) count only the error mechanisms kept: with
@@ -6056,7 +6121,8 @@ Required input (at least one matrix/model specification):
                         finH/finG/finL/fin (fin only supplies the missing finH and finG); the
                         ignored inputs (e.g., matrices with fdem, pmin, merge, expand, drop, or outD
                         without fdem, basis, --p-noise, or --force-noise without a Stim circuit, basis
-                        without drop=css, fin with finH, classical=1 with finG) give a warning.
+                        without drop=css, fin with finH, classical=1 with finG, ortho=0 without G)
+                        give a warning.
 
 Calculation method:
   method=1|2|3          Calculation method (default: 3):
@@ -6317,7 +6383,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand
   stim                  fdem, basis, --rounds, --out-dir, --out-dem, --out-stim, --p-noise,
                         --force-noise, --model-lb, --model-minority, --out-model
-  matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical
+  matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical, ortho
   codewords             --cws, outC, finC, maxC, dW, irred, expand
   threading             threads, nothrottle, chunk_size
   cache                 cache, --no-cache, --trust-start
@@ -6458,7 +6524,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
     a Stim circuit), Hx / Hz (a CSS code), and finH / finG / finL / fin (one sector of a quantum code, or a classical
     code); fin=PREFIX supplies only the missing finH (PREFIX + 'X.mtx') and finG (PREFIX + 'Z.mtx', unless finL).  The
     disabled options --simple and --full always give a warning (see _warn_disabled_simple_full()), and so does the
-    expert option irred of the dist_m4ri binary, unless irred=1 (the codewords recorded are always irreducible).
+    expert option irred of the dist_m4ri binary, unless irred=1 (the codewords recorded are always irreducible).  The
+    expert option ortho=0 gives a warning here for a DEM or a classical code (for a quantum code, see _warn_ortho()).
     """
     def given(*keys: str) -> List[str]:
         return [k for k in keys if args.get(k) is not None]
@@ -6514,6 +6581,10 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                              "names take precedence")
     if args.get("classical") == 1 and given("finG", "finL", "fin", "fdem", "Hz", "Lx", "Lz"):
         warns.append("classical=1 ignored: the input is a quantum code or a DEM")
+    if args.get("ortho") is False:  # (a quantum code: compute_quantum_distance() and compute_css_distance() warn)
+        quantum = bool(given("Hx", "Hz", "finG", "finL", "fin")) or args.get("classical") == 0
+        if args.get("fdem") or not quantum:
+            warns.append("ortho=0: only used for a quantum code with G (finG=, fin=, or Hx= and Hz=); ignored")
     if args.get("model_lb"):  # the code-sized model of a Stim circuit (compute_model_lower_bound())
         ign = [opt for opt, on in (("outC=", args.get("outC") is not None), ("finC=", args.get("finC") is not None),
                                    ("--cws", bool(args.get("do_cws")) and args.get("outC") is None),
@@ -6752,7 +6823,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
                 trust_start=args["trust_start"],
-                start_scan=args["start_scan"]
+                start_scan=args["start_scan"],
+                ortho=args["ortho"]
             )
             dist, dx_info, dz_info = res[0], res[1], res[2]  # (the sector files outC_X / outC_Z are written by
             # compute_css_distance())
@@ -6839,7 +6911,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
                 trust_start=args["trust_start"],
-                start_scan=args["start_scan"]
+                start_scan=args["start_scan"],
+                ortho=args["ortho"]
             )
             dist, d_info = res[0], res[1]  # (compute_*_distance() writes the codewords to outC)
 
