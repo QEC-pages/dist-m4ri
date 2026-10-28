@@ -698,3 +698,6 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Prototype (`bb_irr=1`): with the filter, both kernels give the same codewords at every weight (surf_d3 DEM,
     $w = 3, \dots, 8$), each hit once; without it, the sets differ from $w = 6$ on by reducible ones only (e.g., 204
     reducible hits at $w = 6$ for 0.14.7, 66 for the branch and bound).
+
+- [ ] see if linear algebra can be used to eliminate the possibility of
+      non-trivial DEM code words stretching over multiple REPEAT rounds.      
