@@ -288,6 +288,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [x] **Distance Benchmark Update**: the overnight run of 0.14.0 (Oct 2026, `benchmark/BENCHMARK.md`) certified the
   distances of all benchmark circuits up to gross. Still open: double gross, bb_360, and bb_756; see **Bounds for the
   largest circuits** in section 4.
+- [ ] **2BGA codes and circuits in the benchmark** (Oct 2026): add a few abelian and non-abelian two-block
+  group-algebra codes up to distance 20, with the circuits constructed for them, to `benchmark/BENCHMARK.md`, and
+  verify that the default parameters work well for the code distances, the circuit distances of the T = 1 circuits
+  (folded, so the same as for any T; simplified and full DEMs), and the extended CSS distances with hook errors
+  (`compute_extended_css_distance()`).  Sources: `~/text/hr-2bga/hr2bga_search` (code tables `tab*/`, `tna*/`,
+  `codes3_*.txt`; `circuit_2bga.py build` for sequential and concurrent schemes, `campaign_2bga.py circuits` for the
+  best circuits of a tuple (n, k, g6, d)), e.g., [[126,20,9]] and [[126,18,11]] over C63 and [[162,22,9]] over
+  SmallGroup(81,13) of `../scratch/circ_stats/` there (`use_cases.md`), then larger ones up to d = 20.
 - [ ] **References for the acceleration techniques** (search online): find the prior work and the right citations for
   each technique used by `dist_m4ri` (for the README, `introduction.md`, and a paper), and whether better variants
   exist. Starting points to verify:
@@ -765,3 +773,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] native python interface (as opposed to calling external program) to speed
       up multiple repeated calls?  Or, perhaps a simplified version only for
       small time-out?
+- [x] Recognize folded circuits (see https://arxiv.org/abs/2604.09797)
+- [ ] an option to keep reading commands from stdout (reduced startup cost)
+- [ ] documentation: model code = a variant of extended CSS (specify exact relation)
+- [ ] optional analysis of check matrices and/or model code using sparse
+      `dreadnaut` (if available), 
+  - to speed CC (top of each orbit).
+  - symmetry-based accumulation of canonical CWs (RW) - hit counts.
+  - Does RW blocking make sense for T=1 DEMs?
+  - For circuit distance calculation, if d_code has not been reached, continue
+    with RW beyond steps (within timeout).
+- [ ] even smarter termination logic for CC ?
