@@ -1,0 +1,4 @@
+%%NZLIST
+% [[102, 20, 10]] 2BGA code C(a, b) over SmallGroup(51,1) = C51: an X-type logical operator of weight d_X = 10
+% (witness_X) a = e0+e6+e7+e29+e41, b = e0+e7+e22+e26; G. Lee, bicycle-race 28592a7536416da4 (arXiv:2610.13880)
+10 4 8 23 31 41 45 74 75 83 95

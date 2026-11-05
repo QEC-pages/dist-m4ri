@@ -1,0 +1,4 @@
+%%NZLIST
+% [[288, 8, 22]] 2BGA code C(a, b) over SmallGroup(144,48) = C18 x D8: a Z-type logical operator of weight d_Z = 22
+% (witness_Z) a = e0+e9+e39, b = e0+e31+e74; G. Lee, bicycle-race 03146e8830d9bd01 (arXiv:2610.13880)
+22 16 23 27 28 38 41 52 57 58 64 105 130 139 145 172 182 195 204 215 240 248 273

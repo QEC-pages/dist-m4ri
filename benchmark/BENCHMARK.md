@@ -15,20 +15,23 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 > circuits from the follow-up runs of 0.14.1 (Section 6); the values marked "(s)" are from shorter runs of earlier
 > versions on the stripped DEMs, and they are provisional. The values of the codes and circuits added on 2026-10-20 (the
 > `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise BB circuits) and the re-runs of
-> the uniform-noise gross circuit and of the torus circuits (Section 2.5) are from short runs of 0.14.7. The distances
+> the uniform-noise gross circuit and of the torus circuits (Section 2.6) are from short runs of 0.14.7. The distances
 > of the larger codes of Section 1 (the `yarn_*` codes with $d \ge 16$, `bb_360`, and `bb_756`) are from the
 > branch-and-bound CC search of 0.15.0 (Section 9; those up to $d = 18$ confirmed with the walk of the earlier
-> versions, Section 10.1).
+> versions, Section 10.1). The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were only checked in
+> short RW runs of 0.15.2: the distances in their prefixes are the exact values of their source database.
 
 ## Directory Structure
 
 - `css/`: MatrixMarket (`.mtx`) CSS parity-check matrices (`_Hx.mtx`, `_Hz.mtx`) and canonical logical operators
-  (`_Lx.mtx`, `_Lz.mtx` for the Mitten codes, including the `yarn_*` codes of arXiv:2607.28795).
+  (`_Lx.mtx`, `_Lz.mtx` for the Mitten codes, including the `yarn_*` codes of arXiv:2607.28795, and for the `2bga_*`
+  codes, which also have logical operators of the minimum weight in `.nz` files, `_wX.nz` and `_wZ.nz`).
 - `stim_bb/`: Unmodified Bivariate Bicycle (BB), Gross, and Double-Gross `.stim` circuits from external repositories.
 - `stim_mitten/`: Mitten code `.stim` circuits generated via `quits` with `CircuitBuildOptions(get_all_detectors=True)`
   (`mitten_*`), and from the published hook-free schedules of arXiv:2607.28795 with `make_yarn_mitten_circuits.py`
   (`yarn_*`).
 - `stim_shyps/`: Unmodified SHYPS code `.stim` circuits ($Z$-basis memory).
+- `stim_2bga/`: Unmodified `.stim` circuits of two two-block group-algebra (2BGA) codes (memory in both bases).
 - `stim_torus/`: 2D local torus Bivariate Bicycle `.stim` circuits (`d = 14` to `17`, noiseless templates).
 - `figures/`: scaling of `dist_m4ri` with the number of threads on some of these codes and circuits (Section 4), the
   time to a minimum-weight codeword in the full DEMs of the circuits (Sections 5 and 8), and the lightest codeword
@@ -97,6 +100,28 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
      (`DEPOLARIZE2` after the CX gates, flips at the resets and measurements, no idle noise). The repository has no
      $X$-basis memory circuits of these codes.
 
+5. **Two-Block Group-Algebra (2BGA) Codes of the Bicycle Race Database**
+   - **Codes and Stim circuits**: from [`gideonlsx/bicycle-race`](https://github.com/gideonlsx/bicycle-race)
+     (commit `cee978f8b92256a4783b7e0792f0207a542a1b1e`), the companion database of G. Lee, *Bicycle Race: small
+     two-block codes on the Pareto frontier*, arXiv:2610.13880 (2026); its data are licensed under CC BY 4.0.
+   - A code $C(a, b)$ over a finite group $G$ (elements $e_0, e_1, \ldots$ numbered as in GAP's
+     `Elements(SmallGroup(o, i))`, $e_0$ the identity) has $n = 2|G|$ qubits, $H_X = (L(a) \mid R(b))$, and
+     $H_Z = (R(b)^T \mid L(a)^T)$, where $L(a)$ ($R(b)$) has a 1 in row $s g$ ($g s$) and column $g$ for each $s$ in $a$
+     ($b$). The check matrices were rebuilt with the database's `scripts/codes.py` (which checks the commutation, $k$,
+     and the database's logical operators of weight $d_X$ and $d_Z$); the comment lines of the files give $a$, $b$, and
+     the database id of each code. The paired logical bases `_Lx.mtx`, `_Lz.mtx` ($L_X L_Z^T = I$) were computed
+     here, and `_wX.nz`, `_wZ.nz` are the database's logical operators of weight $d_X$ and $d_Z$ (`.nz` list format,
+     1-based columns, for `finC`).
+   - Seven codes with check weights 5 to 9 and distances 10 to 23, four of them over non-abelian groups. Their
+     distances are the exact values of the database, from the paper's connected-cluster engine. The database also
+     reports `dist-m4ri` certificates: of both sectors for `2bga_102_20_10_C51`, and for `2bga_120_24_10_C30xC2` and
+     `2bga_288_4_20_C24xS3` by CC from the symmetry roots of a checked automorphism group with two orbits.
+   - Circuits (Fig. 3b of the paper, copied unmodified and renamed): $X$- and $Z$-basis memory of `2bga_102_20_10_C51`
+     and `2bga_120_24_10_C30xC2`, 10 rounds of a "bare, equivariant, sequential" schedule with one ancilla per check,
+     and the idle-free noise model of Zhao et al. (arXiv:2604.16209, App. B.1) at $p = 0.001$ (`DEPOLARIZE1` after the
+     preparations and before the measurements, `DEPOLARIZE2` after the CX gates, no idle noise). The header of each
+     file describes the circuit and gives the circuit-level distance 8.
+
 ---
 
 ## 1. CSS Parity-Check and Logical Matrices (`benchmark/css/`)
@@ -130,6 +155,13 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 | `yarn_smitten_840_168_18` | $[[840, 168, 17]]$ | $336 \times 840$ | structured, $G = C_7 \times S_4$ |
 | `yarn_smitten_1200_240_20` | $[[1200, 240, 20]]$ | $480 \times 1200$ | structured, $|G| = 240$ |
 | `yarn_ablp_560_112_14` | $[[560, 112, 14]]$ | $224 \times 560$ | abelian lifted product, $|G| = 112$ |
+| `2bga_102_20_10_C51` | $[[102, 20, 10]]$ | $51 \times 102$ | 2BGA, $G = C_{51}$, weight 9 = 5 + 4 |
+| `2bga_120_24_10_C30xC2` | $[[120, 24, 10]]$ | $60 \times 120$ | 2BGA, $G = C_{30} \times C_2$, weight 9 = 5 + 4 |
+| `2bga_252_16_20_C7xD18` | $[[252, 16, 20]]$ | $126 \times 252$ | 2BGA, $G = C_7 \times D_{18}$, weight 7 = 4 + 3 |
+| `2bga_288_4_20_C24xS3` | $[[288, 4, 20]]$ | $144 \times 288$ | 2BGA, $G = C_{24} \times S_3$, weight 5 = 3 + 2 |
+| `2bga_288_8_22_C18xD8` | $[[288, 8, 22]]$ | $144 \times 288$ | 2BGA, $G = C_{18} \times D_8$, weight 6 = 3 + 3 |
+| `2bga_292_22_23_C146` | $[[292, 22, 23]]$ | $146 \times 292$ | 2BGA, $G = C_{146}$, weight 8 = 4 + 4 |
+| `2bga_294_24_21_SG147_5` | $[[294, 24, 21]]$ | $147 \times 294$ | 2BGA, $G = C_7^2 \rtimes C_3$, weight 9 = 6 + 3 |
 
 Distances computed with `dist_m4ri`:
 
@@ -162,6 +194,13 @@ Distances computed with `dist_m4ri`:
 | `yarn_smitten_840_168_18` | **17** | 18 |
 | `yarn_smitten_1200_240_20` | 20 | 20 |
 | `yarn_ablp_560_112_14` | 14 | 14 |
+| `2bga_102_20_10_C51` | $\le 10$ | $\le 10$ |
+| `2bga_120_24_10_C30xC2` | $\le 10$ | $\le 10$ |
+| `2bga_252_16_20_C7xD18` | $\le 20$ | $\le 20$ |
+| `2bga_288_4_20_C24xS3` | $\le 20$ | $\le 20$ |
+| `2bga_288_8_22_C18xD8` | $\le 22$ | $\le 22$ |
+| `2bga_292_22_23_C146` | $\le 23$ | $\le 23$ |
+| `2bga_294_24_21_SG147_5` | $\le 21$ | $\le 21$ |
 
 - $d_X$ ($d_Z$) is the minimum weight of an $X$-type ($Z$-type) logical operator, i.e., of a vector $c$ with
   $H_Z c = 0$ ($H_X c = 0$) which is not in the row space of $H_X$ ($H_Z$); $d = \min(d_X, d_Z)$. "–": not computed
@@ -185,12 +224,17 @@ Distances computed with `dist_m4ri`:
     `dist_m4ri_old method=2 wmax=9`: no codeword of weight at most 9).
   - `yarn_smitten_840_168_18` has distance **17**, not 18: RW found 7 distinct $X$-type logical operators of weight 17,
     valid in an independent check over GF(2), and 0.15.0 certified $d_X = 17$ and $d_Z = 18$.
+- The `2bga_*` codes (2026-11-05): $\le w$ is the weight of the lightest logical operator found by RW of 0.15.2
+  (20,000 steps on 16 threads, under 0.1 s per sector), not certified by CC here. In both sectors of every code it is
+  the exact distance of the source database (Origins, item 5; $d_X = d_Z = d$ in the prefix). The `.nz` files of these
+  codes give the same upper bounds through `finC`, and the logical bases `_Lx.mtx`, `_Lz.mtx` (`finL`) the same RW
+  results as `finG`.
 
 ---
 
-## 2. Stim Circuits (`stim_bb/`, `stim_mitten/`, `stim_shyps/`, `stim_torus/`)
+## 2. Stim Circuits (`stim_bb/`, `stim_mitten/`, `stim_shyps/`, `stim_torus/`, `stim_2bga/`)
 
-The circuit-level distances are listed in [Section 2.5](#25-circuit-level-distances).
+The circuit-level distances are listed in [Section 2.6](#26-circuit-level-distances).
 
 ### 2.1 Bivariate Bicycle, Gross, and Double-Gross (`benchmark/stim_bb/`)
 
@@ -286,7 +330,24 @@ verified yet (no check matrices are included).
 SHYPS codes are subsystem codes: each round measures the $Z$- and the $X$-type gauge operators, and the circuits have
 detectors of the $Z$ type only (Origins, item 4).
 
-### 2.5 Circuit-Level Distances
+### 2.5 2BGA Codes (`benchmark/stim_2bga/`)
+
+| File (`benchmark/stim_2bga/`) | Code | Rounds | Qubits | Detectors | Observables | Basis |
+| :--- | :--- | ---: | ---: | ---: | ---: | :--- |
+| `2bga_102_20_10_C51_idlefree_r10_X.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `X` |
+| `2bga_102_20_10_C51_idlefree_r10_Z.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `Z` |
+| `2bga_120_24_10_C30xC2_idlefree_r10_X.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `X` |
+| `2bga_120_24_10_C30xC2_idlefree_r10_Z.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `Z` |
+
+The source files are `w9_102_20_10_g51_1_2859_memory_{x,z}basis_r10_idlefree_p0.001.stim` and
+`w9t_120_24_10_g60_13_48f7b6_memory_{x,z}basis_r10_idlefree_p0.001.stim` in `data/circuits/` of the database (Origins,
+item 5). The qubits are numbered as in the database: data qubit $j < |G|$ in the left block and $|G| + j$ in the right
+block, and the ancilla of check $i$ (row $i$ of `_Hx.mtx` or `_Hz.mtx` in `css/`) is $n + i$ for an $X$ check and
+$n + |G| + i$ for a $Z$ check; in the first round, the CX gates of every ancilla address exactly the support of its
+check. Each circuit has the detectors of its own basis only; the full DEM has 8,262 (`2bga_102`) or 9,720
+(`2bga_120`) error mechanisms.
+
+### 2.6 Circuit-Level Distances
 
 The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable
 logical error, i.e., the distance of the full DEM (all detectors).
@@ -305,6 +366,9 @@ logical error, i.e., the distance of the full DEM (all detectors).
 - For the noiseless torus templates, the noise of `add_noise(p=0.001)` is added; the circuit distance depends on the
   noise model (which faults are included), but not on $p$. Since 0.14.0, `add_noise` also adds `DEPOLARIZE2` after
   `CZSWAP`, which these circuits use for routing; the torus values are for this noise.
+- $\le w$ (the `2bga_*` circuits, 2026-11-05): the weight of the lightest logical error found by RW of 0.15.2 in the
+  full DEM of the circuit with its own noise (8 s on 16 threads), not certified; it is the circuit-level distance 8
+  given in the headers of the files (Section 2.5).
 - "–": not computed yet; "n/a": no circuit for this basis.
 
 | Circuit (`.stim` file name without `_X`/`_Z`) | $X$ basis | $Z$ basis |
@@ -337,6 +401,8 @@ logical error, i.e., the distance of the full DEM (all detectors).
 | `NEENNWNWNNEEN_L3_torus_..._n120_k8_d15` | 6 | – |
 | `NEENNWNWNNEEN_L3_torus_..._n200_k16_d16` | 8 | – |
 | `ENENESESENENE_L3_torus_..._n200_k8_d17` | 8 | – |
+| `2bga_102_20_10_C51_idlefree_r10` | $\le 8$ | $\le 8$ |
+| `2bga_120_24_10_C30xC2_idlefree_r10` | $\le 8$ | $\le 8$ |
 
 The circuit-level distances are often below the code distances in the file names. For example, the gross-code circuit
 has distance 10 (also with the uniform noise), consistent with the circuit-level distance $\le 10$ reported for the IBM
@@ -623,7 +689,7 @@ faster in CC, and 12–100 times faster on the full DEM.
 - On the gross circuit, a RW step of 0.14.0 is 67 times faster, and all 128 threads are used (the dense RW working
   memory of the full matrix limits 0.12.2 to 32 threads): 270 times more steps in 180 s, and a codeword of the minimum
   weight 10.
-- For `bb_360`, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.5); Section 6.1 found
+- For `bb_360`, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.6); Section 6.1 found
   one of weight 23.
 - For `bb_756`, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the
   reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, `nothrottle=1` would run
@@ -1017,7 +1083,7 @@ $d = 9$ (0.14.3: not), and with more hits per step for $d = 11$; all runs found 
 
 ### 8.5 Code-sized model lower bound (0.14.5)
 
-`compute_model_lower_bound()` with the default threads, against the circuit distance (Section 2.5). With
+`compute_model_lower_bound()` with the default threads, against the circuit distance (Section 2.6). With
 `minority=False`, only the model of the measured-basis chains (Section 6.3) is solved (`method=3`); with
 `minority=True` (the default of 0.14.5 and 0.14.6), the model with all rows is then searched from that bound (RW with
 `wmin` equal to the bound, then CC if needed); the times are those of the whole calls. Since 0.14.7, the minority-basis
@@ -1043,7 +1109,7 @@ rows are off by default (`minority=True`, CLI `--model-minority`, to use them).
 | `NEENNWNWNNEEN_..._n120_k8_d15_X` | 6 | 60 x 720 | **6** | 0.85 | 120 x 7440 | **6** | 0.93 |
 
 - The bound (bold: equal to the circuit distance) is tight for the `hef` Mitten circuits, `mitten_330` custom, and the
-  `n120` torus circuit (its circuit distance 6 was certified on 2026-10-15, Section 2.5); it is 1 below
+  `n120` torus circuit (its circuit distance 6 was certified on 2026-10-15, Section 2.6); it is 1 below
   the distance for `bb_72`, `bb_90`, and the other custom Mitten circuits, and 2 below it for `bb_108`, gross, and the
   `n60` torus circuit.
 - The minority-basis rows raised none of these bounds: the model with all rows has codewords of the same weight. They
