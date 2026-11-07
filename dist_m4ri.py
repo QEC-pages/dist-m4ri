@@ -644,7 +644,8 @@ def explain_bounds(
                     f"step and would be missed with probability {est['p_miss']:.2g}; 1% after about "
                     f"{est['steps_target']} RW steps in total{t_str}."
                 )
-                if stats.get("min_w") == dmax and "hits_avg" in stats:
+                # (with min_hits=0, the binary does not count the hits: each codeword then has a single hit)
+                if stats.get("min_w") == dmax and "hits_avg" in stats and stats.get("min_hits", 0) > 0:
                     n_all = stats.get("rw_steps", n_unif)
                     p1 = rw_infoset_find_prob(n_cols, rank, dmax, pairs_l)
                     st = stats.get("rw_step_types", {}).get(dmax)
@@ -1505,7 +1506,7 @@ def run_dist_m4ri(
     pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
-    refresh: int = 0,
+    refresh: Optional[int] = None,
     verbose: bool = False,
     stop_event: Optional[threading.Event] = None,
     warn_start: bool = True,
@@ -1576,10 +1577,20 @@ def run_dist_m4ri(
             while a codeword of the weight of the upper bound would be kept with probability below 0.8, but enough
             rows to keep the pairs of a step within about the work of its elimination (e.g., at least 6 for large
             circuit DEMs while the upper bound is far above the distance).  The pairs find the minimum-weight
-            codewords of circuit DEMs 7-25 times faster (per wall time) and lighter codewords of codes with a large
+            codewords of circuit DEMs 7-26 times faster (per wall time) and lighter codewords of codes with a large
             distance.  With debug & 1, the binary prints the pairs checked per step and the codewords found by pairs
             and by single columns (also in _last_run_stats).  The pairs of disjoint codewords are skipped (their sum
             is reducible: the binary records only irreducible codewords, its default irred=1).
+
+    RW stopping criterion:
+        min_hits: Passed as min_hits=N if not None and >= 0 (None, the default, or a negative value: the binary's
+            default 5): RW ends once the average number of hits <n> per codeword reaches N, both for the codewords
+            of the minimum weight found and for a representative set of cov_cws lowest-weight codewords (the hits of
+            all RW steps, with or without windows, and those of CC and finC count).  0: off; then, unless the
+            codewords are collected (outC or maxC), RW records only the codewords lighter than the upper bound, so
+            that the repeated hits are not counted.
+        cov_cws: Size of the representative set of lowest-weight codewords for min_hits, passed as cov_cws=N if not
+            100 (the default, as in the binary; 0: only the minimum weight).
 
     Stop target:
         dstop: The run (method=2 or 3) ends once CC has certified dmin >= dstop, i.e., that there is no codeword of
@@ -1605,10 +1616,12 @@ def run_dist_m4ri(
         noscan / cbeg / cend: Disabled in the Python interface: accepted for backward compatibility,
             but ignored with a warning to stderr (use the dist_m4ri binary directly).
 
-    Experimental RW option:
+    Experimental RW options:
         ksub: Experimental, should not be used: subspace dimension sampled from ker(H) in RW (0: full-matrix RW).
             A RW step reduces the span of ksub rows of a fixed basis of ker(H), so that a few codewords are found
             much more often than others (min_hits may end RW early).
+        refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None, the
+            default: the binary's 5000 with ksub > 0; 0: no refresh).
         warn_ksub: If True (default), issue the warning for ksub > 0 to stderr (with method=1 or 3).
 
     Debug output:
@@ -1699,7 +1712,7 @@ def run_dist_m4ri(
     if pairs != -1: cmd.append(f"pairs={pairs}")
     if min_hits is not None and min_hits >= 0: cmd.append(f"min_hits={min_hits}")
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
-    if refresh > 0: cmd.append(f"refresh={refresh}")
+    if refresh is not None: cmd.append(f"refresh={refresh}")
 
     if eff_debug & PY_DBG_COMMANDS:
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
@@ -1933,7 +1946,8 @@ def add_noise(circuit: Any, p: float = 0.001, force: bool = False) -> Any:
     - X (Z) flips with probability p after Z-basis or Y-basis (X-basis) resets and before measurements, both before and
       after a measurement with reset (MR, MRX, MRY);
     - none for the multi-qubit measurements (MPP, MXX, MYY, MZZ) and the Pauli product gates (SPP, SPP_DAG).
-    The noise of a noisy circuit is kept, unless force=True: then it is replaced (see strip_noise()).
+    The noise of a noisy circuit is kept and the uniform noise is added to it, unless force=True: then it is replaced
+    (see strip_noise()).
 
     Args:
         circuit: stim.Circuit or path to a .stim file.
@@ -3677,7 +3691,7 @@ def _cached_code_distance(
     win_mode: int,
     min_hits: Optional[int],
     cov_cws: int,
-    refresh: int,
+    refresh: Optional[int],
     trust_start: bool,
     fdem: Optional[Any] = None,
     pmin: float = 0.0,
@@ -3942,7 +3956,7 @@ def compute_classical_distance(
     pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
-    refresh: int = 0,
+    refresh: Optional[int] = None,
     trust_start: bool = False,
     start_scan: bool = False,
     sort_rows: Optional[bool] = None,
@@ -3957,8 +3971,21 @@ def compute_classical_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds.
+        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
+            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
+            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+        cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
+            minimum weight).
+        kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            win_hyb and run_dist_m4ri().
+        refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
+            the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance.
         d_max / dmax: Known upper bound on distance.
@@ -4020,6 +4047,11 @@ def compute_classical_distance(
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
+        ValueError: for an invalid option value (e.g., start, or cc_prune other than 0, 1, or 2), for method=2 with
+            timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
+        FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
+        RuntimeError: if the binary exits with an error (e.g., for a missing input file).
+        ImportError: if solver="codedistance" but the codedistance package is not installed.
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
@@ -4110,7 +4142,7 @@ def compute_quantum_distance(
     pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
-    refresh: int = 0,
+    refresh: Optional[int] = None,
     trust_start: bool = False,
     start_scan: bool = False,
     sort_rows: Optional[bool] = None,
@@ -4124,8 +4156,9 @@ def compute_quantum_distance(
 
     Args:
         H: Parity check matrix (numpy array, scipy sparse matrix, or file path).
-        G: Degeneracy generator matrix (numpy array, scipy sparse matrix, or file path).
-        L: Logical operator matrix (numpy array, scipy sparse matrix, or file path).
+        G: Degeneracy generator matrix (numpy array, scipy sparse matrix, or file path); the binary constructs the
+            logical operators from H and G.  Either G or L is required, not both (ValueError).
+        L: Logical operator matrix (numpy array, scipy sparse matrix, or file path), instead of G.
         ortho: Expert option (default: True; since version 0.15.2): False skips the check of the binary that the rows
             of H and G are orthogonal (H G^T = 0; True: an error otherwise), e.g., to screen many codes which are
             orthogonal by construction; a warning is printed to stderr, and the result is valid only if H G^T = 0.  No
@@ -4133,8 +4166,21 @@ def compute_quantum_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds.
+        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
+            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
+            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+        cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
+            minimum weight).
+        kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            win_hyb and run_dist_m4ri().
+        refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
+            the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance.
         d_max / dmax: Known upper bound on distance.
@@ -4196,6 +4242,13 @@ def compute_quantum_distance(
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
+        ValueError: if neither or both of G and L are given (or G is not given, with solver="codedistance"), for an
+            invalid option value (e.g., start, or cc_prune other than 0, 1, or 2), for method=2 with timeout <= 0
+            but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
+        FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
+        RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for rows
+            of H and G which are not orthogonal).
+        ImportError: if solver="codedistance" but the codedistance package is not installed.
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
@@ -4208,6 +4261,8 @@ def compute_quantum_distance(
             "Either G (dual generator matrix) or L (logical operator matrix) "
             "must be specified for quantum distance."
         )
+    if G is not None and L is not None:
+        raise ValueError("Either G or L should be specified for quantum distance, not both.")
     _warn_ortho(ortho, G is not None, solver)
 
     if solver == "codedistance":
@@ -4334,7 +4389,7 @@ def compute_css_distance(
     pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
-    refresh: int = 0,
+    refresh: Optional[int] = None,
     trust_start: bool = False,
     start_scan: bool = False,
     sort_rows: Optional[bool] = None,
@@ -4357,8 +4412,21 @@ def compute_css_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds.
+        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
+            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
+            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+        cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
+            minimum weight).
+        kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            win_hyb and run_dist_m4ri().
+        refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
+            the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on d = min(dX, dZ), inclusive (a lower bound of both sectors).
         d_max / dmax: Known upper bound on d = min(dX, dZ), inclusive.  As it is not an upper bound of either
@@ -4420,10 +4488,24 @@ def compute_css_distance(
         else (dist, dX_info, dZ_info)
 
     Raises:
-        ValueError: if Hx or Hz is missing or empty; use compute_quantum_distance() for one sector, or
-            compute_classical_distance() for a classical code.
+        ValueError: if Hx or Hz is missing or empty (use compute_quantum_distance() for one sector, or
+            compute_classical_distance() for a classical code), for an invalid option value (e.g., start, or
+            cc_prune other than 0, 1, or 2), for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or
+            for do_cws / outC with solver="codedistance".
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
+        FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
+        RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for
+            rows of Hx and Hz which are not orthogonal).
+        ImportError: if solver="codedistance" but the codedistance package is not installed.
     """
+    def _as_matrix(M: Any) -> Any:  # an array-like (e.g., a list of rows) as a NumPy array
+        if M is None or isinstance(M, (str, Path)) or hasattr(M, 'shape'):
+            return M
+        import numpy as np
+        return np.asarray(M)
+
+    Hx, Hz, Lx, Lz = (_as_matrix(M) for M in (Hx, Hz, Lx, Lz))
+
     def _nonempty(M: Any) -> bool:
         return M is not None and (isinstance(M, (str, Path)) or (hasattr(M, 'shape') and M.shape[0] > 0))
 
@@ -4818,7 +4900,7 @@ def compute_dem_distance(
     pairs: int = -1,
     min_hits: Optional[int] = None,
     cov_cws: int = 100,
-    refresh: int = 0,
+    refresh: Optional[int] = None,
     simple: Optional[bool] = None,
     full: Optional[bool] = None,
     basis: Optional[str] = None,
@@ -4845,8 +4927,21 @@ def compute_dem_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds.
+        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
+            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
+            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+        cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
+            minimum weight).
+        kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            win_hyb and run_dist_m4ri().
+        refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
+            the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
         d_min / dmin: Known lower bound on distance, inclusive.
         d_max / dmax: Known upper bound on distance, inclusive.
@@ -4957,6 +5052,14 @@ def compute_dem_distance(
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
+        ValueError: if neither dem nor circuit is given, for rounds without a Stim circuit (or rounds < 0), for
+            p_noise outside [0, 0.5], for an invalid drop (e.g., a file which does not exist) or another invalid
+            option value (e.g., start, or cc_prune other than 0, 1, or 2), for method=2 with timeout <= 0 but
+            without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
+        FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
+        RuntimeError: if the binary exits with an error.
+        ImportError: if stim is needed (e.g., for a Stim circuit) or solver="codedistance", but the package is not
+            installed.
     """
     global _last_run_stats
     eff_dmin = dmin if dmin > 0 else d_min
@@ -5349,7 +5452,7 @@ def compute_model_lower_bound(
             threads=threads, timeout=timeout, num_steps=num_steps, d_exp=0, dmin=dmin, dmax=0, dstop=dstop,
             wmin=wmin, wmax=wmax, smax=0, start_list=None, dW=-1, maxC=0, finC=None, outC=None, need_cws=False,
             eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
-            chunk_size=0, ksub=0, kwin=0, win_mode=0, min_hits=None, cov_cws=100, refresh=0, trust_start=False,
+            chunk_size=0, ksub=0, kwin=0, win_mode=0, min_hits=None, cov_cws=100, refresh=None, trust_start=False,
             pairs=pairs, sort_rows=sort_rows, cc_prune=cc_prune)
         return list(res["d_info"])
 
@@ -5470,7 +5573,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "pairs": -1,
         "min_hits": None,
         "cov_cws": 100,
-        "refresh": 0,
+        "refresh": None,
         "simple": None,
         "full": None,
         "basis": None,
@@ -5970,9 +6073,9 @@ Input matrices & models:
   drop=auto|0|css|FILE  DEM detectors to drop if verified exact: auto=1 (default), 0 (none), css, or a file
   outD=FILE             Write the DEM detectors dropped (0-based) to FILE
   --out-reduced [PFX]   Save the reduced DEM and its maps to the DEM: PFX_red.dem and PFX_red.json
-  classical=0|1         1: classical code (Hx only), 0: quantum CSS (auto-detected)
+  classical=0|1         1: classical code (finH only), 0: quantum CSS (auto-detected)
   basis=X|Z             Override primary memory basis ('X' or 'Z') for .stim circuits (with drop=css)
-  --rounds [N]          Set REPEAT block count in .stim circuit (default: 2; warns if no REPEAT)
+  --rounds [N]          Set the REPEAT count of a .stim circuit (N=2 if omitted; warns if no REPEAT)
   --out-dir DIR         Output directory for saved .dem/.stim files (default: input file dir)
   --out-dem [FILE]      Save constructed DEM (default: <basename>_full.dem)
   --out-stim [FILE]     Save processed/noisy Stim circuit (default: <basename>_full.stim)
@@ -6024,7 +6127,7 @@ Extra parameters (see --morehelp for details):
   win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM, 512 for matrices)
   pairs=N (-1)          RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
   cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
-  refresh=N (0)         Periodic N basis refresh interval in RW steps (experimental ksub only)
+  refresh=N (5000)      Basis refresh interval in RW steps (experimental ksub only; 0 = off)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
   dW=N (0)              Extra weight window above dmin to collect codewords
   seed=N (0)            Random number generator seed
@@ -6107,15 +6210,16 @@ Required input (at least one matrix/model specification):
                         consecutively.  Its maps to the DEM go to PREFIX_red.json: "detectors" (the
                         original index of each detector of the reduced DEM, i.e., those not in
                         outD), "errors" (the original index of each error, as the columns of outC),
-                        "dropped", and "num_detectors", "num_errors", "pmin", "source", "dem",
-                        "drop" (also out_reduced=PREFIX; default PREFIX: the basename of the input
-                        file, without _full, in --out-dir or the directory of the input file).  The
-                        reduced DEM has the same distance, and its codewords are mapped to
-                        codewords of the DEM by "errors".
+                        "dropped", "num_detectors", "num_errors", "pmin", "source", "dem", "drop",
+                        and "__version__" (also out_reduced=PREFIX; default PREFIX: the basename of
+                        the input file, without _full or _simp, in --out-dir or the directory of
+                        the input file).  The reduced DEM has the same distance, and its codewords
+                        are mapped to codewords of the DEM by "errors".
   classical=0|1         Code type override:
-                        1: Classical linear code (Hx only; ignores/discards logicals).
+                        1: Classical linear code (finH only; ignored with a warning if finG, finL,
+                           fin, fdem, Hz, Lx, or Lz is given).
                         0: Quantum CSS code (requires logicals or Hz).
-                        Default: auto-detected (1 if only finH/Hx is given; 0 otherwise).
+                        Default: auto-detected (1 if only finH is given; 0 otherwise).
   --simple / --full     Disabled since version 0.13.0 (also simple=1, full=1): accepted for backward
                         compatibility, but ignored with a warning to stderr.  The DEM of a Stim circuit
                         always has all detectors: the binary drops detectors if this is exact (see
@@ -6176,12 +6280,16 @@ Required input (at least one matrix/model specification):
                         components of the other basis), but they may for other noise models.
   --out-model PREFIX    With --model-lb, write the model to PREFIX_HR.mtx and PREFIX_LR.mtx (also
                         out_model=PREFIX).
+  (positional files)    A file name without a key (the file must exist): a .dem or .stim file is used
+                        as fdem=FILE, and a .mtx or .mmx file as finH=FILE, or as finG=FILE if finH is
+                        already given (and neither finG nor finL); other files are ignored.
   (conflicting inputs)  The input is selected in the order fdem, Hx/Hz (CSS code), and
-                        finH/finG/finL/fin (fin only supplies the missing finH and finG); the
-                        ignored inputs (e.g., matrices with fdem, pmin, merge, expand, drop, or outD
-                        without fdem, basis, --p-noise, or --force-noise without a Stim circuit, basis
-                        without drop=css, fin with finH, classical=1 with finG, ortho=0 without G)
-                        give a warning.
+                        finH/finG/finL/fin (fin only supplies the missing finH and finG, while the
+                        binary ignores fin followed by finH, finG, or finL, and fin after them is an
+                        error); the ignored inputs (e.g., matrices with fdem, pmin, merge, expand,
+                        drop, or outD without fdem, basis, --p-noise, or --force-noise without a Stim
+                        circuit, basis without drop=css, fin with finH, classical=1 with finG,
+                        ortho=0 without G) give a warning.
 
 Calculation method:
   method=1|2|3          Calculation method (default: 3):
@@ -6253,10 +6361,10 @@ Multithreading & throttling:
                         dimension for RW (default: 0 = full matrix).
                         Precomputes N = ker(H) once; each thread echelonizes a compact
                         ksub x n sampled subspace in L1/L2 cache (e.g. ksub=32 or 64).
-                        Automatically falls back to ksub=0 with a warning if m < nu = dim(ker H).
-                        Each step reduces the span of ksub distinct rows of N, so that a few
-                        codewords are found much more often than others, and min_hits may end
-                        RW early.
+                        Automatically falls back to ksub=0 if m < nu = dim(ker H) (a warning is
+                        printed with --verbose or debug&1).  Each step reduces the span of ksub
+                        distinct rows of N, so that a few codewords are found much more often than
+                        others, and min_hits may end RW early.
   kwin=N                Localized column permutation window size W around a random seed
                         column j0, used in every RW step (alias: win=N).  Default: 0 = automatic
                         hybrid for n>=500: every other step uses an index window (win_mode=1) of
@@ -6282,22 +6390,25 @@ Multithreading & throttling:
                         pairs of a step within about the work of its elimination (e.g., at least
                         6 for large circuit DEMs while the upper bound is far above the
                         distance).  The pairs find the minimum-weight codewords of circuit DEMs
-                        7-25 times faster, and lighter codewords of codes with a large distance.
+                        7-26 times faster, and lighter codewords of codes with a large distance.
                         Not with ksub.  With --verbose (or debug&1), the binary prints the pairs
                         checked per step and the codewords found by pairs and by single columns.
-  min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = disabled).
-                        Stops RW when the average number of times <n> that RW has found each
-                        codeword reaches min_hits, both for the codewords of the minimum weight
-                        found and for a representative set of cov_cws lowest-weight codewords
-                        (heavier codewords are kept until enough lighter ones are found).  A
-                        single codeword suffices.  A lighter codeword is missed with probability
-                        about exp(-<n>), assuming that lighter codewords are found at least as
-                        often.  With debug&1 (or --verbose), a warning is printed at the end if
-                        the hit counts of codewords of the same weight are strongly non-uniform
-                        (then exp(-<n>) is optimistic), together with an information-set estimate
-                        (uniform random information sets) of the probability to miss a lighter
-                        codeword and of the RW steps needed for 1%.  With --verbose, both
-                        estimates are always shown for a result which is not certified.
+  min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = off; alias: max_hits).
+                        Stops RW when the average number of hits <n> per codeword (by all RW steps,
+                        with or without windows, and by CC or finC) reaches min_hits, both for the
+                        codewords of the minimum weight found and for a representative set of
+                        cov_cws lowest-weight codewords (heavier codewords are kept until enough
+                        lighter ones are found).  A single codeword suffices.  A lighter codeword is
+                        missed with probability about exp(-<n>), assuming that lighter codewords
+                        are found at least as often.  With debug&1 (or --verbose), a warning is
+                        printed at the end if the hit counts of codewords of the same weight are
+                        strongly non-uniform (then exp(-<n>) is optimistic), together with an
+                        information-set estimate (uniform random information sets) of the
+                        probability to miss a lighter codeword and of the RW steps needed for 1%.
+                        With --verbose, both estimates are always shown for a result which is not
+                        certified.  With min_hits=0, RW records only the codewords lighter than the
+                        upper bound (unless collecting codewords with outC, maxC, or --cws), so
+                        that the repeated hits are not counted.
   cov_cws=N             Size of the representative set of lowest-weight codewords for min_hits
                         (default: 100; 0 = only the minimum weight).  Without outC and maxC, at
                         most cov_cws minimum-weight codewords are tracked (all if cov_cws=0).
@@ -6305,13 +6416,15 @@ Multithreading & throttling:
                         earlier.
   refresh=N             Periodic adaptive basis refresh interval in RW steps, only with the
                         experimental ksub > 0 (default: 5000 when ksub > 0, 0 to disable).
-                        Re-echelonizes N and substitutes heavier basis rows with discovered
-                        min-weight codewords.
+                        Re-echelonizes N and replaces one heavier basis row by a discovered
+                        minimum-weight codeword.
 
 Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 0).
                         When smax > 0, tracks minimum syndrome weights for each error weight.
-                        When smax=0, confinement is not computed.
+                        When smax=0, confinement is not computed.  The binary disables it if
+                        dmin > 1 (also a lower bound from the cache), as the small cluster weights
+                        are then skipped.
   sort_rows=0|1         Sort the rows of H by increasing weight (stable) in the dist_m4ri binary
                         (default: the binary's, 1 for matrices and 0 for a DEM).  With cc_prune=0,
                         CC extends a cluster by the columns of the first row of its syndrome (in
@@ -6380,7 +6493,11 @@ Codeword collection and export:
                         cached ones; with finC=FILE (the same file), those already in FILE are kept
                         (also reducible ones recorded before version 0.14.8).
   finC=FILE             Import initial candidate codewords from file in .nz format.
-                        In CSS mode, automatically resolves FILE_X.nz and FILE_Z.nz.  The binary
+                        In CSS mode (Hx=, Hz=), each sector reads its own file FILE_X.nz or FILE_Z.nz
+                        if at least one of them exists and is not empty (a sector without its file
+                        gets no input codewords); otherwise, FILE itself is given to both sectors
+                        (the binary skips the codewords which are not valid in a sector).  If FILE
+                        is the same file as outC, a missing or empty file is ignored.  The binary
                         replaces a reducible codeword by an irreducible part (see irred).
   maxC=N                Maximum number of codewords to collect (default: 0 = unlimited); with
                         expand=1, also the maximum number of codewords of the expanded list.
@@ -6454,12 +6571,13 @@ Help options:
                         --morehelp TOPIC (also --help=TOPIC).
   --morehelp [TOPIC]    Display this full help message with all parameters, or only the entries of
                         TOPIC, e.g., --morehelp maxC (also --morehelp=TOPIC; several topics separated
-                        by commas, e.g., maxC,dW; the names are case-insensitive, without '-', '_', or
-                        '=VALUE', and include aliases such as dest or batch; an unknown name gives the
-                        closest names on stderr, and the exit code 1).  A group name (see Option
-                        groups, also as singular or plural, e.g., window) gives all entries of the
-                        group, and a parameter of a group also the other entries of its group (see
-                        also).
+                        by commas, e.g., maxC,dW; the names are case-insensitive, without '-' or '_'
+                        (and '=VALUE' in --help=TOPIC and --morehelp=TOPIC: a separate argument with
+                        '=' is not a TOPIC), and include aliases such as dest or batch; an unknown
+                        name gives the closest names on stderr, and the exit code 1).  A group name
+                        (see Option groups, also as singular or plural, e.g., window) gives all
+                        entries of the group, and a parameter of a group also the other entries of
+                        its group (see also).
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary.
 """
 

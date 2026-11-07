@@ -1,6 +1,6 @@
 Authors: Leonid P. Pryadko & Weilei Zeng
 
-Date: 2026-10-09
+Date: 2026-10-28
 
 ## Overview
 
@@ -18,7 +18,7 @@ and their combination:
 The package contains the multithreaded program `dist_m4ri`, the legacy single-threaded program `dist_m4ri_old`, and
 the Python wrapper `dist_m4ri.py` (NumPy and SciPy matrices, Stim circuits and DEMs, a persistent cache of the
 results). This page summarizes how the program works; `README.md` describes all parameters (also `dist_m4ri --help` and
-`dist_m4ri --morehelp`; `dist_m4ri --help maxC` shows the help of one parameter).
+`dist_m4ri --morehelp`; `dist_m4ri --help maxC` shows the help of one parameter, with the related ones).
 
 ## Codes and matrices
 
@@ -51,19 +51,20 @@ information set, the `n - rank(H)` non-pivot columns. Each non-pivot column `j` 
 A codeword `c` is found in a step if exactly one of its positions is a non-pivot column, and every codeword of the
 minimum weight is found with some column order (see the QDistRnd manual, Sec. 3.1). The candidates with `L c != 0`
 are kept in a hash table, together with the number of times each of them has been found (hit counts). For matrices
-with at least 128 rows, the elimination processes 20 or 24 pivots per pass over the rows ("Method of the Four
+with at least 128 rows, the elimination processes 20 to 32 pivots per pass over the rows ("Method of the Four
 Russians", with tables of combinations of the pivot rows), which gives the same result about twice as fast for large
 matrices.
 
-Variants: `kwin > 0` localizes the column order around a random column (for `n >= 500`, every other step by default,
-with windows of `win_hyb` consecutive columns: 256 for a DEM, whose errors are in time order, and 512 for matrices).
+Variants: a window localizes the column order around a random column, in every step with `kwin > 0` (`kwin` columns),
+and by default (`kwin=0`) for `n >= 500` in every other step, with windows of `win_hyb` consecutive columns: 256 for a
+DEM, whose errors are in time order, and 512 for matrices.
 The window columns come first in the elimination order, so that a codeword with most of its columns in the window is
 found far more often; a window much larger than the minimum-weight codewords, e.g., one round of a DEM, has many
 columns which cannot be pivots and helps little.
 With the RW pairs (`pairs`, on by default), a step also finds the codewords with exactly two non-pivot columns, the
 sums of two such vectors (the algorithms of Lee-Brickell and Stern with `p = 2`): only the pairs of columns which agree
 on `l` random pivot rows are checked (`pairs=l`; auto: about one non-pivot column per bucket), and only those whose
-weights differ by less than the weight limit. This finds the minimum-weight codewords of circuit DEMs 7 to 25 times
+weights differ by less than the weight limit. This finds the minimum-weight codewords of circuit DEMs 7 to 26 times
 faster.
 With `ksub > 0` (**experimental, should not be used**; a warning is printed), each step reduces the span of `ksub`
 rows of a fixed basis of `ker(H)` (cache-resident elimination): a few codewords are then found much more often than
@@ -98,9 +99,9 @@ matrices, the rows are sorted by increasing weight (`sort_rows=1`, the default),
 weights are very different; the detectors of a DEM are kept in time order (`sort_rows=0`, the default with `fdem`),
 which is better there.
 
-The expert options `start`, `cbeg`/`cend`, and `noscan` restrict the search; each of them prints a warning, since the
-reported `dmin` is then not necessarily a lower bound (`dmax` is always valid). With `smax > 0`, CC also computes the
-confinement profile, the minimum non-zero syndrome weight for each cluster weight.
+The expert options `start` (with `start_scan`), `cbeg`/`cend`, and `noscan` restrict the search; each of them prints a
+warning, since the reported `dmin` is then not necessarily a lower bound (`dmax` is always valid). With `smax > 0`, CC
+also computes the confinement profile, the minimum non-zero syndrome weight for each cluster weight.
 
 ## How it works: bracketing (method=3)
 

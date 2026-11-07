@@ -2596,6 +2596,33 @@ def test_classify_qubits_checks_measured_in_hadamard_frame():
         assert (stripped, kept) == (8, 16)
 
 
+def test_explain_bounds_model_check_needs_hit_counts():
+    # the "Model check" compares the observed hits with the uniform model: only if the binary counted the hits
+    # (min_hits > 0); with min_hits=0, every codeword has a single hit, and no model check is printed
+    stats = {"rw_n": 40, "rw_rank": 20, "rw_steps_uniform": 1000, "rw_steps": 1000, "min_w": 6, "hits_avg": 1.0}
+    assert "Model check" not in dist_m4ri.explain_bounds([1, 6, 1000], method=1, stats=stats)
+    assert "Model check" in dist_m4ri.explain_bounds([1, 6, 1000], method=1, stats=dict(stats, min_hits=5))
+
+
+def test_refresh_passed_to_binary(capsys):
+    # refresh=0 is passed to the binary (no basis refresh of the experimental ksub RW, whose default is 5000), and the
+    # default refresh=None passes nothing
+    H = os.path.join(EXAMPLES_DIR, "c96H.mmx")
+    for refresh in (0, None):
+        dist_m4ri.run_dist_m4ri(method=1, finH=H, steps=10, threads=1, refresh=refresh,
+                                debug=dist_m4ri.PY_DBG_COMMANDS)
+        assert (" refresh=0" in capsys.readouterr().out) == (refresh is not None)
+
+
+def test_css_and_quantum_distance_inputs():
+    # array-likes such as lists of rows are accepted by compute_css_distance() (the Steane code [[7, 1, 3]])
+    H = [[1, 0, 0, 1, 1, 0, 1], [0, 1, 0, 1, 0, 1, 1], [0, 0, 1, 0, 1, 1, 1]]
+    assert dist_m4ri.compute_css_distance(Hx=H, Hz=H, num_steps=100)[0] == 3
+    # G and L together are rejected (the binary accepts only one of them)
+    with pytest.raises(ValueError, match="not both"):
+        dist_m4ri.compute_quantum_distance(H, G=H, L=[[1] * 7])
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
