@@ -43,6 +43,11 @@ All matrices with entries in $\text{GF}(2)$ have $n$ columns and obey the orthog
 $$H_X H_Z^T = 0,\quad H_X L_Z^T = 0,\quad L_X H_Z^T = 0,\quad L_X L_Z^T = I.$$
 The last condition is not required: it is sufficient that $L_X$, $L_Z$, and $L_X L_Z^T$ have the same full row rank
 $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits (printed with `debug=16`).
+With `finG`, the binary checks that $H_X H_Z^T = 0$ and stops with an error otherwise; since version 0.15.2, this takes
+$O(\mathrm{nnz}(H_Z)\, w)$ operations, where $w$ is the largest column weight of $H_X$ (e.g., about 1 ms instead of
+29 ms for $n = 1994$ and rows of weight 12). The expert option `ortho=0` skips the check (with a `# WARNING:` on
+`stderr`), e.g., to screen many codes which are orthogonal by construction; the result is then valid only if
+$H_X H_Z^T = 0$.
 
 ---
 
@@ -58,8 +63,8 @@ $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits 
     codeword).
   - `dmax` is the weight of the smallest non-trivial codeword found (by RW or CC, or read with `finC`), or the supplied
     upper bound `dmax=[int]` if smaller (`0` if none).
-  - `rw_steps` is the number of completed RW steps across all threads (`0` if CC found a minimum-weight codeword, or
-    if RW did not run in `method=2`).
+  - `rw_steps` is the number of completed RW steps across all threads (`0` with `method=2`, or if CC found a
+    minimum-weight codeword).
   - When `dmin = dmax = d`, the exact code distance is confirmed.
   - With a stop target `dstop=U` (`method=2` or `3`), the run ends once CC has certified `dmin >= U`, unless a codeword
     of weight `< U` is found; `dmax` is then the weight of the lightest codeword found (`0` if none), never `U`, since
@@ -80,7 +85,8 @@ $k = n - \mathrm{rank}\,H_X - \mathrm{rank}\,H_Z$, the number of encoded qubits 
 Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$.
 Threads independently generate random column permutations, compute Gaussian elimination to find information sets,
 and extract candidate dual-row codewords. For matrices with at least 128 rows, the elimination uses the "Method of the
-Four Russians" (as M4RI does, but for the scattered columns of a random permutation): 24 pivots (20 below 512 rows)
+Four Russians" (as M4RI does, but for the scattered columns of a random permutation): 24 pivots (20 below 512 rows;
+up to 32 for very wide matrices, e.g., $n \approx 1.3 \cdot 10^5$, with up to 8 tables instead of 4, about 2 MB in all)
 are found at a time, and every other row is then reduced in one pass with precomputed combinations of the pivot rows,
 from 4 small tables kept in the cache, instead of one pass per pivot. It finds the same information sets and candidates
 as the column-by-column elimination, faster for large matrices: e.g., 1.4x for $378 \times 756$, 1.5-2.0x for the
@@ -100,17 +106,23 @@ and $b$: the sum of the codewords of $a$ and $b$, whose pivot part is the sum of
 matrix (the algorithms of Lee-Brickell and Stern with $p = 2$). Only the pairs of columns which agree on $l$ random
 pivot rows are checked (the columns are sorted by these bits, their bucket), and in a bucket only the pairs whose
 weights differ by less than the weight limit; the pairs of columns whose codewords have equal syndromes $Lc$ are
-skipped (e.g., the many light trivial codewords of a circuit DEM).
+skipped (e.g., the many light trivial codewords of a circuit DEM). With `irred=1` (the default), so are the pairs whose
+codewords are disjoint: their sum is a reducible codeword (see [Codeword Export](#codeword-export-outc--finc)), at no
+extra cost (the weight of the sum is then the sum of the two weights).
 
 Relevant parameters:
 - `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 100000).
-- `min_hits=[int]`: QDistRnd-style automatic convergence stopping criterion (default: 5; set 0 to disable). Stops RW
-  when the average number of hits per codeword $\langle n\rangle$ reaches `min_hits`, both for the codewords of the
-  minimum weight found and for the representative set of `cov_cws` lowest-weight codewords (heavier codewords make the
-  estimate more conservative). A single codeword suffices (e.g., a classical code with $k=1$). A lighter codeword is
-  then missed with probability about $e^{-\langle n\rangle}$; see
+- `min_hits=[int]` (alias: `max_hits=[int]`): QDistRnd-style automatic convergence stopping criterion (default: 5; 0:
+  off, and then the hits are not counted either: without `outC` or `maxC`, RW records only the codewords lighter than
+  the upper bound). Stops RW when the average number of hits per codeword $\langle n\rangle$ reaches `min_hits`, both
+  for the codewords of the minimum weight found and for the representative set of `cov_cws` lowest-weight codewords
+  (heavier codewords make the estimate more conservative). A single codeword suffices (e.g., a classical code with
+  $k=1$). A lighter codeword is then missed with probability about $e^{-\langle n\rangle}$; see
   [RW Convergence](#5-rw-convergence-empirical-test-and-probability-to-find-a-codeword) for this empirical estimate,
-  its test (a warning at the end with `debug&1`), and the information-set estimate.
+  its test (a warning at the end with `debug&1`), and the information-set estimate. All hits count, those of CC and
+  `finC` as well as those of the RW steps with windows (`kwin > 0`, or by default the hybrid windows on every other
+  step for $n \ge 500$), which find the codewords local in the column order much more often: $e^{-\langle n\rangle}$
+  may then be optimistic for the other codewords (`debug&1` prints the hits of the uniform and of the window steps).
 - `cov_cws=[int]`: Size of the representative set of lowest-weight codewords for `min_hits` (default: 100; 0 for the
   minimum-weight codewords only). Without `outC` and `maxC`, at most `cov_cws` minimum-weight codewords are tracked
   (all with `cov_cws=0`). For codes with fewer than `cov_cws` minimum-weight codewords, a smaller `cov_cws` may stop
@@ -118,7 +130,8 @@ Relevant parameters:
 - `kwin=[int]` (alias: `win=[int]`): Localized column permutation window size $W$: the random column order starts with
   $W$ columns near a random column, which are thus preferred as pivots, in every RW step (default: 0; for $n \ge 500$,
   every other RW step then uses an index window of `win_hyb` consecutive columns, as with `win_mode=1`, and the other
-  steps use uniform random permutations, also for codewords which are not local in the column order).
+  steps use uniform random permutations, also for codewords which are not local in the column order). A negative
+  `kwin` (e.g., `kwin=-1`) turns the windows off: uniform random permutations in every RW step.
 - `win_mode=[0|1]`: Window construction mode when `kwin > 0`: `0` for Tanner graph BFS neighborhood, `1` for contiguous
   column index window (default: 0).
 - `win_hyb=[int]`: Window size of the hybrid RW steps (with `kwin=0` and $n \ge 500$; at most $3n/4$). Default: 0, i.e.,
@@ -162,10 +175,10 @@ Relevant parameters:
   `ksub`.
 - `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
   without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
-  full-matrix RW; automatically falls back to `ksub=0` with a warning when $m < \nu = \dim\ker(H)$, e.g., for DEMs
-  and most quantum codes). Each step reduces the span of `ksub` distinct rows of a fixed basis of $\ker(H)$, so that a
-  few codewords are found much more often than others: then $e^{-\langle n\rangle}$ is optimistic, and `min_hits` may
-  end RW early.
+  full-matrix RW; automatically falls back to `ksub=0`, with a warning if `debug&1`, when $m < \nu = \dim\ker(H)$,
+  e.g., for DEMs and most quantum codes). Each step reduces the span of `ksub` distinct rows of a fixed basis of
+  $\ker(H)$, so that a few codewords are found much more often than others: then $e^{-\langle n\rangle}$ is optimistic,
+  and `min_hits` may end RW early.
 - `refresh=[int]`: RW step interval for adaptive $\ker(H)$ basis refresh via low-weight codeword exchange and
   re-echelonization, only with the experimental `ksub>0` (default: 5000 when `ksub > 0`, 0 to disable).
 - `wmin=[int]`: Minimum distance of interest (stop immediately when a codeword of weight $w \le w_{\min}$ is found;
@@ -186,20 +199,48 @@ If `noscan=0` (default), CC scans weights $w = 1, 2, \dots, w_{\max}$. When `out
 columns for weight $w$ to collect all unique minimum-weight codewords.
 With `smax=0` (default), the syndrome of a cluster is kept as a bitset (a column is added by flipping its rows), and
 the last column of a cluster is found by a hash lookup: the syndrome left after the next-to-last column must equal a
-column of $H$ (instead of a scan of the candidate columns). The clusters and the codewords found (with their hit
-counts) are the same as with `smax>0`, only faster (about 3-5 times for CSS codes, and 5-20 times for circuit DEMs).
-A cluster is extended by the columns of the first row of its syndrome, in the order of the rows of $H$ (every codeword
-which contains the cluster has a column in that row). With `sort_rows=1`, the default for matrices (`finH` or `fin`),
-the rows of $H$ are sorted by increasing weight (stable) after reading the input, so that light rows come first: this
-reduces the CC work for matrices with very different row weights, e.g., 1.7-4.2 times for the matrices with hook
-columns of an extended CSS distance (rows of weight 5 to 103), while codes with rows of equal weight are not changed.
-For a DEM (`fdem`), the default is `sort_rows=0`: its detectors are in time order, and the first unsatisfied detector
-of a cluster then has most of its columns before the start column (these are not used), which is better than a light
-row; sorting the rows made CC 1.3-1.6 times slower for the matrices `surf_d5_H.mmx` and `surf_d7_H.mmx` exported from
-DEMs in [`examples/`](examples/) (use `sort_rows=0` for such matrices), and up to about 4 times (estimated) for the
-reduced DEMs of the Mitten circuits. The distance and RW do not depend on the order of the rows (with the same seed, RW
-finds the same codewords); CC enumerates the same codewords (e.g., with `outC`), possibly in another order and with
-other hit counts. With `debug=1`, the input summary notes that the rows were sorted.
+column of $H$ (instead of a scan of the candidate columns). With `cc_prune=0`, the clusters and the codewords found
+(with their hit counts) are the same as with `smax>0`, only faster (about 3-5 times for CSS codes, and 5-20 times for
+circuit DEMs): a cluster is extended by the columns of the first row of its syndrome, in the order of the rows of $H$
+(every codeword which contains the cluster has a column in that row), and a branch is pruned if its syndrome weight
+exceeds $R \Delta$, where $R$ is the number of columns left and $\Delta$ the maximum column weight of $H$.
+
+**Branch and bound (`cc_prune=1`, the default since version 0.15.0)**, after J. Y. Lee, K. Okada, N. Maskara, K.
+Kasai, and H. Zhou, arXiv:2609.30069 (App. B), as used by G. Lee, arXiv:2610.13880 (App. C.4); the proof that it
+finds the same codewords is in [`doc/cc_completeness.tex`](doc/cc_completeness.tex):
+- A column is *available* if it is larger than the start column, and neither in the cluster nor forbidden. A cluster
+  is extended by the available columns of the unsatisfied row (a row of its syndrome) with the fewest available
+  columns, the first such row in the row order; with `sort_rows`, the order of the rows only breaks ties.
+- Sibling exclusion: the column of a branch is forbidden in the later branches of the same cluster, so that every
+  codeword is found exactly once, with one CC hit (e.g., 1884 hits for the 1884 codewords of weight 12 of the gross
+  code, against 2084 hits with `cc_prune=0`). Only irreducible codewords are found for sure (see
+  [Codeword Export](#codeword-export-outc--finc)).
+- A branch is pruned by lower bounds on the number of columns still needed: the syndrome weight bound above, an
+  unsatisfied row without available columns (a dead end), and the packing bound (the number of unsatisfied rows with
+  pairwise disjoint sets of available columns, each of which needs its own column, found greedily, where it can
+  prune). `cc_prune=2` also uses the coverage and fractional cover bounds (with at least 4 columns left): fewer nodes,
+  but more work per node (since version 0.15.2, about as fast as `cc_prune=1` on DEMs, up to 1.1 times faster for the
+  largest rounds of the `yarn_*` codes, and 1.2–1.3 times slower for the BB codes).
+- The gain grows with the weight. E.g., with `method=2` on 128 threads (the rounds up to the distance $d$): the $X$
+  sector of `yarn_mitten_300` ($d = 14$) in 0.23 s instead of 1.7 s (32 times fewer nodes in the round $w = 13$),
+  `yarn_ablp_560` ($d = 14$) in 0.20 s instead of 3.7 s, and double gross ($d = 18$) in 0.33 s instead of 1.4 s; the
+  round $w = 11$ of `yarn_mitten_630` with 110 times fewer nodes (22 times less CC work). The full DEMs of the gross
+  circuit ($d = 10$) and of the custom `mitten_270` circuit ($d = 9$) are certified in 79 s and 141 s instead of
+  189 s and 197 s (`method=3`). For DEMs at small weights ($w \le 7$), the fewer nodes cost about as much time.
+  Version 0.15.2 lowered the cost per node, with the same nodes: up to 1.06 times less CC work for codes, and 1.04–1.26
+  times for DEMs (more on many threads).
+
+With `sort_rows=1`, the default for matrices (`finH` or `fin`), the rows of $H$ are sorted by increasing weight
+(stable) after reading the input, so that light rows come first. With `cc_prune=0`, this reduces the CC work for
+matrices with very different row weights, e.g., 1.7-4.2 times for the matrices with hook columns of an extended CSS
+distance (rows of weight 5 to 103), while codes with rows of equal weight are not changed. For a DEM (`fdem`), the
+default is `sort_rows=0`: its detectors are in time order, and with `cc_prune=0`, the first unsatisfied detector of a
+cluster then has most of its columns before the start column (these are not used), which is better than a light row;
+sorting the rows made CC 1.3-1.6 times slower for the matrices `surf_d5_H.mmx` and `surf_d7_H.mmx` exported from DEMs
+in [`examples/`](examples/) (use `sort_rows=0` for such matrices), and up to about 4 times (estimated) for the reduced
+DEMs of the Mitten circuits. The distance and RW do not depend on the order of the rows (with the same seed, RW finds
+the same codewords); CC enumerates the same codewords (e.g., with `outC`), possibly in another order (with
+`cc_prune=0`, also with other hit counts). With `debug=1`, the input summary notes that the rows were sorted.
 The scan ends with the round $w = d$ in which CC finds a codeword (with `outC` and `dW>0`, after the extra rounds up to
 $w = d + \text{dW}$). A known upper bound $d_{\max}$ (from `dmax=[int]` or from codewords in `finC`) ends the scan as
 soon as $d_{\min} = d_{\max}$, unless codewords are collected (`outC` or `maxC`). A stop target `dstop=U` ends the scan
@@ -215,9 +256,14 @@ Relevant parameters:
   rounds end once $d_{\min} = d_{\max}$, or with `dstop>0`, where they end once $d_{\min} \ge$ `dstop`; otherwise
   required for `method=2`).
 - `smax=[int]`: Maximum syndrome weight to track for confinement profile (default: 0, disabled for faster CC pruning
-  and the bitset syndromes with hash lookups above; set e.g. `smax=5` to compute confinement).
+  and the bitset syndromes with hash lookups above; set e.g. `smax=5` to compute confinement; not with `noscan=1` or
+  `dmin>1`, which skip the small weights: then `smax=0` is used, with a `# WARNING:`).
 - `sort_rows=[0|1]`: Sort the rows of $H$ by increasing weight for CC (default: 1 for matrices, 0 for a DEM; see
   above).
+- `cc_prune=[0|1|2]`: The CC search with `smax=0` (default: 1, the branch and bound; 0: the walk of the first
+  unsatisfied row of the versions before 0.15.0; 2: also the coverage and fractional cover bounds; see above). All
+  values find the same codewords and distances; with `debug&8`, the binary prints the nodes (calls of the recursion)
+  of each CC round.
 
 Expert parameters (each prints a `# WARNING:` to `stderr`; see
 [Restricting the CC Search](#restricting-the-cc-search-expert-options) below):
@@ -225,6 +271,9 @@ Expert parameters (each prints a `# WARNING:` to `stderr`; see
   weights. The result is **not** a lower bound unless `dmin=wmax` is also supplied.
 - `start=[list]`: Comma-separated list of CC start columns (0-based), e.g. `start=0,48,96`. Clusters grown from a
   listed column are **not** limited to larger column indices (for quasi-cyclic or otherwise symmetric codes).
+- `start_scan=[0|1]` (with `start`, since version 0.15.1): 1: a cluster grown from a listed column $c$ only uses the
+  columns $j > c$, as in the scan of all columns (e.g., `start=0,l start_scan=1` for the two blocks of a two-block
+  group-algebra code over an abelian group).
 - `cbeg=[int]`, `cend=[int]`: Range $[c_{\text{beg}}, c_{\text{end}}]$ of CC start columns, for splitting one CC
   calculation into several runs which together cover all columns $0, \dots, n-1$.
 
@@ -239,6 +288,7 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
 |-----------------|--------------------------------------------|-----------------|------------------------------|
 | (default)       | all, $0 \le i \le n-1$                     | columns $j > i$ | always                       |
 | `start=a,b,c`   | listed columns only                        | unlimited       | under a code symmetry only   |
+| `start=a,b,c start_scan=1` | listed columns only             | columns $j > i$ | under a code symmetry only   |
 | `cbeg`, `cend`  | $c_{\text{beg}} \le i \le c_{\text{end}}$  | columns $j > i$ | after combining split runs   |
 | `noscan=1`      | all, $0 \le i \le n-1$                     | columns $j > i$ | only if `dmin=wmax` is given |
 
@@ -250,6 +300,19 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
   with circulant blocks of size $\ell$ (columns ordered block by block), simultaneous cyclic shifts of all blocks are
   a symmetry, and it is sufficient to list one column per block, e.g., `start=0,48,96` for three blocks with
   $\ell = 48$. Cannot be combined with `cbeg`/`cend`.
+- **`start=a,b,c start_scan=1`** (since version 0.15.1; codes only, not with `fdem`): the clusters grown from a listed
+  column $c$ use only the columns $j > c$, as in the scan of all columns. The reported $d_{\min}$ is valid if a code
+  symmetry maps every minimum-weight codeword to one whose **smallest** column is listed. This holds if the listed
+  columns are the smallest columns of the orbits of a group of code automorphisms, one column per orbit: a codeword
+  meets some orbits, and an automorphism maps one of its columns in the orbit with the smallest listed column onto
+  that column, which is then the smallest column of the image (the columns below it belong to the earlier orbits,
+  which the image does not meet). The later start columns then need much less work than with `start` alone (all
+  columns below them are excluded), and the least if each orbit is a range of consecutive columns, e.g.,
+  `start=0,l start_scan=1` for the two blocks (the orbits of the translations) of a two-block group-algebra code of
+  length $2\ell$ over an abelian group, such as the BB codes: from column $\ell$, only the block $\ell, \dots,
+  2\ell-1$ (2x less CC work than `start=0,l`, e.g., 2.1 against 4.4 thread-s for double gross up to $w = 17$). For
+  other groups, renumber the columns so that each orbit is a range of consecutive columns, with the largest orbits
+  first, and list the first column of each range.
 - **`cbeg=[int]`, `cend=[int]`** (split runs): CC starts only from columns $c_{\text{beg}} \le i \le c_{\text{end}}$
   (default `-1`: column $0$, respectively, column $n-1$), still growing clusters using only columns $j > i$. Thus the
   $d_{\min}$ of a single run only covers codewords whose smallest column is in $[c_{\text{beg}}, c_{\text{end}}]$. To
@@ -271,9 +334,12 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
   valid: $d_{\min}$ and `rw_steps` are merged as well, and an existing exact start-list record is copied to the main
   record (and the cache file is saved) even if no calculation is needed. For DEM input, the start columns index the
   error mechanisms in their order in the flattened DEM (after the `pmin` cutoff). For CSS codes, the same list is
-  used in both sectors.
-- **Possible optimization** (not implemented): clusters grown from a listed column could skip the columns listed
-  before it, since all codewords containing those columns have already been enumerated.
+  used in both sectors. `start_scan=True` (CLI: `start_scan=1` or `--start-scan`) passes `start_scan=1`, with the
+  separate key `<key>:start=a,b,c:scan`; it is ignored with a warning without a start list and for a DEM.
+- **Clusters from a listed column skip the columns listed before it** (since version 0.15.0, with `cc_prune=1` or `2`,
+  and `start_scan=0`): all codewords containing those columns have already been enumerated from them, so that each
+  codeword is found once, from the first listed column it contains (see
+  [`doc/cc_completeness.tex`](doc/cc_completeness.tex)).
 
 ### 3. Bracketing Mode (`method=3`, default)
 Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to
@@ -353,8 +419,9 @@ Relevant parameters:
   shortly after the timeout.
 - `steps=[int]`: Maximum total RW steps (default: 100000; set to `0` to run pure CC via bracketing coordinator).
 - `min_hits=[int]`: Average number of hits per lowest-weight codeword for early RW termination (default: 5; 0 to
-  disable; see [method=1](#1-multithreaded-rw-algorithm-method1)).
-- `dW=[int]`: Extra weight window above $d_{\min}$ to continue collecting codewords ($w \le d_{\min} + \text{dW}$).
+  disable, which also turns off the hit counting; see [method=1](#1-multithreaded-rw-algorithm-method1)).
+- `dW=[int]`: Extra weight window above the minimum weight found, $w_{\min}$, to continue collecting codewords
+  ($w \le w_{\min} + \text{dW}$).
 
 ### 4. Multithreading, Throttling & Batch Sizing
 The parameter `threads=[int]` specifies the **maximum** number of worker threads to allocate (default: all logical CPUs
@@ -389,7 +456,8 @@ By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid ov
 - **CC Work Units**: A CC round at weight $w$ hands out its start columns $i$ one at a time. The clusters from the
   first start columns, which can grow to all larger columns, are the largest share of a round (about $w/n$ for the
   first one), which limits the speedup to about $n/w$ threads: e.g., 16 threads for the $[[288,12,18]]$ code at
-  $w=15$. Rounds predicted to take more than 1 ms on all threads, with fewer than about 4 such shares per thread, are
+  $w=15$. Rounds predicted to take more than 1 ms on all threads (with an expert `start` list of fewer columns than
+  threads: 1 ms on each listed column, since 0.15.1), with fewer than about 4 such shares per thread, are
   therefore split into $B^L$ work units per start column ($L = 1, 2$, or $3$ levels, $L \le w-3$, $B$ the maximum row
   weight of $H$): a unit fixes the column added at each of the first $L$ cluster extensions (empty units, where a row
   has fewer columns, are skipped). The number of units is limited by the predicted work of the round (at most $10^4$
@@ -430,7 +498,10 @@ class of the representative set, using the zero-truncated Poisson distribution (
 and with `debug&1` warns at the end if the hit counts are strongly non-uniform: a p-value below $10^{-3}$, a relative
 spread of the hit rates of at least 1, and, for gamma-distributed hit rates with this spread, a probability to miss a
 lighter codeword at least 3 times larger than with equal hit rates. Then $e^{-\langle n\rangle}$ is optimistic, and a
-larger `min_hits` is advisable; this happens, e.g., for the surface-code circuit `examples/surf_d5_H.mmx`.
+larger `min_hits` is advisable; this happens, e.g., for the surface-code circuit `examples/surf_d5_H.mmx`. The hit
+counts include those of CC and `finC` and of all RW steps, also of the steps with windows (`kwin > 0`, or by default
+the hybrid windows on every other step for $n \ge 500$), which find the codewords local in the column order much more
+often.
 
 **Probability to find a given codeword** (information sets; compare the QDistRnd manual, Sec. 3.2). A RW step reduces
 $H$ (rank $r$) with a random column order; a codeword of weight $w$ is found if exactly one of its positions is among
@@ -493,9 +564,9 @@ codewords of weight 5 (18043 distinct ones exist), the single columns 1825.
 
 ## Confinement Profile
 
-By default, `smax=0` (confinement tracking disabled for maximum CC speed; in `.mtx` mode with `debug&1`, a notice is
-logged to `stderr`). When `smax > 0` (e.g. `smax=5`), the CC algorithm tracks the minimum non-zero syndrome weight
-observed for each cluster weight $w$:
+By default, `smax=0` (confinement tracking disabled for maximum CC speed; for matrices, with `method=2` or `3` and
+`debug&1`, a notice is logged to `stderr`). When `smax > 0` (e.g. `smax=5`), the CC algorithm tracks the minimum
+non-zero syndrome weight observed for each cluster weight $w$:
 
 ```bash
 $ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5_L.mmx wmax=4 smax=5 debug=0 threads=4
@@ -544,9 +615,25 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
   `drop=0` to enumerate all codewords of the DEM. (The Python wrapper returns the codewords of a cached record if it
   has any: use `--no-cache` or another cache file to enumerate them again with other options.)
 - **`finC=[file.nz]`**: Reads initial codewords from a file to initialize $d_{\max}$ and the codeword hash table
-  (codewords heavier than `wmax > 0` are skipped; for a DEM with `merge=1`, two equal columns of a codeword cancel).
-- **`dW=[int]`**: When set (e.g. `dW=1`), preserves and exports codewords of weight up to $w \le d_{\min} + \text{dW}$.
+  (codewords heavier than `wmax > 0` are skipped; for a DEM with `merge=1`, two equal columns of a codeword cancel;
+  with `irred=1`, a reducible codeword is replaced by an irreducible part, see below).
+- **`dW=[int]`**: When set (e.g. `dW=1`), preserves and exports codewords of weight up to $w_{\min} + \text{dW}$.
 - **`maxC=[int]`**: Limits collection to at most `maxC` unique codewords (of weight up to $w_{\min} + \text{dW}$).
+- **Irreducible codewords only (`irred=1`, the default; since version 0.14.8)**: a codeword $c$ is *reducible* if it
+  is the union of a codeword and a disjoint nonzero vector $x$ with zero syndrome, $Hx = 0$ (e.g., a trivial weight-3
+  vector of a circuit DEM, or a second codeword); equivalently, the columns of $H$ on the support of $c$ have a rank
+  below $|c| - 1$. The nontrivial one of the two parts (at least one is) is a lighter codeword, so that the
+  minimum-weight codewords are irreducible, and reducible codewords can only appear in the window `dW`: e.g., for a
+  circuit DEM, from the weight $d + 3$ on. They are not recorded (hence not exported or counted for `min_hits`): CC
+  tests the rank of the columns of each codeword found (the CC search finds every irreducible codeword, but only some
+  reducible ones, see [`doc/cc_completeness.tex`](doc/cc_completeness.tex)), RW skips the pairs of disjoint codewords
+  (see [method=1](#1-multithreaded-rw-algorithm-method1); the codewords of single columns are irreducible), and a
+  reducible `finC` codeword is replaced by a nontrivial part (the lighter one if both are), repeatedly, until it is
+  irreducible (`debug&1` gives their number with the codewords read; this can lower $d_{\max}$). E.g., 102 of the 1300
+  codewords of weight 6 found by CC for the surface-code DEM `examples/surf_d3.dem` (`dW=3`) are reducible, and 18% of
+  the codewords of weight 9 found by RW with the pairs for the `bb_72` circuit DEM (`dW=3`). With `debug&1`, the binary
+  prints how many times reducible codewords were skipped (`# reducible codewords skipped ...`). The expert option
+  `irred=0` (binary only; the Python CLI ignores it with a warning) records all codewords, as before version 0.14.8.
 
 ---
 
@@ -646,26 +733,29 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
    and output formats.
 4. **Help on some parameters, `--morehelp TOPIC`** (also `--morehelp=TOPIC`, `--help TOPIC`, or `--help=TOPIC`):
    Displays only the entries of the full help for the parameters `TOPIC`, under their section headers, e.g.,
-   `dist_m4ri --help maxC,dW` (several names separated by commas; the names are case-insensitive, `-`, `_`, and
-   `=VALUE` are ignored, aliases such as `dest` or `batch` work, and `debug` gives the debug bitmap). An unknown name
+   `dist_m4ri --help maxC,dW` (several names separated by commas; the names are case-insensitive, `-` and `_` are
+   ignored, and so is `=VALUE` in `--help=TOPIC` and `--morehelp=TOPIC` (a separate `TOPIC` has no `=`), the aliases
+   given in the help entries (e.g., `dest` or `batch`) work, and `debug` gives the debug bitmap). An unknown name
    gives the closest names on `stderr`, and the exit code `1`. The section "Option groups" of the full help lists
    groups of related parameters: `windows` (`kwin`, `win_mode`, `win_hyb`), `stopping`, `bounds`, `dem`, `matrices`,
-   `codewords`, `threading`, `expert` (the CC options whose results rely on assumptions: `noscan`, `start`, `cbeg`,
-   `cend`), and `experimental` (`ksub`, `refresh`). A group name, also as singular or plural (e.g.,
-   `dist_m4ri -h window`), gives all entries of the group, and a parameter of a group also the other entries of its
-   group, as "see also" (e.g., `--help kwin` gives the three window entries).
+   `codewords`, `threading`, `expert` (the CC options whose results rely on assumptions: `noscan`, `start`,
+   `start_scan`, `cbeg`, `cend`), and `experimental` (`ksub`, `refresh`). A group name, also as singular or plural
+   (e.g., `dist_m4ri -h window`), gives all entries of the group, and a parameter of a group also the other entries of
+   its group, as "see also" (e.g., `--help kwin` gives the three window entries).
 
-`--help`, `--morehelp`, and `--version` print to `stdout`. Conflicting inputs: `fdem` together with matrix files
-(`finH`, `finG`, `finL`, `fin`), `pmin`, `outD`, or `drop` (other than `drop=0`) without `fdem`, and `drop` with
-`classical=1`, are errors; `fin` followed by `finH`, `finG`, or `finL` is replaced by them (with a warning on
-`stderr`), while `fin` after them is an error. The Python CLI (`python3 dist_m4ri.py`) has the same help options (see
-[Python Wrapper](#python-wrapper-dist_m4ripy)).
+`--help`, `--morehelp`, and `--version` (also `-help`, `-?`, `-morehelp`, `--more-help`, `-more-help`, and `-version`)
+print to `stdout`. A file name may also be given as the next argument (e.g., `finH= file`). Conflicting inputs: `fdem`
+together with matrix files (`finH`, `finG`, `finL`, `fin`), `pmin`, `outD`, or `drop` (other than `drop=0`) without
+`fdem`, `finG` together with `finL`, and `drop`, `finG`, `finL`, or `fin` with `classical=1`, are errors; `fin`
+followed by `finH`, `finG`, or `finL` is ignored entirely (with a warning on `stderr`: e.g., `fin=A finG=B` still
+needs `finH`), while `fin` after them is an error. The Python CLI (`python3 dist_m4ri.py`) has the same help options
+(see [Python Wrapper](#python-wrapper-dist_m4ripy)).
 
 ### Standard Help (`dist_m4ri --help`)
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.14.7): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.16.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -714,8 +804,12 @@ Extra parameters (see --morehelp for details):
   smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)
   noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)
   start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48
+  start_scan=[0|1] (0)   Expert, with start: clusters from column c use only columns > c
   cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs
+  irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)
+  ortho=[0|1] (1)        Expert: 0 skips the check H G^T = 0 of finG (valid only if it holds)
   sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)
+  cc_prune=[0|1|2] (1)   CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds
   nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)
   chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
@@ -745,20 +839,23 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
 `debug=0` alone is silent, while `debug=4` and `debug=0 debug=4` both give only the periodic status.
 
 - `0`: silent, except for errors, warnings on the validity of the result (expert options, the experimental `ksub`,
-  invalid `finC` codewords), and the confinement profile with `smax>0`.
+  invalid `finC` codewords) and on ignored or overridden parameters (e.g., `steps` with `method=2`, `smax` with
+  `dmin>1`), and the confinement profile with `smax>0`.
 - `1` (default) **summary**: input matrices (sizes, numbers of nonzeros, maximum row and column weights; for a DEM also
   its rounds, `#   rounds of the DEM: D=... detectors and L=... columns per round`, and for the hybrid RW the window
   size), warnings, the reason why the run ended (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`,
   `timeout=60s reached during CC round w=9 (37.5% of start columns claimed)`, or `RW convergence reached`), codeword
-  and hit statistics, RW information sets (`# RW information sets: ..., pairs=l, ...`), the pairs checked per step
-  and the codewords found by the pairs and by the single columns (`# RW pairs (p=2, ...)`), the codewords of the three
-  lowest weights found by the uniform and by the window steps (`# RW step types, w=...`), codeword export.
+  and hit statistics, the reducible codewords skipped (`irred=1`, see [Codeword Export](#codeword-export-outc--finc)),
+  RW information sets (`# RW information sets: ..., pairs=l, ...`), the pairs checked per step and the codewords found
+  by the pairs and by the single columns (`# RW pairs (p=2, ...)`), the codewords of the three lowest weights found by
+  the uniform and by the window steps (`# RW step types, w=...`), codeword export.
 - `2` (default) **progress**: the run plan (method, threads, RW steps, CC weights, timeout, rng seed), finished CC
   rounds, new upper bounds, RW convergence.
 - `4` **periodic status** after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate,
   $\langle n\rangle$, and the progress of the current CC round (or why no CC round runs).
 - `8` **thread allocation and timing**: throttling, the planning and re-planning of CC rounds, waits for RW, and the
-  predicted vs measured CC work of each round.
+  predicted vs measured CC work of each round, with its number of nodes (calls of the CC recursion; see `cc_prune`),
+  which does not depend on the number of threads.
 - `16` **code parameters**: $\mathrm{rank}\,H$, $\mathrm{rank}\,L$ (or $\mathrm{rank}\,G$), and $k$, by dense
   elimination at startup (slow for large matrices).
 - `32` **codewords**: the support (1-based columns) of each new lightest codeword (RW, CC, `finC`).
@@ -805,19 +902,28 @@ interoperability without manual threading overhead.
 
 ### Key Python Functions
 
+- The binary: the `compute_*()` functions take its path as `dist_m4ri=PATH` (`dist_m4ri_path=` of `run_dist_m4ri()`),
+  the positional parameter after the matrices or after `circuit` (give the other arguments by keyword). Otherwise,
+  `find_dist_m4ri_binary()` tries `src/dist_m4ri`, `dist_m4ri`, and `bin/dist_m4ri` in the directory of
+  `dist_m4ri.py`, then `../dist-m4ri/src/dist_m4ri` from there, the same three paths in the current directory, and
+  finally the `PATH` (`FileNotFoundError` if none is found; no environment variable is read, and the CLI has no option
+  for the path). `--help`, `--morehelp`, and `--version` of the CLI warn on `stderr` if the binary is missing or older
+  than the wrapper.
 - `compute_classical_distance(H, ...)`: Minimum distance of a classical linear code (from NumPy 2D array, SciPy sparse
   matrix, or `.mtx` file).
 - `compute_quantum_distance(H, G=None, L=None, ...)`: Distance of one sector of a quantum CSS code, i.e., the minimum
-  weight of a codeword $c$ with $Hc = 0$ and $Lc \neq 0$ (with $L$ constructed from $H$ and $G$ if not given).
+  weight of a codeword $c$ with $Hc = 0$ and $Lc \neq 0$, given either `G` (then $L$ is constructed from $H$ and $G$)
+  or `L`, not both (`ValueError` if both or neither are given).
 - `compute_css_distance(Hx, Hz, Lx=None, Lz=None, ...)`: Distance $d = \min(d_X, d_Z)$ of a CSS quantum code (two runs
   of the binary, one for each sector); both `Hx` and `Hz` are required (otherwise `ValueError`; use
   `compute_quantum_distance()` for one sector). With `outC="cws.nz"`, the $X$- and $Z$-codewords are saved to
-  `cws_X.nz` and `cws_Z.nz`; with `finC="cws.nz"`, the files `cws_X.nz` and `cws_Z.nz` are read if they exist, and
-  otherwise the same file is given to both runs (codewords which are not valid in a sector are skipped). A known upper
-  bound `dmax` on $d$ is not an upper bound of either sector: it is passed to both sector runs as the stop target
-  `dstop` (and it is not stored in the cache), and the returned $d$ is at most `dmax`. The two sectors are cached as
-  the quantum codes `(H=Hx, G=Hz)` ($d_Z$) and `(H=Hz, G=Hx)` ($d_X$), with `L=Lx` / `L=Lz` if given, i.e., with the
-  same cache records as `compute_quantum_distance()`.
+  `cws_X.nz` and `cws_Z.nz`; with `finC="cws.nz"`, each sector reads its own file `cws_X.nz` or `cws_Z.nz` if at least
+  one of them exists and is not empty (a sector without its file gets no input codewords), and otherwise `cws.nz` is
+  given to both runs (codewords which are not valid in a sector are skipped). A known upper bound `dmax` on $d$ is not
+  an upper bound of either sector: it is passed to both sector runs as the stop target `dstop` (and it is not stored
+  in the cache), and the returned $d$ is at most `dmax`. The two sectors are cached as the quantum codes
+  `(H=Hx, G=Hz)` ($d_Z$) and `(H=Hz, G=Hx)` ($d_X$), with `L=Lx` / `L=Lz` if given, i.e., with the same cache records
+  as `compute_quantum_distance()`.
 - `compute_dem_distance(dem=None, circuit=None, basis=None, rounds=None, out_dir=None, out_dem=None, out_stim=None,`
   `p_noise=0.001, force_noise=False, drop=None, outD=None, out_reduced=None, ...)`:
   Minimum distance directly from a `stim.DetectorErrorModel`, `stim.Circuit`, `.dem` file, or `.stim` circuit file
@@ -874,6 +980,16 @@ interoperability without manual threading overhead.
   - **`expand`** (CLI: `expand=0|1`; default: `False`): the codewords returned and written to `outC` are expanded over
     the choices among equal columns (see [Codeword Export](#codeword-export-outc--finc)); `maxC > 0` limits the
     expanded list (with a warning if some codewords are dropped).
+- Return values (`cws`: the codewords as lists of 0-based column indices): `compute_classical_distance()` and
+  `compute_quantum_distance()` return `dist`, or `(dist, cws)` with `do_cws=True`, or `(dist, d_info)` /
+  `(dist, d_info, cws)` with `return_info=True`; `compute_css_distance()` returns `(dist, dX_info, dZ_info)` (with
+  `do_cws=True`: `(dist, dX_info, dZ_info, cws_X, cws_Z)`), and `compute_dem_distance()` always returns
+  `(dist, d_info)` (with `do_cws=True`: `(dist, d_info, cws)`). With `outC` alone, the codewords are written to the
+  file but not returned. The bounds `d_info = [dmin, dmax, rw_steps]` (see `format_bounds_list()`) differ from the
+  output of the binary: `dmin` is reported as `0` if it is at most 1 (no lower bound; e.g., `0 6 50` where the binary
+  prints `1 6 50`), `rw_steps` as `0` if the distance is exact or there is no upper bound, and with the cache,
+  `rw_steps` adds up the RW steps of all runs with the same cache key. The CLI prints these numbers (and `(exact)` if
+  `dmin = dmax`), and for a CSS code (`Hx=`, `Hz=`) the line `dX: dmin dmax rw_steps  dZ: dmin dmax rw_steps  (d = N)`.
 - `compute_model_lower_bound(circuit, minority=False, out_model=None, return_info=False, ...)` (CLI:
   `fdem=FILE.stim --model-lb [--model-minority] [--out-model PREFIX]`): a certified lower bound on the distance of a
   Stim memory circuit from its code-sized model, a row reduction of its DEM $(H, L)$, for circuits whose DEM is too
@@ -902,7 +1018,9 @@ interoperability without manual threading overhead.
     from `dmin` (CC on all rows alone would be much slower: gross 75 s for 7, instead of 1.8 s for 8). The bound is
     stored as `dmin` in the cache record of the DEM (with `"dmin_model"`), so that `compute_dem_distance()` starts CC
     from it, and the CLI prints the bounds of the circuit. With `return_info=True`, the info has the model (`"H"`,
-    `"L"`, and `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs.
+    `"L"`, and `"col_map"`, the model column of each error of the DEM), its sizes, and the bounds of both runs. The
+    options `method`, `threads`, `timeout`, `num_steps`, `dstop`, `wmax`, `seed`, `nothrottle`, `pairs`, `sort_rows`,
+    and `cc_prune` apply to each run of the binary (also in the CLI).
 - `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ..., mask_out=None)` /
   `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a
   list `mask_out` receives one entry per detector: `True` if it is stripped; `compute_dem_distance()` uses it for the
@@ -915,8 +1033,8 @@ interoperability without manual threading overhead.
   for noise (a noise channel, or a noisy measurement such as `M(0.001)`); removes all noise (stim's
   `Circuit.without_noise()`: the noise channels are removed, the measurements lose their flip probabilities, and
   heralded noise such as `HERALDED_ERASE` is replaced by `MPAD`, which keeps the measurement record); and adds uniform
-  circuit-level noise of strength `p` (with `force=True`, after removing the noise of the circuit; `p=0`: none), with
-  the gates classified by `stim.gate_data()`:
+  circuit-level noise of strength `p` (to the noise of a noisy circuit, which is kept; with `force=True`, after removing
+  it; `p=0`: none), with the gates classified by `stim.gate_data()`:
   - `DEPOLARIZE2(p)` after the two-qubit gates (`CX`, `CY`, `CZ`, `XCX`, `XCY`, `XCZ`, `YCX`, `YCY`, `YCZ`, `SWAP`,
     `ISWAP`, `SQRT_XX`, `SQRT_YY`, `SQRT_ZZ`, their `_DAG` versions, `CXSWAP`, `SWAPCX`, `CZSWAP`, and `II`); a
     classically controlled gate (e.g., `CX rec[-1] 5` or `CZ sweep[0] 5`) gets `DEPOLARIZE1(p/10)` on its qubit;
@@ -930,10 +1048,13 @@ interoperability without manual threading overhead.
   `compute_dem_distance()` adds this noise to a noiseless circuit (see `p_noise` and `force_noise` above); for the
   distance, only which errors are possible matters, as long as `pmin=0`.
 - `read_sparse_vectors(filepath)`: Parses NZLIST files into lists of 0-based integer support indices.
-- Distance caching: `enable_distance_cache()`, `disable_distance_cache()`, `clear_distance_cache()`,
-  `get_cached_distance(..., start=None)`, and the `cache_file` argument of the `compute_*_distance()` functions (a
-  persistent JSON file with the version `"__version__"`; the CLI uses `tmp_dist_cache.json` in the working directory
-  unless `--no-cache` or `cache=FILE` is given). For a Stim circuit, `get_cached_distance(circuit=...)` processes it as
+- Distance caching (on by default, in memory for the Python process): `enable_distance_cache()`,
+  `disable_distance_cache()`, `clear_distance_cache(cache_file=None, clear_file=False)` (`clear_file=True` also deletes
+  the file), `get_cached_distance(..., pmin=0.0, start=None)`, and a persistent JSON file with the version
+  `"__version__"`, given as the `cache_file` argument of the `compute_*_distance()` functions or for all calls with
+  `set_distance_cache_file(path)`, which also loads it (see also `load_distance_cache()`, `save_distance_cache()`, and
+  `get_distance_cache()`); the CLI uses `tmp_dist_cache.json` in the working directory unless `--no-cache` (also
+  `cache=0`) or `cache=FILE` is given. For a Stim circuit, `get_cached_distance(circuit=...)` processes it as
   `compute_dem_distance()` does (with the same `rounds`, `p_noise`, and `force_noise`), so that the same
   DEM gives the cache key. A cache file written by a newer version is ignored (with a warning) and is not overwritten.
   The CSS records written before version 0.12.0 (keys `css:...`) are converted into the two sector records: the lower
@@ -943,7 +1064,9 @@ interoperability without manual threading overhead.
   own results: use separate cache files for different versions.
 - Codewords (`do_cws=True` or `outC=FILE`): the codewords of a run are merged with the cached ones (also in the cache
   record), and they are written to `outC` (for CSS codes, to the sector files); with `finC` identical to `outC`, the
-  codewords already in the file are kept.
+  codewords already in the file are kept. These can include reducible codewords recorded before version 0.14.8 (see
+  [Codeword Export](#codeword-export-outc--finc)): use a new cache file (or `--no-cache`) and a new `outC` file to get
+  only irreducible codewords.
 - Stop target `dstop` of all `compute_*_distance()` functions (CLI: `dstop=U`): the search ends once CC has certified
   `dmin >= dstop`, unless a lighter codeword is found (see [Bracketing Mode](#3-bracketing-mode-method3-default));
   the bounds are then `[dmin, w, rw_steps]` with `dmin >= dstop` and the weight `w` of the lightest codeword found
@@ -951,6 +1074,14 @@ interoperability without manual threading overhead.
 - Row order `sort_rows` of all `compute_*_distance()` functions (CLI: `sort_rows=0|1`; default: `None`, the binary's
   default, i.e., sorted rows for matrices and the detectors of a DEM in time order): passed to the binary (see
   [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it.
+- CC search `cc_prune` of `run_dist_m4ri()` and of all `compute_*_distance()` functions (CLI: `cc_prune=0|1|2` or
+  `--cc-prune N`; default: `None`, the binary's default 1, the branch and bound): passed to the binary (see
+  [CC Algorithm](#2-multithreaded-cc-algorithm-method2)); the result and the cache key do not depend on it. Also for
+  `compute_model_lower_bound()` (with `sort_rows`). With `debug=8` (bit 8 of the binary), `_last_run_stats["cc_rounds"]`
+  lists the completed CC rounds of the last run, each with its weight `"w"`, CC thread time `"work"` and predicted work
+  `"predicted"` (in thread-seconds; `None` if not known), wall time `"time"`, number of CC threads `"threads"`, and
+  number of nodes `"nodes"` (the calls of the CC recursion), and `"cc_nodes"` is their total; the node counts do not
+  depend on the number of threads (e.g., for benchmarks of `cc_prune`).
 - RW window size `win_hyb` of all `compute_*_distance()` functions (CLI: `win_hyb=N`; default: 0, i.e., 256 columns
   for a DEM and 512 for matrices): passed to the binary if nonzero (see
   [RW Algorithm](#1-multithreaded-rw-algorithm-method1)); the cache key does not depend on it. With `verbose=True`
@@ -960,28 +1091,59 @@ interoperability without manual threading overhead.
   information-set estimate uses the hits of the uniform steps only.
 - RW pairs `pairs` of all `compute_*_distance()` functions (CLI: `pairs=N`; default: -1, auto; 0: off): passed to the
   binary if not -1 (see [RW Algorithm](#1-multithreaded-rw-algorithm-method1)); the cache key does not depend on it.
-  `_last_run_stats` holds the number of rows `"rw_pairs_l"` (0: no pairs), and with `debug&1` the pairs checked per
-  step `"rw_pairs_per_step"` and the codewords recorded from the pairs and from the single columns (`"rw_hits_pairs"`,
-  `"rw_hits_single"`); the information-set estimate (`rw_infoset_find_prob()`, `rw_infoset_estimate()`: argument
-  `pairs_l`) includes the pairs.
+  With `debug&1` (or `verbose=True`), `_last_run_stats` holds the number of rows `"rw_pairs_l"` (0: no pairs), the
+  pairs checked per step `"rw_pairs_per_step"`, and the codewords recorded from the pairs and from the single columns
+  (`"rw_hits_pairs"`, `"rw_hits_single"`); the information-set estimate (`rw_infoset_find_prob()`,
+  `rw_infoset_estimate()`: argument `pairs_l`) includes the pairs.
 - Expert CC options of all `compute_*_distance()` functions: `start` (list of CC start columns, e.g. `start=[0, 48]`;
-  separate cache record `<key>:start=a,b,c`) and `trust_start=True` (CLI: `--trust-start`; accept the start-list
-  results as valid and copy them to the main cache record). The binary options `noscan`, `cbeg`, and `cend` are
+  separate cache record `<key>:start=a,b,c`), `start_scan=True` (CLI: `start_scan=1` or `--start-scan`; with `start`,
+  clusters from a listed column $c$ use only the columns $j > c$; cache record `<key>:start=a,b,c:scan`; not for a DEM),
+  and `trust_start=True` (CLI: `--trust-start`; accept the start-list results as valid and copy them to the main cache
+  record). The binary options `noscan`, `cbeg`, and `cend` are
   disabled in Python (ignored with a warning to `stderr`); see
-  [Restricting the CC Search](#restricting-the-cc-search-expert-options).
+  [Restricting the CC Search](#restricting-the-cc-search-expert-options). The expert option `irred=0` of the binary
+  is not available either (the CLI ignores it with a warning): the codewords recorded and cached are irreducible (see
+  [Codeword Export](#codeword-export-outc--finc)).
+- Expert option `ortho` of `run_dist_m4ri()`, `compute_quantum_distance()`, and `compute_css_distance()` (CLI:
+  `ortho=0|1`; default: `True`, since version 0.15.2): `ortho=False` passes `ortho=0` to the binary, which then does
+  not check that the rows of $H$ and $G$ are orthogonal (in each sector of a CSS code with $G$, i.e., without `Lx` or
+  `Lz`), and the same warning as from the binary is written to `stderr`. The result is valid only if $H G^T = 0$; the
+  cache key does not depend on it. Without $G$ (or with `solver="codedistance"`), it has no effect (a warning).
+- Matrices given as NumPy arrays (or array-likes such as lists) or SciPy sparse matrices are written to temporary
+  MatrixMarket files for the binary (in `tmp/` of the current directory, created if needed, or else in the system
+  temporary directory, as are the temporary codeword, DEM, and drop files; kept with `PY_DBG_KEEP_FILES`), in the
+  coordinate pattern format: their nonzero entries over GF(2), i.e., the entries with an odd value (floats are
+  truncated, and the duplicate entries of a sparse matrix are summed). Since version 0.15.2, the wrapper formats these
+  files itself (up to 65536 entries, larger matrices with `scipy.io.mmwrite`): e.g., 0.3 ms instead of 10 ms for a
+  $36 \times 72$ matrix, and 1.1 ms instead of 13 ms for $499 \times 998$ (on a 128-core machine, where `mmwrite` has
+  a fixed cost of about 10 ms from the thread pool of its parallel writer).
 - The experimental RW option `ksub` of the `compute_*_distance()` functions and the CLI should not be used: with
   `ksub>0` (and `method=1` or `3`), the same warning as from the binary is written to `stderr`.
+- The parameters of the `compute_*()` functions have the names of the CLI options (`--out-dir` as `out_dir`, etc.),
+  except `num_steps` (`steps`), `d_exp` (`dexp`, `dest`), `H`/`G`/`L` (`finH`/`finG`/`finL`), `dem` or `circuit`
+  (`fdem`), `cache_file` (`cache`), `do_cws` (`--cws`), and `minority` (`--model-minority`); `d_min`/`d_max` are
+  aliases of `dmin`/`dmax` (`run_dist_m4ri()` takes the names of the binary).
 - An unknown keyword argument of the `compute_*_distance()` functions (e.g., a misspelled option, or `steps=` for
-  `num_steps=`) raises `TypeError`, with the closest parameter name as a hint (`win=` is accepted for `kwin=`).
+  `num_steps=`) raises `TypeError`, with the closest parameter name as a hint (`win=` is accepted for `kwin=`). Other
+  errors: `FileNotFoundError` if the binary is not found, `RuntimeError` if it exits with an error (e.g., for a
+  missing input file, or rows of $H$ and $G$ which are not orthogonal), `ValueError` for invalid option values (e.g.,
+  `cc_prune`, `drop`, `p_noise`, or `method=2` without a limit `wmax`, `dmax`, `dstop`, or `timeout`), and
+  `ImportError` if `stim` or `codedistance` is needed but not installed.
+- Inputs which are ignored give a warning on `stderr` (`# Warning: ...`), unless `set_silent()` is on (in the CLI:
+  `--silent`, also `-q`): e.g., with `solver="codedistance"`, the options of the binary which are not at their
+  defaults. The warnings on the validity of a result (e.g., for `ksub`, `ortho=0`, or `start`) are always written.
 - CLI (`python3 dist_m4ri.py`): `--version` also shows the version of the `dist_m4ri` binary; inputs which are ignored
   give a warning on `stderr` (the input is selected in the order `fdem`, `Hx`/`Hz`, `finH`/`finG`/`finL`/`fin`; e.g.,
   matrices with `fdem`, `pmin`, `merge`, `expand`, `drop`, `outD`, or `--out-reduced` without `fdem`, `basis`,
-  `--p-noise`, or `--force-noise` without a Stim circuit, `basis` without `drop=css`, `fin` with `finH`, `classical=1`
-  with `finG`), where the binary rejects some of these combinations with an error.
+  `--p-noise`, or `--force-noise` without a Stim circuit, `basis` without `drop=css`, `classical=1` with `finG`,
+  `ortho=0` without $G$), where the binary rejects some of these combinations with an error. With `finH`, `finG`, or
+  `finL`, the CLI takes only the missing `finH` and `finG` (the latter not with `finL`) from `fin`, in any order, with
+  a warning, while the binary ignores a `fin` given before them and rejects one after them.
 - CLI help: `--help` (commonly used parameters, fits 80 rows) and `--morehelp` (all parameters); `--morehelp TOPIC`
   (also `--morehelp=TOPIC`, and `--help TOPIC` or `--help=TOPIC`) prints only the entries of the parameters `TOPIC`
-  (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-`, `_`, and `=VALUE` are
-  ignored, and aliases such as `dest` or `batch` work). An unknown name gives the closest names on `stderr`, and the
+  (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-` and `_` are ignored,
+  and so is `=VALUE` in `--morehelp=TOPIC` and `--help=TOPIC` (a separate `TOPIC` has no `=`), and the aliases given
+  in the help entries, e.g., `dest` or `batch`, work). An unknown name gives the closest names on `stderr`, and the
   exit code `1`. As in the binary, the option groups (also `stim` and `cache` in the Python CLI) give all their entries
   (e.g., `-h window`), and a parameter of a group also the other entries of its group. The binary has the same help
   options.
@@ -994,6 +1156,8 @@ interoperability without manual threading overhead.
   multiple `debug` arguments are OR-combined, and `--verbose` implies the bits `1`, `2`, `65536`, and `131072`.
 
 ### Python Example
+
+Run from the repository root (the example reads `examples/QX150.mtx` and `examples/QZ150.mtx`, and writes to `tmp/`):
 
 ```python
 import numpy as np
@@ -1017,7 +1181,7 @@ circuit = stim.Circuit.generated(
     after_clifford_depolarization=0.001
 )
 dist, dist_list, cws = dist_m4ri.compute_dem_distance(circuit=circuit, do_cws=True, threads=4)
-print(f"Surface code distance: {dist}, found {len(cws)} minimum-weight error mechanisms")
+print(f"Surface code distance: {dist}, found {len(cws)} minimum-weight codewords")
 
 # The binary drops 8 of the 24 detectors (drop=auto, the default): save the reduced DEM and its maps to the DEM
 dist_m4ri.compute_dem_distance(circuit=circuit, out_reduced="tmp/surf_d3", outD="tmp/surf_d3_drop.txt")
@@ -1053,7 +1217,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (108 tests)
+# Run full C test suite (113 tests)
 make test
 ```
 
@@ -1066,19 +1230,23 @@ pytest tests/test_dist_m4ri.py -v
 ### Benchmark Suite (`benchmark/`)
 
 The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes ($d = 4$ to $\le 34$) and Stim circuits
-(bivariate bicycle codes including the gross and double-gross codes, Mitten codes, and 2D-local torus BB circuits),
+(bivariate bicycle codes including the gross and double-gross codes, Mitten codes including those of arXiv:2607.28795
+with circuits of their published hook-free schedules, SHYPS codes, and 2D-local torus BB circuits),
 their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on a
-128-thread server: the scaling with the number of threads, and a comparison of the versions 0.14.6, 0.14.5, 0.14.3,
-0.14.0, 0.12.2, and 0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight
-in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of
-the `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
-detectors stripped, whose distance is only a lower bound). Its Section 7 measures the RW window size and the thread
-throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its Section 8 the RW pairs of 0.14.4 with the work
-bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5. With the pairs, RW needs 6-30 times fewer steps
-to a minimum-weight codeword of a full DEM where many steps are needed (the time of these short runs is mostly reading
-and reducing the DEM), it finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s and the weight
-23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and it finds lighter codewords of codes with a large
-distance.
+128-thread server: the scaling with the number of threads (0.15.2 and earlier versions), and a comparison of the
+versions 0.14.6, 0.14.5, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds
+a codeword of the minimum weight in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it
+certifies the circuit-level distance 9 of the `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1:
+2.1 h for the DEM with the minority-basis detectors stripped, whose distance is only a lower bound). Its Section 7
+measures the RW window size and the thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its
+Section 8 the RW pairs of 0.14.4 with the work bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5.
+With the pairs, RW needs 6-30 times fewer steps to a minimum-weight codeword of a full DEM where many steps are needed
+(the time of these short runs is mostly reading and reducing the DEM), it finds the weight 18 of the double-gross
+circuit in 1.5-2.7 s instead of 10-19 s and the weight 23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and
+it finds lighter codewords of codes with a large distance. Its Sections 9 and 10 measure the branch-and-bound CC
+search of 0.15.0 (4-35 times faster for the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of
+`bb_360` certified, up to $d = 24$, and those up to $d = 18$ confirmed with the walk of the earlier versions) and the
+lower cost per node of 0.15.2.
 
 ![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/fulldem_time.png)
 
@@ -1090,11 +1258,16 @@ distance.
 
 If you use this program, please cite:
 
-*   A. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes,"
+*   I. Dumer, A. A. Kovalev, and L. P. Pryadko, "Distance verification for classical and quantum LDPC codes,"
     *IEEE Transactions on Information Theory*, vol. 63, no. 7, pp. 4675-4690, 2017.
     [doi:10.1109/TIT.2017.2690381](https://doi.org/10.1109/TIT.2017.2690381).
 
 Other related papers and software:
+
+*   **Branch and bound for the CC search** (`cc_prune=1`, since version 0.15.0):
+    J. Y. Lee, K. Okada, N. Maskara, K. Kasai, and H. Zhou, "Design principles for ultra-high-rate quantum codes,"
+    arXiv:2609.30069 [quant-ph], 2026, Appendix B; G. Lee, "Bicycle Race: small two-block codes on the Pareto
+    frontier," arXiv:2610.13880 [quant-ph], 2026, Appendix C.4.
 
 *   **vecdec Repository** (Random Information Set (RW) algorithm with error weights/probabilities):
     [QEC-pages/vecdec](https://github.com/QEC-pages/vecdec).

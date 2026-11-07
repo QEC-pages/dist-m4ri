@@ -37,7 +37,7 @@
 #define DBG_ARGS      64   /**< command-line arguments, rng seed, files read */
 #define DBG_MATRICES  128  /**< dump the matrices H, G, L (if n < 150 unless DBG_LARGE) */
 #define DBG_CWDUMP    256  /**< dump all codewords in hash with their hit counts at the end */
-#define DBG_LARGE     2048 /**< no size cutoff for the matrices and codeword supports */
+#define DBG_LARGE     2048 /**< no size cutoff for the matrices, codeword supports, and per-weight cw statistics */
 #define DBG_LEGACY    4096 /**< dist_m4ri_old only: CC recursion and confinement hash traces */
 #define DBG_DEFAULT   (DBG_SUMMARY | DBG_PROGRESS)
 #define DBG_CW_MAX    25   /**< without DBG_LARGE, at most this many positions of a codeword support are printed */
@@ -76,6 +76,8 @@ typedef struct{
   int *start_list; /** sorted list of distinct CC start columns from `start=a,b,c` (NULL: not set).
                        Clusters grown from a listed column are not limited to larger column indices */
   int start_num;   /** number of entries in `start_list` (0: not set, all columns are used) */
+  int start_scan;  /** 1: a cluster grown from a listed start column c only uses the columns > c, as in the scan of
+                       all columns (orbit exclusion when the listed columns are the smallest ones of the orbits) */
   int cbeg; /** first CC start column for split runs (-1: column 0) */
   int cend; /** last CC start column for split runs (-1: column n-1) */
   //  int linear; /* not supported */
@@ -86,6 +88,11 @@ typedef struct{
   int dW;
   char *finC;
   char *outC;
+  int irred; /* 1 (default): only irreducible codewords are recorded, i.e., not the union of a codeword and a disjoint
+              * nonzero zero-syndrome vector (CC codewords and RW pairs are filtered, finC codewords are replaced by an
+              * irreducible nontrivial part); 0: expert, all codewords as before 0.14.8 */
+  int ortho; /* 1 (default): with finG, check that the rows of H and G are orthogonal (H G^T = 0); 0: expert, not
+              * checked (the caller guarantees it) */
   cw_vec_t *codewords; /* hash of codewords: the collection window (weight up to min_w + dW with outC or maxC)
                           and the representative set for `min_hits`, see codeword_add_maybe() */
   long long int num_cws; /* number of codewords in hash */
@@ -114,6 +121,8 @@ typedef struct{
   int sort_rows;   /* 1: sort the rows of H by increasing weight (stable) for CC, see csr_sort_rows_by_weight();
                       -1 (default): 1 for matrices, 0 for a DEM */
   int rows_sorted; /* 1: sort_rows changed the order of the rows of H */
+  int cc_prune;    /* the CC search with smax = 0: 0 the walk of the first unsatisfied row (cc_walk(), before 0.15.0),
+                      1 (default) the branch and bound (cc_bnb()), 2 the branch and bound with the cover bounds */
   char *finH;
   char *finG;
   char *finL;
@@ -130,7 +139,9 @@ typedef struct{
   int nothrottle; /* 1: disable automatic thread throttling */
   int chunk_size; /* RW chunk/batch size (0 for auto) */
   int ksub;       /* RW subspace dimension sampled from ker(H) (0 for full H); experimental, should not be used */
-  int kwin;       /* RW localized window size W (0 for uniform permutation) */
+  int kwin;       /* RW localized window size W, used in every step (0: uniform random permutations, and for n >= 500
+                     an index window of win_hyb columns on every other step, see rw_hybrid_window(); < 0: no
+                     windows) */
   int win_mode;   /* RW window mode: 0 = Tanner BFS, 1 = index proximity */
   int win_hyb;    /* window size of the hybrid RW steps (kwin=0, n >= 500: an index window on every other step); 0:
                      256 columns for a DEM, 512 for matrices (see rw_hybrid_window()) */
@@ -530,7 +541,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.14.7"
+#define DIST_M4RI_VERSION "0.16.0"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -544,10 +555,10 @@ void print_short_help(const char *prog);
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
   "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
-  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, sort_rows,\n" \
-  "  cbeg, cend, noscan, threads, timeout, nothrottle, chunk_size (batch),\n" \
-  "  ksub, kwin (win), win_mode, win_hyb, pairs, min_hits, cov_cws, refresh,\n" \
-  "  finC, outC, maxC, dW, seed, debug\n\n" \
+  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, start_scan,\n" \
+  "  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n" \
+  "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, min_hits,\n" \
+  "  cov_cws, refresh, finC, outC, maxC, dW, irred, ortho, seed, debug\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -595,8 +606,12 @@ void print_short_help(const char *prog);
   "  smax=[int] (0)         Max syndrome weight for confinement profile (0 to disable)\n" \
   "  noscan=[0|1] (0)       Expert, method 2: CC at w=wmax only (no lower bound!)\n" \
   "  start=[list] (-1)      Expert: CC from listed columns only, e.g. start=0,48\n" \
+  "  start_scan=[0|1] (0)   Expert, with start: clusters from column c use only columns > c\n" \
   "  cbeg/cend=[int] (-1)   Expert: CC start column range, for split runs\n" \
+  "  irred=[0|1] (1)        Expert: 0 records also reducible codewords (cw + disjoint 0-syndrome vector)\n" \
+  "  ortho=[0|1] (1)        Expert: 0 skips the check H G^T = 0 of finG (valid only if it holds)\n" \
   "  sort_rows=[0|1] (1)    Sort the rows of H by weight for CC (default 0 with fdem)\n" \
+  "  cc_prune=[0|1|2] (1)   CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds\n" \
   "  nothrottle=[0|1] (0)   Disable thread throttling (also --no-throttle)\n" \
   "  chunk_size=[int] (0)   RW batch chunk size (0: auto, alias: batch)\n" \
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
@@ -632,7 +647,15 @@ void print_short_help(const char *prog);
   "  finH=[file]        Parity check matrix H (for classical codes) or Hx (for\n" \
   "                     quantum CSS codes) in Matrix Market (.mmx / .mtx) format.\n" \
   "  finG=[file]        Generator / Hz matrix for quantum CSS codes in Matrix Market\n" \
-  "                     format. Used to verify orthogonality and construct logicals.\n" \
+  "                     format. Used to verify orthogonality (see ortho) and\n" \
+  "                     construct logicals.\n" \
+  "  ortho=[0|1]        Expert option: 1 (default) checks that the rows of H and G\n" \
+  "                     (finG) are orthogonal, H G^T = 0, and stops with an error\n" \
+  "                     otherwise; 0 skips the check (a WARNING is printed), e.g.,\n" \
+  "                     to screen many codes which are orthogonal by construction\n" \
+  "                     (the check takes O(nnz(G) times the column weight of H)\n" \
+  "                     operations).  The result is valid only if H G^T = 0.\n" \
+  "                     Ignored (with a WARNING) without finG.\n" \
   "  finL=[file]        Logical operator matrix Lx for quantum CSS codes in Matrix\n" \
   "                     Market format.\n" \
   "                     Note: For a quantum CSS code, either finL (Lx) or finG (Hz)\n" \
@@ -640,7 +663,9 @@ void print_short_help(const char *prog);
   "  fin=[str]          Base name for the matrix files (default: ../examples/try).\n" \
   "                     Automatically looks for \"${fin}X.mtx\" as finH and\n" \
   "                     \"${fin}Z.mtx\" as finG.  A later finH, finG, or finL\n" \
-  "                     replaces fin (with a warning); fin after them is an error.\n" \
+  "                     cancels fin (with a warning; then no file is taken from\n" \
+  "                     fin, so that finH must be given); fin after them is an\n" \
+  "                     error.\n" \
   "  fdem=[file]        Detector Error Model file (.dem) generated by Stim.\n" \
   "                     Automatically constructs H and L matrices. Cannot be\n" \
   "                     combined with finH, finG, finL, or fin.\n" \
@@ -685,8 +710,9 @@ void print_short_help(const char *prog);
   "                     format of a drop file; only the comment line if none) to\n" \
   "                     file.  Only valid with fdem.\n" \
   "  classical=[0|1]    Code type override:\n" \
-  "                     1: Treat as a classical linear code (Hx only; ignores\n" \
-  "                        or discards logical matrix L).\n" \
+  "                     1: Treat as a classical linear code (H only: finG,\n" \
+  "                        finL, or fin is an error, and the observables L of a\n" \
+  "                        DEM are discarded).\n" \
   "                     0: Treat as a quantum CSS code (requires L or G matrix).\n" \
   "                     Default: 1 if only finH is given; 0 if finG, finL, fin,\n" \
   "                     or fdem is provided.\n" \
@@ -725,22 +751,42 @@ void print_short_help(const char *prog);
   "  wmax=[int]         Maximum cluster weight to analyze in CC (default: 0).\n" \
   "                     In method=2, CC terminates after checking weight wmax.\n" \
   "                     0 means continue until a codeword is found, the bounds\n" \
-  "                     meet, or timeout (method=2 then needs timeout>0 or dmax>0).\n" \
+  "                     meet, dmin >= dstop, or timeout (method=2 then needs\n" \
+  "                     timeout>0, dmax>0, or dstop>0).\n" \
   "  smax=[int]         Maximum syndrome weight for confinement profile (default: 0).\n" \
   "                     When smax > 0, tracks minimum syndrome weights for each\n" \
   "                     error weight. When smax=0, confinement is not computed.\n" \
+  "                     Disabled (with a WARNING) with noscan=1 or dmin > 1, as the\n" \
+  "                     small cluster weights are then skipped.\n" \
   "  sort_rows=[0|1]    Sort the rows of H by increasing weight (stable) after\n" \
   "                     reading the input (default: 1 for matrices, finH or fin;\n" \
-  "                     0 for a DEM, fdem).  CC extends a cluster by the columns of\n" \
-  "                     the first row of its syndrome (in row order), so that light\n" \
-  "                     rows first reduce the CC work for matrices with very\n" \
-  "                     different row weights, e.g., 1.7-4x with the hook columns\n" \
-  "                     of an extended CSS distance.  The detectors of a DEM are in\n" \
-  "                     time order, which is better for CC (sorting them made CC\n" \
-  "                     1.3-4x slower): use sort_rows=0 also for matrices exported\n" \
-  "                     from a DEM.  The distance and RW do not depend on the order\n" \
-  "                     of the rows; CC enumerates the same codewords (outC), but\n" \
-  "                     possibly in another order and with other hit counts.\n" \
+  "                     0 for a DEM, fdem).  With cc_prune=0, CC extends a cluster\n" \
+  "                     by the columns of the first row of its syndrome (in row\n" \
+  "                     order), so that light rows first reduce the CC work for\n" \
+  "                     matrices with very different row weights, e.g., 1.7-4x\n" \
+  "                     with the hook columns of an extended CSS distance, while\n" \
+  "                     the detectors of a DEM are in time order, which is better\n" \
+  "                     (sorting them made CC 1.3-4x slower).  With cc_prune=1 or\n" \
+  "                     2, the order of the rows only breaks ties.  The distance\n" \
+  "                     and RW do not depend on the order of the rows; CC finds the\n" \
+  "                     same codewords (outC), possibly in another order (with\n" \
+  "                     cc_prune=0, also with other hit counts).\n" \
+  "  cc_prune=[0|1|2]   The CC search with smax=0 (default: 1).  0: the walk of\n" \
+  "                     the versions before 0.15.0: a cluster is extended by the\n" \
+  "                     columns of the first unsatisfied row of its syndrome, and\n" \
+  "                     a branch is pruned if its syndrome weight exceeds what the\n" \
+  "                     columns left can cancel.  1: branch and bound: it branches\n" \
+  "                     on the unsatisfied row with the fewest available columns,\n" \
+  "                     the columns of the earlier branches are forbidden in the\n" \
+  "                     later ones (each codeword is found once: one CC hit), and\n" \
+  "                     a branch is pruned by lower bounds on the number of columns\n" \
+  "                     needed (an unsatisfied row without available columns, or a\n" \
+  "                     packing of unsatisfied rows with disjoint sets of available\n" \
+  "                     columns).  2: also the coverage and fractional cover bounds\n" \
+  "                     (fewer nodes, more work per node).  All values find the\n" \
+  "                     same codewords and distances (doc/cc_completeness.tex);\n" \
+  "                     with the expert start list (and start_scan=0), cc_prune=1\n" \
+  "                     and 2 forbid the columns listed before the start column.\n" \
   "  noscan=[0|1]       Expert option: 1: run CC only at weight w = wmax, skipping\n" \
   "                     the scan over weights w < wmax (default: 0). Only valid for\n" \
   "                     method=2. WARNING: lower weights are not checked, so a\n" \
@@ -749,10 +795,22 @@ void print_short_help(const char *prog);
   "  start=[list]       Expert option: comma-separated list of CC start columns,\n" \
   "                     e.g., start=0,48,96 (default: -1 = all columns). Clusters\n" \
   "                     grown from a listed column are NOT limited to larger column\n" \
-  "                     indices. Use, e.g., one column per block of a quasi-cyclic\n" \
-  "                     code. WARNING: dmin is valid only if a code symmetry maps\n" \
-  "                     every minimum-weight codeword to one containing a listed\n" \
-  "                     column. Cannot be combined with cbeg/cend.\n" \
+  "                     indices (unless start_scan=1). Use, e.g., one column per\n" \
+  "                     block of a quasi-cyclic code. WARNING: dmin is valid only\n" \
+  "                     if a code symmetry maps every minimum-weight codeword to one\n" \
+  "                     containing a listed column. Cannot be combined with\n" \
+  "                     cbeg/cend.\n" \
+  "  start_scan=[0|1]   Expert option, with start (default: 0).  1: a cluster grown\n" \
+  "                     from a listed column c only uses the columns > c, as in the\n" \
+  "                     scan of all columns (see cbeg).  WARNING: dmin is valid\n" \
+  "                     only if a code symmetry maps every minimum-weight codeword\n" \
+  "                     to one whose smallest column is listed, e.g., if the listed\n" \
+  "                     columns are the smallest columns of the orbits of a group of\n" \
+  "                     code automorphisms, one per orbit (start=0,l for the two\n" \
+  "                     blocks of a two-block group-algebra code of length 2l over\n" \
+  "                     an abelian group).  The later start columns then need less\n" \
+  "                     work, the least if each orbit is a range of consecutive\n" \
+  "                     columns.  Not with fdem.\n" \
   "  cbeg=[int]         Expert option for split runs: first CC start column\n" \
   "                     (default: -1 = column 0). A cluster started at column i\n" \
   "                     only uses columns > i, so every codeword is found starting\n" \
@@ -766,14 +824,29 @@ void print_short_help(const char *prog);
   "  outC=[file]        Export found codewords of weight up to min_w + dW (min_w:\n" \
   "                     minimum weight found) to file in .nz list format.  In\n" \
   "                     method=2/3, once dmin = dmax = d, CC rounds w = d..d+dW\n" \
-  "                     enumerate all such codewords (unless the timeout is hit;\n" \
-  "                     for a DEM, up to the choice of equal columns: see merge).\n" \
+  "                     enumerate all such irreducible codewords (see irred; unless\n" \
+  "                     the timeout is hit; for a DEM, up to the choice of equal\n" \
+  "                     columns: see merge).\n" \
   "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
+  "                     A reducible codeword is replaced by an irreducible part with\n" \
+  "                     a nonzero syndrome of L (see irred).  If finC is the same\n" \
+  "                     file name as outC, a missing file is not an error.\n" \
   "  maxC=[int]         Maximum number of codewords to collect (default: 0).\n" \
   "                     0 means collect all valid codewords found up to wmax or stop\n" \
   "                     flag. If maxC > 0, halts when maxC codewords are collected.\n" \
   "  dW=[int]           Extra weight window above minimum distance (default: 0).\n" \
-  "                     Collects codewords with weight up to min_w + dW.\n\n" \
+  "                     Collects codewords with weight up to min_w + dW.\n" \
+  "  irred=[0|1]        Expert option: 1 (default) records only irreducible\n" \
+  "                     codewords: a codeword which is the union of a codeword and a\n" \
+  "                     disjoint nonzero vector with zero syndrome (e.g., a trivial\n" \
+  "                     weight-3 vector of a circuit DEM, from weight d+3 on) is not\n" \
+  "                     recorded.  Minimum-weight codewords are always irreducible.\n" \
+  "                     Tested for the CC codewords (the rank of their columns of\n" \
+  "                     H) and for the RW pairs (the sum of two disjoint vectors\n" \
+  "                     with zero syndrome is skipped); a finC codeword is replaced\n" \
+  "                     by an irreducible part with a nonzero syndrome of L.\n" \
+  "                     0: all codewords are recorded, as before version 0.14.8.\n" \
+  "                     (dist_m4ri_old: finC only.)\n\n" \
   "Execution, multithreading, and timing:\n" \
   "  threads=[int]      Maximum number of worker threads to use (default: 0 = all\n" \
   "                     logical CPUs available, i.e., the CPU affinity mask, e.g.,\n" \
@@ -803,15 +876,17 @@ void print_short_help(const char *prog);
   "                     subspace dimension sampled from ker(H) in RW (default: 0 =\n" \
   "                     original full-matrix RW). E.g. ksub=32 or 64 keeps working\n" \
   "                     matrices inside L1/L2 cache. Automatically falls back to\n" \
-  "                     ksub=0 (with a warning) if m < nu = dim(ker(H)).  Each step\n" \
-  "                     reduces the span of ksub distinct rows of a fixed basis of\n" \
-  "                     ker(H), so that a few codewords are found much more often\n" \
-  "                     than others, and min_hits may end RW early.\n" \
+  "                     ksub=0 if m < nu = dim(ker(H)) (with a warning if debug&1).\n" \
+  "                     Each step reduces the span of ksub distinct rows of a fixed\n" \
+  "                     basis of ker(H), so that a few codewords are found much\n" \
+  "                     more often than others, and min_hits may end RW early.\n" \
   "  kwin=[int]         Localized column permutation window size W, used in every RW\n" \
   "                     step (alias: win=[int]).  Default: 0 = automatic hybrid for\n" \
   "                     n>=500: every other step uses an index window (win_mode=1)\n" \
   "                     of win_hyb columns, the other steps uniform random\n" \
   "                     permutations (also for codewords which are not local).\n" \
+  "                     kwin=-1 (any negative value): no windows, uniform random\n" \
+  "                     permutations in every step.\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
   "                     0: Tanner graph BFS neighbors around random seed column.\n" \
   "                     1: Contiguous index proximity window around seed column.\n" \
@@ -836,14 +911,15 @@ void print_short_help(const char *prog);
   "                     rows to keep the pairs of a step within about the work of\n" \
   "                     its elimination (e.g., l >= 6 for large circuit DEMs while\n" \
   "                     the upper bound is far above the distance).  The pairs\n" \
-  "                     find the minimum-weight codewords of circuit DEMs 7 to 25\n" \
+  "                     find the minimum-weight codewords of circuit DEMs 7 to 26\n" \
   "                     times faster, and lighter codewords of codes with a large\n" \
   "                     distance.  Not with ksub.  With debug&1, the binary prints\n" \
   "                     the pairs checked per step and the codewords found by pairs\n" \
   "                     and by single columns.\n" \
-  "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off).\n" \
-  "                     Stops RW when the average number of times <n> that RW has\n" \
-  "                     found each codeword reaches min_hits, both for the codewords\n" \
+  "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off;\n" \
+  "                     alias: max_hits).  Stops RW when the average number of hits\n" \
+  "                     <n> per codeword (by all RW steps, with or without windows,\n" \
+  "                     and by CC or finC) reaches min_hits, both for the codewords\n" \
   "                     of the minimum weight found and for a representative set of\n" \
   "                     cov_cws lowest-weight codewords (heavier codewords are kept\n" \
   "                     until enough lighter ones are found).  A single codeword\n" \
@@ -855,6 +931,9 @@ void print_short_help(const char *prog);
   "                     together with an information-set estimate (uniform random\n" \
   "                     information sets) of the probability to miss a lighter\n" \
   "                     codeword and of the RW steps needed for 1%%.\n" \
+  "                     With min_hits=0, RW records only the codewords lighter than\n" \
+  "                     the upper bound (unless collecting codewords with outC or\n" \
+  "                     maxC), so that the repeated hits are not counted.\n" \
   "  cov_cws=[int]      Size of the representative set of lowest-weight codewords\n" \
   "                     for min_hits (default: 100; 0 = only the minimum weight).\n" \
   "                     Without outC and maxC, at most cov_cws minimum-weight\n" \
@@ -873,9 +952,9 @@ void print_short_help(const char *prog);
   "  Multiple debug arguments are OR-combined, where the first one replaces the\n" \
   "  default: e.g., debug=0 alone is silent, while debug=4 and debug=0 debug=4\n" \
   "  both give only the periodic status.\n" \
-  "    0    : Silent: errors and warnings on the validity of the result (expert\n" \
-  "           options, experimental ksub, invalid finC codewords) only, and the\n" \
-  "           confinement profile with smax > 0\n" \
+  "    0    : Silent: errors, warnings on the validity of the result (expert\n" \
+  "           options, experimental ksub, invalid finC codewords) and on ignored\n" \
+  "           or overridden parameters, and the confinement profile with smax > 0\n" \
   "    1    : Summary (default): input matrices (and the rounds of a DEM, RW\n" \
   "           windows), warnings, stop reason, codeword and hit statistics,\n" \
   "           RW information sets, pairs, and step types, export\n" \
@@ -884,14 +963,16 @@ void print_short_help(const char *prog);
   "    4    : Periodic status (after 1, 2, 4, ... s, then every 60 s): bounds,\n" \
   "           RW steps and rate, <n>, progress of the current CC round\n" \
   "    8    : Thread allocation and timing: throttling, CC round planning and\n" \
-  "           re-planning, waits for RW, predicted vs measured CC work\n" \
+  "           re-planning, waits for RW, predicted vs measured CC work, and the\n" \
+  "           nodes of each CC round (calls of the recursion)\n" \
   "    16   : Code parameters rank(H), rank(L) or rank(G), and k (dense\n" \
   "           elimination at startup, slow for large matrices)\n" \
   "    32   : Support (1-based) of each new lightest codeword (RW, CC, finC)\n" \
   "    64   : Command-line arguments, rng seed, and files read\n" \
   "    128  : Matrices H, G, L (if n < 150, unless 2048 is set)\n" \
   "    256  : All codewords in hash with their hit counts (at the end)\n" \
-  "    2048 : No size cutoff for matrices and codeword supports\n" \
+  "    2048 : No size cutoff for matrices, codeword supports, and per-weight\n" \
+  "           codeword statistics\n" \
   "    4096 : dist_m4ri_old only: CC recursion and confinement hash traces\n" \
   "  Bits 512, 1024, and 8192 to 32768 are reserved.  Bits 65536 and above are\n" \
   "  reserved for the Python wrapper dist_m4ri.py (ignored by the binary).\n" \
@@ -913,10 +994,10 @@ void print_short_help(const char *prog);
   "  stopping, stop     steps, wmin, timeout, min_hits, cov_cws\n" \
   "  bounds             dmin, dmax, dstop, dexp, wmax\n" \
   "  dem                fdem, pmin, merge, drop, outD\n" \
-  "  matrices, matrix   finH, finG, finL, fin, classical\n" \
-  "  codewords          outC, finC, maxC, dW\n" \
+  "  matrices, matrix   finH, finG, finL, fin, classical, ortho\n" \
+  "  codewords          outC, finC, maxC, dW, irred\n" \
   "  threading          threads, nothrottle, chunk_size\n" \
-  "  expert             noscan, start, cbeg, cend\n" \
+  "  expert             noscan, start, start_scan, cbeg, cend\n" \
   "  experimental       ksub, refresh\n\n" \
   "Help options:\n" \
   "  -h, --help         Display help for commonly used parameters (fits 80 rows);\n" \
@@ -925,13 +1006,14 @@ void print_short_help(const char *prog);
   "                     --morehelp TOPIC (also --morehelp=TOPIC) displays only the\n" \
   "                     entries of TOPIC, e.g., --morehelp maxC: one or more names\n" \
   "                     separated by commas (e.g., maxC,dW), case-insensitive,\n" \
-  "                     without '-', '_', or '=VALUE', including aliases such as\n" \
-  "                     dest or batch (and debug for the debug output bitmap); an\n" \
-  "                     unknown name gives the closest names on stderr, and the\n" \
-  "                     exit code 1.  A group name (see Option groups, also as\n" \
-  "                     singular or plural, e.g., window) gives all entries of the\n" \
-  "                     group, and a parameter of a group also the other entries\n" \
-  "                     of its group (see also).\n" \
+  "                     without '-' or '_' (and '=VALUE' in --help=TOPIC and\n" \
+  "                     --morehelp=TOPIC: a separate argument with '=' is not a\n" \
+  "                     TOPIC), including aliases such as dest or batch (and debug\n" \
+  "                     for the debug output bitmap); an unknown name gives the\n" \
+  "                     closest names on stderr, and the exit code 1.  A group\n" \
+  "                     name (see Option groups, also as singular or plural, e.g.,\n" \
+  "                     window) gives all entries of the group, and a parameter of\n" \
+  "                     a group also the other entries of its group (see also).\n" \
   "  --version          Display program version\n"
 
 #define BRIEF_HELP \

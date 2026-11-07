@@ -46,6 +46,9 @@
  * cov_cws lowest-weight codewords for the QDistRnd-style `min_hits` stopping criterion.  With outC or maxC, RW does not
  * end the run when the bounds coincide (or on wmin); in method=3 with outC, the CC rounds w = d..d+dW then enumerate
  * all codewords to export.  At the end (debug&1), non-uniform hit counts are reported (codeword_hit_check()).
+ * With irred=1 (the default), only irreducible codewords are recorded, i.e., not the union of a codeword and a disjoint
+ * nonzero zero-syndrome vector: the CC codewords are tested by the rank of their columns (cw_irreducible()), and the RW
+ * pairs of disjoint circuits are skipped (rw_pairs_step()); single RW candidates are circuits, hence irreducible.
  *
  * Timing model (method=2, 3): the CC work of a round is measured as the total CC thread time, and the work of the
  * next round is extrapolated with the growth factor of the last two rounds.  With a timeout, a CC round predicted not
@@ -225,9 +228,14 @@ typedef struct {
   atomic_int cc_target_workers;
   atomic_int cc_round_active;
   atomic_llong cc_busy_ns;           /* total CC thread time in ns (all rounds), for the CC timing model */
+  atomic_llong cc_nodes;             /* total calls of the CC recursion (smax = 0, all rounds), for DBG_TIMING */
 
   /* Codeword synchronization */
   pthread_mutex_t cw_mutex;
+  /* irred=1: the reducible codewords not recorded (the union of a codeword and a disjoint nonzero zero-syndrome
+   * vector), found by CC and by RW (pairs of disjoint circuits, ksub rows) */
+  atomic_llong cw_red_cc;
+  atomic_llong cw_red_rw;
 
   /* Subspace sketching (ksub) state */
   mzd_t *N_global;
@@ -297,6 +305,7 @@ typedef struct worker_arg {
   distfork_ctx_t *ctx;
   int tid;
   int min_swei[MAX_W];
+  cols_ws_t *irr_ws; /* irred=1: the workspace of the test of the CC (and ksub RW) codewords, see cw_irreducible() */
 } worker_arg_t;
 
 /* A CC round at weight w hands out the work units u = beg*R .. (end+1)*R-1 one at a time, where beg..end are the start
@@ -337,7 +346,8 @@ static inline int cc_unit_last(const distfork_ctx_t * const ctx, const int w, co
 }
 
 #define CC_SPLIT_UNITS_PER_THREAD 4.0 /* aim at >= 4 work units of the size of the largest one per CC thread */
-#define CC_SPLIT_MIN_WORK 1e-3        /* rounds predicted to take < 1 ms on all threads: whole start indices */
+#define CC_SPLIT_MIN_WORK 1e-3        /* rounds predicted to take < 1 ms on all threads (on the start indices of an
+                                       * expert `start` list, if they are fewer): whole start indices */
 #define CC_SPLIT_CLAIMS_PER_WORK 1e4  /* at most 10^4 work units per thread-second of predicted work */
 #define CC_SPLIT_CLAIMS_UNKNOWN 65536 /* at most this many work units if the work of the round is not known */
 
@@ -346,7 +356,8 @@ static inline int cc_unit_last(const distfork_ctx_t * const ctx, const int w, co
  * gives CC_SPLIT_UNITS_PER_THREAD units per thread, where the largest unit is taken as the unit size: whole start
  * indices count as n/w units (the clusters from the first start column are about w/n of the round; the columns of the
  * expert `start` list are alike, with unlimited clusters), and each fixed level divides the units by the typical
- * number of branches.  L = 0 for short rounds, and L <= min(3, w-3), so that at least two levels of a unit are free.
+ * number of branches.  L = 0 for short rounds (with a short `start` list, only if they are short on its start indices,
+ * which are then all that can work in parallel), and L <= min(3, w-3), so that at least two levels of a unit are free.
  * The number of units (each one claim of the shared counter, empty units included) is limited by the predicted work,
  * and all units must have an index < INT_MAX - num_threads (over-claims at the end of the round). */
 static int cc_round_levels(const distfork_ctx_t * const ctx, const int w, const int beg, const int end,
@@ -355,7 +366,8 @@ static int cc_round_levels(const distfork_ctx_t * const ctx, const int w, const 
   const int n_start = end - beg + 1;
   const int lmax = minint(CC_SPLIT_MAX_LEVELS, w - 3);
   if (nthr <= 1 || n_start <= 0 || lmax <= 0 || ctx->cc_B <= 1) return 0;
-  if (est > 0.0 && est < CC_SPLIT_MIN_WORK * nthr) return 0;
+  const int busy = (ctx->p->start_num > 0) ? minint(nthr, n_start) : nthr; /* threads busy with whole start indices */
+  if (est > 0.0 && est < CC_SPLIT_MIN_WORK * busy) return 0;
   const double max_units = (est > 0.0) ? CC_SPLIT_CLAIMS_PER_WORK * est : CC_SPLIT_CLAIMS_UNKNOWN;
   double units = (ctx->p->start_num > 0) ? (double)n_start : (double)n_start / w;
   int lev = 0;
@@ -378,11 +390,26 @@ static inline void ctx_update_feed_limit(distfork_ctx_t * const ctx) {
   }
 }
 
+/* irred=1: is the codeword of the `cnt` columns `vec` irreducible, i.e., not the union of a codeword and a disjoint
+ * nonzero zero-syndrome vector?  Iff the rank of its columns of H is cnt - 1 (see csr_cols_rank()).  Always true with
+ * irred=0. */
+static inline bool cw_irreducible(const distfork_ctx_t * const ctx, cols_ws_t * const ws, const int cnt,
+                                  const int vec[]) {
+  if (!ctx->p->irred || !ws || cnt < 2) return true;
+  return csr_cols_rank(ctx->mHT_cc, cnt, vec, ws) == cnt - 1;
+}
+
 /* Record the CC codeword `err` (sorted columns, nonzero syndrome of L) found by worker `warg`, and update the upper
- * bound; returns true if the run is to stop (the first codeword without outC and maxC, or maxC codewords) */
+ * bound; returns true if the run is to stop (the first codeword without outC and maxC, or maxC codewords).  With
+ * irred=1, a reducible codeword is not recorded (counted in `cw_red_cc`); the CC search finds every irreducible
+ * codeword, but only some reducible ones, from the weight d + 3 on for a circuit DEM (doc/cc_completeness.tex). */
 static __attribute__((noinline)) bool cc_record(distfork_ctx_t * const ctx, const worker_arg_t * const warg,
                                                 const one_vec_t * const err) {
   params_t * const p = ctx->p;
+  if (!cw_irreducible(ctx, warg->irr_ws, err->wei, err->vec)) {
+    atomic_fetch_add_explicit(&ctx->cw_red_cc, 1, memory_order_relaxed);
+    return false;
+  }
   bool stop = false;
   pthread_mutex_lock(&ctx->cw_mutex);
   p->codewords = codeword_add_maybe(p, err->vec, err->wei, CW_SRC_OTHER);
@@ -429,7 +456,7 @@ static inline int bits_first(const uint64_t * const b, const int from, const int
   return (r < limit) ? r : limit;
 }
 
-/* The state of the CC walk of a worker (smax = 0, see cc_walk()) */
+/* The state of the CC walk of a worker (smax = 0, see cc_walk() and, for cc_prune >= 1, cc_bnb()) */
 typedef struct {
   distfork_ctx_t *ctx;
   worker_arg_t *warg;
@@ -447,6 +474,30 @@ typedef struct {
   int m;               /* the number of rows of H */
   const int *fix;      /* the fixed levels 1..nfix of the work unit, see `cc_pack()` */
   int nfix;
+  long long nodes;     /* calls of the recursion (cc_walk() or cc_bnb()), added to ctx->cc_nodes after each round */
+  int count_w;         /* the nodes of weight w >= count_w are counted: a node at a fixed level is visited by all the
+                        * work units with the same earlier digits, and counted in the one whose later digits are 0 */
+  /* the branch and bound (cc_prune >= 1, see cc_bnb()): a column u is available if u > col_min and u is neither in
+   * the cluster S nor in the forbidden set F */
+  int prune;           /* cc_prune: 1, or 2 with the coverage and fractional cover bounds */
+  int max_row_wt;      /* the maximum row weight of H (at most this many branches per node) */
+  uint64_t *X;         /* the columns of S and F: bitset */
+  int *acnt;           /* the number of available columns of each row of H */
+  int acnt_col;        /* the value of col_min for which acnt is set up (INT_MIN: not set up) */
+  int *kfirst;         /* the position in mH of the first column u > col_min of each row (the columns of a row are
+                        * sorted, so that the loops over the available columns of a row start there) */
+  int *fstk;           /* the forbidden columns in the order forbidden (unwound when the node returns) */
+  int fsp;             /* their number */
+  int *brl;            /* the branches of the nodes: max_row_wt entries per depth */
+  int *ulist;          /* the unsatisfied rows of the current node */
+  int *uacnt;          /* their numbers of available columns (acnt), for the packing bound */
+  int *ord;            /* the unsatisfied rows ordered by their available columns, for the packing bound */
+  int *bcnt;           /* counts of the rows by their available columns (max_row_wt + 2 entries) */
+  uint32_t *mark;      /* columns marked in generation `gen` (packing and coverage bounds) */
+  uint32_t gen;
+  int *cv;             /* cc_prune=2: the unsatisfied rows of each available column (generation `gen`) */
+  int *touched;        /* cc_prune=2: the available columns of the unsatisfied rows */
+  int *hist;           /* cc_prune=2: histogram of cv (max_col_wt + 1 entries) */
 } cc_walk_t;
 
 /* Record the codeword: the cluster with the columns c1 (unless negative) and c2, if its syndrome of L is nonzero;
@@ -550,6 +601,7 @@ static int cc_walk(cc_walk_t * const t, const int sw, const int r0, const uint64
   const int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
   if (cur_dmax > 0 && p->dW >= 0) current_limit = minint(t->w_limit, cur_dmax + p->dW);
   if (w >= current_limit) return 0;
+  if (w >= t->count_w) t->nodes++;
   const csr_t * const mH = t->mH;
   const csr_t * const mHT = t->mHT;
   /* the positions in mH of the columns of the row r0 to add: all of them, or one at a fixed level of the work unit */
@@ -617,14 +669,379 @@ static void cc_walk_unit(cc_walk_t * const t, const int col, const int w_limit, 
   bit_flip(t->E, col);
   t->cols[0] = col;
   t->w = 1;
-  t->col_min = (t->ctx->p->start_num > 0) ? -1 : col;
+  t->col_min = (t->ctx->p->start_num > 0 && !t->ctx->p->start_scan) ? -1 : col;
   t->w_limit = w_limit;
   t->fix = fix;
   t->nfix = nfix;
+  t->count_w = nfix + 1; /* (see cc_walk_t: count_w - 1 = the first fixed level with only zero digits from there on) */
+  while (t->count_w > 1 && fix[t->count_w - 2] == 0) t->count_w--;
   cc_walk(t, pe - pb, mHT->i[pb], t->hs->hc[col]);
   t->w = 0;
   bit_flip(t->E, col);
   for (int k = pb; k < pe; k++) bit_flip(t->S, mHT->i[k]);
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+ * The branch-and-bound CC search (cc_prune >= 1, smax = 0; see doc/cc_completeness.tex for the proof).  A node is a
+ * cluster S with a nonzero syndrome s and a forbidden set F: a column u is available if u > col_min (the start column,
+ * F_0 = {u < start column}; with the expert `start` list, the columns listed before the start column) and u is not
+ * in S or F.  With R = limit - |S| columns left, a node is pruned by admissible lower bounds on the number of columns
+ * needed to complete S to a codeword: |s| > R * max_col_wt (b1, as in cc_walk()), an unsatisfied row without
+ * available columns (dead end), more than R unsatisfied rows with pairwise disjoint sets of available columns (b2,
+ * packing, found greedily; with R >= 3), and with cc_prune=2 the coverage and fractional cover bounds (with R >= 4).
+ * Otherwise it branches on the unsatisfied row with the fewest available columns (the first such row in the row
+ * order), over its available columns v_1..v_q in column order: the branch i adds v_i to S, and v_i is forbidden in the
+ * later branches whatever happened in its own (sibling exclusion).  Every irreducible codeword which contains the
+ * start column and avoids F_0 is found exactly once (one CC hit per codeword), reducible ones at most once.  The
+ * choice of the row and the order of the branches depend only on the node, so that the work units (the fixed levels,
+ * see `cc_pack()`: the branch fix[l] among the available columns of the row, with the earlier ones forbidden)
+ * partition the search.  The last two levels use the column-syndrome hash, as in cc_walk_last2().
+ * ------------------------------------------------------------------------------------------------------------------ */
+
+/* The column v becomes unavailable (added to S or to F) */
+static inline void bnb_take(cc_walk_t * const t, const int v) {
+  const csr_t * const mHT = t->mHT;
+  const int * const ri = mHT->i, ke = mHT->p[v + 1];
+  int * const acnt = t->acnt;
+  t->X[v >> 6] |= (uint64_t)1 << (v & 63);
+  for (int k = mHT->p[v]; k < ke; k++) acnt[ri[k]]--;
+}
+
+/* The column v becomes available again */
+static inline void bnb_give(cc_walk_t * const t, const int v) {
+  const csr_t * const mHT = t->mHT;
+  const int * const ri = mHT->i, ke = mHT->p[v + 1];
+  int * const acnt = t->acnt;
+  t->X[v >> 6] &= ~((uint64_t)1 << (v & 63));
+  for (int k = mHT->p[v]; k < ke; k++) acnt[ri[k]]++;
+}
+
+static inline bool bnb_avail(const cc_walk_t * const t, const int u) { return u > t->col_min && !bit_get(t->X, u); }
+
+/* bnb_avail() for a column u > col_min (from the position t->kfirst[r] on in its row r) */
+static inline bool bnb_free(const cc_walk_t * const t, const int u) { return !bit_get(t->X, u); }
+
+/* A new generation of the column marks (cleared when the counter wraps around) */
+static inline uint32_t bnb_next_gen(cc_walk_t * const t) {
+  if (++t->gen == 0) {
+    memset(t->mark, 0, (size_t)t->mHT->rows * sizeof(uint32_t));
+    t->gen = 1;
+  }
+  return t->gen;
+}
+
+/* As at the entry of a level: no codeword of weight |S| + extra is recorded once the stop flag is set or the weight
+ * limit has dropped below it (a smaller upper bound) */
+static inline bool bnb_record_ok(const cc_walk_t * const t, const int extra) {
+  distfork_ctx_t * const ctx = t->ctx;
+  if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) return false;
+  const int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+  return !(cur_dmax > 0 && ctx->p->dW >= 0 && minint(t->w_limit, cur_dmax + ctx->p->dW) < t->w + extra);
+}
+
+/* The packing bound b2 for the nu unsatisfied rows t->ulist (t->uacnt: their amin..amax available columns): a greedy
+ * packing of rows with pairwise disjoint sets of available columns, the rows with the fewest available columns first
+ * (in row order); returns its size once it exceeds R, or once the rows left cannot make it exceed R */
+static int bnb_packing(cc_walk_t * const t, const int R, const int nu, const int amin, const int amax) {
+  int * const bcnt = t->bcnt; /* bcnt[a - amin]: first the number of the rows with a - 1 available columns */
+  const int * const ulist = t->ulist, * const uacnt = t->uacnt;
+  int * const ord = t->ord;
+  const int na = amax - amin + 1;
+  for (int a = 0; a <= na; a++) bcnt[a] = 0;
+  for (int i = 0; i < nu; i++) bcnt[uacnt[i] - amin + 1]++;
+  for (int a = 1; a <= na; a++) bcnt[a] += bcnt[a - 1]; /* then the first position of the rows with a */
+  for (int i = 0; i < nu; i++) ord[bcnt[uacnt[i] - amin]++] = ulist[i];
+  const uint32_t g = bnb_next_gen(t);
+  uint32_t * const mark = t->mark; /* the columns of the rows packed so far (the available ones count) */
+  const uint64_t * const X = t->X;
+  const int * const rp = t->mH->p, * const ci = t->mH->i, * const kf = t->kfirst;
+  int cnt = 0;
+  for (int i = 0; i < nu; i++) {
+    const int r = ord[i], kb = kf[r], ke = rp[r + 1];
+    int k = kb;
+    while (k < ke && !(mark[ci[k]] == g && !bit_get(X, ci[k]))) k++;
+    if (k == ke) { /* disjoint from the rows packed so far */
+      if (++cnt > R || cnt + (nu - 1 - i) <= R) return cnt;
+      for (k = kb; k < ke; k++) mark[ci[k]] = g;
+    } else if (cnt + (nu - 1 - i) <= R) {
+      return cnt;
+    }
+  }
+  return cnt;
+}
+
+/* cc_prune=2: the coverage bound b3 (the least t such that the t largest values c_u of the available columns sum to at
+ * least |s|, where c_u is the number of unsatisfied rows of u) and the fractional cover bound b4 (the sum over the
+ * unsatisfied rows r of 1 / max c_u over the available columns u of r); true if one of them exceeds R */
+static bool bnb_cover(cc_walk_t * const t, const int R, const int nu) {
+  const csr_t * const mH = t->mH;
+  const uint32_t g = bnb_next_gen(t);
+  int nt = 0;
+  for (int i = 0; i < nu; i++) {
+    const int r = t->ulist[i];
+    for (int k = t->kfirst[r]; k < mH->p[r + 1]; k++) {
+      const int u = mH->i[k];
+      if (!bnb_free(t, u)) continue;
+      if (t->mark[u] != g) {
+        t->mark[u] = g;
+        t->cv[u] = 0;
+        t->touched[nt++] = u;
+      }
+      t->cv[u]++;
+    }
+  }
+  const int D = t->max_col_wt;
+  int * const hist = t->hist;
+  for (int c = 0; c <= D; c++) hist[c] = 0;
+  for (int i = 0; i < nt; i++) hist[t->cv[t->touched[i]]]++;
+  int need = nu, tc = 0;
+  for (int c = D; c >= 1 && need > 0; c--) {
+    if ((long long)hist[c] * c >= need) {
+      tc += (need + c - 1) / c;
+      need = 0;
+    } else {
+      tc += hist[c];
+      need -= hist[c] * c;
+    }
+  }
+  if (need > 0 || tc > R) return true;
+  double sum = 0.0; /* (the rows in row order: the same sum on every thread) */
+  for (int i = 0; i < nu; i++) {
+    const int r = t->ulist[i];
+    int mx = 0;
+    for (int k = t->kfirst[r]; k < mH->p[r + 1]; k++) {
+      const int u = mH->i[k];
+      if (bnb_free(t, u) && t->cv[u] > mx) mx = t->cv[u];
+    }
+    if (mx == 0) return true;
+    sum += 1.0 / mx;
+    /* the partial sums grow, by at most 1 per row, so that the decision may be known early (the rounding errors are
+     * far smaller than the margins) */
+    if (sum > R + 1e-9) return true;
+    if (sum + (nu - 1 - i) < R + 1e-9 - 1e-7) return false;
+  }
+  return false;
+}
+
+/* The hash slot of the key (a syndrome hash, see cc_hash_t), NULL if no nonzero column has this hash */
+static inline const cc_hash_slot_t *cc_hash_find(const cc_hash_t * const hs, const uint64_t key) {
+  const uint64_t fb = key & hs->bmask;
+  if (!((hs->bits[fb >> 6] >> (fb & 63)) & 1)) return NULL;
+  int j = (int)(key >> hs->tshift);
+  while (hs->tab[j].cnt > 0 && hs->tab[j].key != key) j = (j + 1) & hs->tmask;
+  return (hs->tab[j].cnt > 0) ? &hs->tab[j] : NULL;
+}
+
+/* The leaf level of cc_bnb() (one column left, not a fixed level): the available columns u with h_u = s, found by a
+ * lookup of the hash h of s (verified exactly) */
+static int bnb_leaf(cc_walk_t * const t, const int sw, const uint64_t h) {
+  const cc_hash_slot_t * const sl = cc_hash_find(t->hs, h);
+  if (!sl) return 0;
+  const csr_t * const mHT = t->mHT;
+  for (int k = sl->beg; k < sl->beg + sl->cnt; k++) {
+    const int u = t->hs->cols[k];
+    if (!bnb_avail(t, u)) continue;
+    const int pb = mHT->p[u];
+    if (mHT->p[u + 1] - pb != sw) continue;
+    int x = 0;
+    while (x < sw && bit_get(t->S, mHT->i[pb + x])) x++;
+    if (x < sw) continue;
+    if (!bnb_record_ok(t, 1)) return 0;
+    if (cc_walk_found(t, -1, u)) return 1;
+  }
+  return 0;
+}
+
+/* The last two levels of cc_bnb() (two columns left, not a fixed level): for each available column v of the branching
+ * row r (in column order), the available columns u != v with h_u = s + h_v, found by a lookup of the hash h ^ hc[v]
+ * (verified exactly), give the codewords S + {v, u}, each exactly once (doc/cc_completeness.tex, Proposition "the last
+ * two extensions by a hash table"; the columns v of the earlier branches need not be forbidden: such a column u has
+ * a zero in the row r, unlike v) */
+static int bnb_last2(cc_walk_t * const t, const int sw, const uint64_t h, const int r) {
+  const cc_hash_t * const hs = t->hs;
+  const csr_t * const mH = t->mH;
+  for (int i = t->kfirst[r]; i < mH->p[r + 1]; i++) {
+    const int v = mH->i[i];
+    if (!bnb_free(t, v)) continue;
+    const cc_hash_slot_t * const sl = cc_hash_find(hs, h ^ hs->hc[v]);
+    if (!sl) continue;
+    for (int k = sl->beg; k < sl->beg + sl->cnt; k++) {
+      const int u = hs->cols[k];
+      if (u == v || !bnb_avail(t, u)) continue;
+      if (!cc_sum2_equal(t->S, sw, t->mHT, v, u)) continue; /* a hash collision */
+      if (!bnb_record_ok(t, 2)) return 0;
+      if (cc_walk_found(t, v, u)) return 1;
+    }
+  }
+  return 0;
+}
+
+/* The branch-and-bound recursion at the node (S, F) with S = t->cols[0..w-1] (syndrome t->S of weight sw > 0, hash
+ * h), F = the columns of t->X not in S; returns 1 if the run is to stop.  On return, t->X, t->acnt, and t->fsp are as
+ * on entry. */
+static int cc_bnb(cc_walk_t * const t, const int sw, const uint64_t h) {
+  distfork_ctx_t * const ctx = t->ctx;
+  if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) return 0;
+  const params_t * const p = ctx->p;
+  const int w = t->w;
+  int current_limit = t->w_limit;
+  const int cur_dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+  if (cur_dmax > 0 && p->dW >= 0) current_limit = minint(t->w_limit, cur_dmax + p->dW);
+  const int R = current_limit - w; /* the number of columns left */
+  if (R <= 0 || sw > R * t->max_col_wt) return 0; /* b1 */
+  if (w >= t->count_w) t->nodes++;
+  const bool fixed = (w <= t->nfix); /* a fixed level of the work unit */
+  if (R == 1 && !fixed) return bnb_leaf(t, sw, h);
+  /* the unsatisfied rows, and the branching row: the one with the fewest available columns, the first in row order */
+  const int nwords = (t->m + 63) >> 6;
+  const int * const acnt = t->acnt;
+  int nu = 0, rbest = -1, abest = INT_MAX, amax = 0;
+  if (R == 2 && !fixed) { /* (only the branching row is needed) */
+    for (int k = 0; k < nwords; k++) {
+      uint64_t x = t->S[k];
+      while (x) {
+        const int r = (k << 6) + __builtin_ctzll(x);
+        x &= x - 1;
+        const int a = acnt[r];
+        if (a < abest) {
+          if (a == 0) return 0; /* a dead end */
+          abest = a;
+          rbest = r;
+        }
+      }
+    }
+    return bnb_last2(t, sw, h, rbest);
+  }
+  int * const ulist = t->ulist, * const uacnt = t->uacnt;
+  for (int k = 0; k < nwords; k++) {
+    uint64_t x = t->S[k];
+    while (x) {
+      const int r = (k << 6) + __builtin_ctzll(x);
+      x &= x - 1;
+      const int a = acnt[r];
+      ulist[nu] = r;
+      uacnt[nu++] = a;
+      if (a < abest) {
+        abest = a;
+        rbest = r;
+      }
+      if (a > amax) amax = a;
+    }
+  }
+  if (abest == 0) return 0; /* a dead end */
+  if (sw > R && R >= 3) { /* (the packing has at most |s| rows; with R <= 2, the hash levels are cheaper) */
+    if (bnb_packing(t, R, nu, abest, amax) > R) return 0;
+    /* (with R = 3, the cover bounds rarely prune what the packing leaves, and cost more than they save) */
+    if (t->prune >= 2 && R >= 4 && bnb_cover(t, R, nu)) return 0;
+  }
+  /* the branches: the available columns of the row rbest, in column order */
+  const csr_t * const mH = t->mH;
+  const csr_t * const mHT = t->mHT;
+  int * const brl = t->brl + (size_t)w * (size_t)t->max_row_wt;
+  int q = 0;
+  for (int k = t->kfirst[rbest]; k < mH->p[rbest + 1]; k++) {
+    const int u = mH->i[k];
+    if (bnb_free(t, u)) brl[q++] = u;
+  }
+  const int fsp0 = t->fsp;
+  int i_beg = 0, i_end = q;
+  if (fixed) { /* the branch fix[w-1] only, with the columns of the earlier branches forbidden */
+    const int d = t->fix[w - 1];
+    if (d >= q) return 0;
+    for (int i = 0; i < d; i++) {
+      bnb_take(t, brl[i]);
+      t->fstk[t->fsp++] = brl[i];
+    }
+    i_beg = d;
+    i_end = d + 1;
+  }
+  const int reach = (R - 1) * t->max_col_wt; /* the largest syndrome weight which R - 1 columns can complete */
+  const uint64_t * const hc = t->hs->hc;
+  uint64_t * const S = t->S;
+  int res = 0;
+  for (int i = i_beg; i < i_end && !res; i++) {
+    const int v = brl[i];
+    const int pb = mHT->p[v], pe = mHT->p[v + 1];
+    bnb_take(t, v); /* v is in S in its branch, and in F after it, whatever happens in the branch */
+    t->fstk[t->fsp++] = v;
+    if (sw - (pe - pb) > reach) continue; /* b1 of the branch: its syndrome weight is at least sw - |h_v| */
+    int nset = 0; /* the rows of v in s */
+    for (int k = pb; k < pe; k++) nset += bit_get(S, mHT->i[k]);
+    const int sw1 = sw + (pe - pb) - 2 * nset;
+    if (sw1 == 0) { /* a codeword if the cluster has the weight of the limit; nothing is searched below it */
+      if (R == 1 && bnb_record_ok(t, 1)) res = cc_walk_found(t, -1, v);
+      continue;
+    }
+    if (sw1 > reach) continue;
+    for (int k = pb; k < pe; k++) bit_flip(S, mHT->i[k]);
+    t->cols[t->w++] = v;
+    res = cc_bnb(t, sw1, h ^ hc[v]);
+    t->w--;
+    for (int k = pb; k < pe; k++) bit_flip(S, mHT->i[k]);
+  }
+  while (t->fsp > fsp0) bnb_give(t, t->fstk[--t->fsp]);
+  return res;
+}
+
+/* Set up t->acnt and t->kfirst for col_min = c (S and F empty): the columns u > c of each row.  The start columns
+ * claimed by a worker grow within a round, so that both are updated incrementally from a smaller c (the columns
+ * c' < u <= c are dropped: they are the first columns > c' of their rows); otherwise (a new round, or the expert
+ * `start` list after other units) they are counted again. */
+static void bnb_acnt_setup(cc_walk_t * const t, const int c) {
+  if (t->acnt_col == c) return;
+  if (t->acnt_col != INT_MIN && t->acnt_col < c) {
+    const csr_t * const mHT = t->mHT;
+    for (int u = t->acnt_col + 1; u <= c; u++)
+      for (int k = mHT->p[u]; k < mHT->p[u + 1]; k++) {
+        t->acnt[mHT->i[k]]--;
+        t->kfirst[mHT->i[k]]++;
+      }
+  } else {
+    const csr_t * const mH = t->mH;
+    for (int r = 0; r < t->m; r++) {
+      int k = mH->p[r];
+      while (k < mH->p[r + 1] && mH->i[k] <= c) k++; /* (the columns of a row are sorted) */
+      t->acnt[r] = mH->p[r + 1] - k;
+      t->kfirst[r] = k;
+    }
+  }
+  t->acnt_col = c;
+}
+
+/* The CC work unit from the start column `col` with the branch and bound (cc_prune >= 1, w_limit > 1, see cc_bnb()):
+ * the clusters use only the columns u > col, or with the expert `start` list (unlimited clusters), all columns except
+ * those listed before `col` (`idx`: its position in the list), which are forbidden: a codeword which contains one of
+ * them is found from the first one it contains (doc/cc_completeness.tex, Proposition "start lists").  With
+ * start_scan=1, the listed start columns use only the larger columns, as in the scan of all columns. */
+static void cc_bnb_unit(cc_walk_t * const t, const int col, const int idx, const int w_limit, const int * const fix,
+                        const int nfix) {
+  const params_t * const p = t->ctx->p;
+  const csr_t * const mHT = t->mHT;
+  const bool list = (p->start_num > 0 && !p->start_scan);
+  t->col_min = list ? -1 : col;
+  bnb_acnt_setup(t, t->col_min);
+  t->fsp = 0;
+  if (list) {
+    for (int i = 0; i < idx; i++) {
+      bnb_take(t, p->start_list[i]);
+      t->fstk[t->fsp++] = p->start_list[i];
+    }
+    bnb_take(t, col); /* (with col_min = col, the start column is not available anyway) */
+  }
+  const int pb = mHT->p[col], pe = mHT->p[col + 1];
+  for (int k = pb; k < pe; k++) bit_flip(t->S, mHT->i[k]);
+  t->cols[0] = col;
+  t->w = 1;
+  t->w_limit = w_limit;
+  t->fix = fix;
+  t->nfix = nfix;
+  t->count_w = nfix + 1; /* (see cc_walk_t: count_w - 1 = the first fixed level with only zero digits from there on) */
+  while (t->count_w > 1 && fix[t->count_w - 2] == 0) t->count_w--;
+  cc_bnb(t, pe - pb, t->hs->hc[col]);
+  t->w = 0;
+  for (int k = pb; k < pe; k++) bit_flip(t->S, mHT->i[k]);
+  if (list) bnb_give(t, col);
+  while (t->fsp > 0) bnb_give(t, t->fstk[--t->fsp]);
 }
 
 /* Recursive CC worker function (interruptible), used with smax > 0 (otherwise, cc_walk() explores the same clusters).
@@ -661,8 +1078,9 @@ static int start_CC_recurs_mt(one_vec_t *err, one_vec_t *urr, one_vec_t * const 
   }
   const colmask_t * const mL = p->maskL; /* NULL for a classical code */
   /* Clusters are grown only to columns larger than the start column, except with the expert `start`
-   * list, where clusters are unlimited (columns already in `err` are skipped via `one_ordered_search`). */
-  const int col_min = (p->start_num > 0) ? -1 : urr->vec[0];
+   * list, where clusters are unlimited (columns already in `err` are skipped via `one_ordered_search`),
+   * unless start_scan=1. */
+  const int col_min = (p->start_num > 0 && !p->start_scan) ? -1 : urr->vec[0];
 
   /* Leaf level: w + 1 == current_limit */
   if (w + 1 == current_limit) {
@@ -1225,7 +1643,9 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
   /* with one row of L (known syndromes), the other columns have the same syndrome: only their pairs with the columns
    * with zero syndromes */
   const bool other_pairs = (nl != 1);
+  const bool irred = (p->irred != 0);
   long long int nchk = 0, nhits = 0, nvis = 0, next_poll = RW_PAIRS_POLL; /* nvis: the pairs visited, also skipped */
+  long long int nred = 0; /* irred=1: the pairs of disjoint circuits skipped (reducible sums) */
   for (int b0 = 0; b0 < K;) {
     const uint64_t bkey = srt[b0] >> sh_key;
     int b1 = b0 + 1;
@@ -1258,7 +1678,8 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
         }
         const int y0 = y;
         for (; y < b1; y++) {
-          if ((int)((srt[y] >> ib) & wmask) - wx > lx) break;
+          const int wy = (int)((srt[y] >> ib) & wmask);
+          if (wy - wx > lx) break;
           const rw_pair_t * const ey = ent + (srt[y] & imask);
           if (x >= g0 && ex->known && ey->known && ex->sig == ey->sig) continue;
           const word * const ra = ex->row;
@@ -1268,6 +1689,13 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
           for (int iw = 0; iw < aw - 1 && c <= lx; iw++) c += __builtin_popcountll(ra[iw] ^ rb[iw]);
           if (c <= lx) c += __builtin_popcountll((ra[aw - 1] ^ rb[aw - 1]) & last_mask);
           if (c > lx) continue;
+          /* irred=1: the sum of the two circuits is reducible iff they are disjoint, i.e., the weight of the sum of
+           * their pivot parts is wx + wy (a kernel vector on the pivots and the two columns is a sum of the two
+           * circuits, so that the circuits are the only candidates for a proper subset with zero syndrome) */
+          if (irred && c == wx + wy) {
+            nred++;
+            continue;
+          }
           int cnt = 0;
           ee[cnt++] = ex->col;
           ee[cnt++] = ey->col;
@@ -1292,6 +1720,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, mzd_t * const mH, mzd_t * c
 done:
   *checked += nchk;
   *hits += nhits;
+  if (nred > 0) atomic_fetch_add_explicit(&ctx->cw_red_rw, nred, memory_order_relaxed);
   return l;
 }
 
@@ -1551,6 +1980,11 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
       }
 
       if (cnt > 0 && cnt < limit && (classical || colmask_syndrome_non_zero(maskL, cnt, ee))) {
+        /* irred=1: a reduced row of the sampled subspace is not a circuit, so it can be reducible */
+        if (!cw_irreducible(ctx, ctx->wargs[tid].irr_ws, cnt, ee)) {
+          atomic_fetch_add_explicit(&ctx->cw_red_rw, 1, memory_order_relaxed);
+          continue;
+        }
         rw_record_codeword(ctx, ee, cnt, tid, ksub,
                            (eff_kwin > 0 && eff_kwin < nvar) ? CW_SRC_RW_WINDOW : CW_SRC_RW_UNIFORM);
       }
@@ -1688,8 +2122,36 @@ static void *worker_thread_func(void *arg) {
       walk.cols = calloc(wmax_alloc + 3, sizeof(int));
       walk.cw = calloc(1, sizeof(one_vec_t) + sizeof(int) * (wmax_alloc + 3));
       if (!walk.S || !walk.E || !walk.cols || !walk.cw) ERROR("memory allocation");
+      walk.prune = ctx->p->cc_prune;
+      if (walk.prune > 0) { /* the branch and bound, see cc_bnb() */
+        const int B = (ctx->cc_B > 0) ? ctx->cc_B : 1;
+        walk.max_row_wt = B;
+        walk.acnt_col = INT_MIN;
+        walk.X = calloc((size_t)(nvar / 64 + 2), sizeof(uint64_t));
+        walk.acnt = calloc((size_t)walk.m + 1, sizeof(int));
+        walk.kfirst = calloc((size_t)walk.m + 1, sizeof(int));
+        walk.fstk = malloc(((size_t)nvar + 1) * sizeof(int));
+        walk.brl = malloc((size_t)(wmax_alloc + 3) * (size_t)B * sizeof(int));
+        walk.ulist = malloc(((size_t)walk.m + 1) * sizeof(int));
+        walk.uacnt = malloc(((size_t)walk.m + 1) * sizeof(int));
+        walk.ord = malloc(((size_t)walk.m + 1) * sizeof(int));
+        walk.bcnt = malloc(((size_t)B + 2) * sizeof(int));
+        walk.mark = calloc((size_t)nvar + 1, sizeof(uint32_t));
+        if (!walk.X || !walk.acnt || !walk.kfirst || !walk.fstk || !walk.brl || !walk.ulist || !walk.uacnt ||
+            !walk.ord || !walk.bcnt || !walk.mark)
+          ERROR("memory allocation");
+        if (walk.prune >= 2) {
+          walk.cv = malloc(((size_t)nvar + 1) * sizeof(int));
+          walk.touched = malloc(((size_t)nvar + 1) * sizeof(int));
+          walk.hist = malloc(((size_t)walk.max_col_wt + 2) * sizeof(int));
+          if (!walk.cv || !walk.touched || !walk.hist) ERROR("memory allocation");
+        }
+      }
     }
   }
+
+  /* irred=1: the workspace of the irreducibility test of the codewords found by CC and by the experimental ksub RW */
+  if (ctx->p->irred && (ctx->p->method >= 2 || use_ksub)) warg->irr_ws = cols_ws_init(ctx->p->spaH->rows);
 
   while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
     if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
@@ -1745,7 +2207,8 @@ static void *worker_thread_func(void *arg) {
             if (w > 1) {
               if (swei > 0 && swei <= (w - 1) * ctx->max_col_W + ctx->p->smax) {
                 if (walk.S) {
-                  cc_walk_unit(&walk, col, w, fix, lev);
+                  if (walk.prune > 0) cc_bnb_unit(&walk, col, idx, w, fix, lev);
+                  else cc_walk_unit(&walk, col, w, fix, lev);
                 } else {
                   start_CC_recurs_mt(err, urr, syn, w, ctx->max_col_W,
                                      ctx->p->spaH, ctx->mHT_cc, warg, fix, lev);
@@ -1783,6 +2246,8 @@ static void *worker_thread_func(void *arg) {
           /* CC thread time (added before leaving the round, so the coordinator sees it once the round is over) */
           atomic_fetch_add_explicit(&ctx->cc_busy_ns, (long long)((get_time_sec() - t_join) * 1e9),
                                     memory_order_relaxed);
+          atomic_fetch_add_explicit(&ctx->cc_nodes, walk.nodes, memory_order_relaxed);
+          walk.nodes = 0;
           atomic_fetch_sub_explicit(&ctx->cc_active_workers, 1, memory_order_release);
           did_work = true;
           continue;
@@ -1873,6 +2338,20 @@ static void *worker_thread_func(void *arg) {
   free(walk.E);
   free(walk.cols);
   free(walk.cw);
+  free(walk.X);
+  free(walk.acnt);
+  free(walk.kfirst);
+  free(walk.fstk);
+  free(walk.brl);
+  free(walk.ulist);
+  free(walk.uacnt);
+  free(walk.ord);
+  free(walk.bcnt);
+  free(walk.mark);
+  free(walk.cv);
+  free(walk.touched);
+  free(walk.hist);
+  warg->irr_ws = cols_ws_free(warg->irr_ws);
 
   return NULL;
 }
@@ -2100,6 +2579,7 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
 
     atomic_store(&ctx->cc_target_workers, ctx->num_threads);
     const long long busy_ns0 = atomic_load(&ctx->cc_busy_ns);
+    const long long nodes0 = atomic_load(&ctx->cc_nodes);
     atomic_store(&ctx->cc_next, cc_pack(w, lev, beg * ctx->cc_R[lev]));
     atomic_store(&ctx->cc_round_active, 1);
 
@@ -2118,8 +2598,8 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       char units[64] = "";
       if (lev > 0) snprintf(units, sizeof(units), ", %d work units per start column", ctx->cc_R[lev]);
       if (ctx->p->start_num > 0) {
-        fprintf(stderr, "# searching w=%d with %d CC threads, start list (%d columns)%s%s\n",
-                w, ctx->spawned, ctx->p->start_num, units, note);
+        fprintf(stderr, "# searching w=%d with %d CC threads, start list (%d columns%s)%s%s\n",
+                w, ctx->spawned, ctx->p->start_num, ctx->p->start_scan ? ", start_scan=1" : "", units, note);
       } else {
         fprintf(stderr, "# searching w=%d with %d CC threads, columns [%d, %d]%s%s\n",
                 w, ctx->spawned, beg, end, units, note);
@@ -2155,8 +2635,9 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       if ((ctx->p->debug & DBG_TIMING) && round_completed) {
         char est_str[48] = "unknown";
         if (t_cc_work > 0.0) snprintf(est_str, sizeof(est_str), "%.3g thread-s", t_cc_work);
-        fprintf(stderr, "# CC round w=%d work: %.3g thread-s measured, %s predicted (%.3fs on %d threads)\n", w,
-                ctx->cc_time_per_weight[w], est_str, cc_dur, ctx->spawned);
+        fprintf(stderr, "# CC round w=%d work: %.3g thread-s measured, %s predicted (%.3fs on %d threads), %lld "
+                "nodes\n", w, ctx->cc_time_per_weight[w], est_str, cc_dur, ctx->spawned,
+                atomic_load(&ctx->cc_nodes) - nodes0);
       }
     }
 
@@ -2442,6 +2923,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
 
     atomic_store(&ctx->cc_target_workers, n_cc);
     const long long busy_ns0 = atomic_load(&ctx->cc_busy_ns);
+    const long long nodes0 = atomic_load(&ctx->cc_nodes);
     atomic_store(&ctx->cc_next, cc_pack(w, lev, beg * ctx->cc_R[lev]));
     atomic_store(&ctx->cc_round_active, 1);
 
@@ -2525,7 +3007,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
         char est_str[48] = "unknown";
         if (t_cc_est > 0.0) snprintf(est_str, sizeof(est_str), "%.3g thread-s", t_cc_est);
         fprintf(stderr, "# CC round w=%d work: %.3g thread-s measured, %s predicted (%.3fs, %d CC threads at the "
-                "end)\n", w, ctx->cc_time_per_weight[w], est_str, cc_dur, n_cc);
+                "end), %lld nodes\n", w, ctx->cc_time_per_weight[w], est_str, cc_dur, n_cc,
+                atomic_load(&ctx->cc_nodes) - nodes0);
       }
     }
 
@@ -2708,6 +3191,7 @@ static void print_run_plan(const distfork_ctx_t * const ctx, const int init_dmax
   if (p->method & 2) {
     fprintf(stderr, ", CC from w=%d", p->noscan ? p->wmax : (p->dmin > 1 ? p->dmin : 1));
     if (p->wmax > 0) fprintf(stderr, " to wmax=%d", p->wmax);
+    if (p->smax == 0) fprintf(stderr, " (cc_prune=%d)", p->cc_prune);
     if (p->method == 3 && ctx->dexp > 0) fprintf(stderr, ", dexp=%d", ctx->dexp);
   }
   if (init_dmax > 0) fprintf(stderr, ", dmax=%d", init_dmax);
@@ -3027,6 +3511,9 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.cc_target_workers, 0);
   atomic_init(&ctx.cc_round_active, 0);
   atomic_init(&ctx.cc_busy_ns, 0);
+  atomic_init(&ctx.cc_nodes, 0);
+  atomic_init(&ctx.cw_red_cc, 0);
+  atomic_init(&ctx.cw_red_rw, 0);
   atomic_init(&ctx.next_refresh_step, p->refresh > 0 ? p->refresh : 0);
 
   pthread_mutex_init(&ctx.cw_mutex, NULL);
@@ -3048,8 +3535,10 @@ int main(int argc, char **argv) {
   cc_hash_t * const cc_hash = ((p->method & 2) && p->smax == 0) ? cc_hash_new(ctx.mHT_cc, p->spaH->rows) : NULL;
   ctx.cc_hash = cc_hash;
   if (cc_hash && (p->debug & DBG_TIMING)) {
-    fprintf(stderr, "# CC: bitset syndromes, hash of %d nonzero columns (%d distinct) for the last two levels"
-            " (%d table slots)\n", cc_hash->ncols, cc_hash->nkeys, cc_hash->tmask + 1);
+    fprintf(stderr, "# CC: %s, bitset syndromes, hash of %d nonzero columns (%d distinct) for the last two levels"
+            " (%d table slots)\n", (p->cc_prune == 0) ? "walk of the first unsatisfied row (cc_prune=0)"
+            : ((p->cc_prune == 1) ? "branch and bound (cc_prune=1)" : "branch and bound with the cover bounds "
+               "(cc_prune=2)"), cc_hash->ncols, cc_hash->nkeys, cc_hash->tmask + 1);
   }
   /* CC work units (see `cc_pack()`): radix B = the maximum row weight of H, B^L units per start index */
   ctx.cc_B = csr_max_row_wght(p->spaH);
@@ -3115,6 +3604,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < num_threads; i++) {
     args[i].ctx = &ctx;
     args[i].tid = i;
+    args[i].irr_ws = NULL; /* (allocated by the worker, see worker_thread_func()) */
     for (int k = 0; k < MAX_W; k++) {
       args[i].min_swei[k] = p->spaH->rows + 1;
     }
@@ -3205,6 +3695,10 @@ int main(int argc, char **argv) {
 
   if (p->debug & DBG_SUMMARY) {
     print_codeword_stats(stderr, p);
+    const long long red_cc = atomic_load(&ctx.cw_red_cc), red_rw = atomic_load(&ctx.cw_red_rw);
+    if (red_cc > 0 || red_rw > 0) /* (see cw_irreducible(); a codeword found several times is counted each time) */
+      fprintf(stderr, "# reducible codewords skipped (irred=1, a codeword plus a disjoint nonzero vector with zero "
+              "syndrome): %lld times in CC, %lld times in RW\n", red_cc, red_rw);
     /* RW data for the information-set estimate (see print_rw_infoset_estimate(); also used by the Python wrapper) */
     const long rw_done = atomic_load(&ctx.rw_steps_completed);
     const long rw_unif = atomic_load(&ctx.rw_unif_steps);

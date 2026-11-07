@@ -1,0 +1,4 @@
+%%NZLIST
+% [[292, 22, 23]] 2BGA code C(a, b) over SmallGroup(146,2) = C146: an X-type logical operator of weight d_X = 23
+% (witness_X) a = e0+e15+e74+e95, b = e0+e19+e88+e123; G. Lee, bicycle-race f15fbefbb1475648 (arXiv:2610.13880)
+23 2 9 28 45 54 87 105 106 122 123 139 160 178 191 213 219 223 234 244 263 266 284 285

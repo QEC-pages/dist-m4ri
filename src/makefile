@@ -55,6 +55,8 @@ tags:
 veryclean: clean
 	rm -f dist_m4ri dist_m4ri_old distfork *.exe 
 
+src = dist_m4ri.c dist_rw.c dist_cc.c util_io.c util_m4ri.c mmio.c dist_m4ri.h dist_cc.h util_io.h util_m4ri.h \
+      util_hash.h mmio.h sort.h uthash.h makefile
 zip: ${src}
 	zip -9 -o dist_m4ri.zip ${src} ../Doxyfile ../README.md
 
@@ -70,7 +72,7 @@ give_help:
 	@echo  "\e[36m make tags \e[0m   " "\t to create \e[35m TAGS\e[0m file"
 	@echo
 	@echo  "\e[31m The program does not compile?\e[0m"
-	@echo  "  - Make sure you have '\e[32mlibm4ri_dev\e[0m' on your system."
+	@echo  "  - Make sure you have '\e[32mlibm4ri-dev\e[0m' on your system."
 	@echo  "    Please see '../README.md' for installation instructions."
 	@echo  "  - On a Mac, you may want to disable '\e[32m-march=native\e[0m' compiler switch by running" 
 	@echo  "\t\e[36m make dist_m4ri OPT='-g -mtune=native -O3'\e[0m" 

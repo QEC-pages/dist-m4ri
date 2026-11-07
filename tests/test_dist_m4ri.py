@@ -49,6 +49,51 @@ def test_classical_distance_numpy():
     assert all(len(cw) == 3 for cw in cws)
 
 
+def test_matrix_writer(tmp_path):
+    # a numpy array (or an array-like) or a scipy sparse matrix is written to a temporary MatrixMarket coordinate
+    # pattern file of its entries over GF(2) (since version 0.15.2): an entry is 1 iff its value is odd (floats are
+    # truncated; the duplicate entries of a sparse matrix are summed first, without changing the caller's matrix); up
+    # to _MTX_PY_MAX_NNZ entries, the file is formatted in Python, larger matrices are written by scipy.io.mmwrite
+    def read_back(path):  # (the header, and the matrix as the dist_m4ri binary reads a pattern file)
+        with open(path) as f:
+            banner = f.readline().strip()
+            lines = [ln for ln in f if not ln.startswith("%")]
+        m, n, nnz = map(int, lines[0].split())
+        M = np.zeros((m, n), dtype=np.uint8)
+        for ln in lines[1:]:
+            i, j = map(int, ln.split())
+            M[i - 1, j - 1] += 1
+        assert len(lines) - 1 == nnz and M.max(initial=0) <= 1  # (no duplicate entries)
+        return banner, M
+
+    pattern = "%%MatrixMarket matrix coordinate pattern general"
+    A = np.array([[1, 2, 3, 0], [-1, 0, 5, 4], [0, 0, 0, 0]])
+    expect = np.array([[1, 0, 1, 0], [1, 0, 1, 0], [0, 0, 0, 0]], dtype=np.uint8)
+    for M in (A, A.astype(np.uint8), A % 2 != 0, A.astype(float), A.tolist(), A.T.copy().T, sp.csr_matrix(A),
+              sp.csc_matrix(A), sp.coo_array(A)):
+        banner, B = read_back(dist_m4ri._matrix_to_file(M, temp_dir=str(tmp_path)))
+        assert banner == pattern and np.array_equal(B, expect), type(M)
+    banner, B = read_back(dist_m4ri._matrix_to_file(np.array([[1.5, 2.9, -1.2]]), temp_dir=str(tmp_path)))
+    assert B.tolist() == [[1, 0, 1]]  # (floats truncated: 1, 2, -1)
+    N = sp.csr_matrix((np.array([1, 1, 1, 0]), np.array([1, 1, 2, 3]), np.array([0, 2, 3, 4])), shape=(3, 4))
+    assert not N.has_canonical_format  # (a duplicate entry in row 0, an explicit zero in row 2)
+    banner, M = read_back(dist_m4ri._matrix_to_file(N, temp_dir=str(tmp_path)))
+    assert banner == pattern and M.tolist() == [[0, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 0]]
+    assert N.nnz == 4 and not N.has_canonical_format
+    banner, M = read_back(dist_m4ri._matrix_to_file(np.zeros((2, 5), dtype=np.int8), temp_dir=str(tmp_path)))
+    assert banner == pattern and M.shape == (2, 5) and not M.any()
+    assert dist_m4ri._matrix_to_file(os.path.join(EXAMPLES_DIR, "QX40.mtx")) == os.path.join(EXAMPLES_DIR, "QX40.mtx")
+    with pytest.raises(ValueError, match="two dimensions"):
+        dist_m4ri._matrix_to_file(np.ones(4, dtype=np.int8), temp_dir=str(tmp_path))
+    big = np.random.default_rng(1).random((300, 400)) < 0.6  # more than _MTX_PY_MAX_NNZ entries: scipy.io.mmwrite
+    assert big.sum() > dist_m4ri._MTX_PY_MAX_NNZ
+    path = dist_m4ri._matrix_to_file(big, temp_dir=str(tmp_path))
+    banner, M = read_back(path)
+    assert banner == pattern and np.array_equal(M, big)
+    res = dist_m4ri.run_dist_m4ri(method=1, finH=path, classical=1, steps=20, threads=1, seed=1)
+    assert res[1] > 0  # (the binary reads the file: an upper bound from RW)
+
+
 def test_css_distance_files():
     hx_file = os.path.join(EXAMPLES_DIR, "surf_d5_H.mmx")
     hz_file = os.path.join(EXAMPLES_DIR, "surf_d5_L.mmx")
@@ -606,7 +651,7 @@ def test_cli_morehelp_topic(capsys):
     assert dist_m4ri.main(["--morehelp", "maxC"]) == 0
     assert entries(capsys.readouterr().out) == (
         ["Codeword collection and export:", groups],
-        ["--cws", "outC=FILE", "finC=FILE", "maxC=N", "dW=N", "expand=0|1", "codewords"])
+        ["--cws", "outC=FILE", "finC=FILE", "maxC=N", "dW=N", "irred=0|1", "expand=0|1", "codewords"])
     # several topics (case-insensitive, aliases): in the order of the full help, each section header once
     assert dist_m4ri.main(["--morehelp=SEED,method,v"]) == 0
     assert entries(capsys.readouterr().out) == (["Calculation method:", "General options:"],
@@ -629,7 +674,7 @@ def test_cli_morehelp_topic(capsys):
     assert dist_m4ri.main(["--morehelp", "mthod"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "no help entry for 'mthod'; did you mean method?" in captured.err
+    assert "no help entry for 'mthod'; did you mean method" in captured.err  # (the closest name first, then ortho)
     assert dist_m4ri.main(["--morehelp", "maxC,xyz"]) == 1
     captured = capsys.readouterr()
     assert "maxC=N" in entries(captured.out)[1]
@@ -659,7 +704,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.14.7" in captured.out
+    assert "0.16.0" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -670,7 +715,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.14.7" in captured.out
+    assert "0.16.0" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -689,7 +734,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.14.7" in older_warn
+    assert "expected >= 0.16.0" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -1183,6 +1228,55 @@ def test_run_dist_m4ri_start_list_and_disabled_options(capsys):
     assert "WARNING: start=0,41 (expert option)" in captured.err
 
 
+def test_start_scan_option(tmp_path, capsys):
+    # start_scan=True (expert, with start; since version 0.15.1) is passed as start_scan=1: a cluster grown from a
+    # listed column c only uses the columns > c, as in the scan.  With all columns listed, it finds the same codewords
+    # as the scan (QX150 at the supplied dmin=6); the compute_*_distance() functions and the CLI pass it on, with the
+    # cache key suffix ':start=...:scan'; without a start list, or for a DEM, it is ignored with a warning
+    H, G = os.path.join(EXAMPLES_DIR, "QX150.mtx"), os.path.join(EXAMPLES_DIR, "QZ150.mtx")
+    cws = {}
+    for scan in (False, True):
+        out = str(tmp_path / f"cws_{scan}.nz")
+        res = dist_m4ri.run_dist_m4ri(method=2, finH=H, finG=G, dmin=6, outC=out, threads=2, start_scan=scan,
+                                      start=list(range(150)) if scan else None, verbose=True)
+        assert tuple(res) == (6, 6, 0)
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        assert ("start_scan=1" in run_line) == scan
+        assert ("WARNING: start=0,1,2,3,4,5,6,7,... start_scan=1 (expert options)" in captured.err) == scan
+        cws[scan] = sorted(tuple(cw) for cw in dist_m4ri.read_sparse_vectors(out))
+    assert len(cws[False]) == 500 and cws[False] == cws[True]
+    dist_m4ri.run_dist_m4ri(method=2, finH=H, finG=G, dmin=6, wmax=6, threads=2, start_scan=True)
+    assert "start_scan=1 has no effect without a start list" in capsys.readouterr().err
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    with pytest.raises(ValueError, match="start_scan=1 is not available with fdem"):
+        dist_m4ri.run_dist_m4ri(method=2, fdem=dem_file, wmax=3, start=[0, 7], start_scan=True)
+    dist_m4ri.clear_distance_cache()
+    try:
+        dist_m4ri.compute_quantum_distance(H, G=G, method=2, wmax=6, threads=2, start=[0, 75], start_scan=True,
+                                           debug=dist_m4ri.PY_DBG_COMMANDS)
+        captured = capsys.readouterr()
+        assert "start=0,75 start_scan=1" in captured.out and "start_scan=1 (expert options)" in captured.err
+        assert dist_m4ri.get_cached_distance(H=H, G=G, start=[0, 75], start_scan=True) is not None
+        assert dist_m4ri.get_cached_distance(H=H, G=G, start=[0, 75]) is None
+        dist_m4ri.compute_dem_distance(dem=dem_file, method=2, wmax=3, threads=2, start=[0, 7], start_scan=True,
+                                       debug=dist_m4ri.PY_DBG_COMMANDS)
+        captured = capsys.readouterr()
+        assert "start_scan=1 is not available for a DEM (ignored)" in captured.err
+        assert "start_scan=" not in captured.out
+        assert dist_m4ri.parse_cli_args(["start_scan=1"])["start_scan"] is True
+        assert dist_m4ri.parse_cli_args(["--start-scan"])["start_scan"] is True
+        assert dist_m4ri.parse_cli_args([])["start_scan"] is False
+        assert dist_m4ri.main([f"finH={H}", f"finG={G}", "method=2", "wmax=6", "threads=2", "start=0,75",
+                               "start_scan=1", "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "start=0,75 start_scan=1" in capsys.readouterr().out
+        assert dist_m4ri.main([f"finH={H}", "start=0,75", "start_scan=2", "--no-cache"]) == 1
+        assert "invalid 'start_scan=2': start_scan should be 0 or 1" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
 def test_sort_rows_option(tmp_path, capsys):
     # sort_rows=None leaves the binary's default (rows of H sorted by weight for matrices, not for a DEM); True / False
     # pass sort_rows=1 / sort_rows=0; the distance and the codewords enumerated (outC) do not depend on the row order
@@ -1221,6 +1315,140 @@ def test_sort_rows_option(tmp_path, capsys):
     finally:
         dist_m4ri.enable_distance_cache()
         dist_m4ri.clear_distance_cache()
+
+
+def test_cc_prune_option(tmp_path, capsys):
+    # cc_prune=None leaves the binary's default (1, the branch and bound); 0 / 1 / 2 are passed as cc_prune=N; the
+    # distance and the codewords enumerated (outC) do not depend on it, and with cc_prune=1 or 2 each codeword is found
+    # exactly once (surf_d5 as matrices: with cc_prune=0, codewords with equal columns are found several times)
+    cws = {}
+    for val in (None, 0, 1, 2):
+        out = str(tmp_path / f"cws_{val}.nz")
+        res = dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, threads=2, outC=out, cc_prune=val,
+                                      verbose=True)
+        assert tuple(res) == (5, 5, 0)
+        captured = capsys.readouterr()
+        run_line = [ln for ln in captured.out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        if val is None:
+            assert "cc_prune=" not in run_line
+        else:
+            assert f"cc_prune={val}" in run_line
+        hits = re.search(r"# codewords accumulated: total=(\d+), min_w=5: cws=\d+, total_hits=(\d+),",
+                         captured.out + captured.err)
+        assert hits, captured.err
+        assert (hits.group(1) == hits.group(2)) == (val != 0)
+        cws[val] = sorted(tuple(cw) for cw in dist_m4ri.read_sparse_vectors(out))
+    assert len(cws[None]) > 1 and cws[None] == cws[0] == cws[1] == cws[2]
+    with pytest.raises(ValueError, match="cc_prune should be 0, 1, or 2"):
+        dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, cc_prune=3)
+    # the compute_*_distance() functions and the CLI pass it on (the cache key does not depend on it)
+    dist_m4ri.clear_distance_cache()
+    try:
+        for val in (0, 2):
+            assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, method=2, wmax=5, threads=2, cc_prune=val,
+                                                      debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) == 5
+            assert f"cc_prune={val}" in capsys.readouterr().out
+            dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["cc_prune=0"])["cc_prune"] == 0
+        assert dist_m4ri.parse_cli_args(["--cc-prune", "2"])["cc_prune"] == 2
+        assert dist_m4ri.parse_cli_args([])["cc_prune"] is None
+        assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=5", "threads=2", "--cc-prune", "0",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        assert "cc_prune=0" in capsys.readouterr().out
+        assert dist_m4ri.main([f"finH={S5_H}", "cc_prune=3", "--no-cache"]) == 1
+        assert "invalid 'cc_prune=3': cc_prune should be 0, 1, or 2" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_ortho_option(capsys):
+    # ortho=True (the default): the binary checks that H G^T = 0 (an error for QX40 as both H and G); ortho=False
+    # (expert, since version 0.15.2) passes ortho=0, which skips the check, with the warning of the binary also from the
+    # wrapper (the same result for the orthogonal pair QX150, QZ150); no effect without G (a warning); the
+    # compute_*_distance() functions and the CLI pass it on (the cache key does not depend on it)
+    X40 = os.path.join(EXAMPLES_DIR, "QX40.mtx")
+    H, G = os.path.join(EXAMPLES_DIR, "QX150.mtx"), os.path.join(EXAMPLES_DIR, "QZ150.mtx")
+    ortho_warning = "WARNING: ortho=0 (expert option): the rows of H and G are not checked for orthogonality"
+    with pytest.raises(RuntimeError, match="rows of H and G matrices are not orthogonal"):
+        dist_m4ri.run_dist_m4ri(method=1, finH=X40, finG=X40, steps=100, threads=1)
+    res = dist_m4ri.run_dist_m4ri(method=1, finH=X40, finG=X40, steps=100, threads=1, seed=1, ortho=False,
+                                  debug=dist_m4ri.PY_DBG_COMMANDS)
+    assert res[1] > 0
+    captured = capsys.readouterr()
+    assert "ortho=0" in captured.out and captured.err.count(ortho_warning) == 1
+    assert tuple(dist_m4ri.run_dist_m4ri(method=2, finH=H, finG=G, dmin=6, wmax=6, threads=2, ortho=False)) == (6, 6, 0)
+    assert tuple(dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, threads=2, ortho=False,
+                                         debug=dist_m4ri.PY_DBG_COMMANDS)) == (5, 5, 0)
+    captured = capsys.readouterr()
+    assert "ortho=0 has no effect without G" in captured.err and "ortho=" not in captured.out
+    dist_m4ri.clear_distance_cache()
+    try:
+        assert dist_m4ri.compute_quantum_distance(H, G=G, method=2, dmin=6, wmax=6, threads=2, ortho=False,
+                                                  debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None) == 6
+        captured = capsys.readouterr()
+        assert "ortho=0" in captured.out and captured.err.count(ortho_warning) == 1
+        dist_m4ri.clear_distance_cache()
+        res = dist_m4ri.compute_css_distance(H, G, method=2, dmin=6, wmax=6, threads=2, ortho=False,
+                                             debug=dist_m4ri.PY_DBG_COMMANDS, cache_file=None)
+        assert res[0] == 6
+        captured = capsys.readouterr()
+        assert captured.out.count("ortho=0") == 2 and captured.err.count(ortho_warning) == 1
+        dist_m4ri.clear_distance_cache()
+        assert dist_m4ri.parse_cli_args(["ortho=0"])["ortho"] is False
+        assert dist_m4ri.parse_cli_args([])["ortho"] is True
+        assert dist_m4ri.main([f"finH={H}", f"finG={G}", "method=2", "dmin=6", "wmax=6", "threads=2", "ortho=0",
+                               "--no-cache", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        captured = capsys.readouterr()
+        assert "ortho=0" in captured.out and captured.err.count(ortho_warning) == 1
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        assert dist_m4ri.main([f"fdem={dem_file}", "method=2", "wmax=3", "threads=2", "ortho=0", "--no-cache"]) == 0
+        assert "ortho=0: only used for a quantum code with G" in capsys.readouterr().err
+        assert dist_m4ri.main([f"finH={H}", "ortho=2", "--no-cache"]) == 1
+        assert "invalid 'ortho=2': ortho should be 0 or 1" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+        dist_m4ri.clear_distance_cache()
+
+
+def test_cc_round_stats(capsys):
+    # with debug=8 (bit 8 of the binary), _last_run_stats["cc_rounds"] lists the completed CC rounds (weight, CC thread
+    # time, predicted work, wall time, CC threads, and nodes: the calls of the CC recursion), and "cc_nodes" is the
+    # total of the nodes; the lines of binaries before 0.15.0 have no nodes (no "cc_nodes").  The number of nodes of a
+    # completed round does not depend on the threads (surf_d5: the rounds w=1..4 are completed, the round w=5 stops at
+    # the first codeword; method=2 or method=3 without RW steps)
+    stats = dist_m4ri._parse_stderr_stats(
+        "# CC round w=3: started 2 more threads, 4 in total (work not known)\n"
+        "# CC round w=3 work: 0.00125 thread-s measured, unknown predicted (0.001s on 4 threads), 1956 nodes\n"
+        "# CC round w=4 started: 8 CC threads, 0 RW threads (bounds [4, 0], rem_rw=0, rem_time=0.00s, est 0.002 "
+        "thread-s)\n"
+        "# CC round w=4 work: 1.5e-05 thread-s measured, 0.002 thread-s predicted (0.004s, 8 CC threads at the end), "
+        "24644 nodes\n")
+    assert stats["cc_rounds"] == [
+        {"w": 3, "work": 0.00125, "predicted": None, "time": 0.001, "threads": 4, "nodes": 1956},
+        {"w": 4, "work": 1.5e-05, "predicted": 0.002, "time": 0.004, "threads": 8, "nodes": 24644}]
+    assert stats["cc_nodes"] == 1956 + 24644
+    old = dist_m4ri._parse_stderr_stats(
+        "# CC round w=3 work: 0.001 thread-s measured, unknown predicted (0.001s on 2 threads)\n")
+    assert old["cc_rounds"][0]["nodes"] is None and "cc_nodes" not in old
+    assert "cc_rounds" not in dist_m4ri._parse_stderr_stats("# codewords accumulated: total=0\n")
+    nodes = {}
+    for method, threads in ((2, 1), (2, 2), (3, 2)):
+        res = dist_m4ri.run_dist_m4ri(method=method, finH=S5_H, finL=S5_L, wmax=5, threads=threads, debug=8,
+                                      steps=0 if method == 3 else None)
+        assert tuple(res) == (5, 5, 0)
+        capsys.readouterr()
+        stats = dist_m4ri._last_run_stats
+        rounds = stats["cc_rounds"]
+        assert [r["w"] for r in rounds] == [1, 2, 3, 4]
+        assert all(1 <= r["threads"] <= threads and r["time"] >= 0.0 and r["work"] >= 0.0 for r in rounds)
+        assert rounds[0]["nodes"] == 0 and all(r["nodes"] > 0 for r in rounds[1:])
+        assert stats["cc_nodes"] == sum(r["nodes"] for r in rounds)
+        nodes[(method, threads)] = [r["nodes"] for r in rounds]
+    assert nodes[(2, 1)] == nodes[(2, 2)] == nodes[(3, 2)]
+    dist_m4ri.run_dist_m4ri(method=2, finH=S5_H, finL=S5_L, wmax=5, threads=2, debug=1)
+    capsys.readouterr()
+    assert "cc_rounds" not in dist_m4ri._last_run_stats and "cc_nodes" not in dist_m4ri._last_run_stats
 
 
 def test_win_hyb_option(capsys):
@@ -1359,17 +1587,32 @@ def test_model_lower_bound(tmp_path, capsys):
         b, info = dist_m4ri.compute_model_lower_bound(triv, threads=2, cache_file=None, return_info=True)
         assert b == 1 and info["trivial"] == 1 and (info["groups"], info["groups_final"]) == (1, 1)
         assert "flip an observable but no group of detectors" in capsys.readouterr().err
+        # sort_rows and cc_prune are passed to each run of the binary (the bound does not depend on them)
+        dist_m4ri.clear_distance_cache()  # (the model of the first runs is cached)
+        b = dist_m4ri.compute_model_lower_bound(path, threads=2, cache_file=None, minority=True, sort_rows=False,
+                                                cc_prune=0, debug=dist_m4ri.PY_DBG_COMMANDS)
+        runs = [ln for ln in capsys.readouterr().out.splitlines() if "[dist_m4ri] Running:" in ln]
+        assert b == 3 and len(runs) >= 2 and all("sort_rows=0" in ln and "cc_prune=0" in ln for ln in runs)
         # CLI: the bounds of the circuit (without the cache: the bound alone), the model files; errors and warnings
         assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--no-cache", "threads=2", "--out-model",
                                str(tmp_path / "cli")]) == 0
         assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
         assert os.path.isfile(str(tmp_path / "cli_HR.mtx")) and os.path.isfile(str(tmp_path / "cli_LR.mtx"))
-        from scipy.io import mmread
-        assert mmread(str(tmp_path / "cli_HR.mtx")).shape[0] == 4  # (the measured-basis rows only, the default)
+
+        def mtx_rows(path):  # the number of rows of a MatrixMarket file (its size line; scipy's mmread warns since 1.18)
+            with open(path) as f:
+                return int(next(ln for ln in f if not ln.startswith("%")).split()[0])
+
+        assert mtx_rows(tmp_path / "cli_HR.mtx") == 4  # (the measured-basis rows only, the default)
         assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--model-minority", "--no-cache", "threads=2",
                                "--out-model", str(tmp_path / "clim")]) == 0
         assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
-        assert mmread(str(tmp_path / "clim_HR.mtx")).shape[0] == 8  # (also the minority-basis rows)
+        assert mtx_rows(tmp_path / "clim_HR.mtx") == 8  # (also the minority-basis rows)
+        assert dist_m4ri.main([f"fdem={path}", "--model-lb", "--no-cache", "threads=2", "sort_rows=1", "--cc-prune",
+                               "2", f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+        out = capsys.readouterr().out.strip().splitlines()
+        runs = [ln for ln in out if "[dist_m4ri] Running:" in ln]
+        assert out[-1] == "3 0 0" and runs and all("sort_rows=1" in ln and "cc_prune=2" in ln for ln in runs)
         assert dist_m4ri.main([f"fdem={path}", "model_minority=1", "--no-cache", "threads=2", "method=2"]) == 0
         assert "# Warning: --model-minority: only used with --model-lb; ignored" in capsys.readouterr().err
         dist_m4ri.enable_distance_cache()  # (--no-cache disabled it)
@@ -1467,11 +1710,12 @@ def test_start_list_trust_after_calculation_css(tmp_path):
 
 def test_cli_start_trust_start_and_disabled_options(capsys):
     args = dist_m4ri.parse_cli_args(
-        ["finH=h.mtx", "start=5,1,1", "--trust-start", "noscan=1", "cbeg=2", "cend=3"]
+        ["finH=h.mtx", "start=5,1,1", "--trust-start", "noscan=1", "cbeg=2", "cend=3", "irred=0"]
     )
     assert args["start"] == [1, 5]
     assert args["trust_start"] is True
-    assert (args["noscan"], args["cbeg"], args["cend"]) == (1, 2, 3)
+    assert (args["noscan"], args["cbeg"], args["cend"], args["irred"]) == (1, 2, 3, 0)
+    assert dist_m4ri.parse_cli_args([])["irred"] is None
     assert dist_m4ri.parse_cli_args(["trust_start=0"])["trust_start"] is False
     assert dist_m4ri.parse_cli_args(["trust-start=1"])["trust_start"] is True
     assert dist_m4ri.parse_cli_args(["--trust-start=yes"])["trust_start"] is True
@@ -1487,14 +1731,21 @@ def test_cli_start_trust_start_and_disabled_options(capsys):
         # Disabled options are ignored with a warning; the start list gives the distance with a warning
         ret = dist_m4ri.main([
             f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=7", "noscan=1", "cbeg=30",
-            "start=0,41", "--no-cache", "threads=2"
+            "start=0,41", "--no-cache", "threads=2", "irred=0"
         ])
         assert ret == 0
         captured = capsys.readouterr()
         assert "5 5 0 (exact)" in captured.out
         assert "noscan=1 is disabled in the Python interface" in captured.err
         assert "cbeg=30 is disabled in the Python interface" in captured.err
+        assert "irred=0 is disabled in the Python interface" in captured.err
         assert "WARNING: start=0,41 (expert option)" in captured.err
+        # irred=1 (the binary's default) is accepted silently
+        ret = dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=2", "wmax=7", "--no-cache", "irred=1"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "5 5 0 (exact)" in captured.out
+        assert "irred" not in captured.err
     finally:
         dist_m4ri.enable_distance_cache()
 
@@ -2343,6 +2594,92 @@ def test_classify_qubits_checks_measured_in_hadamard_frame():
         assert t_res["z_ancillas"] == [9, 10, 11, 12] and t_res["x_ancillas"] == [13, 14, 15, 16]
         _, stripped, kept = dist_m4ri.strip_minority_detectors(circ, "Z", thorough_res=t_res)
         assert (stripped, kept) == (8, 16)
+
+
+def test_explain_bounds_model_check_needs_hit_counts():
+    # the "Model check" compares the observed hits with the uniform model: only if the binary counted the hits
+    # (min_hits > 0); with min_hits=0, every codeword has a single hit, and no model check is printed
+    stats = {"rw_n": 40, "rw_rank": 20, "rw_steps_uniform": 1000, "rw_steps": 1000, "min_w": 6, "hits_avg": 1.0}
+    assert "Model check" not in dist_m4ri.explain_bounds([1, 6, 1000], method=1, stats=stats)
+    assert "Model check" in dist_m4ri.explain_bounds([1, 6, 1000], method=1, stats=dict(stats, min_hits=5))
+
+
+def test_refresh_passed_to_binary(capsys):
+    # refresh=0 is passed to the binary (no basis refresh of the experimental ksub RW, whose default is 5000), and the
+    # default refresh=None passes nothing
+    H = os.path.join(EXAMPLES_DIR, "c96H.mmx")
+    for refresh in (0, None):
+        dist_m4ri.run_dist_m4ri(method=1, finH=H, steps=10, threads=1, refresh=refresh,
+                                debug=dist_m4ri.PY_DBG_COMMANDS)
+        assert (" refresh=0" in capsys.readouterr().out) == (refresh is not None)
+
+
+def test_css_and_quantum_distance_inputs():
+    # array-likes such as lists of rows are accepted by compute_css_distance() (the Steane code [[7, 1, 3]])
+    H = [[1, 0, 0, 1, 1, 0, 1], [0, 1, 0, 1, 0, 1, 1], [0, 0, 1, 0, 1, 1, 1]]
+    assert dist_m4ri.compute_css_distance(Hx=H, Hz=H, num_steps=100)[0] == 3
+    # G and L together are rejected (the binary accepts only one of them)
+    with pytest.raises(ValueError, match="not both"):
+        dist_m4ri.compute_quantum_distance(H, G=H, L=[[1] * 7])
+
+
+def test_kwin_negative_turns_windows_off(capsys):
+    # kwin=-1 (any negative value): no windows, uniform random permutations in every RW step; passed to the binary
+    H = os.path.join(EXAMPLES_DIR, "c96H.mmx")
+    dist_m4ri.run_dist_m4ri(method=1, finH=H, steps=10, threads=1, kwin=-1, debug=dist_m4ri.PY_DBG_COMMANDS)
+    assert " kwin=-1" in capsys.readouterr().out
+    use_cache = dist_m4ri._use_distance_cache
+    dist_m4ri.disable_distance_cache()
+    try:
+        dist_m4ri.compute_classical_distance(H, method=1, num_steps=10, kwin=-1, debug=dist_m4ri.PY_DBG_COMMANDS)
+        assert " kwin=-1" in capsys.readouterr().out
+    finally:
+        if use_cache:
+            dist_m4ri.enable_distance_cache()
+
+
+def test_codedistance_unused_defaults():
+    # the defaults of _CODEDISTANCE_UNUSED are those of the compute_*() functions
+    import inspect
+    for func in (dist_m4ri.compute_classical_distance, dist_m4ri.compute_quantum_distance,
+                 dist_m4ri.compute_css_distance, dist_m4ri.compute_dem_distance):
+        params = inspect.signature(func).parameters
+        for name, default in dist_m4ri._CODEDISTANCE_UNUSED.items():
+            if name in params:
+                assert params[name].default == default, (func.__name__, name)
+
+
+def test_ignored_inputs_warnings(tmp_path, capsys, monkeypatch):
+    # the inputs which are ignored give a warning on stderr, unless --silent (in Python: set_silent())
+    other = tmp_path / "notes.txt"
+    other.write_text("x")
+    args = dist_m4ri.parse_cli_args(["fdem=c.stim", "--model-lb", "kwin=5", "min_hits=0", "css=1", str(other)])
+    dist_m4ri._warn_cli_conflicts(args)
+    err = capsys.readouterr().err
+    assert "kwin=, min_hits=: not used with --model-lb; ignored" in err
+    assert "css=1: not used by the Python interface" in err and f"{other}: a positional file" in err
+    H = os.path.join(EXAMPLES_DIR, "c96H.mmx")
+    try:
+        for silent in (False, True):
+            argv = [f"finH={H}", "css=1", "method=1", "steps=10", "--no-cache"] + (["--silent"] if silent else [])
+            assert dist_m4ri.main(argv) == 0
+            assert ("css=1" in capsys.readouterr().err) == (not silent)
+    finally:
+        dist_m4ri.enable_distance_cache()
+    # solver="codedistance" does not use the options of the binary (the solver itself is not run here)
+    def no_codedistance():
+        raise RuntimeError("codedistance not run")
+    monkeypatch.setattr(dist_m4ri, "_get_codedistance", no_codedistance)
+    with pytest.raises(RuntimeError, match="not run"):
+        dist_m4ri.compute_classical_distance(H, solver="codedistance", threads=4, kwin=-1)
+    assert "threads=, kwin=: not used with solver='codedistance'; ignored" in capsys.readouterr().err
+    dist_m4ri.set_silent(True)
+    try:
+        with pytest.raises(RuntimeError, match="not run"):
+            dist_m4ri.compute_classical_distance(H, solver="codedistance", threads=4)
+        assert "not used" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.set_silent(False)
 
 
 if __name__ == "__main__":

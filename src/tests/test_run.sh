@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.14.7" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.16.0" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.14.7" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.16.0" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -760,7 +760,8 @@ assert_output "$BIN_FORK method=2 $S5 pmin=0.01 wmax=5 threads=2 debug=0" 255 ""
 # Test 97: CC work units: with few start columns per thread, the start columns of a CC round are split into work units
 # which also fix the first cluster extensions (here: the round at a supplied dmin, of unknown work).  The units find
 # all codewords of weight 6 of the [[150,32,6]] code once each (500 codewords, 500 hits), as whole start columns do;
-# also with the expert start list (59 codewords; one of them contains two listed columns: 60 hits) and in method=3
+# also with the expert start list (59 codewords, 59 hits; with cc_prune=0, one of them, which contains two listed
+# columns, is found from both: 60 hits) and in method=3
 QX97="finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx"
 CWS97=$(mktemp --suffix=.nz)
 assert_output "$BIN_FORK method=2 $QX97 dmin=6 outC=$CWS97 threads=8 nothrottle=1 debug=8" 0 "^6 6 0$" \
@@ -769,6 +770,8 @@ for thr in "threads=1" "threads=8 nothrottle=1"; do
     assert_output "$BIN_FORK method=2 $QX97 dmin=6 outC=$CWS97 $thr debug=1" 0 "^6 6 0$" \
         "^# codewords accumulated: total=500, min_w=6: cws=500, total_hits=500,"
     assert_output "$BIN_FORK method=2 $QX97 dmin=6 start=0,7,77 outC=$CWS97 $thr debug=1" 0 "^6 6 0$" \
+        "^# codewords accumulated: total=59, min_w=6: cws=59, total_hits=59,"
+    assert_output "$BIN_FORK method=2 $QX97 dmin=6 start=0,7,77 outC=$CWS97 $thr cc_prune=0 debug=1" 0 "^6 6 0$" \
         "^# codewords accumulated: total=59, min_w=6: cws=59, total_hits=60,"
 done
 assert_output "$BIN_FORK method=3 $QX97 dmin=6 steps=0 outC=$CWS97 threads=8 nothrottle=1 debug=8" 0 "^6 6 0$" \
@@ -780,11 +783,11 @@ rm -f "$CWS97"
 # Test 98: thread allocation: method=2 starts 4 threads, and the others for a CC round predicted to take longer (all at
 # once with nothrottle=1); the default number of threads is the number of CPUs available (CPU affinity mask)
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=2" 0 "^5 5 0$" \
-    "^# run plan: method=2 \(CC\), 8 threads \(4 at first\), CC from w=1 to wmax=5,"
+    "^# run plan: method=2 \(CC\), 8 threads \(4 at first\), CC from w=1 to wmax=5 \(cc_prune=1\),"
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 debug=8" 0 "^5 5 0$" \
     "^# CC round w=[345]: started 4 more threads, 8 in total \("
 assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=8 nothrottle=1 debug=2" 0 "^5 5 0$" \
-    "^# run plan: method=2 \(CC\), 8 threads, CC from w=1 to wmax=5,"
+    "^# run plan: method=2 \(CC\), 8 threads, CC from w=1 to wmax=5 \(cc_prune=1\),"
 if command -v taskset > /dev/null && [ "$(nproc --all)" -ge 2 ]; then
     assert_output "taskset -c 0,1 $BIN_FORK method=1 $S5 steps=100 debug=2" 0 "^1 [0-9]+ [0-9]+$" \
         "^# run plan: method=1 \(RW\), 2 threads, steps=100,"
@@ -804,19 +807,20 @@ assert_output "$BIN_FORK method=1 $S7 $RW99 debug=1" 0 "^1 7 400$" \
 assert_output "$BIN_FORK method=1 $S7 $RW99 debug=8" 0 "^1 7 400$" \
     "^# \[thread 0\] RW elimination: (blocked|column by column) \(blocked: [0-9.]+x the time of column by column\)$"
 
-# Test 100: CC with bitset syndromes and a hash lookup for the last column of a cluster (smax=0, the default) finds the
-# same codewords with the same hit counts as the recursion on sorted syndrome lists (smax>0), also with duplicate
-# columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a codeword of weight 5 is found up to 5 times), with
-# the rows of H in the input order (sort_rows=0) and sorted by weight (the default for matrices: other hit counts)
+# Test 100: CC with bitset syndromes and a hash lookup for the last column of a cluster (smax=0, the default; here the
+# walk of the first unsatisfied row, cc_prune=0) finds the same codewords with the same hit counts as the recursion on
+# sorted syndrome lists (smax>0), also with duplicate columns of H (surf_d5 circuit DEM: 1958 columns, 1679 distinct; a
+# codeword of weight 5 is found up to 5 times), with the rows of H in the input order (sort_rows=0) and sorted by weight
+# (the default for matrices: other hit counts)
 CWS100=$(mktemp --suffix=.nz)
 for sm in 0 3; do
-    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 sort_rows=0 debug=1" 0 \
-        "^5 5 0$" "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
-    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 debug=1" 0 "^5 5 0$" \
-        "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18063,"
+    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 sort_rows=0 cc_prune=0 \
+debug=1" 0 "^5 5 0$" "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18147,"
+    assert_output "$BIN_FORK method=2 $S5 wmax=5 smax=$sm outC=$CWS100 threads=8 nothrottle=1 cc_prune=0 debug=1" 0 \
+        "^5 5 0$" "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18063,"
 done
 assert_output "$BIN_FORK method=2 $S5 wmax=3 threads=2 debug=8" 0 "^4 0 0$" \
-    "^# CC: bitset syndromes, hash of 1958 nonzero columns \(1679 distinct\) for the last two levels"
+    "^# CC: branch and bound \(cc_prune=1\), bitset syndromes, hash of 1958 nonzero columns \(1679 distinct\) for the"
 rm -f "$CWS100"
 
 # Test 101: the components of a decomposed DEM error (separated by `^`) are summed mod 2: a detector (here D1) or an
@@ -927,8 +931,8 @@ if [ "$GOT104" != "$EXP104" ]; then
     FAILED=1
 fi
 GOT104=$("$BIN_FORK" --help maxC | help_outline)
-EXP104=$(printf '%s\n' "Codeword collection and export:" "outC=[file]" "finC=[file]" "maxC=[int]" "dW=[int]" "-" \
-    "$GROUPS104" "codewords")
+EXP104=$(printf '%s\n' "Codeword collection and export:" "outC=[file]" "finC=[file]" "maxC=[int]" "dW=[int]" \
+    "irred=[0|1]" "-" "$GROUPS104" "codewords")
 echo "Running: $BIN_FORK --help maxC (the codewords group)"
 if [ "$GOT104" != "$EXP104" ]; then
     echo "  [FAIL] Got: $GOT104"
@@ -1159,6 +1163,186 @@ for pr in -2 65; do
     assert_output "$BIN_FORK $S5 $RW108 pairs=$pr" 255 "" \
         "invalid 'pairs=$pr': pairs should be -1 \(auto\), 0 \(off\), or 1 to 64 \(random pivot rows of the buckets\)"
 done
+
+# Test 109: irred=1 (the default) records only irreducible codewords, not the union of a codeword and a disjoint nonzero
+# vector with zero syndrome; the surface-code DEM has trivial codewords of weight 3, so that reducible codewords appear
+# from the weight d+3 = 6 on.  The CC rounds w = 3..6 export 21, 100, 356, and 1198 codewords (with irred=0, also the
+# reducible ones found: 1300 of weight 6 with cc_prune=0, 1264 with the branch and bound); RW with the pairs (one
+# thread, a fixed seed) finds the same 1675 codewords (with irred=0, also reducible sums of two disjoint circuits); a
+# reducible finC codeword is replaced by an irreducible part (c96H: the union of two disjoint codewords of weight 6),
+# also by dist_m4ri_old; irred is 0 or 1
+CWS109=$(mktemp --suffix=.nz)
+FIN109=$(mktemp --suffix=.nz)
+cnt109() {  # the numbers of codewords of each weight in an .nz file, e.g., "3:21 4:100 "
+    grep -v '^%' "$1" | awk '{n[$1]++} END {for (w in n) printf "%s:%d\n", w, n[w]}' | sort -n | tr '\n' ' '
+}
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=6 dW=3 outC=$CWS109 threads=4 debug=1" 0 \
+    "^3 3 0$" "^# reducible codewords skipped \(irred=1, .*\): [0-9]+ times in CC, 0 times in RW$"
+echo "Running Test 109: the irreducible codewords of weight 3..6 found by CC: $(cnt109 "$CWS109")"
+if [ "$(cnt109 "$CWS109")" != "3:21 4:100 5:356 6:1198 " ]; then
+    echo "  [FAIL] Test 109: expected 3:21 4:100 5:356 6:1198"
+    FAILED=1
+fi
+for pr in 0 1; do
+    assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=6 dW=3 outC=$CWS109 threads=4 irred=0 \
+cc_prune=$pr debug=1" 0 "^3 3 0$" "irred=0 \(expert option\): reducible codewords are also recorded"
+    if [ "$(cnt109 "$CWS109")" != "3:21 4:100 5:356 6:$([ $pr = 0 ] && echo 1300 || echo 1264) " ]; then
+        echo "  [FAIL] Test 109: irred=0 cc_prune=$pr: $(cnt109 "$CWS109")"
+        FAILED=1
+    fi
+done
+for ir in 1 0; do
+    assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=3000 min_hits=0 dW=3 threads=1 seed=5 \
+irred=$ir outC=$CWS109 debug=1" 0 "^1 3 3000$" ""
+    N109=$(grep -vc '^%' "$CWS109")
+    echo "Running Test 109: RW with the pairs, irred=$ir: $N109 codewords"
+    if { [ $ir = 1 ] && [ "$N109" != 1675 ]; } || { [ $ir = 0 ] && [ "$N109" -le 1675 ]; }; then
+        echo "  [FAIL] Test 109: RW with irred=$ir exported $N109 codewords"
+        FAILED=1
+    fi
+done
+printf '%%%%NZLIST\n%% the union of two disjoint codewords of weight 6 of c96H\n%s\n' \
+    "12 18 21 25 46 50 59 60 63 64 76 91 93" > "$FIN109"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/c96H.mmx classical=1 finC=$FIN109 threads=1 debug=33" 0 \
+    "^6 6 0$" "min weight 6; 1 reducible codewords replaced by an irreducible part \(irred=1\)"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/c96H.mmx classical=1 finC=$FIN109 threads=1 irred=0 debug=33" 0 \
+    "^6 6 0$" "^# read 1 codewords from .*, total 1, min weight 12$"
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/c96H.mmx classical=1 finC=$FIN109 wmax=6 debug=1" 0 "" \
+    "min weight 6; 1 reducible codewords replaced by an irreducible part \(irred=1\)"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 irred=2" 255 "" \
+    "invalid 'irred=2': irred should be 0 or 1"
+rm -f "$CWS109" "$FIN109"
+
+# Test 110: the CC search: cc_prune=0 (the walk of the first unsatisfied row), 1 (the default: the branch and bound),
+# and 2 (also the cover bounds) find the same codewords and distances, and with cc_prune=1 or 2 each codeword exactly
+# once (one CC hit): the surf_d5 circuit DEM as matrices (equal columns: with cc_prune=0, a codeword is found up to 5
+# times), the CC rounds w = 3..6 of the surface-code DEM, c96H, and the work units (fixed levels) on 8 threads, also
+# with the expert start list (see Test 97); noscan=1 dmin=wmax; cc_prune is 0, 1, or 2
+CWS110=$(mktemp --suffix=.nz)
+CWS110B=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS110 threads=8 nothrottle=1 cc_prune=0 debug=1" 0 "^5 5 0$" \
+    "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18063,"
+grep -v '^%' "$CWS110" | sort > "$CWS110B"
+for pr in 1 2; do
+    assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS110 threads=8 nothrottle=1 cc_prune=$pr debug=1" 0 \
+        "^5 5 0$" "^# codewords accumulated: total=18043, min_w=5: cws=18043, total_hits=18043,"
+    if ! cmp -s <(grep -v '^%' "$CWS110" | sort) "$CWS110B"; then
+        echo "  [FAIL] Test 110: other codewords with cc_prune=$pr than with cc_prune=0 (surf_d5)"
+        FAILED=1
+    fi
+    assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=6 dW=3 outC=$CWS110 threads=4 cc_prune=$pr \
+debug=1" 0 "^3 3 0$" ""
+    if [ "$(cnt109 "$CWS110")" != "3:21 4:100 5:356 6:1198 " ]; then
+        echo "  [FAIL] Test 110: surf_d3 with cc_prune=$pr: $(cnt109 "$CWS110")"
+        FAILED=1
+    fi
+done
+C96="finH=$EXAMPLES_DIR/c96H.mmx classical=1"
+assert_output "$BIN_FORK method=2 $C96 wmax=8 dW=2 outC=$CWS110 threads=4 cc_prune=0 debug=0" 0 "^6 6 0$" ""
+grep -v '^%' "$CWS110" | sort > "$CWS110B"
+for pr in 1 2; do
+    assert_output "$BIN_FORK method=2 $C96 wmax=8 dW=2 outC=$CWS110 threads=4 cc_prune=$pr debug=0" 0 "^6 6 0$" ""
+    if ! cmp -s <(grep -v '^%' "$CWS110" | sort) "$CWS110B" || [ "$(wc -l < "$CWS110B")" != 27 ]; then
+        echo "  [FAIL] Test 110: other codewords with cc_prune=$pr than with cc_prune=0 (c96H, 27 codewords)"
+        FAILED=1
+    fi
+    assert_output "$BIN_FORK method=2 $QX97 dmin=6 outC=$CWS110 threads=8 nothrottle=1 cc_prune=$pr debug=9" 0 \
+        "^6 6 0$" "^# codewords accumulated: total=500, min_w=6: cws=500, total_hits=500,"
+    assert_output "$BIN_FORK method=2 $QX97 dmin=6 outC=$CWS110 threads=8 nothrottle=1 cc_prune=$pr debug=8" 0 \
+        "^6 6 0$" "^# searching w=6 with 8 CC threads, columns \[0, 144\], [0-9]+ work units per start column$"
+    assert_output "$BIN_FORK method=2 $QX97 dmin=6 start=0,7,77 outC=$CWS110 threads=8 nothrottle=1 cc_prune=$pr \
+debug=1" 0 "^6 6 0$" "^# codewords accumulated: total=59, min_w=6: cws=59, total_hits=59,"
+done
+assert_output "$BIN_FORK method=2 $QX97 noscan=1 dmin=6 wmax=6 threads=4 debug=0" 0 "^6 6 0$" ""
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 threads=4 cc_prune=3" 255 "" \
+    "invalid 'cc_prune=3': cc_prune should be 0, 1, or 2"
+rm -f "$CWS110" "$CWS110B"
+
+# Test 111: the number of nodes of a completed CC round (debug&8: the calls of the CC recursion) does not depend on the
+# threads: a node at a fixed level of the work units, visited by all the units with the same earlier branches, is
+# counted once (QX150 at the supplied dmin=6, completed with outC; 1 thread, 5 or 25 work units per start column, and
+# method=3 without RW steps)
+CWS111=$(mktemp --suffix=.nz)
+for pr in 0 1; do
+    N111=""
+    for run in "method=2 threads=1" "method=2 threads=8 nothrottle=1" "method=2 threads=32 nothrottle=1" \
+               "method=3 steps=0 threads=8 nothrottle=1"; do
+        N111="$N111 $($BIN_FORK $run $QX97 dmin=6 outC=$CWS111 cc_prune=$pr debug=8 2>&1 | \
+            sed -n 's/^# CC round w=6 work: .*, \([0-9][0-9]*\) nodes$/\1/p')"
+    done
+    echo "Running Test 111: the nodes of the CC round w=6 with cc_prune=$pr:$N111"
+    if ! echo "$N111" | grep -q '^ \([0-9][0-9]*\) \1 \1 \1$'; then
+        echo "  [FAIL] Test 111: the number of nodes depends on the threads (cc_prune=$pr):$N111"
+        FAILED=1
+    fi
+done
+rm -f "$CWS111"
+
+# Test 112: start_scan=1 (expert, with start): a cluster grown from a listed column c only uses the columns > c, as in
+# the scan.  With all columns listed, the same codewords and hits as the scan (QX150 at the supplied dmin=6, also
+# with cc_prune=0, and with smax=1, the old kernel).  The BB code gross ([[144,12,12]], a two-block group-algebra code
+# over the abelian group C12 x C6, l = 72): start=0,72 start_scan=1 gives d = 12 with fewer CC nodes than start=0,72.
+# Errors: a value other than 0 or 1, no start list, fdem
+CWS112=$(mktemp --suffix=.nz)
+ALL112=$(seq -s, 0 149)
+cc112() { # the codewords found (a checksum of the sorted list) and the totals of the codewords and of their hits
+    $BIN_FORK method=2 $QX97 dmin=6 outC=$CWS112 threads=4 "$@" debug=1 2>&1 >/dev/null | \
+        sed -n 's/^# codewords accumulated: \(total=[0-9]*, min_w=[0-9]*: cws=[0-9]*, total_hits=[0-9]*\),.*/\1/p'
+    grep -v '^%' "$CWS112" | sort | cksum
+}
+for opt in "cc_prune=1" "cc_prune=0" "smax=1"; do
+    A112=$(cc112 $opt)
+    B112=$(cc112 $opt start=$ALL112 start_scan=1)
+    echo "Running Test 112: start_scan=1 with all 150 columns listed, $opt: $(echo "$A112" | head -1)"
+    if [ -z "$A112" ] || [ "$A112" != "$B112" ]; then
+        echo "  [FAIL] Test 112: start_scan=1 with all columns listed differs from the scan ($opt): $B112"
+        FAILED=1
+    fi
+done
+rm -f "$CWS112"
+GROSS112="finH=$WS_ROOT/benchmark/css/gross_144_12_12_Hx.mtx finG=$WS_ROOT/benchmark/css/gross_144_12_12_Hz.mtx"
+assert_output "$BIN_FORK method=2 $GROSS112 start=0,72 start_scan=1 threads=4 debug=8" 0 "^12 12 0$" \
+    "^# searching w=11 with 4 CC threads, start list \(2 columns, start_scan=1\)"
+N112=""
+for opt in "" "start_scan=1"; do
+    N112="$N112 $($BIN_FORK method=2 $GROSS112 wmax=11 start=0,72 $opt threads=4 debug=8 2>&1 | \
+        sed -n 's/^# CC round w=11 work: .*, \([0-9][0-9]*\) nodes$/\1/p')"
+done
+echo "Running Test 112: the nodes of the CC round w=11 of gross with start=0,72, without and with start_scan=1:$N112"
+read -r N112A N112B N112C <<< "$N112"
+if [ -z "$N112B" ] || [ -n "$N112C" ] || [ "$N112B" -ge "$N112A" ]; then
+    echo "  [FAIL] Test 112: start_scan=1 did not reduce the nodes:$N112"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 start=0,7 start_scan=2" 255 "" \
+    "invalid 'start_scan=2': start_scan should be 0 or 1"
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 start_scan=1" 255 "" "start_scan=1 needs a start list"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 start=0,7 start_scan=1" 255 "" \
+    "start_scan=1 is not available with fdem"
+
+# Test 113: the orthogonality check of finG (ortho=1, the default): H G^T = 0 is required (QX40 as both H and G is not
+# self-orthogonal: an error, also in dist_m4ri_old); ortho=0 (expert) skips the check, with a warning: the same result
+# for an orthogonal pair (QX150 with QZ150 at the supplied dmin=6), and no error for QX40 with itself (the result is not
+# valid; a build without -DNDEBUG verifies the orthogonality again when constructing L); ignored without finG (finL, a
+# DEM), with a warning; ortho is 0 or 1
+X113="finH=$EXAMPLES_DIR/QX40.mtx finG=$EXAMPLES_DIR/QX40.mtx"
+assert_output "$BIN_FORK method=1 steps=100 seed=1 threads=1 $X113 debug=0" 255 "" \
+    "rows of H and G matrices are not orthogonal"
+assert_output "$BIN method=1 steps=10 $X113 debug=0" 255 "" "rows of H and G matrices are not orthogonal"
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 wmax=6 threads=4 ortho=0 debug=0" 0 "^6 6 0$" \
+    "^# WARNING: ortho=0 \\(expert option\\): the rows of H and G are not checked for orthogonality$"
+ERR113=$($BIN_FORK method=1 steps=100 seed=1 threads=1 $X113 ortho=0 debug=0 2>&1 >/dev/null)
+echo "Running Test 113: ortho=0 with QX40 as both H and G"
+if ! echo "$ERR113" | grep -q "^# WARNING: ortho=0 (expert option)" || \
+        echo "$ERR113" | grep -q "rows of H and G matrices are not orthogonal"; then
+    echo "  [FAIL] Test 113: ortho=0 did not skip the orthogonality check: $ERR113"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=2 ortho=0 debug=0" 0 "^5 5 0$" \
+    "^# WARNING: ortho=0 is ignored without finG"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 ortho=0 debug=0" 0 "^3 3 0$" \
+    "^# WARNING: ortho=0 is ignored without finG"
+assert_output "$BIN_FORK method=2 $QX97 dmin=6 wmax=6 ortho=2" 255 "" "invalid 'ortho=2': ortho should be 0 or 1"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

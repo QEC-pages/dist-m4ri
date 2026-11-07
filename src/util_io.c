@@ -36,8 +36,10 @@ params_t prm={
   .drop_A=0,
   .sort_rows=-1, /* (auto: 1 for matrices, 0 for a DEM) */
   .rows_sorted=0,
+  .cc_prune=1,
   .start_list=NULL,
   .start_num=0,
+  .start_scan=0,
   .cbeg=-1,
   .cend=-1,
   .seed=0,
@@ -53,6 +55,8 @@ params_t prm={
   .dW=0,
   .finC=NULL,
   .outC=NULL,
+  .irred=1,
+  .ortho=1,
   .codewords=NULL,
   .num_cws=0,
   .min_w=INT_MAX,
@@ -265,6 +269,8 @@ static void print_input_summary(FILE *stream, const params_t * const p){
     print_matrix_summary(stream, "G", p->spaG, "");
   if (p->spaL)
     print_matrix_summary(stream, "L", p->spaL, p->fdem ? " (observables)" : (p->finL ? "" : " (from H and G)"));
+  if (!p->irred)
+    fprintf(stream, "#   irred=0 (expert option): reducible codewords are also recorded, as before version 0.14.8\n");
 }
 
 /** @brief Rank of a binary CSR matrix (dense elimination) */
@@ -898,6 +904,13 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, start_num=%d\n",argv[i],p->start_num);
     }
+    else if (sscanf(argv[i],"start_scan=%d",&dbg)==1){ /** clusters from a listed start column c use only columns > c */
+      if (dbg != 0 && dbg != 1)
+        ERROR("invalid '%s': start_scan should be 0 or 1\n", argv[i]);
+      p->start_scan=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, start_scan=%d\n",argv[i],p->start_scan);
+    }
     else if (sscanf(argv[i],"cbeg=%d",&dbg)==1){
       p->cbeg=dbg;
       if (p->debug & DBG_ARGS)
@@ -952,6 +965,27 @@ void var_init(int argc, char **argv, params_t * const p){
       p->sort_rows=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, sort_rows=%d\n",argv[i],p->sort_rows);
+    }
+    else if (sscanf(argv[i],"irred=%d",&dbg)==1){
+      if ((dbg != 0) && (dbg != 1))
+        ERROR("invalid '%s': irred should be 0 or 1\n", argv[i]);
+      p->irred=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, irred=%d\n",argv[i],p->irred);
+    }
+    else if (sscanf(argv[i],"ortho=%d",&dbg)==1){
+      if ((dbg != 0) && (dbg != 1))
+        ERROR("invalid '%s': ortho should be 0 or 1\n", argv[i]);
+      p->ortho=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, ortho=%d\n",argv[i],p->ortho);
+    }
+    else if (sscanf(argv[i],"cc_prune=%d",&dbg)==1){
+      if ((dbg < 0) || (dbg > 2))
+        ERROR("invalid '%s': cc_prune should be 0, 1, or 2\n", argv[i]);
+      p->cc_prune=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, cc_prune=%d\n",argv[i],p->cc_prune);
     }
     else if (0==strncmp(argv[i],"drop=",5)){
       char * const val = file_arg_value(argc, argv, &i, 5);
@@ -1148,6 +1182,12 @@ void var_init(int argc, char **argv, params_t * const p){
       ERROR("Cannot specify start along with cbeg or cend\n");
     }
   }
+  if (p->start_scan) { /* the scan rule refers to the order of the columns: not after merging the columns of a DEM */
+    if (p->start_num == 0)
+      ERROR("start_scan=1 needs a start list (start=...)\n");
+    if (p->fdem)
+      ERROR("start_scan=1 is not available with fdem (the equal columns of a DEM are merged)\n");
+  }
 
   if (p->method == 1) {
     if (p->cbeg >= 0 || p->cend >= 0 || p->start_num > 0) {
@@ -1238,7 +1278,7 @@ void var_init(int argc, char **argv, params_t * const p){
       p->spaG=csr_mm_read(p->finG,p->spaG,0);
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read G <- file '%s'\n",p->finG);
-      if(csr_csr_mul_non_zero(p->spaH, p->spaG))
+      if(p->ortho && csr_csr_mul_non_zero(p->spaH, p->spaG))
 	 ERROR("rows of H and G matrices are not orthogonal");
       csr_dump(stderr, p->spaG, "G", p->debug);
     } 
@@ -1373,7 +1413,15 @@ void var_init(int argc, char **argv, params_t * const p){
     fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
   }
 
-  /* Warnings for the expert CC options and for the experimental ksub (printed regardless of `debug`) */
+  /* Warnings for the expert options (ortho and the CC options) and for the experimental ksub (printed regardless of
+   * `debug`) */
+  if (!p->ortho) {
+    if (p->spaG)
+      fprintf(stderr, "# WARNING: ortho=0 (expert option): the rows of H and G are not checked for orthogonality\n"
+                      "#   (H G^T = 0); the result is valid only if they are orthogonal\n");
+    else
+      fprintf(stderr, "# WARNING: ortho=0 is ignored without finG (the check H G^T = 0 needs G)\n");
+  }
   if (p->noscan) {
     const int d0 = (p->dmin > 1) ? p->dmin : 1;
     if (d0 < p->wmax)
@@ -1390,11 +1438,18 @@ void var_init(int argc, char **argv, params_t * const p){
     fprintf(stderr, "# WARNING: start=");
     for (int k = 0; (k < p->start_num) && (k < 8); k++)
       fprintf(stderr, "%s%d", k ? "," : "", col_orig_index(p, p->start_list[k]));
-    fprintf(stderr,
-            "%s (expert option): CC clusters are grown only from %d listed column(s)\n"
-            "#   (not limited to larger column indices); dmin is valid only if a code symmetry maps every\n"
-            "#   minimum-weight codeword to one containing a listed column\n",
-            (p->start_num > 8) ? ",..." : "", p->start_num);
+    if (p->start_scan)
+      fprintf(stderr,
+              "%s start_scan=1 (expert options): CC clusters are grown only from %d listed column(s), each with\n"
+              "#   the larger columns only; dmin is valid only if a code symmetry maps every minimum-weight codeword\n"
+              "#   to one whose smallest column is listed\n",
+              (p->start_num > 8) ? ",..." : "", p->start_num);
+    else
+      fprintf(stderr,
+              "%s (expert option): CC clusters are grown only from %d listed column(s)\n"
+              "#   (not limited to larger column indices); dmin is valid only if a code symmetry maps every\n"
+              "#   minimum-weight codeword to one containing a listed column\n",
+              (p->start_num > 8) ? ",..." : "", p->start_num);
   }
   if (p->cbeg >= 0 || p->cend >= 0) {
     const int beg = (p->cbeg >= 0) ? p->cbeg : 0;
@@ -2985,9 +3040,35 @@ void print_rw_infoset_estimate(FILE *stream, const int n, const int rank, const 
           pairs_str, n, rank, w_hard, p1, steps, p_miss, steps_str, time_str);
 }
 
+/* finC with irred=1: reduce the nontrivial codeword arr[0..w-1] (sorted) to an irreducible nontrivial codeword which it
+ * contains.  While a nonempty proper subset has zero syndrome (csr_cols_dependency()), keep the lighter one of the
+ * subset and its complement which has a nonzero syndrome of L (at least one has, since the trivial codewords form a
+ * linear space; for a classical code, both are nontrivial).  `sub` and `rest`: room for w entries each.  Returns the
+ * new weight (arr stays sorted). */
+static int codeword_reduce(const params_t * const p, const csr_t * const HT, int arr[], int w, cols_ws_t * const ws,
+                           int sub[], int rest[]) {
+  int k;
+  while ((k = csr_cols_dependency(HT, w, arr, ws, sub)) > 0) {
+    int nr = 0;
+    for (int i = 0, j = 0; i < w; i++) {
+      if (j < k && sub[j] == arr[i]) j++;
+      else rest[nr++] = arr[i];
+    }
+    const int nt_sub = !p->maskL || colmask_syndrome_non_zero(p->maskL, k, sub);
+    const int nt_rest = !p->maskL || colmask_syndrome_non_zero(p->maskL, nr, rest);
+    const int keep_sub = nt_sub && (!nt_rest || k <= nr);
+    memcpy(arr, keep_sub ? sub : rest, (size_t)(keep_sub ? k : nr) * sizeof(int));
+    w = keep_sub ? k : nr;
+  }
+  return w;
+}
+
 long long int nzlist_read(const char fnam[], params_t *p){
   long long int count = 0, lineno;
-  long long int skipped_invalid = 0;
+  long long int skipped_invalid = 0, reduced = 0;
+  csr_t *HT = NULL;     /* irred=1: the transpose of H, the workspace, and room for the parts, see codeword_reduce() */
+  cols_ws_t *ws = NULL;
+  int *sub = NULL, *rest = NULL;
   assert(fnam);
   FILE * f=nzlist_r_open(fnam, &lineno);
   if(!f){
@@ -3035,6 +3116,18 @@ long long int nzlist_read(const char fnam[], params_t *p){
         valid = 0;
       }
     }
+    if (valid && p->irred && p->spaH && entry->weight > 1) { /* an irreducible part of a reducible codeword */
+      if (!HT) {
+        HT = csr_transpose(NULL, p->spaH);
+        ws = cols_ws_init(p->spaH->rows);
+        sub = malloc((size_t)(p->spaH->cols + 1) * sizeof(int));
+        rest = malloc((size_t)(p->spaH->cols + 1) * sizeof(int));
+        if (!sub || !rest) ERROR("memory allocation");
+      }
+      const int w0 = entry->weight;
+      entry->weight = codeword_reduce(p, HT, entry->arr, w0, ws, sub, rest);
+      if (entry->weight < w0) reduced++;
+    }
     if (!valid) {
       skipped_invalid++;
       free(entry);
@@ -3053,6 +3146,10 @@ long long int nzlist_read(const char fnam[], params_t *p){
     free(entry);
   }
   fclose(f);
+  csr_free(HT);
+  cols_ws_free(ws);
+  free(sub);
+  free(rest);
   if (skipped_invalid > 0) {
     fprintf(stderr,
             "# Warning: skipped %lld invalid codewords (column out of range, not orthogonal to H, or orthogonal "
@@ -3063,6 +3160,8 @@ long long int nzlist_read(const char fnam[], params_t *p){
     fprintf(stderr, "# read %lld codewords from %s, total %lld", count, fnam, p->num_cws);
     if (p->min_w != INT_MAX)
       fprintf(stderr, ", min weight %d", p->min_w);
+    if (reduced > 0)
+      fprintf(stderr, "; %lld reducible codewords replaced by an irreducible part (irred=1)", reduced);
     fprintf(stderr, "\n");
   }
   if ((p->debug & DBG_CODEWORDS) && (p->min_w != INT_MAX)) { /* a lightest codeword (the hash holds only finC ones) */

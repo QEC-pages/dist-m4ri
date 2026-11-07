@@ -8,7 +8,7 @@
  * (2) depth-first codeword enumeration (connected cluster) algorithm
  * (Lower bound or actual distance if a codeword is found.)  
  * 
- * A. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..."
+ * I. Dumer, A. A. Kovalev, and L. P. Pryadko "Distance verification..."
  * in IEEE Trans. Inf. Th., vol. 63, p. 4675 (2017). 
  * doi: 10.1109/TIT.2017.2690381
  *
@@ -76,8 +76,8 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
   }
 #endif   
   /** all valid positions should be to the right of here, except with the expert `start` list
-   *  (unlimited clusters; columns already in `err` are skipped below) */
-  const int col_min = (p->start_num > 0) ? -1 : urr->vec[0];
+   *  (unlimited clusters, unless start_scan=1; columns already in `err` are skipped below) */
+  const int col_min = (p->start_num > 0 && !p->start_scan) ? -1 : urr->vec[0];
   int current_limit = w_limit;
   if (p->min_w != INT_MAX && p->dW >= 0) {
     current_limit = minint(w_limit, p->min_w + p->dW);

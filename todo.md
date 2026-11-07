@@ -51,15 +51,18 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   fallback rule $m < \nu \Rightarrow$ `ksub=0` thus stays (it disables `ksub` for DEMs and most quantum codes).
 - [x] `ksub` is kept for now, but marked experimental (should not be used) in the documentation, `--help`, and
   `--morehelp`; a warning is printed whenever `ksub>0` is given for RW (with or without `min_hits`, regardless of
-  `debug`; in Python, once per `compute_*_distance()` call), as a reminder that the option does not do what it is
-  supposed to.
+  `debug`; in Python, once per `compute_*_distance()` call, and again in the binary's stderr, which Python prints if
+  `verbose` or a debug bit of the binary is set), as a reminder that the option does not do what it is supposed to.
+  The fallback to `ksub=0` for $m < \nu$ is reported only with `debug&1` (the binary's default, not Python's).
 - [ ] Find a subspace sampling for which the hit counts are uniform (or drop `ksub`).
 
 ---
 
 ### Task 2: Localized & Windowed Column Permutations for DEMs
-- [x] Add parameters `kwin=[int]` (window size $W$, default `0` = uniform random permutation; alias `win=[int]`) and
-  `win_mode=[0|1]` (default `0`).
+- [x] Add parameters `kwin=[int]` (window size $W$ in every step; default `0`: uniform random permutations, and for
+  $n \ge 500$ an index window of `win_hyb` columns on every other step, see **RW windows for big DEMs** in section 2;
+  alias `win=[int]`) and `win_mode=[0|1]` (default `0`). A negative `kwin` (e.g., `-1`) turns the windows off
+  (uniform random permutations in every step; documented, and passed by the Python wrapper, since 2026-11-07).
 - [x] **Window Construction**:
   - Pick a seed column $j_0 \in [0, n-1]$ uniformly at random per trial.
   - **Mode 0 (Tanner Graph BFS Neighbors)**: Perform BFS on the bipartite graph between columns and check rows starting
@@ -71,7 +74,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Place the internally shuffled $W$ window columns in the first $W$ positions ($0 \dots W-1$).
   - Place the remaining $n - W$ columns at the tail ($W \dots n-1$).
 - [x] **Support Overlap Filter & Windowed Echelonization**:
-  - Optionally restrict row sampling to basis vectors of $N$ whose support intersects window $W$.
+  - Optionally restrict row sampling to basis vectors of $N$ whose support intersects window $W$. Done as a
+    preference, with the experimental `ksub` only: in a window step, up to 4 redraws per sampled row for a row of $N$
+    meeting the window (always on, no option).
   - Exploit left-to-right echelonization: Gaussian elimination pivots first on the window columns, producing localized
     candidate codewords with support concentrated around the seed column $j_0$.
 
@@ -85,6 +90,10 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Maintain an atomic pool of the lowest-weight non-trivial logical codewords found by worker threads.
   - Periodically substitute these lighter codewords into the basis $N$ using Gaussian elimination to maintain linear
     independence while systematically reducing the average row weight of the basis.
+  - Done differently (experimental `ksub` only, at each refresh below): one codeword of the minimum weight from the
+    codeword hash (no separate pool) replaces the heaviest row of the re-echelonized basis $N$ whose pivot column is in
+    its support, if that row is heavier, so that $N$ stays a basis of $\ker H$; the next refresh re-echelonizes $N$
+    again, so that the row weights are not reduced systematically.
 - [x] **Periodic Re-Echelonization (`refresh=[int]`)**:
   - Every `refresh` trials, generate a fresh canonical basis of $\ker(H)$ by re-echelonizing under a new global column
     permutation $\Pi$ (protected by a per-batch `pthread_rwlock_t`). This breaks sampling blind spots without
@@ -97,8 +106,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 ---
 
 ### Task 4: Hit-Count Stopping Criterion (`QDistRnd` Convergence Style)
-- [x] Add parameters `min_hits=[int]` (default `5`, `0` = disabled) and `cov_cws=[int]` (size of the representative
-  set of lowest-weight codewords, default `100`).
+- [x] Add parameters `min_hits=[int]` (default `5`; `0` turns off both the stop and the hit counting: without `outC`
+  or `maxC`, RW then records only the codewords lighter than the upper bound, each with a single hit) and
+  `cov_cws=[int]` (size of the representative set of lowest-weight codewords, default `100`).
 - [x] **Codeword Multiplicity Tracking**:
   - Leverage the existing `cw_vec_t->cnt` field in `p->codewords` (which increments every time a duplicate codeword is
     found), with per-weight histograms of the numbers of codewords and of hits (`cw_cnt_w`, `cw_hits_w`).
@@ -109,12 +119,18 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     `min_hits`, both for the minimum-weight codewords and for the representative set (a single codeword suffices,
     e.g., for a classical code with $k=1$). As in QDistRnd, a lighter codeword is missed with probability
     $\approx e^{-\langle n\rangle}$, assuming that lighter codewords are found at least as often.
+  - The hits of all RW steps count, including the window steps (`kwin > 0`, and the hybrid windows on every other
+    step for $n \ge 500$, on by default), as well as the CC and `finC` hits; the window steps find local codewords
+    much more often, so that $e^{-\langle n\rangle}$ can be optimistic for codewords which are not local (found by the
+    uniform steps only).
 - [x] **Hit Uniformity Check**: at the end (`debug&1`, result not certified), a dispersion test of the hit counts in
   each weight class of the representative set (zero-truncated Poisson); a warning if they are strongly non-uniform.
 - [x] **Information-Set Estimate** (Python `--verbose`, and in the binary with the hit uniformity warning): with
   uniform random information sets, a codeword of weight $w$ is found per RW step with probability
-  $P_1(w) = w\binom{n-w}{s-1}/\binom{n}{s}$, $s = n - \mathrm{rank}\,H$; also the RW steps / time for a 1% miss
-  probability (and the extrapolation of $e^{-\langle n\rangle}$ to 1%).
+  $P_1(w) = w\binom{n-w}{s-1}/\binom{n}{s}$, $s = n - \mathrm{rank}\,H$, plus, with the RW pairs (0.14.4, $l$ pivot
+  rows of the buckets), $P_2(w) = \binom{w}{2}\binom{n-w}{s-2}/\binom{n}{s} \cdot \binom{r-w+2}{l}/\binom{r}{l}$
+  ($r = \mathrm{rank}\,H$); also the RW steps / time for a 1% miss probability (and the extrapolation of
+  $e^{-\langle n\rangle}$ to 1%).
 - [ ] **Proper estimate for matrices with many small-weight dual vectors**: see Task 6.
 
 ---
@@ -151,7 +167,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     the distinct codewords and hits of the three lowest weights found by each kind of step (`# RW step types, ...`),
     and the Python model check of the information-set estimate uses the hits of the uniform steps only. Codewords
     which violate the window model (e.g., time-like codewords with one error per round) are still found only by the
-    uniform steps, which are kept for this.
+    uniform steps, which are kept for this. The `min_hits` stop and the hit uniformity check still use the hits of
+    both kinds of steps (`cnt`); only the printed statistics and the Python model check separate them.
   - Empirical per-weight hit rates from the representative set, extrapolated to weights below the minimum found.
   - Account for the small-weight trivial vectors explicitly (see **Trivial Codeword Statistics** below); this may
     also give a more accurate round estimate (degenerate multiplicity).
@@ -265,18 +282,23 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     0.23 s; `surf_d5` 0.77 s $\to$ 0.51 s.
 - [x] **CC row order** (`sort_rows`, 0.14.1): CC extends a cluster by the columns of the first unsatisfied row (in
   row order), so the binary sorts the rows of $H$ by increasing weight (stable) for matrices (`sort_rows=1`, the
-  default; `sort_rows=0` for a DEM, whose detectors are in time order).
+  default; `sort_rows=0` for a DEM, whose detectors are in time order). Since 0.15.0, this is the walk of
+  `cc_prune=0`; with `cc_prune=1` (the default) or 2, CC branches on the unsatisfied row with the fewest available
+  columns, so that the row order only breaks ties. The numbers below are for the walk.
   - Extended CSS matrices with hook columns (`tmp/distance.py`; rows of weight 5–103): 1.2–2.3x to certify the
     distance, 1.7–4.2x to enumerate all codewords of a weight.
   - DEMs, and matrices exported from DEMs: 1.3–4x slower when sorted, since the first detector in time order has most
     of its columns before the start column of the cluster.
   - RW is unchanged (the same codewords with the same seed).
   - Choosing the row with the fewest admissible columns dynamically gave 2–23% fewer CC loop iterations on DEMs in a
-    model, about as much as its per-node cost (`scratch/rowsort/`).
+    model, about as much as its per-node cost (`scratch/rowsort/`). Done in 0.15.0 as part of the branch and bound
+    (`cc_prune=1`, see **Branch-and-bound CC** below).
 - [x] **RW Step Profile** (Oct 2026, one thread, after the faster logical check): the Gaussian elimination takes
   70–95% of a RW step for DEMs (`bb72_si1000_X.dem`: 215 of $\sim$310 µs; `gross_uniform_X.dem`: 6.8 of 7.8 ms), the
   transposition 7–15%, the extraction of the candidates the rest. Faster elimination (Task 5, or M4RI on a
-  column-permuted copy, which needs thread-safe allocations) is the next step.
+  column-permuted copy, which needs thread-safe allocations) is the next step. Done: the blocked elimination
+  `rw_eliminate()` for at least 128 rows (the Method of the Four Russians on the scattered columns of the permutation,
+  with tables allocated once per thread): 1.4–2.3x for 378 to 2736 rows (README Section 1); Task 5 is still open.
   - The weight of each candidate is now counted first (word-wise popcount, ending at the weight limit), and only the
     candidates below the limit are formed: `surf_d5` $-11\%$, `c1920H.mmx` $-9\%$ of the RW time.
   - With redundant rows of $H$, the RW matrices keep only the $\mathrm{rank}\,H$ non-zero rows after the first step,
@@ -284,10 +306,27 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Contention on `cw_mutex` is negligible: only the candidates below the weight limit and with $Lc \neq 0$ are
     recorded, and with `min_hits` about `min_hits` $\times$ `cov_cws` hits are recorded until convergence (e.g., 1.4 µs
     of lock wait per step of $\sim$260 µs for `surf_d5` with 32 threads); it only shows in runs of a few
-    milliseconds.
+    milliseconds. With the RW pairs (0.14.4), many more hits are recorded per step (small codes: 2–5x longer steps,
+    see the pairs item above).
 - [x] **Distance Benchmark Update**: the overnight run of 0.14.0 (Oct 2026, `benchmark/BENCHMARK.md`) certified the
-  distances of all benchmark circuits up to gross. Still open: double gross, bb_360, and bb_756; see **Bounds for the
-  largest circuits** in section 4.
+  distances of all its circuits up to gross (Section 5.1). Still open: double gross, bb_360, and bb_756; see **Bounds
+  for the largest circuits** in section 4. Also open (Section 2.6): the uniform-noise double gross, the $Z$ basis of
+  most BB and torus circuits, and the circuits added later: the other `yarn_mitten_*` and `yarn_smitten_*` circuits,
+  `shyps_961`, and the 2BGA circuits (RW upper bounds only).
+- [ ] **2BGA codes and circuits in the benchmark** (Oct 2026): add a few abelian and non-abelian two-block
+  group-algebra codes up to distance 20, with the circuits constructed for them, to `benchmark/BENCHMARK.md`, and
+  verify that the default parameters work well for the code distances, the circuit distances of the T = 1 circuits
+  (folded, so the same as for any T; simplified and full DEMs), and the extended CSS distances with hook errors
+  (`compute_extended_css_distance()`).  Sources: `~/text/hr-2bga/hr2bga_search` (code tables `tab*/`, `tna*/`,
+  `codes3_*.txt`; `circuit_2bga.py build` for sequential and concurrent schemes, `campaign_2bga.py circuits` for the
+  best circuits of a tuple (n, k, g6, d)), e.g., [[126,20,9]] and [[126,18,11]] over C63 and [[162,22,9]] over
+  SmallGroup(81,13) of `../scratch/circ_stats/` there (`use_cases.md`), then larger ones up to d = 20.
+  - [x] 2026-11-05: seven 2BGA codes of the Bicycle Race database (G. Lee, arXiv:2610.13880; three over abelian and
+    four over non-abelian groups, $d = 10$–23) in Section 1 of `benchmark/BENCHMARK.md`, and the circuits of the paper
+    for two of them (10 rounds, $X$ and $Z$ basis) in Sections 2.5–2.6; only checked with short RW runs of 0.15.2
+    (the upper bounds equal the distances of the database, and 8 for the circuits, as in their headers). Still open:
+    CC certificates with the default parameters, the T = 1 circuits, and the extended CSS distances
+    (`compute_extended_css_distance()` is in `tmp/distance.py`, not in `dist_m4ri.py`).
 - [ ] **References for the acceleration techniques** (search online): find the prior work and the right citations for
   each technique used by `dist_m4ri` (for the README, `introduction.md`, and a paper), and whether better variants
   exist. Starting points to verify:
@@ -299,7 +338,11 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Elimination: the Method of the Four Russians (Arlazarov, Dinic, Kronrod, Faradzev) and M4RI (Albrecht, Bard;
     Gray-code tables), for the scattered column orders of RW.
   - CC: connected-cluster enumeration (Dumer, Kovalev, Pryadko 2017), the meet-in-the-middle hash for the last two
-    levels, work units and thread scheduling.
+    levels, work units and thread scheduling; the branch-and-bound pruning (forbidden set, fewest-available row,
+    packing bound) of J. Y. Lee, Okada, Maskara, Kasai, Zhou, arXiv:2609.30069, App. B, used by G. Lee,
+    arXiv:2610.13880, App. C.4 (see **Branch-and-bound CC** below).
+    - [x] The branch-and-bound papers are cited as [LOMKZ26] and [Lee26] in `introduction.md` (text and references),
+      and inline in the CC section of the README (not yet in its references).
   - Statistics: index-of-dispersion tests and zero-truncated Poisson fits of the hit counts.
   - Circuit-level distance: stim's search for undetectable logical errors, SAT/MaxSAT and ILP approaches (e.g., for
     the BB codes), spacetime codes (Delfosse, Paetznick), hook errors and distance-preserving schedules, extended CSS
@@ -360,13 +403,15 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     unique kernel vector on the pivots plus that column), i.e., a minimal codeword, and a disconnected codeword is never
     minimal (each component is itself in $\ker H$). Instrumented test: 0 disconnected among $\sim 7\cdot 10^6$ kernel
     vectors (surf_d5, bb72 and dgross DEMs, mitten_90 and mitten_270 full DEMs, dgross CSS, c1920, a random LDPC code).
-    Only the experimental `ksub` rows are not circuits; CC clusters are connected by construction.
+    Only the experimental `ksub` rows are not circuits; CC clusters are connected by construction. Since 0.14.4, the
+    RW pairs give sums of two circuits, which are reducible (and possibly disconnected) iff the two circuits are
+    disjoint; since 0.14.8 (`irred=1`), such sums and the reducible `ksub` rows are not recorded (see **Irreducible
+    codewords only** below).
 - [ ] See that matrices constructed when generating L from H (e.g.) are reused when codeword searching.
 - [ ] For a very large circuit, when RW is very slow, should we try constructing
       codewords from the underlying code (can this even be done from a DEM ---
       or should it be done in python?)
   - See **Full DEM from the simplified DEM** below (done by hand for mitten_270 in Oct 2026).
-- [ ] 
 
 ---
 
@@ -382,7 +427,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - C: done, the binary merges the equal columns on reading a DEM (`merge=1`, the default), with a map back to the
     original columns (`outC`, `finC`, `start`, `cbeg`, `cend`); bb72 DEM: 2664 -> 2232 columns, CC `wmax=6` in 0.06 s
     instead of 0.21 s.
-- [x] **Full DEM from the simplified DEM** (`--full` mode of CSS circuits): the simplified DEM is the full DEM with the
+- [x] **Full DEM from the simplified DEM** (the former `--full` mode): the simplified DEM is the full DEM with the
   minority-basis detector rows deleted (equal columns merged, empty columns dropped; they never flip an observable), so
   $d_{\rm simp} \le d_{\rm full}$, and $d_{\rm full} = d_{\rm simp}$ iff some minimum-weight simplified codeword lifts
   (one full error per column, with the deleted detectors cancelling too). Sufficient and checked column by column:
@@ -391,7 +436,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   preimages each); RW on the simplified DEMs found weight-7 (hef) and weight-9 (custom) codewords in about 2 s, which
   lift to the full DEMs, so mitten_270 full: hef $d = 7$, custom $d = 9$ (RW on the full DEMs had not found them in
   2.8 h: the per-step probability scales like $(\mathrm{rank}/n)^{w-1}$).
-  - Python: build both DEMs with a detector map (`strip_minority_detectors` returning the kept detector indices),
+  - Python: build both DEMs with a detector map (`strip_minority_detectors(..., mask_out)`: True if stripped),
     check the clean preimages, run (or take from the cache) the simplified result, lift its codewords to the full DEM
     (`finC`, upper bound), and use $d_{\rm simp}$ as `dmin` for the full run; run the full binary only if a gap remains.
   - Default on for `--full`, but only for circuits verified as CSS: the circuit classification, plus the DEM-level
@@ -401,8 +446,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Done differently (exact reduction in the binary, `drop=FILE`): every full column touching a deleted detector needs
     a twin (same kept detectors, no deleted one, observables $L + A H$, $A$ by elimination); then the binary runs on
     the kept detectors and the columns touching no deleted detector, and its codewords are full codewords (no lifting).
-    Python passes the minority-basis detectors with `--full` (`drop=1`, the default). mitten_270 full: 70254 -> 8910
-    columns, RW finds weight 9 (custom) and 7 (hef) in 3.5 s; mitten_90 full: exact $d = 5, 4$ by CC in 0.1 s.
+    Python passed the minority-basis detectors with `--full` (`drop=1`, the default; since 0.14.0, `drop=1` means
+    `drop=auto`, and they are passed with `drop=css`). mitten_270 full: 70254 -> 8910 columns, RW finds weight 9
+    (custom) and 7 (hef) in 3.5 s; mitten_90 full: exact $d = 5, 4$ by CC in 0.1 s.
   - Since 0.13.0, the Python options `--simple` and `--full` (`simple=`, `full=`) are disabled (ignored with a
     warning): the DEM of a Stim circuit always has all detectors.
   - Done in 0.14.0: `drop=auto` in the binary (the default, also `drop=1`; `drop=0` keeps all detectors) finds the
@@ -472,6 +518,11 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   can only lower the distance, $d_R \le d_{\rm full}$; deleting or merging observables could raise it. Columns equal
   on $(RH, L)$ merge into classes, and $d_R = d_{\rm full}$ iff some minimum-weight reduced codeword lifts (one full
   column per class, with $Hx = 0$).
+  - **Partly done:** the exact reductions in the binary, i.e., the first step of the order below (equal columns
+    merged, `merge=1`, 0.12.4; a given detector set dropped if each column touching it has a twin, `drop=FILE`, and
+    the largest set with $A = 0$ found from the DEM alone, `drop=auto`, 0.14.0; see the items above), and the
+    code-sized model as a lower bound in Python (`compute_model_lower_bound()`, 0.14.5), not in C. Still open: the
+    lossy reductions in C, with lifting, verification, and refinement.
   - Exact reductions ("clean twins"): a detector set $M$ can be deleted together with all columns touching it if each
     such column has a twin with the same pattern on the other detectors and on $L$ that does not touch $M$ (columns
     with no other detector and no observable are dropped). The reduced DEM is a submatrix of the full one with the
@@ -525,7 +576,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Use: one start column per column orbit (`start` list, unlimited clusters), when the orbit size is large compared
     with $w$ (gain about orbit size / $w$; measured 7.2x for double gross with `start=0,144`, one column per orbit of
     the translations; the full group, $|\mathrm{Aut}| = 864$, has a single column orbit). Orbit exclusion: the k-th
-    start column only needs clusters avoiding the orbits of the previous ones (about 2x more for two orbits).
+    start column only needs clusters avoiding the orbits of the previous ones (about 2x more for two orbits; details
+    in **Orbit exclusion** below).
   - Correctness: the graph must contain all defining matrices ((Hx, Hz) or (H, G): an automorphism then preserves both
     row spaces); with `finL`, verify each generator by rank checks of $[H; L]$. Certify `dmin` without `trust_start`
     (e.g., the binary verifies the given generators and computes the orbits).
@@ -534,6 +586,35 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     without symmetry can be canonicalized when merged); the expanded list only on request (it can be huge: e.g.,
     $|\mathrm{Aut}| = 4\cdot 10^{11}$ for AG(2,64)).
   - Dependency: python-igraph is optional (networkx is too slow for large graphs); or nauty/Traces in C.
+- [ ] **Orbit exclusion** (for the programs which construct codes with known symmetries; needs the forbidden set of
+  the **Branch-and-bound CC** below): the CC search from the $j$-th start column forbids all columns of the orbits of
+  the earlier start columns.
+  - **Partly done in 0.15.1:** `start_scan=1` (expert, with `start`): a cluster grown from a listed column $c$ only
+    uses the columns $> c$, which is valid if the listed columns are the smallest columns of the orbits (one per orbit:
+    every column below a listed one is in an earlier orbit), and it is exactly the orbit exclusion if each orbit is a
+    range of consecutive columns, e.g., `start=0,l start_scan=1` for the two blocks of a 2BGA code over an abelian
+    group (2x less CC work than `start=0,l`), or after renumbering the columns by orbits (largest first) in the program
+    which builds the code. `scratch/bench_0.15.1_scan/`. Still open: the inputs below (orbits in any column order,
+    verified generators), and the work-unit split for few start columns (`scratch/symmetry/REPORT.md`).
+  - Input, one of:
+    - `orbits=FILE`: an orbit label for each column ($n$ integers, in the original 0-based column order), and one start
+      column per orbit (from `start=`, by default the smallest column of each orbit). Trusted, as `start`: a
+      `# WARNING:`, and `dmin` is valid only if the labels are the orbits of a group of code automorphisms;
+    - `aut=FILE`: generators of the group, each a permutation of the columns (a line of $n$ 0-based images). The binary
+      verifies each generator $\pi$ by rank tests ($\mathrm{rank}\,[H; H\pi] = \mathrm{rank}\,H$, the same for $G$, or
+      for $[H; L]$ with `finL`), computes the orbits (union-find over the cycles of the generators) and the start
+      columns, and the result is certified without `trust_start`.
+  - Search: start columns $r_1, \dots, r_k$ of the orbits $O_1, \dots, O_k$; from $r_j$, unlimited clusters (as with
+    `start`) with $F = O_1 \cup \dots \cup O_{j-1}$ at the root. A codeword $C$ is found at most once: from the first
+    orbit $O_j$ it meets, if $r_j \in C$. Every codeword is the image of a found one: $g(C) \ni r_j$ for some $g$ in
+    the group, and $g(C)$ meets no earlier orbit (the orbits are invariant).
+  - Prototype (`scratch/cc_bnb/`, `bb_blocks=2 bb_orbit=2`, the two orbits of the translations): double gross,
+    $w = 15$: 9.76M nodes without symmetry, 1.15M with `start=0,144`, 0.58M with orbit exclusion; gross, $w = 12$:
+    694K, 136K, 69K.
+  - Not with `cbeg`/`cend`; codes only (see above for DEMs). `outC` holds the codewords found, not whole orbits (see
+    the canonical representatives above); CC hits: one per codeword found.
+  - Python: `orbits=` and `aut=` next to `start=`; the cache key `<key>:start=...` extended by a hash of the labels or
+    of the generators; with verified generators, the result can be merged into the main record without `trust_start`.
 - [ ] **Orbit-canonical RW hit counts** (with a known group): with uniform permutations, all codewords of an orbit have
   the same hit rate, and a lighter orbit $O'$ is missed with probability $\approx e^{-|O'| p N}$, with $|O'| \ge |G|/w$
   for a group acting freely on the columns. Count hits per orbit (uniform steps only), canonical form: cheap for
@@ -544,5 +625,215 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] **RW window steps restricted to the window**: the circuits of the non-pivot window columns are those of the window
   submatrix (all rows touched by the window), at a fraction of the cost of the full elimination; window shapes: time
   slabs (space-like logicals), tubes of a few stabilizers over all rounds (time-like logicals), Tanner-graph balls, and
-  the full matrix (uniform steps, which keep every codeword reachable). Separate hit statistics for the window steps.
+  the full matrix (uniform steps, which keep every codeword reachable). Separate hit statistics for the window steps:
+  done in 0.14.3 (`# RW step types` with `debug&1`, see Task 6), and the dump of `debug&256` shows the hits `u` and `w`
+  of each codeword.
+- [ ] **Exact distance from extended CSS distance** Formulate explicit criteria
+      on the exactness of the extended CSS distance, and learn to recognize such
+      DEMs / circuits, as an alternative to code-sized model bounds
+- [x] **Optimize pair $p=2$ construction**: only start $i+j$ pairs with $i$ a verified codeword (non-trivial). Done in
+  0.14.4 (`rw_pairs_step()`): the pairs of two columns with zero L syndromes, or with equal L syndromes (trivial sums),
+  are skipped (see **RW with pairs of non-pivot columns** above).
+- [ ] **examine symmetry** of `model` check matrices to get guaranteed lower bounds faster (`--model-lb` option)
+- [x] **Branch-and-bound CC** (`cc_prune`), from G. Lee, "Bicycle Race: small two-block codes on the Pareto
+  frontier," arXiv:2610.13880 (2026), App. C.4, whose exact engine uses the pruning of J. Y. Lee, K. Okada,
+  N. Maskara, K. Kasai, H. Zhou, "Design principles for ultra-high-rate quantum codes," arXiv:2609.30069 (2026),
+  App. B. Goal: `method=2` certification of distances up to $d = 20$ for matrices with row weights up to 12.
+  - **Implemented in 0.15.0** (M2 of `scratch/cc_bnb/PLAN.md`): `cc_bnb()` in `dist_m4ri.c` as described below,
+    `cc_prune=0|1|2` (default 1), the start-list exclusion, nodes per round with `debug&8` (exact: independent of the
+    threads and work units; Python: `_last_run_stats["cc_rounds"]`), the Python pass-through (also
+    `compute_model_lower_bound()`), Tests 110 and 111. M3 benchmark (2026-10-25): `benchmark/BENCHMARK.md` Section 9
+    (4–35x for $d = 14$–18; the distances of the `yarn_*` codes with $d \ge 16$ and of `bb_360` certified, up to
+    $d = 24$). M4 and the checks of 0.15.1 in 0.15.2 (below); later runs: $d_X$ of `yarn_mitten_975` (the round
+    $w = 23$, about 46 min) and the row-weight-12 GB code $[[254, 16, \le 24]]$.
+  - [ ] Later runs: $d_X$ of `yarn_mitten_975` (the round $w = 23$, about 46 min on 128 threads) and the row-weight-12
+    GB code $[[254, 16, \le 24]]$.
+  - **Checks of 0.15.1** (2026-10-28, `scratch/bench_0.15.1_p0/`: 413 runs, 33 checks, mostly 128 threads): the same
+    codewords with `cc_prune=0`, 1, 2 (codes and DEMs, one to 128 threads, `method=2` and 3; `cc_prune=0` did not
+    finish the codewords of the gross DEM in 40 min), and node counts which do not depend on the threads;
+    `cc_prune=0` confirms the distances of BENCHMARK.md Section 9.3 up to $d = 18$ (`yarn_mitten_500` and
+    `yarn_smitten_600_120_16`: 16, 16; `yarn_smitten_840`: 17, 18; `yarn_mitten_540`: 18, 18), in 92–2319 s instead
+    of 1.3–10.6 s (55–220x; 228–1063x the nodes in the last round); the start-list exclusion saves 4–5% of the nodes
+    with two listed columns and 22–31% with eight (against the separate runs); `method=3` on the full DEMs:
+    `cc_prune=0` as fast as 0.14.7 (0.94–1.08x), the branch and bound 1.4–2.5x faster on the DEMs which take more than
+    1 s.
+  - **M4: per-node cost (0.15.2, 2026-10-28**; `scratch/reports/m4_per_node_0.15.2.md`): with callgrind (one thread),
+    the packing bound took about half of the instructions on codes, and the hash lookups of the last two levels about
+    40% on DEMs.
+    - `kfirst[r]`: the position of the first column after the start column in each row (updated with `acnt`), so that
+      the loops over the available columns of a row skip the columns before it; the packing sorts the rows only over
+      the range of their numbers of available columns, which the scan of the syndrome copies; at the last two levels,
+      the scan only looks for the branching row; local pointers in the inner loops. The same nodes and codewords;
+      speedups against 0.15.1 (both built with the makefile, idle server) on one thread: 1.05–1.06x on codes,
+      1.04–1.11x on DEMs; of the CC work on 128 threads: 1.00–1.05x on codes (the large rounds of `yarn_smitten_840`,
+      `yarn_mitten_540`, double gross), 1.11–1.26x on DEMs (gross, `mitten_150` custom, `mitten_270`).
+    - `cc_prune=2`: the cover bounds only with $R \ge 4$ (with $R = 3$, after the packing, they pruned few nodes of
+      the DEMs, e.g., 4% of the calls for `mitten_150` custom, and cost more than they saved), and the fractional sum
+      stops once the decision is known. Other node counts, the same codewords; speedups on one thread: 1.04–1.09x on
+      codes, 1.25–1.39x on DEMs; of the CC work on 128 threads: 1.03–1.06x on codes, 1.07–1.55x on DEMs (1.07x for
+      the gross DEM at $w \le 9$, where the cover bounds with $R = 3$ still paid off).
+    - Tested and dropped: the packing only with $R \ge 4$ (codes 1.2–1.3x slower), sorted lists of the unsatisfied
+      rows updated incrementally (slower), a weight filter before the hash lookups (DEMs 1.3–1.6x slower). Not
+      tried: `acnt` as `uint16_t`, $b_2$ repaired from the packing of the parent (would change the pruning).
+    - `cc_prune=2` against 1 after M4 (CC work, 128 threads): 0.89–0.99x for the largest rounds of the `yarn_*` codes
+      (`yarn_mitten_630`, $w \le 19$: 0.89x; `yarn_mitten_780`, $w \le 19$: 0.97x; `yarn_smitten_840` and
+      `yarn_mitten_540`, $w \le 16$, 17), 0.96–1.04x on the DEMs (gross, also two slices of its round $w = 10$;
+      `mitten_150` custom, `mitten_270`), 1.23–1.26x on the BB codes (double gross, $w \le 17$; `bb_360` and `bb_756`,
+      $w \le 22$); 15–35% fewer nodes on codes, about as many on DEMs. `cc_prune=1` stays the default (the cover bounds
+      likely help the `yarn_*` codes as their columns have the weights 3 and 6, while those of the BB codes all have 3).
+  - First measurements (2026-10-25, 128 threads, idle server, one run each; `scratch/cc_bnb/m2/`; the node counts
+    again with the exact counter, `nodes_count_w.sh`, as the nodes at the fixed levels of the work units were counted
+    once per unit before): the same codewords as 0.14.8 in all 16 runs of `scratch/cc_bnb/m0/` (each codeword once);
+    `method=2` up to the distance:
+    - $X$ sectors: yarn_mitten_300 ($d = 14$) 1.69 s -> 0.23 s (round $w = 13$: 1.59G -> 49.8M nodes, 32x),
+      yarn_ablp_560 ($d = 14$) 3.66 s -> 0.20 s (3.54G -> 47.5M nodes, 74x), double gross ($d = 18$) 1.36 s ->
+      0.33 s (round $w = 17$: 15x fewer nodes), yarn_mitten_630 round $w = 11$: 151M -> 1.37M nodes (110x), 16.2 ->
+      0.73 thread-s;
+    - full DEMs: bb_90 ($d = 8$) 0.50 s -> 0.46 s; mitten_270 hef ($d = 7$) 5.5 s -> 2.6 s; mitten_150 custom
+      ($d = 7$) 0.56 s -> 0.57 s (round $w = 6$: 1.5x fewer nodes, but 1.4x the CC work); `method=3`: gross circuit
+      ($d = 10$) 189 s -> 79 s, mitten_270 custom ($d = 9$) 197 s -> 141 s;
+    - `cc_prune=2`: 13–43% fewer nodes than 1, but 0.9–1.3x the time.
+    - A node costs about 3x a node of `cc_walk()` (gross: 0.22 µs against 0.074 µs).
+  - Prototype (Oct 2026, `scratch/cc_bnb/`: `bbcc.c`, one thread, with the objects of 0.14.7; plan in `PLAN.md`):
+    `bb_F=0 bb_mrv=0 bb_b2=0` reproduces `cc_walk()` (gross, $w = 12$: 1884 codewords, 2084 hits). Lee's 133x and
+    5000x were measured against an older dist-m4ri; the gains over 0.14.7 in the last round (node counts exact, times
+    noisy on a loaded machine):
+    - gross $w = 12$: 4x; double gross $w = 14$: 7–14x (45.4M -> 3.66M nodes); yarn_mitten_300 $w = 11$: 11–20x;
+      yarn_smitten_330 $w = 11$: 17x; yarn_mitten_630_126_20, $w = 8, \dots, 11$: 8x, 15x, 28x, 64x (151M -> 1.1M
+      nodes at $w = 11$); c204H: 2x.
+    - Row weight 12 (`gen_gb.py`: generalized bicycle codes from weight-6 multiples of a primitive polynomial):
+      $[[126,14,\le 14]]$, $w = 10$: 3.2x; $[[254,16,\le 24]]$, $w = 9$: 8x.
+    - The growth per round drops from 5–7x to 3–4x, so that the gain grows with $w$; extrapolated to $w = 19$ for
+      yarn_mitten_630: about $5\cdot 10^3$ s on one thread, against about $6\cdot 10^7$ s now.
+    - Reduced DEMs (bb_72, bb_90, double gross): 0.86–1.2x for $w \le 6$, 1.6x at $w = 7$ (bb_90).
+    - The relabeling of the columns and the order of the branches change the work by ±20%.
+    - Contributions (single rounds, `scratch/cc_bnb/run_mrv.sh`, `mrv.log`; gross, double gross, yarn_mitten_300 and
+      630, the GB code $[[254,16,\le 24]]$, the bb_72 and bb_90 DEMs): the fewest-available row alone (no $F$, no
+      $b_2$) visits 1.05–1.7x fewer nodes, but takes 0.7–1.5x the time (as in `scratch/rowsort/`); adding $F$ gives
+      1.1–1.5x fewer nodes again; $b_2$ alone (first row) 1.1–45x fewer nodes, 1.0–32x less time; all three 1.7–66x
+      fewer nodes, 1.1–38x less time (the largest gains for the large $w$ of the mitten codes).
+  - Kernel `cc_bnb()` for `cc_prune=1, 2` (`smax=0`; `cc_walk()` stays for `cc_prune=0`, and `start_CC_recurs_mt()`
+    for `smax>0`):
+    - forbidden set $F$: branch $i$ adds the column $v_i$ and forbids $v_1, \dots, v_{i-1}$ in its subtree (also the
+      columns whose branch was pruned or reached zero syndrome), so that every support is reached once;
+    - branching row: the unsatisfied row with the fewest available columns (larger than the start column, not in
+      $S \cup F$; `acnt[r]` updated in $O(\Delta)$ per column added or forbidden), a dead end if one has none;
+      `sort_rows` then only breaks ties;
+    - bounds with $R = w - |S|$ columns left: $b_1 = \lceil |s|/\Delta \rceil$ as now, and the packing bound $b_2$
+      (unsatisfied rows with pairwise disjoint available sets, greedy with the smallest sets first, need distinct new
+      columns): prune if $b_2 > R$; computed only for $|s| > R$ (otherwise it cannot prune) and $R \ge 3$ (the hash is
+      cheaper for the last two levels);
+    - the last two levels with the column-syndrome hash as now (with $F$: the second column never lies in the
+      branching row), and the last column by a single lookup;
+    - work units: at a fixed level, the branch `fix[l]` among the available columns of the row, with the earlier ones
+      forbidden, so that the units still partition the tree;
+    - `acnt` per worker, updated incrementally as the start column grows (a recount of $O(\mathrm{nnz})$ per start
+      column made small rounds on the double-gross DEM 15x slower in the prototype).
+  - `cc_prune=[0|1|2]`, default 1 for all inputs:
+    - 0: the walk of 0.14.7 (first unsatisfied row in row order, $b_1$ only);
+    - 1: $F$, the fewest-available row with the dead-end test, $b_1$ and $b_2$;
+    - 2: also the coverage bound $b_3$ (the least $t$ such that the $t$ largest $c_v$ sum to at least $|s|$, with
+      $c_v$ the number of unsatisfied rows of the available column $v$) and the fractional cover bound
+      $\sum_r 1/\max_{v \in A_r} c_v$ over the unsatisfied rows $r$ (a dual solution of the covering LP): 13–43% fewer
+      nodes than 1 at 0.9–1.3x the time (M2); after M4, 15–35% fewer nodes on codes and about as many on DEMs, at
+      0.89–1.26x the CC work; since 0.15.2 only with $R \ge 4$, and not the default (M4 above);
+    - Python: `cc_prune` passed like `sort_rows`, CLI `--cc-prune`.
+  - `start` list: the search from a listed column forbids the columns listed before it (valid without further
+    assumptions; the prototype shows a small gain, gross 136K -> 129K nodes, double gross 1.15M -> 1.11M; keep it if
+    there is no slowdown), so that each codeword is found once. Kept: 4–31% fewer nodes in the checks of 0.15.1.
+  - CC hits: exactly one per codeword (needed for the RW miss estimate), as in all prototype runs with $F$; they enter
+    `cnt` and `cw_hits_w` (the `min_hits` statistic) like `finC` codewords, not `cnt_u`/`cnt_w`. With `cc_prune=0`,
+    codewords reached by several paths get more hits (gross: 2084 for 1884).
+  - Per-node cost (a node costs about 2x a node of 0.14.7): one pass over the syndrome for the branching row and $b_2$,
+    `acnt` as `uint16_t`, a tuned threshold for $b_2$, maybe $b_2$ updated from the packing of the parent. Done in
+    0.15.2 (M4 above): the scan copies `acnt` for $b_2$, and $R \ge 3$ stays the threshold of $b_2$.
+  - `noscan=1` (the single round at `wmax`, certified with `dmin=wmax`) gets the same speed-up.
+  - Tests: `cc_prune=0` and `1` give the same distances and the same irreducible codewords (`outC`) for the codes and
+    DEMs of the benchmark, with `start`, `cbeg`/`cend`, `noscan`, `dmin`, `dW`, `maxC`, `method=3`, 1 or many threads;
+    benchmark (1 and 128 threads): certify yarn_mitten_300, yarn_smitten_600_120_14, yarn_ablp_560, and try
+    yarn_mitten_500, 540, 630.
+  - Docs: README (CC section, `start`, help texts in `util_io.h`), `introduction.md`, Python docstrings; version 0.15.0
+    in the four files.
+- [x] **Irreducible codewords only** (codes and DEMs; 0.14.8, `irred=1` by default): a codeword which splits into a
+  codeword and a zero-syndrome vector with disjoint supports is not recorded. The expert option `irred=0` of the binary
+  records all codewords, as before (the Python CLI ignores it with a warning).
+  - CC (`cc_record()`, both kernels): the columns of $H$ on the support $C$ have rank $|C| - 1$ (otherwise a proper
+    subset of $C$ has zero syndrome); a small dense elimination on the at most $|C|\Delta$ rows touched
+    (`csr_cols_rank()` in `util_m4ri.c`, with a per-thread workspace `cols_ws_t`), only for the codewords found.
+  - RW pairs (`rw_pairs_step()`): the sum of two circuits is reducible iff their supports are disjoint, i.e., iff the
+    weight of the sum is the sum of the weights (free); single RW columns give circuits, which are irreducible; the
+    rows of the experimental `ksub` get the rank test.
+  - `finC` (`nzlist_read()`, also in `dist_m4ri_old`): a reducible codeword is replaced by a nontrivial part (the
+    lighter one if both parts are; `csr_cols_dependency()`, repeated until irreducible), which may lower `dmax`.
+  - `debug&1`: the counts of the reducible codewords skipped by CC and RW, and of the `finC` codewords replaced.
+  - Regression data (`scratch/cc_bnb/m0/`: `m0.sh`, the outputs of 0.14.7 for 16 deterministic runs of CC, RW, and
+    `method=3` on codes and DEMs, and `verify_m1.sh`): the same results in all 16 runs; with `irred=0`, the same
+    codeword sets as 0.14.7; with `irred=1`, exactly the reducible codewords removed (checked with `cwcheck`, which
+    tests each codeword): surf_d3 DEM with `dW=3`: 102 of 1777 (CC), 848 of 2523 (RW with pairs, 3000 steps; none
+    without pairs), 255 of 1930 (`method=3`), so that all three now give the same 1675 codewords; bb_72 DEM, RW with
+    `dW=3`, 1000 steps: 15024 of 142284. None for the codes (CC at $w \le d + 2$) or at $w \le d + 2$ for the DEMs.
+  - Before 0.14.8, there was no such filter: `nzlist_read()` checked the column range, the merged twins of a DEM,
+    $Hc = 0$, and $Lc \neq 0$.
+  - vecdec (`~/prog/vecdec/src/vecdec.c`) has two filters: `do_hash_decomp()` (after reading `finC`) splits each
+    codeword into its connected components in the Tanner graph (`ufl_decompose()` in `dec_pre.c`), and replaces a
+    reducible one (several components, or a trivial one) by its components with a nonzero syndrome of $L$;
+    `do_hash_remove_reduc()` (after the RIS search) removes the codewords which contain a lighter stored codeword
+    (at least `dx` = 1, or 3 for a DEM, lighter). CC codewords are connected by construction, so that the component
+    test never fires on them: in the surf_d3 DEM, all the reducible codewords found by CC are connected (204, 2102,
+    11552 hits at $w = 6, 7, 8$). The subset test finds them only if their lighter part is stored. Hence the rank
+    test for CC and the RW pairs, and vecdec's replacement by the nontrivial parts for `finC`.
+  - Minimum-weight codewords are irreducible; both kernels find every irreducible codeword (each proper prefix of its
+    path has nonzero syndrome), but only some reducible ones, depending on the path: from $w = d + w_0$ on, with $w_0$
+    the weight of the lightest zero-syndrome vector (3 for circuit DEMs).
+  - Prototype (`bb_irr=1`): with the filter, both kernels give the same codewords at every weight (surf_d3 DEM,
+    $w = 3, \dots, 8$), each hit once; without it, the sets differ from $w = 6$ on by reducible ones only (e.g., 204
+    reducible hits at $w = 6$ for 0.14.7, 66 for the branch and bound).
+- [x] **Fast orthogonality check and `ortho=0`** (0.15.2, 2026-10-28): the check $H G^T = 0$ of `finG`
+  (`csr_csr_mul_non_zero()` in `util_m4ri.c`) uses the columns of $H$ (its transpose): $O(\mathrm{nnz}(H) +
+  \mathrm{nnz}(G)\, w)$ operations, with $w$ the column weight of $H$, instead of $O(\mathrm{rows}(G)\,
+  \mathrm{nnz}(H))$; a column repeated in a row counts once, as in `mzd_from_csr()` (and the test of the compressed
+  form of $G$ no longer tests $H$). The same decisions as 0.15.1 and numpy for 120 random circulant pairs, orthogonal
+  or not (`scratch/m4_0.15.2/ortho_check.py`). A short run (`method=1 steps=1`, one thread, the minimum of 30 runs,
+  `ortho_time.py`) of a pair of $499 \times 998$ matrices of row weight 12: 23.3 ms -> 16.1 ms (15.1 ms with
+  `ortho=0`); $997 \times 1994$: 69.5 ms -> 41.0 ms (40.0 ms), i.e., the check takes about 1 ms instead of 29 ms. The
+  expert option `ortho=0` (binary, Python API and CLI) skips it, with a warning, e.g., to screen many codes which are
+  orthogonal by construction (Test 113, `test_ortho_option`).
+  - Not added: a switch for subsystem codes. For $H G^T \neq 0$, $L$ from `Lx_for_CSS_code()` spans a complement of
+    $\mathrm{rowspace}\, H$ in $\mathrm{rowspace}\, H + \ker G$, so that the codewords ($Hc = 0$, $Lc \neq 0$) are
+    $\ker H \setminus \mathrm{rowspace}\, G$: with `ortho=0`, the binary gives the bare distance of the subsystem code
+    with the gauge generators $H$ and $G$ (in a build with `-DNDEBUG`, the default; otherwise `Lx_for_CSS_code()`
+    verifies the orthogonality again); the code parameters of `debug=16` assume $H G^T = 0$.
+- [x] **Faster temporary matrix files in the Python wrapper** (0.15.2, 2026-10-28): `_matrix_to_file()` wrote each
+  matrix with `scipy.io.mmwrite`, which costs about 10 ms per call on the 128-core server also for small matrices (the
+  thread pool of its parallel writer), and for dense input, the conversion to CSR added up to 70 ms ($2999 \times
+  5998$). Now `_write_mtx_gf2()`: the nonzero entries over GF(2) (odd values; floats truncated; the duplicate entries of
+  a sparse matrix summed, as `mmwrite` did) from `np.flatnonzero` of a bool mask (about 10x faster than `np.nonzero` of
+  a uint8 array), formatted with one `%` operation in the coordinate pattern format; `scipy.io.mmwrite` (pattern) only
+  above 65536 entries, where it is faster. Per matrix (outside the sandbox, median of 30, `l x 2l` with row weight 12,
+  `scratch/matrix_writer/timing_writer.py`): $\ell = 36$: 10.4 -> 0.33 ms; $\ell = 499$: 13.1 -> 1.1 ms (CSR input:
+  11.7 -> 0.96 ms); $\ell = 997$: 19.5 -> 2.2 ms; $\ell = 2999$: 78.9 -> 9.1 ms (CSR: 11.7 -> 5.3 ms). End to end, a
+  short screening call `compute_quantum_distance(HX, G=HZ, method=1, num_steps=1, threads=1)` with numpy matrices and
+  the cache disabled (`e2e_screen.py`): $\ell = 72$: 29.0 -> 8.1 ms; $\ell = 499$: 44.5 -> 18.6 ms; $\ell = 997$:
+  81.4 -> 45.2 ms. The binary gives identical outputs on the files of both writers (13 cases: dense, list, CSR / CSC /
+  COO, a quantum pair, and a matrix above 65536 entries; `verify_writer.py`); `test_matrix_writer`.
 
+- [ ] see if linear algebra can be used to eliminate the possibility of
+      non-trivial DEM code words stretching over multiple REPEAT rounds.      
+- [ ] native python interface (as opposed to calling external program) to speed
+      up multiple repeated calls?  Or, perhaps a simplified version only for
+      small time-out?
+- [ ] Recognize folded circuits (see https://arxiv.org/abs/2604.09797): an option to detect a memory circuit with a
+  folded structure, i.e., in which each measurement round $i > 1$ is done in the reverse addressing order of the first
+  one. For such a circuit, it is sufficient to compute the circuit distance at $T = 1$ (a single round). Open: the
+  test of the structure (e.g., the order of the two-qubit gates of each round) and the option. (This item was checked
+  by mistake until 2026-11-07; nothing is implemented yet.)
+- [ ] an option to keep reading commands from stdin (reduced startup cost)
+- [ ] documentation: model code = a variant of extended CSS (specify exact relation)
+- [ ] optional analysis of check matrices and/or model code using sparse
+      `dreadnaut` (if available), 
+  - to speed CC (top of each orbit).
+  - symmetry-based accumulation of canonical CWs (RW) - hit counts.
+  - Does RW blocking make sense for T=1 DEMs?
+  - For circuit distance calculation, if d_code has not been reached, continue
+    with RW beyond steps (within timeout).
+- [ ] even smarter termination logic for CC ?
