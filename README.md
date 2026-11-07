@@ -755,7 +755,7 @@ needs `finH`), while `fin` after them is an error. The Python CLI (`python3 dist
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.15.2): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.16.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
