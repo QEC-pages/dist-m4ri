@@ -1,0 +1,28 @@
+var searchData=
+[
+  ['figures_0',['4. Scaling with the Number of Threads (&lt;span class=&quot;tt&quot;&gt;benchmark/figures/&lt;/span&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md22',1,'']]],
+  ['files_1',['Temporary files',['../md_AGENTS.html#autotoc_md3',1,'']]],
+  ['finc_2',['Codeword Export (&lt;span class=&quot;tt&quot;&gt;outC&lt;/span&gt; / &lt;span class=&quot;tt&quot;&gt;finC&lt;/span&gt;)',['../md_README.html#autotoc_md89',1,'']]],
+  ['find_20a_20codeword_3',['5. RW Convergence: Empirical Test and Probability to Find a Codeword',['../md_README.html#autotoc_md85',1,'']]],
+  ['follow_20up_20runs_20of_200_2014_201_202026_2010_2014_4',['6. Follow-up Runs of 0.14.1 (2026-10-14)',['../md_benchmark_2BENCHMARK.html#autotoc_md31',1,'']]],
+  ['for_20180_20s_20default_20parameters_5',['5.4 Large full DEMs (RW for 180 s, default parameters)',['../md_benchmark_2BENCHMARK.html#autotoc_md28',1,'']]],
+  ['for_20dems_6',['Task 2: Localized &amp;amp; Windowed Column Permutations for DEMs',['../md_todo.html#autotoc_md118',1,'']]],
+  ['for_20dist_20m4ri_7',['for dist m4ri',['../md_AGENTS.html',1,'Agent Guidelines for dist-m4ri'],['../md_benchmark_2BENCHMARK.html',1,'Benchmark Suite for &lt;tt&gt;dist-m4ri&lt;/tt&gt;']]],
+  ['for_20dist_5fm4ri_20program_8',['Todo Notes for &lt;span class=&quot;tt&quot;&gt;dist_m4ri&lt;/span&gt; Program',['../md_todo.html',1,'']]],
+  ['for_20in_20cache_20multicore_20scaling_9',['Task 1: Subspace Sketching (&lt;span class=&quot;tt&quot;&gt;ksub&lt;/span&gt;, experimental) for In-Cache Multicore Scaling',['../md_todo.html#autotoc_md116',1,'']]],
+  ['for_20matrices_20with_20many_20small_20weight_20dual_20vectors_10',['Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors',['../md_todo.html#autotoc_md126',1,'']]],
+  ['for_20the_20largest_20dems_11',['6.1 RW threads for the largest DEMs',['../md_benchmark_2BENCHMARK.html#autotoc_md32',1,'']]],
+  ['for_20the_20rw_20pairs_200_2014_206_12',['8.7 A work bound for the RW pairs (0.14.6)',['../md_benchmark_2BENCHMARK.html#autotoc_md49',1,'']]],
+  ['format_20stream_20separation_13',['Output Format &amp;amp; Stream Separation',['../md_README.html#autotoc_md76',1,'']]],
+  ['formatting_20standards_14',['Code and Formatting Standards',['../md_AGENTS.html#autotoc_md2',1,'']]],
+  ['found_20by_20the_20uniform_20and_20by_20the_20window_20steps_15',['7.3 Codewords found by the uniform and by the window steps',['../md_benchmark_2BENCHMARK.html#autotoc_md39',1,'']]],
+  ['from_16',['5.5 Where the speedups come from',['../md_benchmark_2BENCHMARK.html#autotoc_md29',1,'']]],
+  ['from_20a_20code_20sized_20model_17',['6.3 Certified lower bounds from a code-sized model',['../md_benchmark_2BENCHMARK.html#autotoc_md34',1,'']]],
+  ['full_20dems_20and_20their_20exact_20reduction_18',['3. Full DEMs and Their Exact Reduction',['../md_benchmark_2BENCHMARK.html#autotoc_md20',1,'']]],
+  ['full_20dems_20method_203_20128_20threads_19',['5.1 Certified circuit distances (0.14.0, full DEMs, &lt;span class=&quot;tt&quot;&gt;method=3&lt;/span&gt;, 128 threads)',['../md_benchmark_2BENCHMARK.html#autotoc_md25',1,'']]],
+  ['full_20dems_20rw_20for_20180_20s_20default_20parameters_20',['5.4 Large full DEMs (RW for 180 s, default parameters)',['../md_benchmark_2BENCHMARK.html#autotoc_md28',1,'']]],
+  ['full_20dems_3a_200_2014_207_20against_200_2015_201_21',['10.3 &lt;span class=&quot;tt&quot;&gt;method=3&lt;/span&gt; on the full DEMs: 0.14.7 against 0.15.1',['../md_benchmark_2BENCHMARK.html#autotoc_md58',1,'']]],
+  ['full_20dems_3a_20time_20to_20a_20codeword_20of_20the_20minimum_20weight_22',['Full DEMs: time to a codeword of the minimum weight',['../md_benchmark_2BENCHMARK.html#autotoc_md26',1,'5.2 Full DEMs: time to a codeword of the minimum weight'],['../md_benchmark_2BENCHMARK.html#autotoc_md43',1,'8.1 Full DEMs: time to a codeword of the minimum weight']]],
+  ['full_20parameter_20listing_20dist_5fm4ri_20morehelp_23',['Full Parameter Listing (&lt;span class=&quot;tt&quot;&gt;dist_m4ri --morehelp&lt;/span&gt;)',['../md_README.html#autotoc_md97',1,'']]],
+  ['functions_24',['Key Python Functions',['../md_README.html#autotoc_md102',1,'']]]
+];

@@ -1,0 +1,25 @@
+var searchData=
+[
+  ['reduction_0',['3. Full DEMs and Their Exact Reduction',['../md_benchmark_2BENCHMARK.html#autotoc_md20',1,'']]],
+  ['reference_1',['3. Operational Modes Reference',['../md_todo.html#autotoc_md130',1,'']]],
+  ['references_2',['References',['../md_benchmark_2BENCHMARK.html#autotoc_md8',1,'Origins and References'],['../index.html#autotoc_md72',1,'References'],['../md_README.html#autotoc_md111',1,'References']]],
+  ['refresh_20of_20_24n_24_3',['Task 3: Adaptive Basis Evolution &amp;amp; Periodic Refresh of $N$',['../md_todo.html#autotoc_md120',1,'']]],
+  ['reporting_20and_20code_20contributions_4',['Issue reporting and code contributions',['../md_CONTRIBUTING.html#autotoc_md61',1,'']]],
+  ['restricting_20the_20cc_20search_20expert_20options_5',['Restricting the CC Search (Expert Options)',['../md_README.html#autotoc_md81',1,'']]],
+  ['roadmap_3a_20high_20performance_20rw_20overhaul_6',['1. High-Priority Roadmap: High-Performance RW Overhaul',['../md_todo.html#autotoc_md113',1,'']]],
+  ['role_20of_20dexp_3a_7',['Dynamic Thread Allocation &amp;amp; Role of &lt;span class=&quot;tt&quot;&gt;dexp&lt;/span&gt;:',['../md_README.html#autotoc_md83',1,'']]],
+  ['rules_8',['Interaction Rules',['../md_AGENTS.html#autotoc_md1',1,'']]],
+  ['runs_20of_200_2014_201_202026_2010_2014_9',['6. Follow-up Runs of 0.14.1 (2026-10-14)',['../md_benchmark_2BENCHMARK.html#autotoc_md31',1,'']]],
+  ['rw_10',['Convergence of RW',['../index.html#autotoc_md68',1,'']]],
+  ['rw_20algorithm_20method_201_11',['1. Multithreaded RW Algorithm (&lt;span class=&quot;tt&quot;&gt;method=1&lt;/span&gt;)',['../md_README.html#autotoc_md79',1,'']]],
+  ['rw_20algorithm_20method_201_12',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md65',1,'']]],
+  ['rw_20convergence_3a_20empirical_20test_20and_20probability_20to_20find_20a_20codeword_13',['5. RW Convergence: Empirical Test and Probability to Find a Codeword',['../md_README.html#autotoc_md85',1,'']]],
+  ['rw_20for_20180_20s_20default_20parameters_14',['5.4 Large full DEMs (RW for 180 s, default parameters)',['../md_benchmark_2BENCHMARK.html#autotoc_md28',1,'']]],
+  ['rw_20overhaul_15',['1. High-Priority Roadmap: High-Performance RW Overhaul',['../md_todo.html#autotoc_md113',1,'']]],
+  ['rw_20pairs_200_2014_206_16',['8.7 A work bound for the RW pairs (0.14.6)',['../md_benchmark_2BENCHMARK.html#autotoc_md49',1,'']]],
+  ['rw_20pairs_20of_200_2014_204_20and_200_2014_206_20and_20the_20model_20bound_20of_200_2014_205_202026_2010_2015_17',['8. RW Pairs of 0.14.4 and 0.14.6, and the Model Bound of 0.14.5 (2026-10-15)',['../md_benchmark_2BENCHMARK.html#autotoc_md42',1,'']]],
+  ['rw_20steps_18',['7.2 Window size of the hybrid RW steps',['../md_benchmark_2BENCHMARK.html#autotoc_md38',1,'']]],
+  ['rw_20threads_20for_20the_20largest_20dems_19',['6.1 RW threads for the largest DEMs',['../md_benchmark_2BENCHMARK.html#autotoc_md32',1,'']]],
+  ['rw_20windows_20and_20thread_20throttle_20of_200_2014_203_202026_2010_2014_20',['7. RW Windows and Thread Throttle of 0.14.3 (2026-10-14)',['../md_benchmark_2BENCHMARK.html#autotoc_md36',1,'']]],
+  ['rw_20windows_20on_20the_20gross_20and_20double_20gross_20dems_21',['6.2 RW windows on the gross and double-gross DEMs',['../md_benchmark_2BENCHMARK.html#autotoc_md33',1,'']]]
+];

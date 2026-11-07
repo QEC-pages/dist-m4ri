@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['test_5fdist_5fm4ri_0',['test_dist_m4ri',['../namespacetest__dist__m4ri.html',1,'']]]
+  ['make_5fyarn_5fmitten_5fcircuits_0',['make_yarn_mitten_circuits',['../namespacemake__yarn__mitten__circuits.html',1,'']]]
 ];

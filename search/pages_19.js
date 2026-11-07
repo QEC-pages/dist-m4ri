@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['pairs_200_2014_206_0',['8.7 A work bound for the RW pairs (0.14.6)',['../md_benchmark_2BENCHMARK.html#autotoc_md49',1,'']]],
+  ['pairs_20of_200_2014_204_20and_200_2014_206_20and_20the_20model_20bound_20of_200_2014_205_202026_2010_2015_1',['8. RW Pairs of 0.14.4 and 0.14.6, and the Model Bound of 0.14.5 (2026-10-15)',['../md_benchmark_2BENCHMARK.html#autotoc_md42',1,'']]],
+  ['parameter_20listing_20dist_5fm4ri_20morehelp_2',['Full Parameter Listing (&lt;span class=&quot;tt&quot;&gt;dist_m4ri --morehelp&lt;/span&gt;)',['../md_README.html#autotoc_md97',1,'']]],
+  ['parameters_3',['parameters',['../md_benchmark_2BENCHMARK.html#autotoc_md28',1,'5.4 Large full DEMs (RW for 180 s, default parameters)'],['../md_benchmark_2BENCHMARK.html#autotoc_md46',1,'8.4 Default parameters']]],
+  ['parameters_20no_20threads_20throttling_20on_20no_20taskset_4',['5.3 Default parameters (no &lt;span class=&quot;tt&quot;&gt;threads=&lt;/span&gt;, throttling on, no &lt;span class=&quot;tt&quot;&gt;taskset&lt;/span&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md27',1,'']]],
+  ['parity_20check_20and_20logical_20matrices_20benchmark_20css_5',['1. CSS Parity-Check and Logical Matrices (&lt;span class=&quot;tt&quot;&gt;benchmark/css/&lt;/span&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md10',1,'']]],
+  ['per_20node_20cost_200_2015_202_6',['10.4 Per-node cost (0.15.2)',['../md_benchmark_2BENCHMARK.html#autotoc_md59',1,'']]],
+  ['per_20node_20cost_20of_200_2015_202_202026_2010_2028_7',['10. Checks of 0.15.1 and the Per-Node Cost of 0.15.2 (2026-10-28)',['../md_benchmark_2BENCHMARK.html#autotoc_md55',1,'']]],
+  ['performance_20rw_20overhaul_8',['1. High-Priority Roadmap: High-Performance RW Overhaul',['../md_todo.html#autotoc_md113',1,'']]],
+  ['periodic_20refresh_20of_20_24n_24_9',['Task 3: Adaptive Basis Evolution &amp;amp; Periodic Refresh of $N$',['../md_todo.html#autotoc_md120',1,'']]],
+  ['permutations_20for_20dems_10',['Task 2: Localized &amp;amp; Windowed Column Permutations for DEMs',['../md_todo.html#autotoc_md118',1,'']]],
+  ['predicted_20work_11',['9.2 Threads, load balance, and predicted work',['../md_benchmark_2BENCHMARK.html#autotoc_md53',1,'']]],
+  ['prerequisites_12',['Prerequisites',['../md_README.html#autotoc_md106',1,'']]],
+  ['priority_20roadmap_3a_20high_20performance_20rw_20overhaul_13',['1. High-Priority Roadmap: High-Performance RW Overhaul',['../md_todo.html#autotoc_md113',1,'']]],
+  ['probability_20estimate_20for_20matrices_20with_20many_20small_20weight_20dual_20vectors_14',['Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors',['../md_todo.html#autotoc_md126',1,'']]],
+  ['probability_20to_20find_20a_20codeword_15',['5. RW Convergence: Empirical Test and Probability to Find a Codeword',['../md_README.html#autotoc_md85',1,'']]],
+  ['profile_16',['Confinement Profile',['../md_README.html#autotoc_md87',1,'']]],
+  ['program_17',['Todo Notes for &lt;span class=&quot;tt&quot;&gt;dist_m4ri&lt;/span&gt; Program',['../md_todo.html',1,'']]],
+  ['py_18',['Python Wrapper (&lt;span class=&quot;tt&quot;&gt;dist_m4ri.py&lt;/span&gt;)',['../md_README.html#autotoc_md101',1,'']]],
+  ['python_20example_19',['Python Example',['../md_README.html#autotoc_md103',1,'']]],
+  ['python_20functions_20',['Key Python Functions',['../md_README.html#autotoc_md102',1,'']]],
+  ['python_20unit_20tests_21',['Python Unit Tests',['../md_README.html#autotoc_md108',1,'']]],
+  ['python_20wrapper_20dist_5fm4ri_20py_22',['Python Wrapper (&lt;span class=&quot;tt&quot;&gt;dist_m4ri.py&lt;/span&gt;)',['../md_README.html#autotoc_md101',1,'']]]
+];

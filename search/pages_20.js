@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['walk_20cc_5fprune_200_0',['10.1 The distances of Section 9.3 with the walk (&lt;span class=&quot;tt&quot;&gt;cc_prune=0&lt;/span&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md56',1,'']]],
+  ['wall_20time_1',['9.1 Wall time',['../md_benchmark_2BENCHMARK.html#autotoc_md52',1,'']]],
+  ['weight_2',['weight',['../md_benchmark_2BENCHMARK.html#autotoc_md26',1,'5.2 Full DEMs: time to a codeword of the minimum weight'],['../md_benchmark_2BENCHMARK.html#autotoc_md40',1,'7.4 Time to a codeword of the minimum weight'],['../md_benchmark_2BENCHMARK.html#autotoc_md43',1,'8.1 Full DEMs: time to a codeword of the minimum weight']]],
+  ['weight_20dual_20vectors_3',['Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors',['../md_todo.html#autotoc_md126',1,'']]],
+  ['when_20dropping_20detectors_20is_20exact_4',['When Dropping Detectors Is Exact',['../md_README.html#autotoc_md92',1,'']]],
+  ['where_20the_20speedups_20come_20from_5',['5.5 Where the speedups come from',['../md_benchmark_2BENCHMARK.html#autotoc_md29',1,'']]],
+  ['window_20size_20of_20the_20hybrid_20rw_20steps_6',['7.2 Window size of the hybrid RW steps',['../md_benchmark_2BENCHMARK.html#autotoc_md38',1,'']]],
+  ['window_20steps_7',['7.3 Codewords found by the uniform and by the window steps',['../md_benchmark_2BENCHMARK.html#autotoc_md39',1,'']]],
+  ['windowed_20column_20permutations_20for_20dems_8',['Task 2: Localized &amp;amp; Windowed Column Permutations for DEMs',['../md_todo.html#autotoc_md118',1,'']]],
+  ['windows_20and_20thread_20throttle_20of_200_2014_203_202026_2010_2014_9',['7. RW Windows and Thread Throttle of 0.14.3 (2026-10-14)',['../md_benchmark_2BENCHMARK.html#autotoc_md36',1,'']]],
+  ['windows_20on_20the_20gross_20and_20double_20gross_20dems_10',['6.2 RW windows on the gross and double-gross DEMs',['../md_benchmark_2BENCHMARK.html#autotoc_md33',1,'']]],
+  ['with_20a_20large_20distance_11',['8.3 Codes with a large distance',['../md_benchmark_2BENCHMARK.html#autotoc_md45',1,'']]],
+  ['with_20hit_20count_20saturation_12',['Mode: Upper Bound Search with Hit-Count Saturation',['../md_todo.html#autotoc_md132',1,'']]],
+  ['with_20many_20small_20weight_20dual_20vectors_13',['Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors',['../md_todo.html#autotoc_md126',1,'']]],
+  ['with_20the_20number_20of_20threads_20benchmark_20figures_14',['4. Scaling with the Number of Threads (&lt;span class=&quot;tt&quot;&gt;benchmark/figures/&lt;/span&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md22',1,'']]],
+  ['with_20the_20walk_20cc_5fprune_200_15',['10.1 The distances of Section 9.3 with the walk (&lt;span class=&quot;tt&quot;&gt;cc_prune=0&lt;/span&gt;)',['../md_benchmark_2BENCHMARK.html#autotoc_md56',1,'']]],
+  ['work_16',['How the Methods Work',['../md_README.html#autotoc_md78',1,'']]],
+  ['work_17',['9.2 Threads, load balance, and predicted work',['../md_benchmark_2BENCHMARK.html#autotoc_md53',1,'']]],
+  ['work_20bound_20for_20the_20rw_20pairs_200_2014_206_18',['8.7 A work bound for the RW pairs (0.14.6)',['../md_benchmark_2BENCHMARK.html#autotoc_md49',1,'']]],
+  ['works_3a_20bracketing_20method_203_19',['How it works: bracketing (method=3)',['../index.html#autotoc_md67',1,'']]],
+  ['works_3a_20cc_20algorithm_20method_202_20',['How it works: CC algorithm (method=2)',['../index.html#autotoc_md66',1,'']]],
+  ['works_3a_20rw_20algorithm_20method_201_21',['How it works: RW algorithm (method=1)',['../index.html#autotoc_md65',1,'']]],
+  ['wrapper_20dist_5fm4ri_20py_22',['Python Wrapper (&lt;span class=&quot;tt&quot;&gt;dist_m4ri.py&lt;/span&gt;)',['../md_README.html#autotoc_md101',1,'']]]
+];

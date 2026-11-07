@@ -1,7 +1,7 @@
 <map id="src/dist_m4ri.h" name="src/dist_m4ri.h">
-<area shape="rect" id="Node000001" title=" " alt="" coords="71,5,190,31"/>
-<area shape="rect" id="Node000002" href="$dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri)" alt="" coords="5,79,123,104"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="112,43,77,80,73,77,108,39"/>
-<area shape="rect" id="Node000003" href="$dist__rw_8c.html" title=" " alt="" coords="147,79,250,104"/>
-<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="153,39,190,77,186,80,149,42"/>
+<area shape="rect" id="Node000001" title=" " alt="" coords="72,5,189,33"/>
+<area shape="rect" id="Node000002" href="$dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri)." alt="" coords="5,81,122,109"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="111,44,77,83,74,79,106,45"/>
+<area shape="rect" id="Node000003" href="$dist__rw_8c.html" title=" " alt="" coords="146,81,248,109"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="153,42,188,81,182,80,151,47"/>
 </map>

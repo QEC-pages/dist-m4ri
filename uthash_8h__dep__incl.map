@@ -1,26 +1,26 @@
 <map id="src/uthash.h" name="src/uthash.h">
-<area shape="rect" id="Node000001" title=" " alt="" coords="45,5,147,31"/>
-<area shape="rect" id="Node000002" href="$dist__cc_8c.html" title=" " alt="" coords="5,299,107,324"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="88,45,57,124,42,174,31,226,31,250,40,276,51,297,46,300,35,278,25,251,25,225,37,173,52,122,83,43"/>
-<area shape="rect" id="Node000003" href="$dist__cc_8h.html" title=" " alt="" coords="49,225,151,251"/>
-<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="99,45,102,225,97,225,94,45"/>
-<area shape="rect" id="Node000004" href="$dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri)" alt="" coords="207,299,324,324"/>
-<area shape="poly" id="edge5_Node000001_Node000004" title=" " alt="" coords="161,25,266,43,388,70,446,86,498,105,539,127,566,150,576,167,580,183,579,199,572,213,547,237,510,257,465,274,416,287,325,305,324,300,415,282,463,269,508,252,544,233,568,210,574,197,575,184,571,169,562,154,536,131,496,110,445,91,387,75,265,48,160,31"/>
-<area shape="rect" id="Node000005" href="$util__io_8h.html" title=" " alt="" coords="146,79,243,104"/>
-<area shape="poly" id="edge6_Node000001_Node000005" title=" " alt="" coords="124,36,180,76,177,81,121,41"/>
-<area shape="poly" id="edge3_Node000003_Node000002" title=" " alt="" coords="88,264,65,300,61,297,83,261"/>
-<area shape="poly" id="edge4_Node000003_Node000004" title=" " alt="" coords="140,254,239,296,237,301,138,258"/>
-<area shape="poly" id="edge7_Node000005_Node000002" title=" " alt="" coords="159,113,127,132,93,157,62,189,40,226,36,245,39,264,52,297,47,299,34,265,31,245,35,224,58,186,89,153,124,127,156,108"/>
-<area shape="poly" id="edge8_Node000005_Node000003" title=" " alt="" coords="167,114,146,132,128,153,111,191,104,225,99,224,106,190,123,151,142,128,163,110"/>
-<area shape="poly" id="edge9_Node000005_Node000004" title=" " alt="" coords="230,110,251,128,268,151,279,192,281,234,277,272,271,299,266,298,271,271,276,234,274,193,263,153,247,131,227,114"/>
-<area shape="rect" id="Node000006" href="$dist__rw_8c.html" title=" " alt="" coords="329,152,431,177"/>
-<area shape="poly" id="edge10_Node000005_Node000006" title=" " alt="" coords="238,106,351,149,349,154,236,111"/>
-<area shape="rect" id="Node000007" href="$util__hash_8h.html" title="Utility functions for use with uthash.h" alt="" coords="137,152,253,177"/>
-<area shape="poly" id="edge11_Node000005_Node000007" title=" " alt="" coords="189,118,190,152,185,152,183,118"/>
-<area shape="rect" id="Node000008" href="$util__io_8c.html" title=" " alt="" coords="456,152,552,177"/>
-<area shape="poly" id="edge16_Node000005_Node000008" title=" " alt="" coords="257,104,456,150,455,155,256,109"/>
-<area shape="poly" id="edge12_Node000007_Node000002" title=" " alt="" coords="193,192,184,223,166,252,130,282,92,301,89,296,127,277,162,249,179,220,188,191"/>
-<area shape="poly" id="edge13_Node000007_Node000003" title=" " alt="" coords="170,188,117,227,114,223,167,183"/>
-<area shape="poly" id="edge14_Node000007_Node000004" title=" " alt="" coords="209,189,262,297,257,300,204,191"/>
-<area shape="poly" id="edge15_Node000007_Node000005" title=" " alt="" coords="201,139,199,104,204,104,206,138"/>
+<area shape="rect" id="Node000001" title=" " alt="" coords="45,5,146,33"/>
+<area shape="rect" id="Node000002" href="$dist__cc_8c.html" title=" " alt="" coords="5,308,106,336"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="83,50,56,130,41,181,30,233,30,260,39,285,50,307,45,308,34,287,25,260,25,232,36,179,51,128,85,45"/>
+<area shape="rect" id="Node000003" href="$dist__cc_8h.html" title=" " alt="" coords="49,232,150,260"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="98,47,102,232,97,231,94,49"/>
+<area shape="rect" id="Node000004" href="$dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri)." alt="" coords="205,308,322,336"/>
+<area shape="poly" id="edge5_Node000001_Node000004" title=" " alt="" coords="160,27,266,46,386,74,444,91,494,110,535,131,562,155,572,172,576,188,574,204,568,218,543,243,506,264,462,281,413,295,322,315,322,309,412,290,460,276,504,259,540,239,563,215,569,202,570,189,567,174,557,158,532,136,492,115,442,96,385,79,265,51,161,33"/>
+<area shape="rect" id="Node000005" href="$util__io_8h.html" title=" " alt="" coords="146,81,242,109"/>
+<area shape="poly" id="edge6_Node000001_Node000005" title=" " alt="" coords="125,40,179,80,174,82,125,45"/>
+<area shape="poly" id="edge3_Node000003_Node000002" title=" " alt="" coords="86,272,65,309,61,306,81,275"/>
+<area shape="poly" id="edge4_Node000003_Node000004" title=" " alt="" coords="143,264,237,307,232,309,142,269"/>
+<area shape="poly" id="edge7_Node000005_Node000002" title=" " alt="" coords="152,118,124,138,90,164,61,196,39,233,36,253,38,272,51,307,46,308,33,274,30,252,34,231,56,193,87,160,121,134,156,114"/>
+<area shape="poly" id="edge8_Node000005_Node000003" title=" " alt="" coords="160,120,144,138,127,158,111,197,103,233,98,231,106,196,123,155,140,134,163,116"/>
+<area shape="poly" id="edge9_Node000005_Node000004" title=" " alt="" coords="230,115,251,133,266,156,278,197,279,241,275,279,269,309,265,306,270,279,274,240,272,198,261,158,247,137,230,120"/>
+<area shape="rect" id="Node000006" href="$dist__rw_8c.html" title=" " alt="" coords="326,157,428,184"/>
+<area shape="poly" id="edge10_Node000005_Node000006" title=" " alt="" coords="241,112,347,155,342,157,241,118"/>
+<area shape="rect" id="Node000007" href="$util__hash_8h.html" title="Utility functions for use with uthash.h." alt="" coords="136,157,252,184"/>
+<area shape="poly" id="edge11_Node000005_Node000007" title=" " alt="" coords="186,122,190,157,185,155,184,127"/>
+<area shape="rect" id="Node000008" href="$util__io_8c.html" title=" " alt="" coords="452,157,547,184"/>
+<area shape="poly" id="edge16_Node000005_Node000008" title=" " alt="" coords="258,109,454,156,449,159,258,114"/>
+<area shape="poly" id="edge12_Node000007_Node000002" title=" " alt="" coords="191,197,182,231,164,262,130,290,93,310,91,305,127,286,160,258,177,229,188,201"/>
+<area shape="poly" id="edge13_Node000007_Node000003" title=" " alt="" coords="163,196,118,234,115,230,167,192"/>
+<area shape="poly" id="edge14_Node000007_Node000004" title=" " alt="" coords="208,196,260,308,255,307,205,200"/>
+<area shape="poly" id="edge15_Node000007_Node000005" title=" " alt="" coords="200,140,200,112,202,107,206,142"/>
 </map>
