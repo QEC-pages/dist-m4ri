@@ -1179,6 +1179,48 @@ def _format_start_list(start_list: List[int], max_show: int = 8) -> str:
     return shown + (",..." if len(start_list) > max_show else "")
 
 
+_report_ignored = True  # warnings on stderr for the inputs which are ignored (off: set_silent(), the CLI's --silent)
+
+
+def set_silent(silent: bool = True) -> None:
+    """
+    Turns off (silent=True) or on again (silent=False) the warnings written to stderr for the inputs which are
+    ignored (the CLI option --silent).  The warnings on the validity of a result (e.g., for ksub, ortho=0, or start)
+    are always written.
+    """
+    global _report_ignored
+    _report_ignored = not silent
+
+
+def _warn_ignored(msg: str) -> None:
+    """Writes the warning '# Warning: msg' on an input which is ignored to stderr, unless set_silent() is on."""
+    if _report_ignored:
+        sys.stderr.write(f"# Warning: {msg}\n")
+
+
+# The options of the dist_m4ri binary in the compute_*() functions, with their defaults there, which
+# solver="codedistance" does not use (it uses the matrices or the DEM, num_steps, seed, codedistance_method, and
+# codedistance_params): see _warn_codedistance_ignored().  (start, ortho, noscan, cbeg, cend, outD, and out_reduced
+# have warnings of their own, and outC and do_cws are errors.)
+_CODEDISTANCE_UNUSED: Dict[str, Any] = {
+    "method": 3, "threads": None, "timeout": 60.0, "d_exp": 0, "dmin": 0, "dmax": 0, "d_min": 0, "d_max": 0,
+    "dstop": 0, "wmin": 1, "wmax": 0, "smax": None, "dW": -1, "maxC": 0, "finC": None, "nothrottle": False,
+    "chunk_size": 0, "ksub": 0, "kwin": 0, "win_mode": 0, "win_hyb": 0, "pairs": -1, "sort_rows": None,
+    "cc_prune": None, "min_hits": None, "cov_cws": 100, "refresh": None, "dist_m4ri": None, "pmin": 0.0,
+    "merge": True, "drop": None, "expand": False,
+}
+
+
+def _warn_codedistance_ignored(values: Dict[str, Any]) -> None:
+    """
+    With solver="codedistance": a warning (see _warn_ignored()) on the options of the dist_m4ri binary in `values`
+    (the locals() of a compute_*() function) which are not at their defaults (see _CODEDISTANCE_UNUSED).
+    """
+    names = [k for k, v in _CODEDISTANCE_UNUSED.items() if k in values and values[k] != v]
+    if names:
+        _warn_ignored(f"{', '.join(k + '=' for k in names)}: not used with solver='codedistance'; ignored")
+
+
 def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) -> None:
     """
     Issues a warning to stderr for each of the expert options noscan, cbeg, and cend that is set.
@@ -1194,10 +1236,8 @@ def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) 
         except (TypeError, ValueError):
             active = True
         if active:
-            sys.stderr.write(
-                f"# Warning: {name}={val} is disabled in the Python interface (ignored); "
-                f"use the dist_m4ri binary directly\n"
-            )
+            _warn_ignored(f"{name}={val} is disabled in the Python interface (ignored); use the dist_m4ri binary "
+                          f"directly")
 
 
 def _start_warning_text(start_list: List[int]) -> str:
@@ -1256,11 +1296,11 @@ def _warn_ortho(ortho: Any, has_g: bool, solver: str = "dist_m4ri") -> None:
     if ortho:
         return
     if solver == "codedistance":
-        sys.stderr.write("# Warning: ortho=0 is ignored with solver='codedistance'\n")
+        _warn_ignored("ortho=0 is ignored with solver='codedistance'")
     elif has_g:
         sys.stderr.write(_ortho_warning_text())
     else:
-        sys.stderr.write("# Warning: ortho=0 has no effect without G (the check H G^T = 0 needs G)\n")
+        _warn_ignored("ortho=0 has no effect without G (the check H G^T = 0 needs G)")
 
 
 def _check_kwargs(func: Callable[..., Any], kwargs: Dict[str, Any], aliases: Sequence[str] = ("win",)) -> None:
@@ -1304,12 +1344,12 @@ def _prepare_start_option(
     start_list = _normalize_start_list(start)
     if start_list is None:
         if trust_start:
-            sys.stderr.write("# Warning: trust_start=1 has no effect without a start list\n")
+            _warn_ignored("trust_start=1 has no effect without a start list")
         if start_scan:
-            sys.stderr.write("# Warning: start_scan=1 has no effect without a start list\n")
+            _warn_ignored("start_scan=1 has no effect without a start list")
         return None
     if solver == "codedistance":
-        sys.stderr.write(f"# Warning: start={_format_start_list(start_list)} is ignored with solver='codedistance'\n")
+        _warn_ignored(f"start={_format_start_list(start_list)} is ignored with solver='codedistance'")
         return None
     start_list = _scan_start_list(start_list, start_scan)
     msg = _start_warning_text(start_list)
@@ -1562,7 +1602,8 @@ def run_dist_m4ri(
     RW windows:
         kwin / win_mode: A window of kwin columns in every RW step (win_mode=0: a Tanner graph ball, 1: an index
             window).  kwin=0 (default): the automatic hybrid for n >= 500, an index window of win_hyb columns in every
-            other step and uniform random permutations in the others.
+            other step and uniform random permutations in the others.  kwin=-1 (any negative value): no windows,
+            uniform random permutations in every step.
         win_hyb: Window size of the hybrid RW steps, passed as win_hyb=N if nonzero; 0 (default): 256 columns for a
             DEM, 512 for matrices (at most 3n/4).  The windows of 192-256 columns find the minimum-weight codewords of
             circuit DEMs 2-10 times faster than 512, and windows of one round of columns are much slower.  With
@@ -1642,7 +1683,7 @@ def run_dist_m4ri(
     start_list = _normalize_start_list(start)
     _warn_disabled_options(noscan, cbeg, cend)
     if start_scan and not start_list:
-        sys.stderr.write("# Warning: start_scan=1 has no effect without a start list\n")
+        _warn_ignored("start_scan=1 has no effect without a start list")
     if start_scan and start_list and fdem:
         raise ValueError("start_scan=1 is not available with fdem (the equal columns of a DEM are merged)")
     start_list = _scan_start_list(start_list, start_scan)
@@ -1706,7 +1747,7 @@ def run_dist_m4ri(
     if nothrottle: cmd.append("nothrottle=1")
     if chunk_size > 0: cmd.append(f"chunk_size={chunk_size}")
     if ksub > 0: cmd.append(f"ksub={ksub}")
-    if kwin > 0: cmd.append(f"kwin={kwin}")
+    if kwin != 0: cmd.append(f"kwin={kwin}")  # (kwin < 0: no windows)
     if win_mode != 0: cmd.append(f"win_mode={win_mode}")
     if win_hyb != 0: cmd.append(f"win_hyb={win_hyb}")
     if pairs != -1: cmd.append(f"pairs={pairs}")
@@ -3983,7 +4024,7 @@ def compute_classical_distance(
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
             graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
-            win_hyb and run_dist_m4ri().
+            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -4062,6 +4103,7 @@ def compute_classical_distance(
     if solver == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
+        _warn_codedistance_ignored(locals())
         codedistance = _get_codedistance()
         import numpy as np
         params = dict(codedistance_params or {})
@@ -4088,7 +4130,7 @@ def compute_classical_distance(
         num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
         smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
-        chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+        chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
         sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune
     )
@@ -4178,7 +4220,7 @@ def compute_quantum_distance(
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
             graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
-            win_hyb and run_dist_m4ri().
+            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -4268,6 +4310,7 @@ def compute_quantum_distance(
     if solver == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
+        _warn_codedistance_ignored(locals())
         codedistance = _get_codedistance()
         import numpy as np
         params = dict(codedistance_params or {})
@@ -4304,7 +4347,7 @@ def compute_quantum_distance(
         num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
         smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
-        chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0),
+        chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
         sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, ortho=ortho
     )
@@ -4424,7 +4467,7 @@ def compute_css_distance(
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
             graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
-            win_hyb and run_dist_m4ri().
+            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -4525,6 +4568,7 @@ def compute_css_distance(
     if solver == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
+        _warn_codedistance_ignored(locals())
         codedistance = _get_codedistance()
         import numpy as np
         params = dict(codedistance_params or {})
@@ -4586,7 +4630,7 @@ def compute_css_distance(
             wmax=wmax, smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC_s,
             outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
             seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
-            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+            kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
             cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
             pairs=pairs, cc_prune=cc_prune, ortho=ortho
         )
@@ -4690,9 +4734,9 @@ def _warn_disabled_simple_full(simple: Optional[bool] = None, full: Optional[boo
     """
     names = [f"--{n}" if cli else f"{n}=" for n, v in (("simple", simple), ("full", full)) if v is not None]
     if names:
-        sys.stderr.write(f"# Warning: {', '.join(names)}: disabled since version 0.13.0, ignored: the DEM of a Stim "
-                         f"circuit has all detectors, and the binary drops detectors if this is exact (drop=auto, the "
-                         f"default, e.g., the minority-basis detectors of a CSS circuit; drop=0 keeps them)\n")
+        _warn_ignored(f"{', '.join(names)}: disabled since version 0.13.0, ignored: the DEM of a Stim circuit has all "
+                      f"detectors, and the binary drops detectors if this is exact (drop=auto, the default, e.g., the "
+                      f"minority-basis detectors of a CSS circuit; drop=0 keeps them)")
 
 
 def _dem_from_input(
@@ -4725,7 +4769,7 @@ def _dem_from_input(
         and the file to which the DEM was saved (None if it was not saved).
     """
     if dem is not None and circuit is not None:
-        sys.stderr.write("# Warning: both 'dem' and 'circuit' were given; using 'dem' (the circuit is ignored).\n")
+        _warn_ignored("both 'dem' and 'circuit' were given; using 'dem' (the circuit is ignored).")
         circuit = None
     if dem is not None and isinstance(dem, (str, Path)) and str(dem).endswith(".stim"):
         circuit = dem
@@ -4939,7 +4983,7 @@ def compute_dem_distance(
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
             graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
-            win_hyb and run_dist_m4ri().
+            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -5066,7 +5110,7 @@ def compute_dem_distance(
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_dem_distance, kwargs)
     if start_scan:  # (the binary merges the equal columns of a DEM, which changes the order of the columns)
-        sys.stderr.write("# Warning: start_scan=1 is not available for a DEM (ignored)\n")
+        _warn_ignored("start_scan=1 is not available for a DEM (ignored)")
         start_scan = False
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
@@ -5093,7 +5137,8 @@ def compute_dem_distance(
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         if outD or out_reduced:
-            sys.stderr.write("# Warning: outD and out_reduced are only used with solver='dist_m4ri'; ignored\n")
+            _warn_ignored("outD and out_reduced are only used with solver='dist_m4ri'; ignored")
+        _warn_codedistance_ignored(locals())
         codedistance = _get_codedistance()
         params = dict(codedistance_params or {})
         params.setdefault("filterCircuit", False)
@@ -5139,9 +5184,8 @@ def compute_dem_distance(
                           f"this is exact")
             else:
                 fdrop = "auto"
-                sys.stderr.write("# Warning: drop=css: no minority-basis detectors (they are only known for a Stim "
-                                 "circuit classified as CSS); using drop=auto (the detectors to drop found from the "
-                                 "DEM)\n")
+                _warn_ignored("drop=css: no minority-basis detectors (they are only known for a Stim circuit "
+                              "classified as CSS); using drop=auto (the detectors to drop found from the DEM)")
         outd_file = str(outD) if outD else None
         if out_reduced and outd_file is None:
             outd_file = create_unique_file(extension="_outD.txt")
@@ -5162,7 +5206,7 @@ def compute_dem_distance(
             smax=smax if smax is not None else 0, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC,
             need_cws=bool(do_cws or outC), eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose,
             nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
-            kwin=kwin if kwin > 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+            kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
             cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
             merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file,
             sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune
@@ -5564,6 +5608,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "use_cache": True,
         "do_cws": False,
         "verbose": False,
+        "silent": False,
         "nothrottle": False,
         "chunk_size": 0,
         "ksub": 0,
@@ -5590,6 +5635,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "morehelp_topic": None,
         "version": False,
         "unrecognized": [],
+        "ignored_files": [],
     }
 
     def _has_later_input_file(start_idx: int) -> bool:
@@ -5646,6 +5692,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
         if arg in ("-v", "--verbose", "verbose", "-verbose"):
             args["verbose"] = True
+            i += 1
+            continue
+
+        if arg in ("-q", "--silent", "-silent", "silent", "--quiet"):
+            args["silent"] = True
             i += 1
             continue
 
@@ -5794,6 +5845,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                         args["finH"] = arg
                     elif args["finG"] is None and args["finL"] is None:
                         args["finG"] = arg
+                    else:
+                        args["ignored_files"].append(arg)
+                else:
+                    args["ignored_files"].append(arg)
             else:
                 args["unrecognized"].append(arg)
             i += 1
@@ -6047,7 +6102,7 @@ Allowed parameters:
   timeout, threads, nothrottle, chunk_size (batch), ksub, kwin (win), win_mode,
   win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, start_scan,
   cbeg, cend, finC, outC, maxC, expand, dW, irred, seed, debug, solver, cache,
-  --no-cache, --verbose, --cws, --trust-start, sort_rows, cc_prune, ortho
+  --no-cache, --verbose, --silent, --cws, --trust-start, sort_rows, cc_prune, ortho
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -6110,6 +6165,7 @@ Codeword collection & caching:
   cache=FILE            Persistent JSON cache file (default: tmp_dist_cache.json)
   --no-cache / nocache  Disable persistent JSON caching
   --verbose / -v        Explain bounds, steps, cache status, and miss probability estimates
+  --silent / -q         No warnings on stderr for the inputs which are ignored
 
 Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
@@ -6122,7 +6178,7 @@ Extra parameters (see --morehelp for details):
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500, alias: batch)
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
-  kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, alias: win)
+  kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, -1: none, alias: win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
   win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM, 512 for matrices)
   pairs=N (-1)          RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
@@ -6289,7 +6345,7 @@ Required input (at least one matrix/model specification):
                         error); the ignored inputs (e.g., matrices with fdem, pmin, merge, expand,
                         drop, or outD without fdem, basis, --p-noise, or --force-noise without a Stim
                         circuit, basis without drop=css, fin with finH, classical=1 with finG,
-                        ortho=0 without G) give a warning.
+                        ortho=0 without G) give a warning (unless --silent).
 
 Calculation method:
   method=1|2|3          Calculation method (default: 3):
@@ -6369,7 +6425,8 @@ Multithreading & throttling:
                         column j0, used in every RW step (alias: win=N).  Default: 0 = automatic
                         hybrid for n>=500: every other step uses an index window (win_mode=1) of
                         win_hyb columns, and the other steps uniform random permutations (also
-                        for codewords which are not local in the column order).
+                        for codewords which are not local in the column order).  kwin=-1 (any
+                        negative value): no windows, uniform random permutations in every step.
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
   win_hyb=N             Window size of the hybrid RW steps (kwin=0, n>=500; at most 3n/4).
@@ -6533,6 +6590,10 @@ General options:
                         (from the average hits <n>, and from uniform random information sets
                         with n, rank(H), and the RW steps), with the RW steps and time needed
                         for a 1% miss probability.
+  --silent / -q         No warnings on stderr for the inputs which are ignored (e.g., matrices with
+                        fdem, the options of the binary with solver=codedistance, or the options
+                        not used with --model-lb); the warnings on the validity of a result are
+                        still written.  In Python: set_silent().
   seed=N                Random number generator seed (default: 0; the binary replaces seed<=0 by
                         time(NULL) + 10*pid - 1000*seed).
   debug=N               Debug bitmap (default: 0), a decimal or hexadecimal (0x...) integer;
@@ -6709,8 +6770,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
 
     _warn_disabled_simple_full(args.get("simple"), args.get("full"), cli=True)  # (not passed on)
     if args.get("irred") is not None and args["irred"] != 1:  # (not passed on: the binary's default irred=1)
-        sys.stderr.write(f"# Warning: irred={args['irred']} is disabled in the Python interface (ignored: only "
-                         f"irreducible codewords are recorded); use the dist_m4ri binary directly\n")
+        _warn_ignored(f"irred={args['irred']} is disabled in the Python interface (ignored: only irreducible "
+                      f"codewords are recorded); use the dist_m4ri binary directly")
     stim_opts = [opt for opt, on in (("basis=", args.get("basis") is not None),
                                      ("--out-stim", args.get("out_stim") is not None),
                                      ("--p-noise", args.get("p_noise") is not None),
@@ -6762,6 +6823,11 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
         quantum = bool(given("Hx", "Hz", "finG", "finL", "fin")) or args.get("classical") == 0
         if args.get("fdem") or not quantum:
             warns.append("ortho=0: only used for a quantum code with G (finG=, fin=, or Hx= and Hz=); ignored")
+    if args.get("css") is not None:
+        warns.append(f"css={args['css']}: not used by the Python interface (CSS codes only); ignored")
+    for f in args.get("ignored_files") or []:
+        warns.append(f"{f}: a positional file which is not used (not a .dem, .stim, .mtx, or .mmx file, or a third "
+                     f"matrix file); ignored")
     if args.get("model_lb"):  # the code-sized model of a Stim circuit (compute_model_lower_bound())
         ign = [opt for opt, on in (("outC=", args.get("outC") is not None), ("finC=", args.get("finC") is not None),
                                    ("--cws", bool(args.get("do_cws")) and args.get("outC") is None),
@@ -6776,6 +6842,17 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                                    ("maxC=", bool(args.get("maxC"))), ("dW=", args.get("dW", -1) >= 0),
                                    ("merge=", args.get("merge") is not None),
                                    ("expand=", args.get("expand") is not None),
+                                   ("wmin=", args.get("wmin", 1) != 1), ("smax=", args.get("smax") is not None),
+                                   ("noscan=", bool(args.get("noscan"))), ("cbeg=", args.get("cbeg") is not None),
+                                   ("cend=", args.get("cend") is not None),
+                                   ("--trust-start", bool(args.get("trust_start"))),
+                                   ("start_scan=", bool(args.get("start_scan"))),
+                                   ("chunk_size=", bool(args.get("chunk_size"))), ("ksub=", bool(args.get("ksub"))),
+                                   ("kwin=", bool(args.get("kwin"))), ("win_mode=", bool(args.get("win_mode"))),
+                                   ("win_hyb=", bool(args.get("win_hyb"))),
+                                   ("min_hits=", args.get("min_hits") is not None),
+                                   ("cov_cws=", args.get("cov_cws", 100) != 100),
+                                   ("refresh=", args.get("refresh") is not None),
                                    ("solver=", args.get("solver") not in (None, "dist_m4ri"))) if on]
         if ign:
             warns.append(f"{', '.join(ign)}: not used with --model-lb; ignored")
@@ -6785,10 +6862,19 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
         if args.get("model_minority"):
             warns.append("--model-minority: only used with --model-lb; ignored")
     for w in warns:
-        sys.stderr.write(f"# Warning: {w}\n")
+        _warn_ignored(w)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """The CLI (see print_cli_help()); with --silent, set_silent() is on during the run, and restored at its end."""
+    report = _report_ignored
+    try:
+        return _main(argv)
+    finally:
+        set_silent(not report)
+
+
+def _main(argv: Optional[List[str]] = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
@@ -6797,6 +6883,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     except ValueError as e:
         sys.stderr.write(f"Error: {e}\n")
         return 1
+    if args.get("silent"):  # no warnings on the inputs which are ignored
+        set_silent(True)
 
     if args.get("version"):
         print(f"dist_m4ri.py version {__version__}")

@@ -57,7 +57,7 @@ matrices.
 
 Variants: a window localizes the column order around a random column, in every step with `kwin > 0` (`kwin` columns),
 and by default (`kwin=0`) for `n >= 500` in every other step, with windows of `win_hyb` consecutive columns: 256 for a
-DEM, whose errors are in time order, and 512 for matrices.
+DEM, whose errors are in time order, and 512 for matrices; `kwin=-1` turns the windows off.
 The window columns come first in the elimination order, so that a codeword with most of its columns in the window is
 found far more often; a window much larger than the minimum-weight codewords, e.g., one round of a DEM, has many
 columns which cannot be pivots and helps little.

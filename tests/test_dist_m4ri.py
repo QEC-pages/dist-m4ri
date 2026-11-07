@@ -2623,6 +2623,65 @@ def test_css_and_quantum_distance_inputs():
         dist_m4ri.compute_quantum_distance(H, G=H, L=[[1] * 7])
 
 
+def test_kwin_negative_turns_windows_off(capsys):
+    # kwin=-1 (any negative value): no windows, uniform random permutations in every RW step; passed to the binary
+    H = os.path.join(EXAMPLES_DIR, "c96H.mmx")
+    dist_m4ri.run_dist_m4ri(method=1, finH=H, steps=10, threads=1, kwin=-1, debug=dist_m4ri.PY_DBG_COMMANDS)
+    assert " kwin=-1" in capsys.readouterr().out
+    use_cache = dist_m4ri._use_distance_cache
+    dist_m4ri.disable_distance_cache()
+    try:
+        dist_m4ri.compute_classical_distance(H, method=1, num_steps=10, kwin=-1, debug=dist_m4ri.PY_DBG_COMMANDS)
+        assert " kwin=-1" in capsys.readouterr().out
+    finally:
+        if use_cache:
+            dist_m4ri.enable_distance_cache()
+
+
+def test_codedistance_unused_defaults():
+    # the defaults of _CODEDISTANCE_UNUSED are those of the compute_*() functions
+    import inspect
+    for func in (dist_m4ri.compute_classical_distance, dist_m4ri.compute_quantum_distance,
+                 dist_m4ri.compute_css_distance, dist_m4ri.compute_dem_distance):
+        params = inspect.signature(func).parameters
+        for name, default in dist_m4ri._CODEDISTANCE_UNUSED.items():
+            if name in params:
+                assert params[name].default == default, (func.__name__, name)
+
+
+def test_ignored_inputs_warnings(tmp_path, capsys, monkeypatch):
+    # the inputs which are ignored give a warning on stderr, unless --silent (in Python: set_silent())
+    other = tmp_path / "notes.txt"
+    other.write_text("x")
+    args = dist_m4ri.parse_cli_args(["fdem=c.stim", "--model-lb", "kwin=5", "min_hits=0", "css=1", str(other)])
+    dist_m4ri._warn_cli_conflicts(args)
+    err = capsys.readouterr().err
+    assert "kwin=, min_hits=: not used with --model-lb; ignored" in err
+    assert "css=1: not used by the Python interface" in err and f"{other}: a positional file" in err
+    H = os.path.join(EXAMPLES_DIR, "c96H.mmx")
+    try:
+        for silent in (False, True):
+            argv = [f"finH={H}", "css=1", "method=1", "steps=10", "--no-cache"] + (["--silent"] if silent else [])
+            assert dist_m4ri.main(argv) == 0
+            assert ("css=1" in capsys.readouterr().err) == (not silent)
+    finally:
+        dist_m4ri.enable_distance_cache()
+    # solver="codedistance" does not use the options of the binary (the solver itself is not run here)
+    def no_codedistance():
+        raise RuntimeError("codedistance not run")
+    monkeypatch.setattr(dist_m4ri, "_get_codedistance", no_codedistance)
+    with pytest.raises(RuntimeError, match="not run"):
+        dist_m4ri.compute_classical_distance(H, solver="codedistance", threads=4, kwin=-1)
+    assert "threads=, kwin=: not used with solver='codedistance'; ignored" in capsys.readouterr().err
+    dist_m4ri.set_silent(True)
+    try:
+        with pytest.raises(RuntimeError, match="not run"):
+            dist_m4ri.compute_classical_distance(H, solver="codedistance", threads=4)
+        assert "not used" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.set_silent(False)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

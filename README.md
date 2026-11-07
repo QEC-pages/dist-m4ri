@@ -130,7 +130,8 @@ Relevant parameters:
 - `kwin=[int]` (alias: `win=[int]`): Localized column permutation window size $W$: the random column order starts with
   $W$ columns near a random column, which are thus preferred as pivots, in every RW step (default: 0; for $n \ge 500$,
   every other RW step then uses an index window of `win_hyb` consecutive columns, as with `win_mode=1`, and the other
-  steps use uniform random permutations, also for codewords which are not local in the column order).
+  steps use uniform random permutations, also for codewords which are not local in the column order). A negative
+  `kwin` (e.g., `kwin=-1`) turns the windows off: uniform random permutations in every RW step.
 - `win_mode=[0|1]`: Window construction mode when `kwin > 0`: `0` for Tanner graph BFS neighborhood, `1` for contiguous
   column index window (default: 0).
 - `win_hyb=[int]`: Window size of the hybrid RW steps (with `kwin=0` and $n \ge 500$; at most $3n/4$). Default: 0, i.e.,
@@ -1128,6 +1129,9 @@ interoperability without manual threading overhead.
   missing input file, or rows of $H$ and $G$ which are not orthogonal), `ValueError` for invalid option values (e.g.,
   `cc_prune`, `drop`, `p_noise`, or `method=2` without a limit `wmax`, `dmax`, `dstop`, or `timeout`), and
   `ImportError` if `stim` or `codedistance` is needed but not installed.
+- Inputs which are ignored give a warning on `stderr` (`# Warning: ...`), unless `set_silent()` is on (in the CLI:
+  `--silent`, also `-q`): e.g., with `solver="codedistance"`, the options of the binary which are not at their
+  defaults. The warnings on the validity of a result (e.g., for `ksub`, `ortho=0`, or `start`) are always written.
 - CLI (`python3 dist_m4ri.py`): `--version` also shows the version of the `dist_m4ri` binary; inputs which are ignored
   give a warning on `stderr` (the input is selected in the order `fdem`, `Hx`/`Hz`, `finH`/`finG`/`finL`/`fin`; e.g.,
   matrices with `fdem`, `pmin`, `merge`, `expand`, `drop`, `outD`, or `--out-reduced` without `fdem`, `basis`,

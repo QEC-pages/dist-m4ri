@@ -61,7 +61,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 ### Task 2: Localized & Windowed Column Permutations for DEMs
 - [x] Add parameters `kwin=[int]` (window size $W$ in every step; default `0`: uniform random permutations, and for
   $n \ge 500$ an index window of `win_hyb` columns on every other step, see **RW windows for big DEMs** in section 2;
-  alias `win=[int]`) and `win_mode=[0|1]` (default `0`).
+  alias `win=[int]`) and `win_mode=[0|1]` (default `0`). A negative `kwin` (e.g., `-1`) turns the windows off
+  (uniform random permutations in every step; documented, and passed by the Python wrapper, since 2026-11-07).
 - [x] **Window Construction**:
   - Pick a seed column $j_0 \in [0, n-1]$ uniformly at random per trial.
   - **Mode 0 (Tanner Graph BFS Neighbors)**: Perform BFS on the bipartite graph between columns and check rows starting
@@ -821,7 +822,11 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] native python interface (as opposed to calling external program) to speed
       up multiple repeated calls?  Or, perhaps a simplified version only for
       small time-out?
-- [x] Recognize folded circuits (see https://arxiv.org/abs/2604.09797)
+- [ ] Recognize folded circuits (see https://arxiv.org/abs/2604.09797): an option to detect a memory circuit with a
+  folded structure, i.e., in which each measurement round $i > 1$ is done in the reverse addressing order of the first
+  one. For such a circuit, it is sufficient to compute the circuit distance at $T = 1$ (a single round). Open: the
+  test of the structure (e.g., the order of the two-qubit gates of each round) and the option. (This item was checked
+  by mistake until 2026-11-07; nothing is implemented yet.)
 - [ ] an option to keep reading commands from stdin (reduced startup cost)
 - [ ] documentation: model code = a variant of extended CSS (specify exact relation)
 - [ ] optional analysis of check matrices and/or model code using sparse

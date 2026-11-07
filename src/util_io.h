@@ -140,7 +140,8 @@ typedef struct{
   int chunk_size; /* RW chunk/batch size (0 for auto) */
   int ksub;       /* RW subspace dimension sampled from ker(H) (0 for full H); experimental, should not be used */
   int kwin;       /* RW localized window size W, used in every step (0: uniform random permutations, and for n >= 500
-                     an index window of win_hyb columns on every other step, see rw_hybrid_window()) */
+                     an index window of win_hyb columns on every other step, see rw_hybrid_window(); < 0: no
+                     windows) */
   int win_mode;   /* RW window mode: 0 = Tanner BFS, 1 = index proximity */
   int win_hyb;    /* window size of the hybrid RW steps (kwin=0, n >= 500: an index window on every other step); 0:
                      256 columns for a DEM, 512 for matrices (see rw_hybrid_window()) */
@@ -884,6 +885,8 @@ void print_short_help(const char *prog);
   "                     n>=500: every other step uses an index window (win_mode=1)\n" \
   "                     of win_hyb columns, the other steps uniform random\n" \
   "                     permutations (also for codewords which are not local).\n" \
+  "                     kwin=-1 (any negative value): no windows, uniform random\n" \
+  "                     permutations in every step.\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
   "                     0: Tanner graph BFS neighbors around random seed column.\n" \
   "                     1: Contiguous index proximity window around seed column.\n" \
