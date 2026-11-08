@@ -1522,7 +1522,7 @@ def _cert_is_conditional(cert: Any) -> bool:
     return False
 
 
-def _cert_extract_bounds(cert: Any) -> Tuple[int, int]:
+def _cert_extract_bounds(cert: Any, certified_dmin: int = 1) -> Tuple[int, int]:
     """
     Extracts unconditional (dmin, dmax) from a qec_cert Certificate for dist_m4ri reporting and caching:
     - An exact result (dmin = dmax = d) only if status == 'exact', witness_verified is True, and not conditional.
@@ -1535,6 +1535,8 @@ def _cert_extract_bounds(cert: Any) -> Tuple[int, int]:
     is_cond = _cert_is_conditional(cert)
     raw_lb = int(get("lower_bound") or 0)
     raw_ub = int(get("upper_bound") or 0)
+    if is_cond and certified_dmin > 1 and _cert_wmin_discharged(cert, certified_dmin):
+        is_cond = False
     if status == "exact" and wit_ver and not is_cond and raw_ub > 0 and raw_lb == raw_ub:
         return raw_ub, raw_ub
     c_ub = raw_ub if (wit_ver and raw_ub > 0) else 0
@@ -1542,6 +1544,80 @@ def _cert_extract_bounds(cert: Any) -> Tuple[int, int]:
     if c_ub > 0 and c_lb > c_ub:
         c_lb = c_ub
     return c_lb, c_ub
+
+
+def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
+    """
+    True iff the certificate's conditionality is caused solely by an assumed lower bound
+    lb_assumed_wmin <= certified_dmin (already certified in _distance_cache), with no trust
+    flags, no precondition violation, and no other conditional stage or reduction.
+    """
+    if certified_dmin <= 1:
+        return False
+    get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
+    if get("status") == "conditional" or bool(get("precondition_violated", False)):
+        return False
+    if bool(get("trust_sym", False)) or bool(get("trust_quot", False)):
+        return False
+    inst = get("instance", None)
+    inst_d = inst if isinstance(inst, dict) else {}
+    if (
+        bool(inst_d.get("trust_sym", False))
+        or bool(inst_d.get("trust_quot", False))
+        or bool(inst_d.get("precondition_violated", False))
+    ):
+        return False
+    assumed_wmin = int(get("lb_assumed_wmin", None) or inst_d.get("lb_assumed_wmin", 0) or 0)
+    if not (1 < assumed_wmin <= certified_dmin):
+        return False
+    sectors = inst_d.get("sectors")
+    if isinstance(sectors, dict):
+        for sec in sectors.values():
+            if _cert_is_conditional(sec) and not _cert_wmin_discharged(sec, certified_dmin):
+                return False
+    stages = get("stages", ()) or ()
+    pinned_ok = any(
+        isinstance(s, dict) and s.get("name") == "polymer_pinning" and s.get("shift_verified") is True
+        for s in stages
+    )
+    for s in stages:
+        if isinstance(s, dict) and s.get("lb_conditional"):
+            sname = str(s.get("name", "") or "")
+            if bool(s.get("trust_sym", False)) or bool(s.get("trust_quot", False)):
+                return False
+            if sname == "search":
+                sym_ok = bool(s.get("sym_verified", True)) or (
+                    s.get("sym_kind") == "pinned" and pinned_ok
+                )
+                if not sym_ok:
+                    return False
+            elif sname != "p1_projection_lb" and not sname.startswith("fold_mod_"):
+                return False
+    reductions = get("reductions", ()) or ()
+    pinned_red_ok = pinned_ok or any(
+        isinstance(r, dict)
+        and r.get("name") == "polymer_pinning"
+        and (r.get("params") or {}).get("shift_verified") is True
+        for r in reductions
+    )
+    for r in reductions:
+        if not isinstance(r, dict):
+            continue
+        rp = r.get("params") or {}
+        if r.get("conditional"):
+            return False
+        if rp.get("lb_conditional"):
+            rname = str(r.get("name", "") or "")
+            if rname == "cc_mitm_search":
+                sym_ok = bool(rp.get("sym_verified", True)) or (
+                    rp.get("sym_kind") == "pinned" and pinned_red_ok
+                )
+                wmin_r = int(rp.get("wmin", 0) or 0)
+                if not sym_ok or (wmin_r > certified_dmin):
+                    return False
+            elif rname not in ("p1_projection_lb", "capped_spacetime_folding"):
+                return False
+    return True
 
 
 def _cert_code_distance(
@@ -1587,7 +1663,7 @@ def _cert_code_distance(
     if dstop > 0:
         w_hi = min(w_hi, max(1, dstop - 1)) if (wmax > 0 or eff_dmax > 0) else max(1, dstop - 1)
     cert = run_cert_fn(w_lo, max(w_lo, w_hi))
-    c_lb, c_ub = _cert_extract_bounds(cert)
+    c_lb, c_ub = _cert_extract_bounds(cert, (entry.get("dmin", 0) or 0) if entry else 0)
     p_dmin = (entry.get("dmin", 0) or 0) if entry else 0
     p_dmax = (entry.get("dmax", 0) or 0) if entry else 0
     p_rw = (entry.get("rw_steps", 0) or 0) if entry else 0

@@ -2749,6 +2749,11 @@ def test_cc_zero_col_strip_and_even_weight_parity(tmp_path):
             H_even, method=2, wmax=4, threads=2, do_cws=True, return_info=True
         )
         assert d == 4 and d_info == [4, 4, 0] and len(cws) == 14
+        # Sub-distance wmax=2 on even code (d=4) certifies w=2 and steps dmin to w+2=4 (not w+4)
+        d_lo, d_info_lo = dist_m4ri.compute_classical_distance(
+            H_even, method=2, wmax=2, threads=2, engine="dist_m4ri", return_info=True
+        )
+        assert abs(d_lo) == 4 and d_info_lo == [4, 0, 0]
         d_s, d_info_s, cws_s = dist_m4ri.compute_classical_distance(
             H_even, method=2, wmax=4, smax=2, threads=2, do_cws=True, return_info=True
         )
@@ -2762,6 +2767,14 @@ def test_cc_zero_col_strip_and_even_weight_parity(tmp_path):
         )
         assert dq == 4 and dq_info == [4, 4, 0] and dq_s == 4 and dq_info_s == [4, 4, 0]
         assert sorted(cws_q) == sorted(cws_qs) and all(0 not in cw for cw in cws_q)
+
+        # 3. DEM with both a (0,0) column and a (0,1) weight-1 logical column (zero detectors, nonzero observable):
+        #    strip_zero_hl must NOT strip the (0,1) column (distance must be 1, not 2).
+        dem_w1 = "error(0.1) D0 ^ D0\nerror(0.1) L0\nerror(0.1) D0 L0\nerror(0.1) D0\n"
+        d_dem, info_dem = dist_m4ri.compute_dem_distance(
+            dem_w1, method=2, wmax=2, threads=1, engine="dist_m4ri"
+        )
+        assert d_dem == 1 and info_dem[1] == 1
     finally:
         dist_m4ri.enable_distance_cache()
 
@@ -2808,6 +2821,80 @@ def test_cert_engine_delegation_and_cache_rules(tmp_path, monkeypatch):
         )
         assert d2 == 0 and info2 == [0, 0, 0]
         assert dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file) is None
+
+        # 2b. Unverified caller dmin > 1 must NEVER pollute _distance_cache when cert returns a smaller c_lb
+        fake_partial = SimpleNamespace(
+            status="timeout", distance=None, lower_bound=2, upper_bound=5,
+            witness_verified=True, lb_conditional=False, ub_conditional=False, method_used="cc"
+        )
+        fake_pipeline.certify = lambda *a, **kw: fake_partial
+        d2b, info2b = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, dmin=4, engine="cert", return_info=True, cache_file=cache_file
+        )
+        assert d2b == 5 and info2b == [4, 5, 0]
+        cached_2b = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)
+        assert cached_2b["dmin"] == 2 and cached_2b["dmax"] == 5
+
+        # 2c. D1-OBS-1 regression: when cache already holds a certified dmin (p_dmin=3 from wmax=2),
+        #     a subsequent wmax=5 run passes wmin=3 to qec_cert, which marks lb_conditional=True with
+        #     lb_assumed_wmin=3. Because lb_assumed_wmin <= p_dmin and no trust flags or other conditional
+        #     stages exist, the new lower bound (5) is discharged and cached as exact [5, 5, 0].
+        dist_m4ri.clear_distance_cache(cache_file, clear_file=True)
+        fake_step1 = SimpleNamespace(
+            status="bounds", distance=None, lower_bound=3, upper_bound=5,
+            witness_verified=True, lb_conditional=False, ub_conditional=False, method_used="cc"
+        )
+        fake_pipeline.certify = lambda *a, **kw: fake_step1
+        d_s1, info_s1 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, wmax=2, engine="cert", return_info=True, cache_file=cache_file
+        )
+        assert d_s1 == 5 and info_s1 == [3, 5, 0]
+        cached_s1 = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)
+        assert cached_s1["dmin"] == 3 and cached_s1["dmax"] == 5
+
+        # If a certificate with p_dmin=3 also has trust_sym=True (or unverified symmetry), keep rejecting LB
+        fake_trusted_sym = SimpleNamespace(
+            status="bounds", distance=None, lower_bound=5, upper_bound=5,
+            witness_verified=True, lb_conditional=True, lb_assumed_wmin=3,
+            instance={"lb_conditional": True, "lb_assumed_wmin": 3, "trust_sym": True},
+            stages=[{"name": "search", "lb_conditional": True, "sym_kind": "orbit", "sym_verified": False}],
+            reductions=[],
+        )
+        fake_pipeline.certify = lambda *a, **kw: fake_trusted_sym
+        d_ts, info_ts = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, wmax=5, engine="cert", return_info=True, cache_file=cache_file
+        )
+        assert d_ts == 5 and info_ts == [3, 5, 0]
+        assert dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)["dmin"] == 3
+
+        # When the ONLY conditional reason is lb_assumed_wmin=3 <= p_dmin=3, accept LB=5 -> exact [5, 5, 0]
+        seen_wmin = []
+
+        def _fake_step2(*a, **kw):
+            w_in = int(kw.get("wmin", 1))
+            seen_wmin.append(w_in)
+            return SimpleNamespace(
+                status="bounds", distance=None, lower_bound=5, upper_bound=5,
+                witness_verified=True, lb_conditional=True, lb_assumed_wmin=w_in,
+                instance={"lb_conditional": True, "lb_assumed_wmin": w_in},
+                stages=[{"name": "search", "lb_conditional": True, "sym_kind": "orbit", "sym_verified": 2}],
+                reductions=[{
+                    "name": "cc_mitm_search",
+                    "params": {
+                        "wmin": w_in, "wmax": 4, "sym_kind": "orbit",
+                        "sym_verified": 2, "lb_conditional": True,
+                    },
+                }],
+            )
+
+        fake_pipeline.certify = _fake_step2
+        d_s2, info_s2 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, wmax=5, engine="cert", return_info=True, cache_file=cache_file
+        )
+        assert seen_wmin == [3]
+        assert d_s2 == 5 and info_s2 == [5, 5, 0]
+        cached_s2 = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)
+        assert cached_s2["dmin"] == 5 and cached_s2["dmax"] == 5
 
         # 3. engine='auto' delegates distance-only calls, but falls back to dist_m4ri when do_cws=True
         fake_pipeline.certify = lambda *a, **kw: fake_exact

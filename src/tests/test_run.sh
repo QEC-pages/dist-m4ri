@@ -1353,6 +1353,7 @@ CWS114A=$(mktemp --suffix=.nz)
 CWS114B=$(mktemp --suffix=.nz)
 assert_output "$BIN_FORK method=2 $C96 wmax=6 threads=2 debug=8" 0 "^6 6 0$" \
     "even weights only \(1 in rowspan\(H\)\)"
+assert_output "$BIN_FORK method=2 $C96 wmax=2 threads=2 debug=0" 0 "^4 0 0$" ""
 if $BIN_FORK method=2 $C96 wmax=6 threads=2 debug=8 2>&1 | grep -q "searching w=[135] "; then
     echo "  [FAIL] Test 114: odd CC weights were not skipped on c96H with smax=0"
     FAILED=1
@@ -1374,6 +1375,8 @@ if [ "$(grep -v '^%' "$CWS114A" | tr -s ' ')" != "3 2 3 5" ]; then
     echo "  [FAIL] Test 114: expected codeword '3 2 3 5' in outC with (0,0)-cols stripped, got: $(cat "$CWS114A")"
     FAILED=1
 fi
+printf 'error(0.1) D0 ^ D0\nerror(0.1) L0\nerror(0.1) D0 L0\nerror(0.1) D0\n' > "$DEM114"
+assert_output "$BIN_FORK method=2 fdem=$DEM114 drop=0 wmax=2 threads=1 debug=0" 0 "^1 1 0$" ""
 rm -f "$CWS114A" "$CWS114B" "$DEM114"
 
 # Test 115: rank-0 finG (all-zero stabilizer generator matrix, rowspan(G) = {0}):
