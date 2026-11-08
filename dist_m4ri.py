@@ -33,7 +33,7 @@ _codedistance_mod = None
 _stim_mod = None
 _qec_cert_mod = None
 
-__version__ = "0.16.0"
+__version__ = "0.16.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
