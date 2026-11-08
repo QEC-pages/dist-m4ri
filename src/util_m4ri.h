@@ -735,6 +735,17 @@ static inline int colmask_syndrome_non_zero(const colmask_t * const cm, const in
    *        and optionally inject a low-weight codeword via Steinitz exchange.
    */
   void refresh_nullspace_basis(mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *rng_state);
+
+  /**
+   * @brief Check whether the all-ones vector lies in the row span of a binary CSR matrix H over GF(2).
+   *
+   * When 1_n is in rowspan(H), every vector c in ker(H) satisfies 1_n . c = 0 (mod 2), so all codewords have even
+   * Hamming weight.
+   *
+   * @param H Binary matrix in compressed CSR form.
+   * @return 1 if the all-ones vector is in rowspan(H), 0 otherwise.
+   */
+  int csr_all_ones_in_rowspan(const csr_t * const H);
   
 #if defined(__cplusplus) && !defined (_MSC_VER)
 }

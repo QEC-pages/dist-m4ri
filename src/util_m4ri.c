@@ -1305,3 +1305,30 @@ void refresh_nullspace_basis(mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *r
   mzp_free(perm);
   mzp_free(pivs);
 }
+
+int csr_all_ones_in_rowspan(const csr_t * const H) {
+  if (!H || H->rows <= 0 || H->cols <= 0 || H->nz != -1) return 0;
+  const int m = H->rows, n = H->cols;
+  char * const has_nz = calloc((size_t)n, 1);
+  if (!has_nz) ERROR("memory allocation");
+  int covered = 0;
+  for (int t = 0; t < H->p[m]; t++) {
+    const int c = H->i[t];
+    if (c >= 0 && c < n && !has_nz[c]) {
+      has_nz[c] = 1;
+      covered++;
+    }
+  }
+  free(has_nz);
+  if (covered < n) return 0;
+  mzd_t * const mH = mzd_from_csr(NULL, H);
+  const rci_t rank_H = mzd_echelonize(mH, 0);
+  mzd_t * const m1 = mzd_init(1, n);
+  for (int c = 0; c < n; c++) mzd_write_bit(m1, 0, c, 1);
+  mzd_t * const mAug = mzd_stack(NULL, mH, m1);
+  mzd_free(mH);
+  mzd_free(m1);
+  const rci_t rank_Aug = mzd_echelonize(mAug, 0);
+  mzd_free(mAug);
+  return rank_Aug == rank_H;
+}

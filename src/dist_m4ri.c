@@ -221,6 +221,7 @@ typedef struct {
   _Alignas(64) atomic_llong cc_next; /* weight, fixed levels, next work unit of the current CC round, see `cc_pack()` */
   csr_t *mHT_cc;
   int max_col_W;
+  bool even_weight_only;                 /* 1_n in rowspan(H) and smax=0: all codewords have even weight */
   int cc_B;                              /* CC work units: radix B, the maximum row weight of H */
   int cc_R[CC_SPLIT_MAX_LEVELS + 1];     /* work units per start index with L fixed levels: B^L (0 if too large) */
   double cc_branch;                      /* typical number of branches per level: average row weight of H - 1 */
@@ -2193,10 +2194,22 @@ static void *worker_thread_func(void *arg) {
             /* with the expert `start` list, `idx` enumerates the listed start columns */
             const int col = (ctx->p->start_num > 0) ? ctx->p->start_list[idx] : idx;
 
+            if (walk.S) {
+              const int swei = ctx->mHT_cc->p[col + 1] - ctx->mHT_cc->p[col];
+              if (w > 1) {
+                if (swei > 0 && swei <= (w - 1) * ctx->max_col_W) {
+                  if (walk.prune > 0) cc_bnb_unit(&walk, col, idx, w, fix, lev);
+                  else cc_walk_unit(&walk, col, w, fix, lev);
+                }
+                continue;
+              }
+              if (swei > 0) continue;
+            }
+
             err->vec[0] = urr->vec[0] = col;
             err->wei = urr->wei = 1;
             syn[1]->wei = 0;
-            int swei = one_csr_row_combine(syn[1], syn[0], ctx->mHT_cc, col);
+            int swei = walk.S ? 0 : one_csr_row_combine(syn[1], syn[0], ctx->mHT_cc, col);
 
             if (ctx->p->smax && swei > 0 && swei <= ctx->p->smax) {
               if (swei < warg->min_swei[1]) {
@@ -2478,6 +2491,18 @@ static void run_method1_coordinator(distfork_ctx_t *ctx) {
  * W(w-1)/W(w-2), clamped to [2, 10] (4 if W(w-2) is not known), also returned in `*growth`.  Returns 0 if W(w-1)
  * has not been measured (the first round at a supplied dmin > 1). */
 static double cc_work_estimate(const distfork_ctx_t * const ctx, const int w, double * const growth) {
+  if (ctx->even_weight_only && !(w & 1)) {
+    *growth = 16.0;
+    if (w <= 2) return 1e-4;
+    if (w > MAX_W) return 0.0;
+    const double prev = ctx->cc_time_per_weight[w - 2];
+    if (!(prev > 0.0)) return 0.0;
+    if (w >= 6 && ctx->cc_time_per_weight[w - 4] > 1e-4) {
+      const double g = prev / ctx->cc_time_per_weight[w - 4];
+      *growth = (g < 4.0) ? 4.0 : ((g > 100.0) ? 100.0 : g);
+    }
+    return ((prev > 1e-4) ? prev : 1e-4) * (*growth);
+  }
   *growth = 4.0;
   if (w <= 1) return 1e-4; /* one syndrome per column */
   if (w > MAX_W) return 0.0;
@@ -2539,9 +2564,13 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       w_limit = minint(w_limit, collecting ? dstop + extra_w : dstop - 1);
     }
     if (w > w_limit) {
-      ctx->stop_w = w - 1;
+      ctx->stop_w = w_limit;
       ctx_stop(ctx, (dstop > 0 && atomic_load(&ctx->dmin) >= dstop) ? STOP_DSTOP : STOP_CC_DONE);
       break;
+    }
+    if (ctx->even_weight_only && (w & 1)) {
+      if (w == atomic_load(&ctx->dmin)) atomic_store(&ctx->dmin, w + 1);
+      continue;
     }
 
     double now = get_time_sec();
@@ -2651,7 +2680,8 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       atomic_store(&ctx->dmax, cw_found);
       /* the distance is known: no rounds beyond w = cw_found + extra_w */
       w_limit = minint(w_limit, cw_found + extra_w);
-      const bool more_rounds = round_completed && (w < w_limit);
+      const int next_w = (ctx->even_weight_only && !(w & 1)) ? w + 2 : w + 1;
+      const bool more_rounds = round_completed && (next_w <= w_limit);
       if (ctx->p->debug & DBG_PROGRESS) {
         if (w == cw_found && more_rounds) {
           fprintf(stderr,
@@ -2689,10 +2719,11 @@ static void run_method2_coordinator(distfork_ctx_t *ctx) {
       }
       if (certified) {
         /* Weight w analyzed without success */
-        atomic_store(&ctx->dmin, w + 1);
+        const int new_dmin = ctx->even_weight_only ? w + 2 : w + 1;
+        atomic_store(&ctx->dmin, new_dmin);
         if (ctx->p->debug & DBG_PROGRESS) {
           fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found -> dmin=%d\n",
-                  w, cc_dur, ctx->spawned, w + 1);
+                  w, cc_dur, ctx->spawned, new_dmin);
         }
       } else if (ctx->p->debug & DBG_PROGRESS) {
         fprintf(stderr, "# CC w=%d completed in %.3fs (%d CC threads): no codewords found "
@@ -2735,7 +2766,9 @@ static int m3_cc_target_w(const distfork_ctx_t * const ctx, const int cur_dmin, 
     target = (p->wmax > 0) ? p->wmax : p->spaH->cols;
   }
   const int max_allowed_w = (p->wmax > 0) ? minint(p->wmax, MAX_W - 2) : (MAX_W - 2);
-  return minint(target, max_allowed_w);
+  int res = minint(target, max_allowed_w);
+  if (ctx->even_weight_only && (res & 1)) res--;
+  return res;
 }
 
 #define M3_DEADLINE_FRACTION 0.75 /* with a timeout, a round gets enough CC threads to finish in 3/4 of the time left */
@@ -2756,7 +2789,8 @@ static int m3_plan_cc_threads(distfork_ctx_t * const ctx, const int w, const dou
    * codewords).  RW cannot improve this result, it could only find a codeword of weight w before CC does: all threads
    * run CC. */
   const int t = ctx_target(ctx, cur_dmax);
-  if (t > 0 && (w >= t - 1 || cur_dmin >= t)) return nthr;
+  const int cert_w = ctx->even_weight_only ? (t - ((t & 1) ? 1 : 2)) : (t - 1);
+  if (t > 0 && (w >= cert_w || cur_dmin >= t)) return nthr;
   /* `dexp` hint: as long as RW has not found any codeword, CC rounds w > dexp run only on the threads which cannot
    * run RW (none: CC pauses) */
   if (cur_dmax == 0 && ctx->dexp > 0 && w > ctx->dexp) return nthr - ctx->rw_threads;
@@ -2773,7 +2807,8 @@ static int m3_plan_cc_threads(distfork_ctx_t * const ctx, const int w, const dou
     int horizon = m3_cc_target_w(ctx, cur_dmin, cur_dmax);
     if (cur_dmax == 0 && ctx->dexp > 0 && ctx->dexp < horizon) horizon = ctx->dexp;
     double t_cc = est, t_k = est;
-    for (int k = w + 1; k <= horizon && k <= w + 2; k++) {
+    const int step = ctx->even_weight_only ? 2 : 1;
+    for (int k = w + step; k <= horizon && k <= w + 2 * step; k += step) {
       t_k *= growth;
       t_cc += t_k;
     }
@@ -2828,6 +2863,11 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
    * or CC paused by `dexp`), the coordinator waits for RW and re-plans when dmax changes or RW ends. */
   int wait_msg_w = 0; /* weight w for which a waiting message was printed (once per round) */
   while (!atomic_load(&ctx->stop_flag)) {
+    if (ctx->even_weight_only && (w & 1)) {
+      if (w == atomic_load(&ctx->dmin)) atomic_store(&ctx->dmin, w + 1);
+      w++;
+      continue;
+    }
     double now = get_time_sec();
     double remaining_time = (ctx->timeout > 0.0) ? (ctx->timeout - (now - ctx->start_time)) : 1e9;
     if (ctx->timeout > 0.0 && remaining_time <= 0.0) {
@@ -2857,7 +2897,8 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     if (w > target_cc_w) {
       /* CC done up to wmax: only RW can still lower dmax */
       if (!rw_on) {
-        ctx->stop_w = target_cc_w;
+        const int max_allowed_w = (ctx->p->wmax > 0) ? minint(ctx->p->wmax, MAX_W - 2) : (MAX_W - 2);
+        ctx->stop_w = (ctx->even_weight_only && target_cc_w + 1 == max_allowed_w) ? max_allowed_w : target_cc_w;
         ctx_stop(ctx, STOP_CC_DONE);
         break;
       }
@@ -3026,6 +3067,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
         /* a stop target dstop below the distance: the codewords of weight up to dstop + dW only (as in method 2) */
         max_w_lim = minint(max_w_lim, ctx->p->dstop + (ctx->p->dW > 0 ? ctx->p->dW : 0));
       }
+      if (ctx->even_weight_only && (max_w_lim & 1)) max_w_lim--;
       if (ctx->p->outC && ctx->p->dW > 0 && w < max_w_lim) {
         if (ctx->p->debug & DBG_PROGRESS) {
           if (w == cw_found) {
@@ -3075,7 +3117,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       }
 
       /* Weight w analyzed without success */
-      int new_dmin = w + 1;
+      int new_dmin = ctx->even_weight_only ? w + 2 : w + 1;
       atomic_store(&ctx->dmin, new_dmin);
       if (ctx->p->debug & DBG_PROGRESS) {
         fprintf(stderr, "# CC round w=%d finished in %.3fs (%d CC threads, %d RW threads): no codewords -> dmin=%d\n",
@@ -3534,11 +3576,14 @@ int main(int argc, char **argv) {
    * smax > 0, which needs the syndrome weights of the leaf level) */
   cc_hash_t * const cc_hash = ((p->method & 2) && p->smax == 0) ? cc_hash_new(ctx.mHT_cc, p->spaH->rows) : NULL;
   ctx.cc_hash = cc_hash;
+  ctx.even_weight_only = ((p->method & 2) && p->smax == 0 && !p->noscan && p->spaH &&
+                          csr_all_ones_in_rowspan(p->spaH));
   if (cc_hash && (p->debug & DBG_TIMING)) {
     fprintf(stderr, "# CC: %s, bitset syndromes, hash of %d nonzero columns (%d distinct) for the last two levels"
-            " (%d table slots)\n", (p->cc_prune == 0) ? "walk of the first unsatisfied row (cc_prune=0)"
+            " (%d table slots)%s\n", (p->cc_prune == 0) ? "walk of the first unsatisfied row (cc_prune=0)"
             : ((p->cc_prune == 1) ? "branch and bound (cc_prune=1)" : "branch and bound with the cover bounds "
-               "(cc_prune=2)"), cc_hash->ncols, cc_hash->nkeys, cc_hash->tmask + 1);
+               "(cc_prune=2)"), cc_hash->ncols, cc_hash->nkeys, cc_hash->tmask + 1,
+            ctx.even_weight_only ? ", even weights only (1 in rowspan(H))" : "");
   }
   /* CC work units (see `cc_pack()`): radix B = the maximum row weight of H, B^L units per start index */
   ctx.cc_B = csr_max_row_wght(p->spaH);

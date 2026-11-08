@@ -1621,10 +1621,12 @@ def test_model_lower_bound(tmp_path, capsys):
         assert captured.out.strip().splitlines()[-1] == "3 3 0 (exact)"
         assert "# Warning: outC=: not used with --model-lb; ignored" in captured.err
         dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
-        assert dist_m4ri.main([f"fdem={dem_file}", "--model-lb", "--no-cache"]) == 1
-        assert "--model-lb needs a Stim circuit" in capsys.readouterr().err
+        assert dist_m4ri.main([f"fdem={dem_file}", "--model-lb", "--no-cache", "threads=2"]) == 0
+        assert capsys.readouterr().out.strip().splitlines()[-1] == "3 0 0"
+        dem_bound, dem_info = dist_m4ri.compute_model_lower_bound(dem_file, threads=2, return_info=True)
+        assert dem_bound == 3 and dem_info["groups"] == 8 and dem_info["groups_final"] == 4
         with pytest.raises(ValueError, match="not a Stim circuit"):
-            dist_m4ri.compute_model_lower_bound(dem_file)
+            dist_m4ri.compute_model_lower_bound(S5_H)
         with pytest.raises(TypeError, match="did you mean 'minority'"):
             dist_m4ri.compute_model_lower_bound(path, minorty=False)
     finally:
@@ -2680,6 +2682,148 @@ def test_ignored_inputs_warnings(tmp_path, capsys, monkeypatch):
         assert "not used" not in capsys.readouterr().err
     finally:
         dist_m4ri.set_silent(False)
+
+
+def test_model_detector_groups_end_of_circuit_and_pure_dem(tmp_path):
+    if not dist_m4ri._HAS_STIM:
+        pytest.skip("stim is not installed")
+    import stim
+    circ = stim.Circuit.generated(
+        "surface_code:rotated_memory_z", rounds=3, distance=3,
+        after_clifford_depolarization=0.001, before_measure_flip_probability=0.001
+    ).flattened()
+    non_det = stim.Circuit()
+    det_obs = stim.Circuit()
+    meas_so_far = 0
+    total_meas = circ.num_measurements
+    for inst in circ:
+        if inst.name == "DETECTOR":
+            shifted = [stim.target_rec((meas_so_far + t.value) - total_meas)
+                       for t in inst.targets_copy() if t.is_measurement_record_target]
+            det_obs.append("DETECTOR", shifted, inst.gate_args_copy())
+        elif inst.name == "OBSERVABLE_INCLUDE":
+            shifted = [stim.target_rec((meas_so_far + t.value) - total_meas)
+                       for t in inst.targets_copy() if t.is_measurement_record_target]
+            det_obs.append("OBSERVABLE_INCLUDE", shifted, inst.gate_args_copy())
+        else:
+            if stim.gate_data(inst.name).produces_measurements:
+                meas_so_far += len(inst.target_groups())
+            non_det.append(inst)
+    circ_end_dets = non_det + det_obs
+    g1, f1, nf1 = dist_m4ri._model_detector_groups(circ)
+    g2, f2, nf2 = dist_m4ri._model_detector_groups(circ_end_dets)
+    assert (g1, f1, nf1) == (g2, f2, nf2)
+    assert len(f2) == 8 and sum(f2) == 4 and nf2 == 9
+
+    dist_m4ri.disable_distance_cache()
+    try:
+        b_end, info_end = dist_m4ri.compute_model_lower_bound(circ_end_dets, threads=2, return_info=True)
+        assert b_end == 3 and info_end["groups"] == 8 and info_end["groups_final"] == 4
+        with open(SURF_D3_DEM) as f:
+            raw_lines = [
+                ln for ln in f.read().splitlines()
+                if not ln.strip().startswith(("detector", "shift_detectors"))
+            ]
+        nocoord_dem = tmp_path / "surf_d3_nocoord.dem"
+        nocoord_dem.write_text("\n".join(raw_lines) + "\n")
+        b_nc, info_nc = dist_m4ri.compute_model_lower_bound(str(nocoord_dem), threads=2, return_info=True)
+        assert b_nc == 3 and info_nc["groups"] == 8 and info_nc["groups_final"] == 4
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cc_zero_col_strip_and_even_weight_parity(tmp_path):
+    # 1. Classical even-weight code: Extended Hamming [8, 4, 4] with 1_8 in rowspan(H)
+    H_even = np.array([
+        [1, 0, 0, 1, 1, 0, 1, 0],
+        [0, 1, 0, 1, 0, 1, 1, 0],
+        [0, 0, 1, 0, 1, 1, 1, 0],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+    ], dtype=np.int8)
+    # 2. Quantum code (H_q, L_q) with a (0,0) column at index 0 AND 1_n in rowspan(H_q)
+    H_q = np.pad(H_even, ((0, 0), (1, 0)), constant_values=0)
+    L_q = np.array([[0, 1, 1, 0, 1, 0, 0, 1, 0]], dtype=np.int8)
+    dist_m4ri.disable_distance_cache()
+    try:
+        d, d_info, cws = dist_m4ri.compute_classical_distance(
+            H_even, method=2, wmax=4, threads=2, do_cws=True, return_info=True
+        )
+        assert d == 4 and d_info == [4, 4, 0] and len(cws) == 14
+        d_s, d_info_s, cws_s = dist_m4ri.compute_classical_distance(
+            H_even, method=2, wmax=4, smax=2, threads=2, do_cws=True, return_info=True
+        )
+        assert d_s == 4 and d_info_s == [4, 4, 0] and sorted(cws_s) == sorted(cws)
+
+        dq, dq_info, cws_q = dist_m4ri.compute_quantum_distance(
+            H_q, L=L_q, method=2, wmax=4, threads=2, do_cws=True, return_info=True
+        )
+        dq_s, dq_info_s, cws_qs = dist_m4ri.compute_quantum_distance(
+            H_q, L=L_q, method=2, wmax=4, smax=2, threads=2, do_cws=True, return_info=True
+        )
+        assert dq == 4 and dq_info == [4, 4, 0] and dq_s == 4 and dq_info_s == [4, 4, 0]
+        assert sorted(cws_q) == sorted(cws_qs) and all(0 not in cw for cw in cws_q)
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cert_engine_delegation_and_cache_rules(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    cache_file = str(tmp_path / "cert_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        # 1. Exact verified unconditional certificate writes exact distance to cache
+        fake_exact = SimpleNamespace(
+            status="exact", distance=5, lower_bound=5, upper_bound=5,
+            witness_verified=True, lb_conditional=False, ub_conditional=False, method_used="cc"
+        )
+        fake_pipeline = SimpleNamespace(
+            certify=lambda *a, **kw: fake_exact,
+            certify_dem=lambda *a, **kw: fake_exact,
+            certify_circuit=lambda *a, **kw: fake_exact,
+        )
+        fake_io = SimpleNamespace(
+            DistanceProblem=lambda *a, **kw: SimpleNamespace(args=a, **kw),
+            read_mtx=lambda p: None,
+            binary_csr=lambda m: m,
+        )
+        monkeypatch.setattr(dist_m4ri, "_get_qec_cert", lambda: (None, fake_io, fake_pipeline))
+        monkeypatch.setattr(dist_m4ri, "_has_qec_cert", lambda: True)
+        d, info = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, engine="cert", return_info=True, cache_file=cache_file
+        )
+        assert d == 5 and info == [5, 5, 0]
+        cached = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)
+        assert cached["dmin"] == 5 and cached["dmax"] == 5
+
+        # 2. Unverified upper bound (witness_verified=False) or conditional LB (lb_conditional=True) is NOT cached
+        dist_m4ri.clear_distance_cache(cache_file, clear_file=True)
+        fake_unverified = SimpleNamespace(
+            status="exact", distance=5, lower_bound=5, upper_bound=5,
+            witness_verified=False, lb_conditional=True, ub_conditional=False, method_used="start_list"
+        )
+        fake_pipeline.certify = lambda *a, **kw: fake_unverified
+        d2, info2 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, engine="cert", return_info=True, cache_file=cache_file
+        )
+        assert d2 == 0 and info2 == [0, 0, 0]
+        assert dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file) is None
+
+        # 3. engine='auto' delegates distance-only calls, but falls back to dist_m4ri when do_cws=True
+        fake_pipeline.certify = lambda *a, **kw: fake_exact
+        d3, info3 = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, engine="auto", return_info=True, cache_file=cache_file
+        )
+        assert d3 == 5 and info3 == [5, 5, 0]
+        dist_m4ri.clear_distance_cache(cache_file, clear_file=True)
+        d4, info4, cws4 = dist_m4ri.compute_classical_distance(
+            S5_H, method=2, wmax=2, threads=2, engine="auto", do_cws=True, return_info=True, cache_file=cache_file
+        )
+        assert d4 == 2 and info4 == [2, 2, 0] and len(cws4) > 0
+        with pytest.raises(ValueError, match="Codeword extraction is not supported with engine='cert'"):
+            dist_m4ri.compute_classical_distance(S5_H, engine="cert", do_cws=True)
+    finally:
+        dist_m4ri.clear_distance_cache()
 
 
 if __name__ == "__main__":
