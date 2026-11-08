@@ -231,16 +231,19 @@ mzd_t *mzd_generator_from_csr(mzd_t *G, const csr_t * const H){
     G=mzd_init(n-ra,n);    
   else
     mzd_set_ui(G,0); /* clear the matrix */
-  mzd_apply_p_right_trans(mat,pivots); /* permute columns to make std form [ I C ] */
-  mzd_t *matC = mzd_submatrix(NULL, mat, 0, ra, ra, n); /* C size ra by n-ra */
-  mzd_t * winCT=mzd_init_window(G,0,0,n-ra,ra);
-  mzd_transpose(winCT,matC);
-  mzd_free(winCT); /* window is no longer needed */
-  mzd_free(matC);  /* \todo see why window does not seem to work here */
+  if (ra > 0 && ra < n) {
+    mzd_apply_p_right_trans(mat,pivots); /* permute columns to make std form [ I C ] */
+    mzd_t *matC = mzd_submatrix(NULL, mat, 0, ra, ra, n); /* C size ra by n-ra */
+    mzd_t * winCT=mzd_init_window(G,0,0,n-ra,ra);
+    mzd_transpose(winCT,matC);
+    mzd_free(winCT); /* window is no longer needed */
+    mzd_free(matC);  /* \todo see why window does not seem to work here */
+  }
   for(int i=0; i<n-ra ; i++)
     mzd_write_bit(G,i,i+ra,1); /* identity matrix on the right */
 
-  mzd_apply_p_right(G,pivots); /* permute columns back */
+  if (ra < n)
+    mzd_apply_p_right(G,pivots); /* permute columns back */
   mzp_free(pivots);
   mzd_free(mat);
   return G;

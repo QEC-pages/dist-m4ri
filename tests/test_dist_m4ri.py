@@ -2826,6 +2826,45 @@ def test_cert_engine_delegation_and_cache_rules(tmp_path, monkeypatch):
         dist_m4ri.clear_distance_cache()
 
 
+def test_zero_rank_g_and_css_sectors():
+    # Hamming [7, 4, 3] parity-check matrix (rank 3, ker(H) has classical distance 3)
+    H = np.array([
+        [1, 0, 1, 0, 1, 0, 1],
+        [0, 1, 1, 0, 0, 1, 1],
+        [0, 0, 0, 1, 1, 1, 1],
+    ], dtype=np.uint8)
+    G_zero = np.zeros((2, 7), dtype=np.uint8)
+
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        d_cl, info_cl, cws_cl = dist_m4ri.compute_classical_distance(
+            H, method=2, wmax=3, threads=2, do_cws=True, return_info=True
+        )
+        for m in (1, 2, 3):
+            dq, info_q = dist_m4ri.compute_quantum_distance(
+                H, G=G_zero, method=m, num_steps=200, wmax=3, threads=2, return_info=True
+            )
+            assert dq == d_cl == 3
+            assert info_q[1] == info_cl[1] == 3
+        dq2, info_q2, cws_q2 = dist_m4ri.compute_quantum_distance(
+            H, G=G_zero, method=2, wmax=3, threads=2, do_cws=True, return_info=True
+        )
+        assert dq2 == d_cl and info_q2 == info_cl and sorted(cws_q2) == sorted(cws_cl)
+
+        # CSS with all-zero Hz: Z-sector (ker(Hx) \ rowspan(Hz)) equals classical distance of Hx; X-sector has d=1
+        d_css1, dx1, dz1 = dist_m4ri.compute_css_distance(H, G_zero, method=2, wmax=3, threads=2)
+        assert dz1 == info_cl == [3, 3, 0]
+        assert dx1[1] == 1 and d_css1 == 1
+
+        # CSS with all-zero Hx: X-sector (ker(Hz) \ rowspan(Hx)) equals classical distance of Hz; Z-sector has d=1
+        d_css2, dx2, dz2 = dist_m4ri.compute_css_distance(G_zero, H, method=2, wmax=3, threads=2)
+        assert dx2 == info_cl == [3, 3, 0]
+        assert dz2[1] == 1 and d_css2 == 1
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

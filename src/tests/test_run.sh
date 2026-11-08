@@ -1376,6 +1376,26 @@ if [ "$(grep -v '^%' "$CWS114A" | tr -s ' ')" != "3 2 3 5" ]; then
 fi
 rm -f "$CWS114A" "$CWS114B" "$DEM114"
 
+# Test 115: rank-0 finG (all-zero stabilizer generator matrix, rowspan(G) = {0}):
+# Lx_for_CSS_code constructs L of rank n - rank(H) without aborting, and the distance and codewords match the
+# classical distance of ker(H) (no finG); an all-zero finH with rank(G) < n gives distance 1.
+GZERO115=$(mktemp --suffix=.mmx)
+CWS115A=$(mktemp --suffix=.nz)
+CWS115B=$(mktemp --suffix=.nz)
+C96H="finH=$EXAMPLES_DIR/c96H.mmx"
+printf '%%%%MatrixMarket matrix coordinate integer general\n10 96 0\n' > "$GZERO115"
+assert_output "$BIN_FORK method=2 $C96H finG=$GZERO115 wmax=6 outC=$CWS115A threads=2 debug=1" 0 "^6 6 0$" \
+    "^#   L: 50 x 96 \(from H and G\)"
+assert_output "$BIN_FORK method=2 $C96H wmax=6 outC=$CWS115B threads=2 debug=0" 0 "^6 6 0$" ""
+if ! cmp -s <(grep -v '^%' "$CWS115A" | sort) <(grep -v '^%' "$CWS115B" | sort); then
+    echo "  [FAIL] Test 115: rank-0 finG outC does not match classical distance of ker(H)"
+    FAILED=1
+fi
+assert_output "$BIN method=2 $C96H finG=$GZERO115 wmax=6 debug=0" 0 "^6$" ""
+assert_output "$BIN_FORK method=3 $C96H finG=$GZERO115 steps=200 wmax=6 seed=1 threads=2 debug=0" 0 "^6 6 " ""
+assert_output "$BIN_FORK method=2 finH=$GZERO115 finG=$EXAMPLES_DIR/c96H.mmx wmax=2 threads=2 debug=0" 0 "^1 1 0$" ""
+rm -f "$GZERO115" "$CWS115A" "$CWS115B"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1
