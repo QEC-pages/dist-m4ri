@@ -17,7 +17,8 @@ and their combination:
 
 The package contains the multithreaded program `dist_m4ri`, the legacy single-threaded program `dist_m4ri_old`, and
 the Python wrapper `dist_m4ri.py` (NumPy and SciPy matrices, Stim circuits and DEMs, a persistent cache of the
-results). This page summarizes how the program works; `README.md` describes all parameters (also `dist_m4ri --help` and
+results, and an optional `qec_cert` certification engine via `solver="cert"` or `"auto"` / `engine=`). This page
+summarizes how the program works; `README.md` describes all parameters (also `dist_m4ri --help` and
 `dist_m4ri --morehelp`; `dist_m4ri --help maxC` shows the help of one parameter, with the related ones).
 
 ## Codes and matrices
