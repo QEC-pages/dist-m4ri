@@ -1828,11 +1828,16 @@ static void dem_merge_columns(params_t * const p) {
   }
   qsort(ch, n, sizeof(dem_col_hash_t), dem_col_hash_cmp);
   int nclass = 0;
+  const int strip_zero_hl = (p->classical != 1 && p->smax == 0);
   for (int a = 0; a < n;) { /* a run of equal hashes, in increasing column order */
     int b = a + 1;
     while (b < n && ch[b].h == ch[a].h) b++;
     for (int s = a; s < b; s++) {
       const int j = ch[s].j;
+      if (strip_zero_hl && HT->p[j + 1] == HT->p[j] && LT->p[j + 1] == LT->p[j]) {
+        rep[j] = -1; /* (0,0) column: no detectors and no observables */
+        continue;
+      }
       rep[j] = j;
       for (int t = a; t < s; t++) { /* an earlier column of the run (a first one) equal to j */
         const int i = ch[t].j;
@@ -1848,7 +1853,7 @@ static void dem_merge_columns(params_t * const p) {
   free(ch);
   csr_free(HT);
   csr_free(LT);
-  if (nclass == n) { /* all columns distinct */
+  if (nclass == n || nclass == 0) { /* all columns distinct (or all (0,0)) */
     free(rep);
     return;
   }
@@ -1860,9 +1865,11 @@ static void dem_merge_columns(params_t * const p) {
     if (rep[j] == j) {
       col_orig[c] = j;
       col_class[j] = keep[j] = c++;
-    } else {
+    } else if (rep[j] >= 0) {
       col_class[j] = col_class[rep[j]]; /* (rep[j] < j) */
       keep[j] = -1;
+    } else {
+      col_class[j] = keep[j] = -1;
     }
   }
   csr_t * const H2 = csr_keep_columns(p->spaH, keep, nclass);
@@ -2388,7 +2395,7 @@ static void dem_drop_detectors(params_t * const p) {
       if (keepcol[j] >= 0) col_orig[keepcol[j]] = col_orig_index(p, j); /* (increasing) */
     for (int o = 0; o < n_orig; o++) {
       const int c = p->col_class ? p->col_class[o] : o;
-      col_class[o] = (twin[c] >= 0) ? keepcol[twin[c]] : -1;
+      col_class[o] = (c >= 0 && twin[c] >= 0) ? keepcol[twin[c]] : -1;
     }
     csr_t * const H1 = csr_keep_columns(p->spaH, keepcol, n2);
     csr_t * const H2 = csr_keep_rows(H1, keeprow, m2);

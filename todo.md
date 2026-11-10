@@ -837,3 +837,25 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - For circuit distance calculation, if d_code has not been reached, continue
     with RW beyond steps (within timeout).
 - [ ] even smarter termination logic for CC ?
+- [ ] **Optional `engine="tropidist"` delegation fallback** (future work): an external subprocess fallback for large
+  quantum codes and circuits when `qec_cert` is not installed:
+  - **Auto resolution order**: in `engine="auto"`, try `qec_cert` first, then `tropidist` (if configured via
+    `TROPIDIST_ROOT` and the instance size exceeds a minimum threshold), then the native `dist_m4ri` binary.
+  - **Delegation gate & cache safety**: apply the same distance-only gate as `engine="cert"` (fall back to native
+    `dist_m4ri` when codeword enumeration `do_cws` / `outC`, `finC`, `smax`, `dW`, `maxC`, `start` list, `outD`,
+    `out_reduced`, `pmin > 0`, or single-sided `method=1` / `2` is requested) and the same verified-only cache write
+    rules (only unconditional lower bounds and independently verified upper-bound witnesses are written to the cache).
+  - **Subprocess invocation**: invoke `python -m cdist --matrices H.mtx L.mtx --threads N --time-limit S --out rec.json`
+    for matrix pairs, or `python -m cdist circuit.stim --threads N --time-limit S --out rec.json` directly for `.stim`
+    circuits so `tropidist` retains its native circuit relaxations; a DEM-only input (`fdem` without a circuit) is
+    exported as `(H, L)` matrices.
+  - **CSS codes**: run one call per sector (`X` and `Z`), constructing `L` (`Lx` / `Lz`) in `dist_m4ri` when only
+    `(Hx, Hz)` are supplied.
+  - **Location & memory**: locate the checkout via `TROPIDIST_ROOT` (a repository checkout whose C kernels compile on
+    first use) and expose a `table_gb` memory option for Rank-DP table sizing.
+  - **Witness re-verification & size threshold**: independently re-verify every returned witness ($H x = 0$,
+    $L x \neq 0$, or DEM replay) in `dist_m4ri`; because spawning `python -m cdist` incurs
+    $\approx 0.1\text{--}1\text{ s}$ of subprocess overhead, `engine="auto"` should delegate to `tropidist` only
+    above an instance size threshold.
+  - **Licensing & testing**: `tropidist` is MIT-licensed and invoked as a separate process, so licenses remain fully
+    compatible; unit tests should mock the subprocess invocation and JSON record parsing.

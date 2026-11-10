@@ -342,10 +342,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.16.0" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.16.1" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.16.0" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.16.1" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -1302,13 +1302,13 @@ done
 rm -f "$CWS112"
 GROSS112="finH=$WS_ROOT/benchmark/css/gross_144_12_12_Hx.mtx finG=$WS_ROOT/benchmark/css/gross_144_12_12_Hz.mtx"
 assert_output "$BIN_FORK method=2 $GROSS112 start=0,72 start_scan=1 threads=4 debug=8" 0 "^12 12 0$" \
-    "^# searching w=11 with 4 CC threads, start list \(2 columns, start_scan=1\)"
+    "^# searching w=10 with 4 CC threads, start list \(2 columns, start_scan=1\)"
 N112=""
 for opt in "" "start_scan=1"; do
-    N112="$N112 $($BIN_FORK method=2 $GROSS112 wmax=11 start=0,72 $opt threads=4 debug=8 2>&1 | \
-        sed -n 's/^# CC round w=11 work: .*, \([0-9][0-9]*\) nodes$/\1/p')"
+    N112="$N112 $($BIN_FORK method=2 $GROSS112 wmax=10 start=0,72 $opt threads=4 debug=8 2>&1 | \
+        sed -n 's/^# CC round w=10 work: .*, \([0-9][0-9]*\) nodes$/\1/p')"
 done
-echo "Running Test 112: the nodes of the CC round w=11 of gross with start=0,72, without and with start_scan=1:$N112"
+echo "Running Test 112: the nodes of the CC round w=10 of gross with start=0,72, without and with start_scan=1:$N112"
 read -r N112A N112B N112C <<< "$N112"
 if [ -z "$N112B" ] || [ -n "$N112C" ] || [ "$N112B" -ge "$N112A" ]; then
     echo "  [FAIL] Test 112: start_scan=1 did not reduce the nodes:$N112"
@@ -1343,6 +1343,61 @@ assert_output "$BIN_FORK method=2 $S5 wmax=5 threads=2 ortho=0 debug=0" 0 "^5 5 
 assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 ortho=0 debug=0" 0 "^3 3 0$" \
     "^# WARNING: ortho=0 is ignored without finG"
 assert_output "$BIN_FORK method=2 $QX97 dmin=6 wmax=6 ortho=2" 255 "" "invalid 'ortho=2': ortho should be 0 or 1"
+
+# Test 114: CC even-weight skip (when 1_n in rowspan(H) and smax=0) and (0,0)-column stripping:
+# (a) For c96H (1_n in rowspan(H), d=6), smax=0 skips odd CC rounds (w=1,3,5,7) and exports the exact same codewords
+#     and hit counts for outC / maxC / dW=1,2 as smax=1 (full weight scan).
+# (b) For a DEM (and CSS matrices) containing (0,0) columns (zero H-column and zero L-column), smax=0 strips (0,0)
+#     columns while preserving 1-based original column indices in outC / finC and exact parity with smax=1.
+CWS114A=$(mktemp --suffix=.nz)
+CWS114B=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK method=2 $C96 wmax=6 threads=2 debug=8" 0 "^6 6 0$" \
+    "even weights only \(1 in rowspan\(H\)\)"
+assert_output "$BIN_FORK method=2 $C96 wmax=2 threads=2 debug=0" 0 "^4 0 0$" ""
+if $BIN_FORK method=2 $C96 wmax=6 threads=2 debug=8 2>&1 | grep -q "searching w=[135] "; then
+    echo "  [FAIL] Test 114: odd CC weights were not skipped on c96H with smax=0"
+    FAILED=1
+fi
+for dw in 0 1 2; do
+    wm=$((6 + dw))
+    $BIN_FORK method=2 $C96 wmax=$wm dW=$dw smax=0 outC=$CWS114A threads=2 debug=0 > /dev/null 2>&1
+    $BIN_FORK method=2 $C96 wmax=$wm dW=$dw smax=1 outC=$CWS114B threads=2 debug=0 > /dev/null 2>&1
+    if ! cmp -s <(grep -v '^%' "$CWS114A" | sort) <(grep -v '^%' "$CWS114B" | sort); then
+        echo "  [FAIL] Test 114: c96H outC mismatch between smax=0 and smax=1 for dW=$dw"
+        FAILED=1
+    fi
+done
+DEM114=$(mktemp --suffix=.dem)
+printf 'error(0.1) D0 ^ D0\nerror(0.1) D0 L0\nerror(0.1) D0 D1\nerror(0.1) L0 ^ L0\nerror(0.1) D1\n' > "$DEM114"
+assert_output "$BIN_FORK method=2 fdem=$DEM114 drop=0 wmax=3 outC=$CWS114A threads=1 debug=1" 0 "^3 3 0$" \
+    "^#   H: 2 x 3 \(detectors\)"
+if [ "$(grep -v '^%' "$CWS114A" | tr -s ' ')" != "3 2 3 5" ]; then
+    echo "  [FAIL] Test 114: expected codeword '3 2 3 5' in outC with (0,0)-cols stripped, got: $(cat "$CWS114A")"
+    FAILED=1
+fi
+printf 'error(0.1) D0 ^ D0\nerror(0.1) L0\nerror(0.1) D0 L0\nerror(0.1) D0\n' > "$DEM114"
+assert_output "$BIN_FORK method=2 fdem=$DEM114 drop=0 wmax=2 threads=1 debug=0" 0 "^1 1 0$" ""
+rm -f "$CWS114A" "$CWS114B" "$DEM114"
+
+# Test 115: rank-0 finG (all-zero stabilizer generator matrix, rowspan(G) = {0}):
+# Lx_for_CSS_code constructs L of rank n - rank(H) without aborting, and the distance and codewords match the
+# classical distance of ker(H) (no finG); an all-zero finH with rank(G) < n gives distance 1.
+GZERO115=$(mktemp --suffix=.mmx)
+CWS115A=$(mktemp --suffix=.nz)
+CWS115B=$(mktemp --suffix=.nz)
+C96H="finH=$EXAMPLES_DIR/c96H.mmx"
+printf '%%%%MatrixMarket matrix coordinate integer general\n10 96 0\n' > "$GZERO115"
+assert_output "$BIN_FORK method=2 $C96H finG=$GZERO115 wmax=6 outC=$CWS115A threads=2 debug=1" 0 "^6 6 0$" \
+    "^#   L: 50 x 96 \(from H and G\)"
+assert_output "$BIN_FORK method=2 $C96H wmax=6 outC=$CWS115B threads=2 debug=0" 0 "^6 6 0$" ""
+if ! cmp -s <(grep -v '^%' "$CWS115A" | sort) <(grep -v '^%' "$CWS115B" | sort); then
+    echo "  [FAIL] Test 115: rank-0 finG outC does not match classical distance of ker(H)"
+    FAILED=1
+fi
+assert_output "$BIN method=2 $C96H finG=$GZERO115 wmax=6 debug=0" 0 "^6$" ""
+assert_output "$BIN_FORK method=3 $C96H finG=$GZERO115 steps=200 wmax=6 seed=1 threads=2 debug=0" 0 "^6 6 " ""
+assert_output "$BIN_FORK method=2 finH=$GZERO115 finG=$EXAMPLES_DIR/c96H.mmx wmax=2 threads=2 debug=0" 0 "^1 1 0$" ""
+rm -f "$GZERO115" "$CWS115A" "$CWS115B"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

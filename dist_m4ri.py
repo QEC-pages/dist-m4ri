@@ -31,8 +31,9 @@ from typing import List, Tuple, Union, Optional, Dict, Any, Set, Sequence, Calla
 
 _codedistance_mod = None
 _stim_mod = None
+_qec_cert_mod = None
 
-__version__ = "0.16.0"
+__version__ = "0.16.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -99,6 +100,28 @@ def _get_stim():
     return _stim_mod
 
 
+def _get_qec_cert():
+    """Lazily imports qec_cert (io, pipeline) only when requested."""
+    global _qec_cert_mod
+    if _qec_cert_mod is None:
+        try:
+            import qec_cert
+            from qec_cert import io as _qec_io, pipeline as _qec_pipeline
+            _qec_cert_mod = (qec_cert, _qec_io, _qec_pipeline)
+        except ImportError:
+            raise ImportError("qec_cert library is requested (engine='cert') but not installed.")
+    return _qec_cert_mod
+
+
+def _has_qec_cert() -> bool:
+    """Checks whether qec_cert is importable without raising ImportError."""
+    try:
+        _get_qec_cert()
+        return True
+    except ImportError:
+        return False
+
+
 def __getattr__(name: str) -> Any:
     """Lazily resolves module attributes without loading heavy dependencies at startup."""
     if name == "_HAS_STIM":
@@ -113,6 +136,8 @@ def __getattr__(name: str) -> Any:
             return True
         except ImportError:
             return False
+    if name == "_HAS_QEC_CERT":
+        return _has_qec_cert()
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 # Global cache for distance results
@@ -1407,6 +1432,264 @@ def _single_entry_is_exact(entry: Dict[str, Any], need_cws: bool = False, dstop:
     if not ((c_dmin > 0 and c_dmin == entry.get("dmax")) or (dstop > 0 and c_dmin >= dstop)):
         return False
     return (not need_cws) or bool(entry.get("cws"))
+
+
+def _resolve_cert_engine(solver: str = "dist_m4ri", engine: Optional[str] = None) -> str:
+    """
+    Resolves the qec_cert delegation mode ('off', 'auto', or 'cert') from `solver` and `engine`.
+    Default ('dist_m4ri', engine=None) returns 'off'.
+    """
+    if engine is not None:
+        e = str(engine).strip().lower()
+        if e in ("", "dist_m4ri", "m4ri", "native", "off", "0", "false", "none"):
+            return "off"
+        if e == "auto":
+            return "auto"
+        if e in ("cert", "qec_cert", "qec-cert"):
+            return "cert"
+        if e == "codedistance":
+            return "off"
+        raise ValueError(f"invalid engine={engine!r}: expected 'dist_m4ri', 'auto', or 'cert'")
+    s = str(solver or "dist_m4ri").strip().lower()
+    if s in ("dist_m4ri", "codedistance"):
+        return "off"
+    if s == "auto":
+        return "auto"
+    if s in ("cert", "qec_cert", "qec-cert"):
+        return "cert"
+    raise ValueError(f"invalid solver={solver!r}: expected 'dist_m4ri', 'codedistance', 'auto', or 'cert'")
+
+
+def _can_delegate_to_cert(
+    mode: str,
+    *,
+    method: int = 3,
+    do_cws: bool = False,
+    outC: Optional[str] = None,
+    finC: Optional[str] = None,
+    smax: Optional[int] = None,
+    dW: int = -1,
+    maxC: int = 0,
+    start_list: Optional[List[int]] = None,
+    outD: Optional[Any] = None,
+    out_reduced: Optional[Any] = None,
+    pmin: float = 0.0,
+) -> bool:
+    """
+    Whether a distance calculation should be delegated to `qec_cert`.
+    In 'auto' mode, delegates only when safe (no codeword enumeration, finC, smax, start list, outD, out_reduced,
+    pmin > 0, or single-sided method 1/2, and `qec_cert` is importable).
+    """
+    if mode == "off":
+        return False
+    if do_cws or outC:
+        if mode == "cert":
+            raise ValueError("Codeword extraction is not supported with engine='cert'; use solver='dist_m4ri'.")
+        return False
+    if mode == "auto":
+        if (
+            method != 3 or finC or (smax is not None and smax > 0) or dW >= 0 or maxC > 0
+            or start_list is not None or outD or out_reduced or pmin > 0.0
+        ):
+            return False
+        return _has_qec_cert()
+    _get_qec_cert()
+    if outD or out_reduced:
+        _warn_ignored("outD and out_reduced are only used with solver='dist_m4ri'; ignored")
+    return True
+
+
+def _cert_to_csr(M: Any, qec_io: Any) -> Any:
+    """Converts a matrix (file path, numpy array, or scipy sparse matrix) to a binary CSR matrix for qec_cert."""
+    if M is None:
+        return None
+    if isinstance(M, (str, Path)):
+        return qec_io.read_mtx(str(M))
+    return qec_io.binary_csr(M)
+
+
+def _cert_is_conditional(cert: Any) -> bool:
+    """Whether a qec_cert Certificate (or dict) has a conditional lower bound (e.g., unverified symmetry)."""
+    get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
+    if get("status") == "conditional" or bool(get("lb_conditional", False)):
+        return True
+    for s in get("stages", ()) or ():
+        if isinstance(s, dict) and s.get("lb_conditional"):
+            return True
+    for r in get("reductions", ()) or ():
+        if isinstance(r, dict) and (r.get("conditional") or (r.get("params") or {}).get("lb_conditional")):
+            return True
+    return False
+
+
+def _cert_extract_bounds(cert: Any, certified_dmin: int = 1) -> Tuple[int, int]:
+    """
+    Extracts unconditional (dmin, dmax) from a qec_cert Certificate for dist_m4ri reporting and caching:
+    - An exact result (dmin = dmax = d) only if status == 'exact', witness_verified is True, and not conditional.
+    - For bounds, an upper bound dmax only if witness_verified is True, and a lower bound dmin only when
+      status in ('exact', 'bounds', 'timeout') and not lb_conditional.
+    """
+    get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
+    status = str(get("status", "") or "")
+    wit_ver = get("witness_verified") is True
+    is_cond = _cert_is_conditional(cert)
+    raw_lb = int(get("lower_bound") or 0)
+    raw_ub = int(get("upper_bound") or 0)
+    if is_cond and certified_dmin > 1 and _cert_wmin_discharged(cert, certified_dmin):
+        is_cond = False
+    if status == "exact" and wit_ver and not is_cond and raw_ub > 0 and raw_lb == raw_ub:
+        return raw_ub, raw_ub
+    c_ub = raw_ub if (wit_ver and raw_ub > 0) else 0
+    c_lb = raw_lb if (status in ("exact", "bounds", "timeout") and not is_cond and raw_lb > 1) else 0
+    if c_ub > 0 and c_lb > c_ub:
+        c_lb = c_ub
+    return c_lb, c_ub
+
+
+def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
+    """
+    True iff the certificate's conditionality is caused solely by an assumed lower bound
+    lb_assumed_wmin <= certified_dmin (already certified in _distance_cache), with no trust
+    flags, no precondition violation, and no other conditional stage or reduction.
+    """
+    if certified_dmin <= 1:
+        return False
+    get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
+    if get("status") == "conditional" or bool(get("precondition_violated", False)):
+        return False
+    if bool(get("trust_sym", False)) or bool(get("trust_quot", False)):
+        return False
+    inst = get("instance", None)
+    inst_d = inst if isinstance(inst, dict) else {}
+    if (
+        bool(inst_d.get("trust_sym", False))
+        or bool(inst_d.get("trust_quot", False))
+        or bool(inst_d.get("precondition_violated", False))
+    ):
+        return False
+    assumed_wmin = int(get("lb_assumed_wmin", None) or inst_d.get("lb_assumed_wmin", 0) or 0)
+    if not (1 < assumed_wmin <= certified_dmin):
+        return False
+    sectors = inst_d.get("sectors")
+    if isinstance(sectors, dict):
+        for sec in sectors.values():
+            if _cert_is_conditional(sec) and not _cert_wmin_discharged(sec, certified_dmin):
+                return False
+    stages = get("stages", ()) or ()
+    pinned_ok = any(
+        isinstance(s, dict) and s.get("name") == "polymer_pinning" and s.get("shift_verified") is True
+        for s in stages
+    )
+    for s in stages:
+        if isinstance(s, dict) and s.get("lb_conditional"):
+            sname = str(s.get("name", "") or "")
+            if bool(s.get("trust_sym", False)) or bool(s.get("trust_quot", False)):
+                return False
+            if sname == "search":
+                sym_ok = bool(s.get("sym_verified", True)) or (
+                    s.get("sym_kind") == "pinned" and pinned_ok
+                )
+                if not sym_ok:
+                    return False
+            elif sname != "p1_projection_lb" and not sname.startswith("fold_mod_"):
+                return False
+    reductions = get("reductions", ()) or ()
+    pinned_red_ok = pinned_ok or any(
+        isinstance(r, dict)
+        and r.get("name") == "polymer_pinning"
+        and (r.get("params") or {}).get("shift_verified") is True
+        for r in reductions
+    )
+    for r in reductions:
+        if not isinstance(r, dict):
+            continue
+        rp = r.get("params") or {}
+        if r.get("conditional"):
+            return False
+        if rp.get("lb_conditional"):
+            rname = str(r.get("name", "") or "")
+            if rname == "cc_mitm_search":
+                sym_ok = bool(rp.get("sym_verified", True)) or (
+                    rp.get("sym_kind") == "pinned" and pinned_red_ok
+                )
+                wmin_r = int(rp.get("wmin", 0) or 0)
+                if not sym_ok or (wmin_r > certified_dmin):
+                    return False
+            elif rname not in ("p1_projection_lb", "capped_spacetime_folding"):
+                return False
+    return True
+
+
+def _cert_code_distance(
+    key_fn: Callable[[], str],
+    run_cert_fn: Callable[[int, int], Any],
+    *,
+    label: str = "code",
+    dmin: int = 0,
+    dmax: int = 0,
+    dstop: int = 0,
+    wmax: int = 0,
+    eff_cache_file: Optional[str] = None,
+    debug: int = 0,
+    verbose: bool = False,
+) -> Dict[str, Any]:
+    """
+    Runs a qec_cert certification callback with dist_m4ri cache lookup and safe cache write-back.
+    """
+    global _distance_cache
+    code_key: Optional[str] = None
+    entry: Optional[Dict[str, Any]] = None
+    eff_dmin, eff_dmax = dmin, dmax
+    if _use_distance_cache:
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
+        code_key = key_fn()
+        entry = _distance_cache.get(code_key)
+        if entry is not None and _single_entry_is_exact(entry, need_cws=False, dstop=dstop):
+            if verbose or (debug & PY_DBG_CACHE):
+                c_dmin = entry.get("dmin", 0) or 0
+                found = ("exact distance" if c_dmin == entry.get("dmax") else f"dmin={c_dmin} >= dstop={dstop}")
+                print(f"[dist_m4ri] Cache hit for {label} distance ({found} known)!")
+            return {
+                "dist": entry["dist"], "dmin": entry["dmin"], "dmax": entry["dmax"],
+                "rw_steps": entry.get("rw_steps", 0), "d_info": list(entry["d_info"]),
+                "cws": list(entry.get("cws", [])), "cached": True,
+            }
+        eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, entry)
+    w_lo = max(1, eff_dmin)
+    w_hi = wmax if wmax > 0 else 40
+    if eff_dmax > 0:
+        w_hi = min(w_hi, max(1, eff_dmax - 1)) if wmax > 0 else max(1, eff_dmax - 1)
+    if dstop > 0:
+        w_hi = min(w_hi, max(1, dstop - 1)) if (wmax > 0 or eff_dmax > 0) else max(1, dstop - 1)
+    cert = run_cert_fn(w_lo, max(w_lo, w_hi))
+    c_lb, c_ub = _cert_extract_bounds(cert, (entry.get("dmin", 0) or 0) if entry else 0)
+    p_dmin = (entry.get("dmin", 0) or 0) if entry else 0
+    p_dmax = (entry.get("dmax", 0) or 0) if entry else 0
+    p_rw = (entry.get("rw_steps", 0) or 0) if entry else 0
+    p_cws = list(entry.get("cws", [])) if entry else []
+    cache_dmin = max(p_dmin, c_lb)
+    cache_dmax = min(p_dmax, c_ub) if (p_dmax > 0 and c_ub > 0) else max(p_dmax, c_ub)
+    if cache_dmax > 0 and cache_dmin > cache_dmax:
+        cache_dmin = cache_dmax
+    if _use_distance_cache and code_key is not None and (c_lb > 1 or c_ub > 0):
+        record = _sector_record(cache_dmin, cache_dmax, p_rw, p_cws)
+        if entry is not None and "dmin_model" in entry:
+            record["dmin_model"] = entry["dmin_model"]
+        if record != entry:
+            _distance_cache[code_key] = record
+            if eff_cache_file:
+                save_distance_cache(eff_cache_file)
+    dmin_res = max(eff_dmin, cache_dmin)
+    pos_ub = [x for x in (eff_dmax, cache_dmax) if x > 0]
+    dmax_res = min(pos_ub) if pos_ub else 0
+    if dmax_res > 0 and dmin_res > dmax_res:
+        dmin_res = dmax_res
+    dist = _dist_from_bounds(dmin_res, dmax_res)
+    return {
+        "dist": dist, "dmin": dmin_res, "dmax": dmax_res, "rw_steps": p_rw,
+        "d_info": format_bounds_list(dmin_res, dmax_res, p_rw), "cws": p_cws, "cached": False,
+    }
 
 
 def _merge_start_into_plain(
@@ -4002,6 +4285,7 @@ def compute_classical_distance(
     start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
+    engine: Optional[str] = None,
     **kwargs
 ) -> Any:
     """
@@ -4097,10 +4381,11 @@ def compute_classical_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_classical_distance, kwargs)
+    cert_mode = _resolve_cert_engine(solver, engine)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
 
-    if solver == "codedistance":
+    if solver == "codedistance" or str(engine or "").strip().lower() == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         _warn_codedistance_ignored(locals())
@@ -4123,8 +4408,29 @@ def compute_classical_distance(
             return d, d_info
         return d
 
-    # Solver is native multithreaded dist_m4ri (supports bounds caching and cumulative RW steps)
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    if _can_delegate_to_cert(
+        cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC,
+        start_list=start_list,
+    ):
+        _, qec_io, qec_pipeline = _get_qec_cert()
+        mode_arg = "ub" if method == 1 else "auto"
+        res = _cert_code_distance(
+            lambda: _matrix_cache_key(H, None, None, True),
+            lambda w_lo, w_hi: qec_pipeline.certify(
+                qec_io.DistanceProblem(_cert_to_csr(H, qec_io), None, None),
+                wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                seed=seed if seed != 0 else 1,
+                time_limit=float(timeout) if timeout and timeout > 0 else 0.0,
+                mode=mode_arg,
+            ),
+            label="classical", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
+            eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+        )
+        dist, d_info = res["dist"], res["d_info"]
+        return (dist, d_info) if return_info else dist
+
+    # Solver is native multithreaded dist_m4ri (supports bounds caching and cumulative RW steps)
     res = _cached_code_distance(
         H, None, None, True, "classical", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
         num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
@@ -4190,6 +4496,7 @@ def compute_quantum_distance(
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     ortho: bool = True,
+    engine: Optional[str] = None,
     **kwargs
 ) -> Any:
     """
@@ -4295,6 +4602,7 @@ def compute_quantum_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_quantum_distance, kwargs)
+    cert_mode = _resolve_cert_engine(solver, engine)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
 
@@ -4307,7 +4615,7 @@ def compute_quantum_distance(
         raise ValueError("Either G or L should be specified for quantum distance, not both.")
     _warn_ortho(ortho, G is not None, solver)
 
-    if solver == "codedistance":
+    if solver == "codedistance" or str(engine or "").strip().lower() == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         _warn_codedistance_ignored(locals())
@@ -4340,8 +4648,31 @@ def compute_quantum_distance(
             return d, d_info
         return d
 
-    # Solver is native multithreaded dist_m4ri (the cache records are shared with the sectors of CSS codes)
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    if _can_delegate_to_cert(
+        cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC,
+        start_list=start_list,
+    ):
+        _, qec_io, qec_pipeline = _get_qec_cert()
+        mode_arg = "ub" if method == 1 else "auto"
+        res = _cert_code_distance(
+            lambda: _matrix_cache_key(H, G, L, False),
+            lambda w_lo, w_hi: qec_pipeline.certify(
+                qec_io.DistanceProblem(
+                    _cert_to_csr(H, qec_io), _cert_to_csr(L, qec_io), _cert_to_csr(G, qec_io)
+                ),
+                wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                seed=seed if seed != 0 else 1,
+                time_limit=float(timeout) if timeout and timeout > 0 else 0.0,
+                mode=mode_arg,
+            ),
+            label="quantum", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
+            eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+        )
+        dist, d_info = res["dist"], res["d_info"]
+        return (dist, d_info) if return_info else dist
+
+    # Solver is native multithreaded dist_m4ri (the cache records are shared with the sectors of CSS codes)
     res = _cached_code_distance(
         H, G, L, False, "quantum", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
         num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
@@ -4438,6 +4769,7 @@ def compute_css_distance(
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     ortho: bool = True,
+    engine: Optional[str] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -4561,11 +4893,12 @@ def compute_css_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max  # an upper bound on d = min(dX, dZ), not on either sector
     _check_kwargs(compute_css_distance, kwargs)
+    cert_mode = _resolve_cert_engine(solver, engine)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
     _warn_ortho(ortho, Lx is None or Lz is None, solver)  # (G of the sectors: Hz unless Lx, Hx unless Lz)
 
-    if solver == "codedistance":
+    if solver == "codedistance" or str(engine or "").strip().lower() == "codedistance":
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         _warn_codedistance_ignored(locals())
@@ -4624,16 +4957,37 @@ def compute_css_distance(
             dual = ("Hx" if s == "X" else "Hz") if G_s is not None else ("Lz" if s == "X" else "Lx")
             print(f"[dist_m4ri] CSS sector d{s}: H={'Hz' if s == 'X' else 'Hx'} with "
                   f"{'G' if G_s is not None else 'L'}={dual}")
-        res[s] = _cached_code_distance(
-            H_s, G_s, L_s, False, f"CSS {s}-sector", dist_m4ri=dist_m4ri, method=method, threads=threads,
-            timeout=timeout, num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=0, dstop=sector_stop, wmin=wmin,
-            wmax=wmax, smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC_s,
-            outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
-            seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
-            kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
-            pairs=pairs, cc_prune=cc_prune, ortho=ortho
-        )
+        if _can_delegate_to_cert(
+            cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC_s, smax=smax,
+            dW=dW, maxC=maxC, start_list=start_list,
+        ):
+            _, qec_io, qec_pipeline = _get_qec_cert()
+            mode_arg = "ub" if method == 1 else "auto"
+            res[s] = _cert_code_distance(
+                lambda H_s=H_s, G_s=G_s, L_s=L_s: _matrix_cache_key(H_s, G_s, L_s, False),
+                lambda w_lo, w_hi, H_s=H_s, G_s=G_s, L_s=L_s: qec_pipeline.certify(
+                    qec_io.DistanceProblem(
+                        _cert_to_csr(H_s, qec_io), _cert_to_csr(L_s, qec_io), _cert_to_csr(G_s, qec_io)
+                    ),
+                    wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                    seed=seed if seed != 0 else 1,
+                    time_limit=float(timeout) if timeout and timeout > 0 else 0.0,
+                    mode=mode_arg,
+                ),
+                label=f"CSS {s}-sector", dmin=eff_dmin, dmax=0, dstop=sector_stop, wmax=wmax,
+                eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+            )
+        else:
+            res[s] = _cached_code_distance(
+                H_s, G_s, L_s, False, f"CSS {s}-sector", dist_m4ri=dist_m4ri, method=method, threads=threads,
+                timeout=timeout, num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=0, dstop=sector_stop, wmin=wmin,
+                wmax=wmax, smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC_s,
+                outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
+                seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
+                kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+                cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
+                pairs=pairs, cc_prune=cc_prune, ortho=ortho
+            )
         _last_css_stats[s] = dict(_last_run_stats)
 
     rx, rz = res["X"], res["Z"]
@@ -4958,6 +5312,7 @@ def compute_dem_distance(
     start_scan: bool = False,
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
+    engine: Optional[str] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -5109,6 +5464,7 @@ def compute_dem_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_dem_distance, kwargs)
+    cert_mode = _resolve_cert_engine(solver, engine)
     if start_scan:  # (the binary merges the equal columns of a DEM, which changes the order of the columns)
         _warn_ignored("start_scan=1 is not available for a DEM (ignored)")
         start_scan = False
@@ -5122,18 +5478,19 @@ def compute_dem_distance(
     drop_mode = _drop_mode(drop)  # "auto", "0", "css", or a file name
     src_in = dem if dem is not None else circuit  # (the input, for the names of the files of out_reduced)
     src_name = str(src_in) if isinstance(src_in, (str, Path)) else f"stim.{type(src_in).__name__}"
+    is_codedist = solver == "codedistance" or str(engine or "").strip().lower() == "codedistance"
     css_list: List[int] = []  # the minority-basis detectors of a CSS circuit (drop=css)
     dem, circuit, saved_dem_path = _dem_from_input(
         dem, circuit, basis=basis, rounds=rounds, p_noise=p_noise, out_dir=out_dir, out_dem=out_dem,
         out_stim=out_stim, circ_verbose=circ_verbose,
-        drop_out=css_list if (drop_mode == "css" and solver != "codedistance") else None, force_noise=force_noise
+        drop_out=css_list if (drop_mode == "css" and not is_codedist) else None, force_noise=force_noise
     )
     if getattr(dem, "num_errors", None) == 0:  # (a stim object; e.g., a noiseless circuit with p_noise=0)
         sys.stderr.write("# Note: the DEM has no error mechanisms (no noise, e.g., p_noise=0 for a noiseless circuit "
                          "or with force_noise): no distance computed\n")
         return (0, [0, 0, 0], []) if do_cws else (0, [0, 0, 0])
 
-    if solver == "codedistance":
+    if is_codedist:
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         if outD or out_reduced:
@@ -5200,6 +5557,31 @@ def compute_dem_distance(
             def cws_out_fn(cws_in: List[List[int]]) -> List[List[int]]:
                 return _expand_equal_columns(cws_in, fdem_run, pmin=pmin, maxC=maxC, verbose=verbose)
         eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+        if _can_delegate_to_cert(
+            cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax,
+            dW=dW, maxC=maxC, start_list=start_list, outD=outD, out_reduced=out_reduced, pmin=pmin
+        ):
+            _, _, qec_pipeline = _get_qec_cert()
+            mode_arg = "ub" if method == 1 else "auto"
+            t_lim = float(timeout) if timeout and timeout > 0 else 0.0
+            n_thr = threads or (os.cpu_count() or 8)
+            r_seed = seed if seed != 0 else 1
+            res = _cert_code_distance(
+                lambda: _dem_cache_key(dem, pmin),
+                lambda w_lo, w_hi: (
+                    qec_pipeline.certify_circuit(
+                        circuit, wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg
+                    )
+                    if circuit is not None else
+                    qec_pipeline.certify_dem(
+                        fdem_run, wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg
+                    )
+                ),
+                label="DEM", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
+                eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+            )
+            dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
+            return (dist, d_info, cws) if do_cws else (dist, d_info)
         res = _cached_code_distance(
             None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
             num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
@@ -5269,25 +5651,31 @@ def _model_detector_groups(circuit: Any) -> Tuple[List[int], List[bool], int]:
     det_pos: List[int] = []                # its position in the flattened circuit
     meas_pos: List[int] = []               # the position of the instruction of each measurement record
     meas_qubits: List[frozenset] = []      # and its qubits
+    last_gate_pos = -1                     # the position of the last unitary gate (for end-of-circuit DETECTORs)
     for pos, inst in enumerate(circuit.flattened()):
         if inst.name == "DETECTOR":
             n = len(meas_pos)
             det_recs.append([n + t.value for t in inst.targets_copy() if t.is_measurement_record_target])
             det_pos.append(pos)
-        elif stim.gate_data(inst.name).produces_measurements:
-            for grp in inst.target_groups():  # (one record per group, e.g., per Pauli product of MPP)
-                meas_pos.append(pos)
-                meas_qubits.append(frozenset() if inst.name == "MPAD" else
-                                   frozenset(t.qubit_value for t in grp if t.qubit_value is not None))
+        else:
+            gd = stim.gate_data(inst.name)
+            if gd.produces_measurements:
+                for grp in inst.target_groups():  # (one record per group, e.g., per Pauli product of MPP)
+                    meas_pos.append(pos)
+                    meas_qubits.append(frozenset() if inst.name == "MPAD" else
+                                       frozenset(t.qubit_value for t in grp if t.qubit_value is not None))
+            elif gd.is_unitary:
+                last_gate_pos = pos
     last_meas = meas_pos[-1] if meas_pos else -1
     last_det = max((p for p in det_pos if p < last_meas), default=-1)
+    cutoff = max(last_det, last_gate_pos)
     before: Set[int] = set()  # the qubits measured before the final measurement block
     for p, qs in zip(meas_pos, meas_qubits):
-        if p <= last_det:
+        if p <= cutoff:
             before |= qs
-    final_data = {r for r, (p, qs) in enumerate(zip(meas_pos, meas_qubits)) if p > last_det and qs and not qs & before}
+    final_data = {r for r, (p, qs) in enumerate(zip(meas_pos, meas_qubits)) if p > cutoff and qs and not qs & before}
     if not final_data:  # (e.g., all qubits are measured in every round): all measurements of the final block
-        final_data = {r for r, p in enumerate(meas_pos) if p > last_det}
+        final_data = {r for r, p in enumerate(meas_pos) if p > cutoff}
     parent = list(range(len(det_recs)))
 
     def find(a: int) -> int:
@@ -5310,6 +5698,164 @@ def _model_detector_groups(circuit: Any) -> Tuple[List[int], List[bool], int]:
         if any(r in final_data for r in recs):
             final[group[d]] = True
     return group, final, len(final_data)
+
+
+def _dem_detector_groups(dem: Any, pmin: float = 0.0) -> Tuple[List[int], List[bool], int, int, int]:
+    """
+    Pure-DEM detector chains for compute_model_lower_bound() when no Stim circuit is available (or when the circuit
+    groups are trivial).  Uses detector coordinates (x, y, ..., t) when present in the DEM to group detectors with the
+    same spatial coordinates across rounds, and falls back to linking consecutive-round detectors via dominant weight-2
+    observable-free (ancilla measurement) error mechanisms when coordinates are absent.
+
+    Returns:
+        (group, final, num_final, num_detectors, num_observables).
+    """
+    if isinstance(dem, (str, Path)):
+        with open(str(dem)) as f:
+            lines = f.read().splitlines()
+    else:
+        lines = str(dem.flattened() if hasattr(dem, "flattened") else dem).splitlines()
+
+    det_coords: Dict[int, Tuple[float, ...]] = {}
+    max_det = -1
+    max_obs = -1
+
+    def parse_block(i: int, det_shift: int, c_shift: Tuple[float, ...]) -> Tuple[int, int, Tuple[float, ...]]:
+        nonlocal max_det, max_obs
+        while i < len(lines):
+            s = lines[i].split("#", 1)[0].strip()
+            i += 1
+            if not s:
+                continue
+            if s.startswith("}"):
+                return i, det_shift, c_shift
+            if s.startswith("repeat"):
+                count = int(s.split()[1])
+                body, end = i, i
+                for _ in range(count):
+                    end, det_shift, c_shift = parse_block(body, det_shift, c_shift)
+                if count <= 0:
+                    depth = 1
+                    while end < len(lines) and depth > 0:
+                        t = lines[end].split("#", 1)[0].strip()
+                        end += 1
+                        depth += t.startswith("repeat") - t.startswith("}")
+                i = end
+            elif s.startswith("shift_detectors"):
+                if "(" in s and ")" in s:
+                    vals = [float(x) for x in s[s.index("(") + 1:s.index(")")].split(",") if x.strip()]
+                    n_c = max(len(c_shift), len(vals))
+                    c_shift = tuple(
+                        (c_shift[k] if k < len(c_shift) else 0.0) + (vals[k] if k < len(vals) else 0.0)
+                        for k in range(n_c)
+                    )
+                    rest = s[s.index(")") + 1:].strip()
+                else:
+                    rest = s.split(None, 1)[1].strip() if len(s.split()) > 1 else "0"
+                if rest:
+                    det_shift += int(rest.rsplit(None, 1)[-1])
+            elif s.startswith("detector"):
+                coords: Tuple[float, ...] = ()
+                if "(" in s and ")" in s:
+                    vals = [float(x) for x in s[s.index("(") + 1:s.index(")")].split(",") if x.strip()]
+                    coords = tuple(vals[k] + (c_shift[k] if k < len(c_shift) else 0.0) for k in range(len(vals)))
+                    rest = s[s.index(")") + 1:]
+                else:
+                    rest = s[len("detector"):]
+                for tok in rest.split():
+                    if tok.startswith("D"):
+                        d = int(tok[1:]) + det_shift
+                        max_det = max(max_det, d)
+                        if coords:
+                            det_coords[d] = coords
+            elif s.startswith("logical_observable"):
+                for tok in s.split()[1:]:
+                    if tok.startswith("L"):
+                        max_obs = max(max_obs, int(tok[1:]))
+            elif s.startswith("error"):
+                p_text = s[s.index("(") + 1:s.index(")")].strip()
+                if float(p_text) < pmin:
+                    continue
+                for tok in s[s.index(")") + 1:].split():
+                    if tok.startswith("D"):
+                        max_det = max(max_det, int(tok[1:]) + det_shift)
+                    elif tok.startswith("L"):
+                        max_obs = max(max_obs, int(tok[1:]))
+        return i, det_shift, c_shift
+
+    parse_block(0, 0, ())
+    num_det = int(getattr(dem, "num_detectors", max_det + 1) or (max_det + 1))
+    num_obs = int(getattr(dem, "num_observables", max_obs + 1) or (max_obs + 1))
+    if num_det <= 0:
+        return [], [], 0, 0, max(0, num_obs)
+
+    if len(det_coords) == num_det and all(len(c) >= 2 for c in det_coords.values()):
+        spatial_ids: Dict[Tuple[float, ...], int] = {}
+        group = [spatial_ids.setdefault(det_coords[d][:-1], len(spatial_ids)) for d in range(num_det)]
+        if 1 <= len(spatial_ids) < num_det:
+            max_t = max(c[-1] for c in det_coords.values())
+            final = [False] * len(spatial_ids)
+            for d in range(num_det):
+                if det_coords[d][-1] == max_t:
+                    final[group[d]] = True
+            if all(final):
+                counts = [0] * len(spatial_ids)
+                for g in group:
+                    counts[g] += 1
+                max_c = max(counts, default=0)
+                if max_c > 1 and 0 < sum(c == max_c for c in counts) < len(spatial_ids):
+                    final = [c == max_c for c in counts]
+            return group, final, sum(final), num_det, max(0, num_obs)
+
+    cols_prob = _dem_error_columns(dem, pmin, with_prob=True)
+    pair_prob: Dict[Tuple[int, int], float] = {}
+    best_inc = [0.0] * num_det
+    for dets, obs, p_text in cols_prob:
+        if len(dets) == 2 and not obs:
+            u, v = sorted(dets)
+            if 0 <= u < v < num_det:
+                p = float(p_text)
+                if p > pair_prob.get((u, v), -1.0):
+                    pair_prob[(u, v)] = p
+                if p > best_inc[u]:
+                    best_inc[u] = p
+                if p > best_inc[v]:
+                    best_inc[v] = p
+
+    parent = list(range(num_det))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    has_next = [False] * num_det
+    has_prev = [False] * num_det
+    cand_edges = [
+        (p, u, v) for (u, v), p in pair_prob.items()
+        if p >= 0.5 * max(best_inc[u], best_inc[v])
+    ]
+    cand_edges.sort(key=lambda item: (-item[0], item[1], item[2]))
+    for _, u, v in cand_edges:
+        if not has_next[u] and not has_prev[v]:
+            ru, rv = find(u), find(v)
+            if ru != rv:
+                parent[max(ru, rv)] = min(ru, rv)
+                has_next[u] = True
+                has_prev[v] = True
+
+    ids: Dict[int, int] = {}
+    group = [ids.setdefault(find(d), len(ids)) for d in range(num_det)]
+    counts = [0] * len(ids)
+    for g in group:
+        counts[g] += 1
+    max_len = max(counts, default=0)
+    if max_len > 1 and 0 < sum(c == max_len for c in counts) < len(ids):
+        final = [c == max_len for c in counts]
+    else:
+        final = [True] * len(ids)
+    return group, final, sum(final), num_det, max(0, num_obs)
 
 
 def _model_matrices(
@@ -5359,7 +5905,7 @@ def _model_matrices(
 
 
 def compute_model_lower_bound(
-    circuit: Any,
+    circuit: Any = None,
     dist_m4ri: Optional[str] = None,
     method: int = 3,
     threads: Optional[int] = None,
@@ -5382,6 +5928,7 @@ def compute_model_lower_bound(
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     return_info: bool = False,
+    dem: Optional[Any] = None,
     **kwargs
 ) -> Any:
     """
@@ -5448,26 +5995,46 @@ def compute_model_lower_bound(
     """
     global _distance_cache
     _check_kwargs(compute_model_lower_bound, kwargs, aliases=())
-    if isinstance(circuit, (str, Path)) and not str(circuit).endswith(".stim"):
-        raise ValueError(f"compute_model_lower_bound: {circuit} is not a Stim circuit (.stim): the code-sized model is "
-                         f"built from the detectors and measurements of a circuit")
+    src = dem if dem is not None else circuit
+    if src is None:
+        raise ValueError("compute_model_lower_bound: a Stim circuit (.stim) or DEM (.dem) is required")
+    is_dem_input = dem is not None or (
+        isinstance(src, (str, Path)) and str(src).endswith(".dem")
+    ) or (not isinstance(src, (str, Path)) and not hasattr(src, "detector_error_model"))
+    if isinstance(src, (str, Path)) and not str(src).endswith((".stim", ".dem")):
+        raise ValueError(f"compute_model_lower_bound: {src} is not a Stim circuit (.stim) or DEM (.dem)")
     if not 0.0 <= p_noise <= 0.5:
         raise ValueError(f"invalid p_noise={p_noise}: the noise strength must be in [0, 0.5]")
     circ_verbose = verbose or bool(debug & PY_DBG_CIRCUITS)
-    dem, circ, _ = _dem_from_input(None, circuit, rounds=rounds, p_noise=p_noise, circ_verbose=circ_verbose,
-                                   force_noise=force_noise)
+    dem_obj, circ, _ = _dem_from_input(
+        src if is_dem_input else None, None if is_dem_input else src,
+        rounds=rounds, p_noise=p_noise, circ_verbose=circ_verbose, force_noise=force_noise
+    )
+    dem = dem_obj
     info: Dict[str, Any] = {"d_info": [0, 0, 0], "model_d_info": [], "measured_d_info": [], "files": []}
     if getattr(dem, "num_errors", None) == 0:
         sys.stderr.write("# Note: the DEM has no error mechanisms (no noise, e.g., p_noise=0 for a noiseless circuit "
                          "or with force_noise): no bound computed\n")
         return (0, info) if return_info else 0
-    group, final, num_final = _model_detector_groups(circ)
-    if len(group) != dem.num_detectors:
-        raise ValueError(f"compute_model_lower_bound: {len(group)} detectors in the circuit, {dem.num_detectors} in "
-                         f"its DEM")
     cols = _dem_error_columns(dem, pmin)
-    part = _model_matrices(cols, group, final, dem.num_observables)  # the rows of the measured-basis chains
-    full = _model_matrices(cols, group, [True] * len(final), dem.num_observables) if minority else part
+    if not cols:
+        sys.stderr.write("# Note: the DEM has no error mechanisms (no noise, e.g., p_noise=0 for a noiseless circuit "
+                         "or with force_noise): no bound computed\n")
+        return (0, info) if return_info else 0
+    if circ is not None:
+        group, final, num_final = _model_detector_groups(circ)
+        num_det = int(getattr(dem, "num_detectors", len(group)))
+        num_obs = int(getattr(dem, "num_observables", 0))
+        if len(group) != num_det:
+            raise ValueError(f"compute_model_lower_bound: {len(group)} detectors in the circuit, {num_det} in its DEM")
+        if len(final) == len(group) and len(group) > 1:
+            dem_group, dem_final, dem_num_final, _, _ = _dem_detector_groups(dem, pmin)
+            if len(dem_group) == len(group) and len(dem_final) < len(group):
+                group, final, num_final = dem_group, dem_final, dem_num_final
+    else:
+        group, final, num_final, num_det, num_obs = _dem_detector_groups(dem, pmin)
+    part = _model_matrices(cols, group, final, num_obs)  # the rows of the measured-basis chains
+    full = _model_matrices(cols, group, [True] * len(final), num_obs) if minority else part
     info.update(rows=full["H"].shape[0], cols=full["H"].shape[1], rows_measured=part["H"].shape[0],
                 cols_measured=part["H"].shape[1], groups=len(final), groups_final=sum(final), detectors=len(group),
                 final_data=num_final, dem_cols=len(cols), trivial=len(full["trivial"]), H=full["H"], L=full["L"],
@@ -5604,6 +6171,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "seed": 0,
         "debug": 0,
         "solver": "dist_m4ri",
+        "engine": None,
         "cache_file": "tmp_dist_cache.json",
         "use_cache": True,
         "do_cws": False,
@@ -5991,6 +6559,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["debug"] |= parse_debug_value(val)  # OR-combined (the default is 0)
             elif key_lower == "solver":
                 args["solver"] = val
+            elif key_lower == "engine":
+                args["engine"] = val
             elif key_lower in ("verbose", "v"):
                 args["verbose"] = bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
             elif key_lower == "cws":
@@ -6101,8 +6671,9 @@ Allowed parameters:
   --out-model, method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax,
   timeout, threads, nothrottle, chunk_size (batch), ksub, kwin (win), win_mode,
   win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, start_scan,
-  cbeg, cend, finC, outC, maxC, expand, dW, irred, seed, debug, solver, cache,
-  --no-cache, --verbose, --silent, --cws, --trust-start, sort_rows, cc_prune, ortho
+  cbeg, cend, finC, outC, maxC, expand, dW, irred, seed, debug, solver, engine,
+  cache, --no-cache, --verbose, --silent, --cws, --trust-start, sort_rows,
+  cc_prune, ortho
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -6155,7 +6726,7 @@ Search limits and stopping criteria:
 
 Multithreading & execution:
   threads=N             Max worker threads (default: all logical CPUs; throttled unless nothrottle=1)
-  solver=NAME           Distance solver backend: 'dist_m4ri' (default) or 'codedistance'
+  solver=NAME           Distance solver backend: 'dist_m4ri' (default), 'cert', 'auto', or 'codedistance' (also engine=)
 
 Codeword collection & caching:
   --cws                 Collect and output non-trivial minimum-weight codewords
@@ -6582,7 +7153,10 @@ Distance caching (Python CLI):
   --no-cache / nocache  Disable reading and writing to the persistent JSON cache.
 
 General options:
-  solver=NAME           Distance calculation engine: 'dist_m4ri' (default) or 'codedistance'.
+  solver=NAME, engine=NAME
+                        Distance calculation engine: 'dist_m4ri' (default), 'cert' ('qec_cert'),
+                        'auto' (delegates distance-only calls to qec_cert if installed), or
+                        'codedistance'.
   --verbose / -v        Enable verbose output with detailed explanations of bounds,
                         timings, steps, and cache status (implies the debug bits 1, 2,
                         65536, and 131072).  For a RW upper bound which is not certified,
@@ -6853,7 +7427,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                                    ("min_hits=", args.get("min_hits") is not None),
                                    ("cov_cws=", args.get("cov_cws", 100) != 100),
                                    ("refresh=", args.get("refresh") is not None),
-                                   ("solver=", args.get("solver") not in (None, "dist_m4ri"))) if on]
+                                   ("solver=", args.get("solver") not in (None, "dist_m4ri")),
+                                   ("engine=", args.get("engine") not in (None, "dist_m4ri"))) if on]
         if ign:
             warns.append(f"{', '.join(ign)}: not used with --model-lb; ignored")
     else:
@@ -6929,10 +7504,9 @@ def _main(argv: Optional[List[str]] = None) -> int:
         disable_distance_cache()
 
     try:
-        if args.get("model_lb"):  # the certified lower bound of a Stim circuit from its code-sized model
-            if not args["fdem"] or not str(args["fdem"]).endswith(".stim"):
-                raise ValueError("--model-lb needs a Stim circuit (fdem=FILE.stim): the code-sized model is built "
-                                 "from the detectors and measurements of a circuit")
+        if args.get("model_lb"):  # the certified lower bound of a Stim circuit or DEM from its code-sized model
+            if not args["fdem"] or not str(args["fdem"]).endswith((".stim", ".dem")):
+                raise ValueError("--model-lb needs a Stim circuit (.stim) or DEM (.dem) (fdem=FILE)")
             bound, info = compute_model_lower_bound(
                 circuit=args["fdem"],
                 method=args["method"],
@@ -7003,6 +7577,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 do_cws=args["do_cws"] or (args["outC"] is not None),
                 cache_file=cache_file,
                 solver=args["solver"],
+                engine=args["engine"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],
@@ -7072,6 +7647,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 do_cws=args["do_cws"] or (args["outC"] is not None),
                 cache_file=cache_file,
                 solver=args["solver"],
+                engine=args["engine"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],
@@ -7160,6 +7736,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 return_info=True,
                 cache_file=cache_file,
                 solver=args["solver"],
+                engine=args["engine"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],
@@ -7217,6 +7794,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 return_info=True,
                 cache_file=cache_file,
                 solver=args["solver"],
+                engine=args["engine"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],

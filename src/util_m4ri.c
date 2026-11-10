@@ -231,16 +231,19 @@ mzd_t *mzd_generator_from_csr(mzd_t *G, const csr_t * const H){
     G=mzd_init(n-ra,n);    
   else
     mzd_set_ui(G,0); /* clear the matrix */
-  mzd_apply_p_right_trans(mat,pivots); /* permute columns to make std form [ I C ] */
-  mzd_t *matC = mzd_submatrix(NULL, mat, 0, ra, ra, n); /* C size ra by n-ra */
-  mzd_t * winCT=mzd_init_window(G,0,0,n-ra,ra);
-  mzd_transpose(winCT,matC);
-  mzd_free(winCT); /* window is no longer needed */
-  mzd_free(matC);  /* \todo see why window does not seem to work here */
+  if (ra > 0 && ra < n) {
+    mzd_apply_p_right_trans(mat,pivots); /* permute columns to make std form [ I C ] */
+    mzd_t *matC = mzd_submatrix(NULL, mat, 0, ra, ra, n); /* C size ra by n-ra */
+    mzd_t * winCT=mzd_init_window(G,0,0,n-ra,ra);
+    mzd_transpose(winCT,matC);
+    mzd_free(winCT); /* window is no longer needed */
+    mzd_free(matC);  /* \todo see why window does not seem to work here */
+  }
   for(int i=0; i<n-ra ; i++)
     mzd_write_bit(G,i,i+ra,1); /* identity matrix on the right */
 
-  mzd_apply_p_right(G,pivots); /* permute columns back */
+  if (ra < n)
+    mzd_apply_p_right(G,pivots); /* permute columns back */
   mzp_free(pivots);
   mzd_free(mat);
   return G;
@@ -1304,4 +1307,31 @@ void refresh_nullspace_basis(mzd_t *N, const int *cw_arr, int cw_wt, uint64_t *r
   free(piv_cols);
   mzp_free(perm);
   mzp_free(pivs);
+}
+
+int csr_all_ones_in_rowspan(const csr_t * const H) {
+  if (!H || H->rows <= 0 || H->cols <= 0 || H->nz != -1) return 0;
+  const int m = H->rows, n = H->cols;
+  char * const has_nz = calloc((size_t)n, 1);
+  if (!has_nz) ERROR("memory allocation");
+  int covered = 0;
+  for (int t = 0; t < H->p[m]; t++) {
+    const int c = H->i[t];
+    if (c >= 0 && c < n && !has_nz[c]) {
+      has_nz[c] = 1;
+      covered++;
+    }
+  }
+  free(has_nz);
+  if (covered < n) return 0;
+  mzd_t * const mH = mzd_from_csr(NULL, H);
+  const rci_t rank_H = mzd_echelonize(mH, 0);
+  mzd_t * const m1 = mzd_init(1, n);
+  for (int c = 0; c < n; c++) mzd_write_bit(m1, 0, c, 1);
+  mzd_t * const mAug = mzd_stack(NULL, mH, m1);
+  mzd_free(mH);
+  mzd_free(m1);
+  const rci_t rank_Aug = mzd_echelonize(mAug, 0);
+  mzd_free(mAug);
+  return rank_Aug == rank_H;
 }
