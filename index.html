@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.1</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -92,7 +92,7 @@ Overview</h2>
 <li><b>Connected clusters</b> (<span class="tt">CC</span>, <span class="tt">method=2</span>): exhaustive search over clusters of increasing weight, which gives a certified lower bound <span class="tt">dmin</span>, or the exact distance once a codeword is found.</li>
 <li><b>Bracketing</b> (<span class="tt">method=3</span>, the default): RW and CC run concurrently on a common pool of threads until the two bounds coincide, <span class="tt">dmin = dmax</span>, or another stop condition is met (e.g., the <span class="tt">timeout</span>, 60 s by default).</li>
 </ul>
-<p>The package contains the multithreaded program <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span>, the legacy single-threaded program <span class="tt">dist_m4ri_old</span>, and the Python wrapper <span class="tt"><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></span> (NumPy and SciPy matrices, Stim circuits and DEMs, a persistent cache of the results). This page summarizes how the program works; <span class="tt"><a class="el" href="README_8md.html">README.md</a></span> describes all parameters (also <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> --help</span> and <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> --morehelp</span>; <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> --help maxC</span> shows the help of one parameter, with the related ones).</p>
+<p>The package contains the multithreaded program <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span>, the legacy single-threaded program <span class="tt">dist_m4ri_old</span>, and the Python wrapper <span class="tt"><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></span> (NumPy and SciPy matrices, Stim circuits and DEMs, a persistent cache of the results, and an optional <span class="tt">qec_cert</span> certification engine via <span class="tt">solver="cert"</span> or <span class="tt">"auto"</span> / <span class="tt">engine=</span>). This page summarizes how the program works; <span class="tt"><a class="el" href="README_8md.html">README.md</a></span> describes all parameters (also <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> --help</span> and <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> --morehelp</span>; <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> --help maxC</span> shows the help of one parameter, with the related ones).</p>
 <h2 class="doxsection"><a class="anchor" id="autotoc_md64"></a>
 Codes and matrices</h2>
 <ul>

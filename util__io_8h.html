@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.1</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -210,7 +210,7 @@ Macros</h2></td></tr>
 <tr class="memdesc:ab906de270d1045fdf3dff19f8fe664da"><td class="mdescLeft">&#160;</td><td class="mdescRight">The elimination of a RW step (rank r, n columns) takes about r^2 n / (64 RW_PAIRS_WORK) word operations, the scale of the work of its RW pairs with <span class="tt">pairs=-1</span> (auto), see rw_pairs_min_bits(). (Measured with l = 1: the pairs took 0.5 and 2.5 times the time of the elimination for c1920H and a random LDPC code with n = 3000, against 0.67 and 2.0 times from this estimate.).  <br /></td></tr>
 <tr class="memitem:a83963ffb6de122488cdaeab2c8efc5e2" id="r_a83963ffb6de122488cdaeab2c8efc5e2"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a83963ffb6de122488cdaeab2c8efc5e2">RW_PAIRS_FREE</a>&#160;&#160;&#160;1048576.0</td></tr>
 <tr class="memdesc:a83963ffb6de122488cdaeab2c8efc5e2"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of pairs of a RW step allowed with <span class="tt">pairs=-1</span> (auto) whatever the work of its elimination (small matrices), see rw_pairs_min_bits().  <br /></td></tr>
-<tr class="memitem:a3f3d8600177e9da2e2b6f9ec1099b90a" id="r_a3f3d8600177e9da2e2b6f9ec1099b90a"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3f3d8600177e9da2e2b6f9ec1099b90a">DIST_M4RI_VERSION</a>&#160;&#160;&#160;&quot;0.16.0&quot;</td></tr>
+<tr class="memitem:a3f3d8600177e9da2e2b6f9ec1099b90a" id="r_a3f3d8600177e9da2e2b6f9ec1099b90a"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3f3d8600177e9da2e2b6f9ec1099b90a">DIST_M4RI_VERSION</a>&#160;&#160;&#160;&quot;0.16.1&quot;</td></tr>
 <tr class="memitem:a2f7fcedd9dd4e25fceb137e859db806f" id="r_a2f7fcedd9dd4e25fceb137e859db806f"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2f7fcedd9dd4e25fceb137e859db806f">SHORT_HELP</a></td></tr>
 <tr class="memitem:a56fe9bff0a1be75aae2da3e593053e2c" id="r_a56fe9bff0a1be75aae2da3e593053e2c"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a56fe9bff0a1be75aae2da3e593053e2c">USAGE</a></td></tr>
 <tr class="memitem:a4bb660c2e956c3b7425d345b4adb9a0b" id="r_a4bb660c2e956c3b7425d345b4adb9a0b"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4bb660c2e956c3b7425d345b4adb9a0b">MORE_HELP</a></td></tr>
@@ -342,7 +342,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00036">36</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="util__io_8c_source.html#l03066">nzlist_read()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>.</p>
 
 </div>
 </div>
@@ -361,7 +361,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00043">43</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03179">print_codeword_support()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>.</p>
 
 </div>
 </div>
@@ -380,7 +380,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00039">39</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -415,7 +415,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00040">40</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00186">csr_dump()</a>, <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l02821">print_codeword_stats()</a>, and <a class="el" href="util__io_8c_source.html#l03179">print_codeword_support()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00186">csr_dump()</a>, <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>, and <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>.</p>
 
 </div>
 </div>
@@ -491,7 +491,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00032">32</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -529,7 +529,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00031">31</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>, <a class="el" href="util__io_8c_source.html#l03066">nzlist_read()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
 
 </div>
 </div>
@@ -548,7 +548,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00034">34</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -559,7 +559,7 @@ Variables</h2></td></tr>
 <div class="memproto">
       <table class="memname">
         <tr>
-          <td class="memname">#define DIST_M4RI_VERSION&#160;&#160;&#160;&quot;0.16.0&quot;</td>
+          <td class="memname">#define DIST_M4RI_VERSION&#160;&#160;&#160;&quot;0.16.1&quot;</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -584,7 +584,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00047">47</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
 
 </div>
 </div>
@@ -810,9 +810,9 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>1 if convergence criterion is met, 0 otherwise. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02899">2899</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02906">2906</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l02802">codeword_hit_stats()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>.</p>
 
@@ -865,11 +865,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The codeword hash (<span class="tt">p-&gt;codewords</span>). </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02686">2686</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02693">2693</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::arr</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::cnt_u</a>, <a class="el" href="util__hash_8h_source.html#l00041">CW_VEC_T::cnt_w</a>, <a class="el" href="util__io_8c_source.html#l02637">codeword_maxc_reached()</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_RW_UNIFORM</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_RW_WINDOW</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00427">HASH_ADD</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::arr</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::cnt_u</a>, <a class="el" href="util__hash_8h_source.html#l00041">CW_VEC_T::cnt_w</a>, <a class="el" href="util__io_8c_source.html#l02644">codeword_maxc_reached()</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_RW_UNIFORM</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_RW_WINDOW</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00427">HASH_ADD</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03066">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
 
 </div>
 </div>
@@ -891,11 +891,11 @@ Variables</h2></td></tr>
 <p>Weight limit (exclusive) of RW codewords needed for the <span class="tt">min_hits</span> statistic. </p>
 <p>Returns 0 if min_hits &lt;= 0, the weight min_w + 1 if only the minimum-weight codewords are used (cov_cws &lt;= 0), INT_MAX (any weight) while the representative set is not filled, and otherwise the maximum weight in hash plus one. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02641">2641</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02648">2648</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -929,11 +929,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Number of weight classes with non-uniform hit counts. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02932">2932</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02939">2939</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l02780">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l02780">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l02802">codeword_hit_stats()</a>, <a class="el" href="util__io_8c_source.html#l02778">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8c_source.html#l02777">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l02779">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, <a class="el" href="util__io_8c_source.html#l02785">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8c_source.html#l02784">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l02786">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -966,11 +966,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02802">2802</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02809">2809</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8h_source.html#l00397">cw_hit_stats_t::min_cws</a>, <a class="el" href="util__io_8h_source.html#l00398">cw_hit_stats_t::min_hits</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8h_source.html#l00400">cw_hit_stats_t::set_hits</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02899">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l02932">codeword_hit_check()</a>, and <a class="el" href="util__io_8c_source.html#l02821">print_codeword_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02906">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l02939">codeword_hit_check()</a>, and <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>.</p>
 
 </div>
 </div>
@@ -991,11 +991,11 @@ Variables</h2></td></tr>
 
 <p>Returns 1 if maxC &gt; 0 and maxC codewords of the collection window are collected. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02637">2637</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02644">2644</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l02628">codeword_window_count()</a>, and <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l02635">codeword_window_count()</a>, and <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02686">codeword_add_maybe()</a>, <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03066">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
 
 </div>
 </div>
@@ -1016,11 +1016,11 @@ Variables</h2></td></tr>
 
 <p>Number of codewords in the collection window (weight up to min_w + dW with outC or maxC, otherwise weight min_w): the codewords exported with outC and counted for maxC. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02628">2628</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02635">2635</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02637">codeword_maxc_reached()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02644">codeword_maxc_reached()</a>.</p>
 
 </div>
 </div>
@@ -1070,7 +1070,7 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02738">2738</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02745">2745</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
@@ -1155,11 +1155,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Number of valid codewords successfully read and added, or -1 on error. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03066">3066</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03073">3073</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::arr</a>, <a class="el" href="util__io_8c_source.html#l02686">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l02637">codeword_maxc_reached()</a>, <a class="el" href="util__m4ri_8c_source.html#l01019">cols_ws_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l01008">cols_ws_init()</a>, <a class="el" href="util__m4ri_8c_source.html#l00519">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00163">csr_transpose()</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_OTHER</a>, <a class="el" href="util__io_8h_source.html#l00036">DBG_CODEWORDS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l02559">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l02539">nzlist_r_open()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8c_source.html#l03179">print_codeword_support()</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::arr</a>, <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l02644">codeword_maxc_reached()</a>, <a class="el" href="util__m4ri_8c_source.html#l01022">cols_ws_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l01011">cols_ws_init()</a>, <a class="el" href="util__m4ri_8c_source.html#l00522">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00163">csr_transpose()</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_OTHER</a>, <a class="el" href="util__io_8h_source.html#l00036">DBG_CODEWORDS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l02566">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l02546">nzlist_r_open()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -1199,11 +1199,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Number of codewords written, or -1 on error. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03190">3190</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03197">3197</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8c_source.html#l02527">nzlist_w_append()</a>, <a class="el" href="util__io_8c_source.html#l02515">nzlist_w_new()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8c_source.html#l02534">nzlist_w_append()</a>, <a class="el" href="util__io_8c_source.html#l02522">nzlist_w_new()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -1236,11 +1236,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02821">2821</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02828">2828</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l02780">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l02780">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l02802">codeword_hit_stats()</a>, <a class="el" href="util__io_8h_source.html#l00040">DBG_LARGE</a>, <a class="el" href="util__io_8c_source.html#l02778">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8c_source.html#l02777">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l02779">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, <a class="el" href="util__io_8h_source.html#l00040">DBG_LARGE</a>, <a class="el" href="util__io_8c_source.html#l02785">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8c_source.html#l02784">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l02786">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -1291,11 +1291,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03179">3179</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03186">3186</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__io_8h_source.html#l00043">DBG_CW_MAX</a>, <a class="el" href="util__io_8h_source.html#l00040">DBG_LARGE</a>, and <a class="el" href="util__io_8c_source.html#l00008">prm</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03066">nzlist_read()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>.</p>
 
 </div>
 </div>
@@ -1370,11 +1370,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03003">3003</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03010">3010</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l02983">rw_infoset_find_prob()</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l02990">rw_infoset_find_prob()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -1399,11 +1399,11 @@ Variables</h2></td></tr>
 
 <p>DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform random permutation and by those with a window (the distinct codewords and their hits), e.g., to see whether some codewords are found only by the uniform steps (not local in the column order). </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02874">2874</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02881">2881</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::cnt_u</a>, <a class="el" href="util__hash_8h_source.html#l00041">CW_VEC_T::cnt_w</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -1487,7 +1487,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l01728">1728</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00594">csr_from_pairs()</a>, <a class="el" href="util__io_8h_source.html#l00037">DBG_ARGS</a>, and <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00597">csr_from_pairs()</a>, <a class="el" href="util__io_8h_source.html#l00037">DBG_ARGS</a>, and <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
 
@@ -1535,11 +1535,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>P1(w) + P2(w). </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02983">2983</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02990">2990</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
 <p class="reference">References <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03003">print_rw_infoset_estimate()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03010">print_rw_infoset_estimate()</a>.</p>
 
 </div>
 </div>
@@ -1593,9 +1593,9 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00766">766</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00982">colmask_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00339">csr_csr_mul_non_zero()</a>, <a class="el" href="util__io_8c_source.html#l00186">csr_dump()</a>, <a class="el" href="util__m4ri_8c_source.html#l00519">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00652">csr_mm_read()</a>, <a class="el" href="util__io_8h_source.html#l00037">DBG_ARGS</a>, <a class="el" href="util__io_8h_source.html#l00035">DBG_PARAMS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__io_8h_source.html#l00544">DIST_M4RI_VERSION</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00931">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00047">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00629">MORE_HELP</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8c_source.html#l00095">print_short_help()</a>, <a class="el" href="util__io_8c_source.html#l01728">read_dem_file()</a>, <a class="el" href="util__io_8h_source.html#l00278">RW_PAIRS_MAX_BITS</a>, and <a class="el" href="util__io_8h_source.html#l00566">USAGE</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00985">colmask_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00342">csr_csr_mul_non_zero()</a>, <a class="el" href="util__io_8c_source.html#l00186">csr_dump()</a>, <a class="el" href="util__m4ri_8c_source.html#l00522">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00655">csr_mm_read()</a>, <a class="el" href="util__io_8h_source.html#l00037">DBG_ARGS</a>, <a class="el" href="util__io_8h_source.html#l00035">DBG_PARAMS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__io_8h_source.html#l00544">DIST_M4RI_VERSION</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00934">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00047">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00629">MORE_HELP</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8c_source.html#l00095">print_short_help()</a>, <a class="el" href="util__io_8c_source.html#l01728">read_dem_file()</a>, <a class="el" href="util__io_8h_source.html#l00278">RW_PAIRS_MAX_BITS</a>, and <a class="el" href="util__io_8h_source.html#l00566">USAGE</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -1625,9 +1625,9 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l01492">1492</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l01000">colmask_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00519">csr_free()</a>, <a class="el" href="uthash_8h_source.html#l00507">HASH_DEL</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, and <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l01003">colmask_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00522">csr_free()</a>, <a class="el" href="uthash_8h_source.html#l00507">HASH_DEL</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, and <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
 
 </div>
 </div>
@@ -1654,7 +1654,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00008">8</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03354">main()</a>, <a class="el" href="util__m4ri_8c_source.html#l00213">mzd_generator_from_csr()</a>, <a class="el" href="util__io_8c_source.html#l02527">nzlist_w_append()</a>, and <a class="el" href="util__io_8c_source.html#l03179">print_codeword_support()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, <a class="el" href="util__m4ri_8c_source.html#l00213">mzd_generator_from_csr()</a>, <a class="el" href="util__io_8c_source.html#l02534">nzlist_w_append()</a>, and <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>.</p>
 
 </div>
 </div>

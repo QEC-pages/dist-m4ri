@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.0</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.1</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -667,7 +667,19 @@ More improvements</h2>
 </li>
 </ul>
 <ul class="check">
-<li class="unchecked">even smarter termination logic for CC ? </li>
+<li class="unchecked">even smarter termination logic for CC ?</li>
+</ul>
+<ul class="check">
+<li class="unchecked"><b>Optional <span class="tt">engine="tropidist"</span> delegation fallback</b> (future work): an external subprocess fallback for large quantum codes and circuits when <span class="tt">qec_cert</span> is not installed:<ul>
+<li><b>Auto resolution order</b>: in <span class="tt">engine="auto"</span>, try <span class="tt">qec_cert</span> first, then <span class="tt">tropidist</span> (if configured via <span class="tt">TROPIDIST_ROOT</span> and the instance size exceeds a minimum threshold), then the native <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span> binary.</li>
+<li><b>Delegation gate &amp; cache safety</b>: apply the same distance-only gate as <span class="tt">engine="cert"</span> (fall back to native <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span> when codeword enumeration <span class="tt">do_cws</span> / <span class="tt">outC</span>, <span class="tt">finC</span>, <span class="tt">smax</span>, <span class="tt">dW</span>, <span class="tt">maxC</span>, <span class="tt">start</span> list, <span class="tt">outD</span>, <span class="tt">out_reduced</span>, <span class="tt">pmin &gt; 0</span>, or single-sided <span class="tt">method=1</span> / <span class="tt">2</span> is requested) and the same verified-only cache write rules (only unconditional lower bounds and independently verified upper-bound witnesses are written to the cache).</li>
+<li><b>Subprocess invocation</b>: invoke <span class="tt">python -m cdist --matrices H.mtx L.mtx --threads N --time-limit S --out rec.json</span> for matrix pairs, or <span class="tt">python -m cdist circuit.stim --threads N --time-limit S --out rec.json</span> directly for <span class="tt">.stim</span> circuits so <span class="tt">tropidist</span> retains its native circuit relaxations; a DEM-only input (<span class="tt">fdem</span> without a circuit) is exported as <span class="tt">(H, L)</span> matrices.</li>
+<li><b>CSS codes</b>: run one call per sector (<span class="tt">X</span> and <span class="tt">Z</span>), constructing <span class="tt">L</span> (<span class="tt">Lx</span> / <span class="tt">Lz</span>) in <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span> when only <span class="tt">(Hx, Hz)</span> are supplied.</li>
+<li><b>Location &amp; memory</b>: locate the checkout via <span class="tt">TROPIDIST_ROOT</span> (a repository checkout whose C kernels compile on first use) and expose a <span class="tt">table_gb</span> memory option for Rank-DP table sizing.</li>
+<li><b>Witness re-verification &amp; size threshold</b>: independently re-verify every returned witness ($H x = 0$, $L x \neq 0$, or DEM replay) in <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span>; because spawning <span class="tt">python -m cdist</span> incurs $\approx 0.1\text{&ndash;}1\text{ s}$ of subprocess overhead, <span class="tt">engine="auto"</span> should delegate to <span class="tt">tropidist</span> only above an instance size threshold.</li>
+<li><b>Licensing &amp; testing</b>: <span class="tt">tropidist</span> is MIT-licensed and invoked as a separate process, so licenses remain fully compatible; unit tests should mock the subprocess invocation and JSON record parsing. </li>
+</ul>
+</li>
 </ul>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
