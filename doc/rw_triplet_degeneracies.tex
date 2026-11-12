@@ -162,10 +162,20 @@ mathematical tools from first principles in physical QEC terms. To keep every fo
   \item Every formal statement is followed both by an intuitive \textbf{Physical idea of the proof} (framed in
     terms of spacetime syndromes, stabilizer gauge fixing, CNOT hooks, or Poisson arrival races) and by a
     \textbf{detailed step-by-step formal proof} (placed in the text for concise arguments, or in
-    Appendices~\ref{app:drop_proof}--\ref{app:infoset_proof} for longer derivations); and
-  \item Every formal statement concludes with a \textbf{Prior work and attribution} paragraph situating the result
-    within the coding, matroid, optimization, probability, and QEC literatures and distinguishing known or folklore
-    ingredients from new specializations and derivations.
+    Appendices~\ref{app:drop_proof}--\ref{app:infoset_proof} for longer derivations);
+  \item Every formal statement is accompanied by a \textbf{Prior work and attribution} paragraph situating the
+    result within the coding, matroid, optimization, probability, and QEC literatures and distinguishing known or
+    folklore ingredients from new specializations and derivations; and
+  \item Every formal statement concludes with a \textbf{Relevance and role in the proposed pipeline} paragraph
+    explaining how the result is used in the five-stage \ttt{dist-m4ri} pipeline of Section~\ref{sec:roadmap}.
+    Proposition~\ref{prop:hook_triangulation} motivates running Stages~\ref{stage:enum}, \ref{stage:contract},
+    and~\ref{stage:conv} by default on every circuit DEM; Stage~\ref{stage:enum} ($\Tc$ enumeration) implements
+    Lemma~\ref{lem:min_det_bucket}; Stage~\ref{stage:contract} (contraction and Stern pruning) rests on
+    Theorems~\ref{thm:ambush}, \ref{thm:mis_push}(b), and~\ref{thm:contraction_dominance}; Stage~\ref{stage:slab}
+    (row-slab windows) rests on Theorems~\ref{thm:ambush} and~\ref{thm:mis_push}(a) and on the accounting of
+    Proposition~\ref{prop:mis_drop}, which also rules out MIS Drop; Stage~\ref{stage:dual} (sparse-dual elimination)
+    rests on Proposition~\ref{prop:sparse_dual}; and Stage~\ref{stage:conv} (calibrated stopping) rests on
+    Theorem~\ref{thm:infoset_likelihood}, Corollary~\ref{cor:harmonic_hub}, and Proposition~\ref{prop:plaquette_swap}.
 \end{itemize}
 
 \paragraph{Outline.}
@@ -181,8 +191,9 @@ Section~\ref{sec:benchmarks} reports C/OpenMP benchmarks across $9$ circuit DEMs
 derives exact information-set likelihoods (Theorem~\ref{thm:infoset_likelihood} and
 Corollary~\ref{cor:harmonic_hub}) and resolves the Node-Marginal Paradox. Section~\ref{sec:convergence}
 establishes $2 \leftrightarrow 2$ plaquette exchanges (Proposition~\ref{prop:plaquette_swap}) and evaluates the
-calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 stopping gauge. Section~\ref{sec:roadmap} summarizes
-practical integration guidelines for \ttt{dist-m4ri}.
+calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 stopping gauge. Section~\ref{sec:roadmap} organizes practical
+integration guidelines for \ttt{dist-m4ri} into a five-stage pipeline and cites, for each stage, the formal results
+that justify it.
 
 % ============================================================================
 \section{Pedagogical Background: From Quantum Circuits to Discrete Mathematics}\label{sec:background}
@@ -702,6 +713,25 @@ identical columns, these gauge generators survive as weight-3 column relations $
 both the time-like phenomenological plaquette and the ancilla-injected spatial stabilizer as telescoping sums of
 them.
 
+\paragraph{Relevance and role in the proposed pipeline.}
+Proposition~\ref{prop:hook_triangulation} explains why weight-3 degeneracies are generic structure of circuit DEMs
+rather than a feature of particular codes: every noisy CNOT contributes the triangle~\eqref{eq:tri_gate} whenever its
+three cleaned columns are nonzero and distinct, unreduced DEMs add the Pauli triangles of depolarizing channels
+(Section~\ref{subsec:origin}), and Part~(b) writes the elementary time-like and space-like stabilizer cycles as
+$\Ftwo$-sums of such triangles. This is the structural reason for running the $\Tc$-based stages of the pipeline of
+Section~\ref{sec:roadmap} by default whenever a DEM is loaded (\ttt{fdem=}) rather than as code-specific options:
+Stage~\ref{stage:enum} finds triangles on every circuit DEM we tested (each column of all $14$ DEMs lies in a
+triplet), Stage~\ref{stage:contract} then has local gauge moves for the contraction and Stern filter of
+Theorem~\ref{thm:contraction_dominance}, and Stage~\ref{stage:conv} has shared-hub triangle pairs to canonicalize,
+because consecutive triangles of a telescoping chain in Part~(b) share a column, which is exactly the hub
+configuration of Proposition~\ref{prop:plaquette_swap}. If $\Tc$ happens to be small or empty, these stages reduce to
+standard \ttt{RW} and raw-vector keying, so making them defaults costs little beyond the startup enumeration. The
+proposition does not by itself prove that $\Tc$ spans $\Dc$: Table~\ref{tab:t3_span} shows $\mathrm{GAP} = 0$
+empirically on $12$ of $14$ DEMs, the exceptions being unreduced two-sector BB DEMs whose passive metachecks leave
+$\mathrm{GAP} = 6$ (removed by \ttt{drop=auto} on \ttt{bb\_72}). When $\mathrm{GAP} = 0$, any two error-equivalent
+fault sets differ by a sum of triplets, so $\Tc$-moves connect all gauge-dressed representatives of a fault class,
+although not necessarily through monotonically decreasing weights.
+
 % ----------------------------------------------------------------------------
 \subsection{Exact Millisecond-Scale Enumeration of \texorpdfstring{$\Tc$}{T3}}\label{subsec:enumeration}
 % ----------------------------------------------------------------------------
@@ -775,6 +805,22 @@ collisions of low-order bits; for sparse DEM columns the leading detector is det
 produced once without a random collision filter. The $\Ftwo$-linear Zobrist hash is
 standard~\cite{Zobrist1970,CarterWegman1979}. We are not aware of an earlier explicit statement of the
 duplicate-free enumeration~(b) for detector error models and regard it as a folklore-level observation.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Lemma~\ref{lem:min_det_bucket} is the algorithm of Stage~\ref{stage:enum}. Its probe count $\sum_{i=1}^m
+\binom{|G_i|}{2}$ makes exact enumeration cheap enough to run unconditionally at startup ($155{,}853$ probes instead
+of $3.43 \times 10^8$, in at most $18.4\text{ ms}$, on \ttt{dgross\_288}; see below), and its exactly-once
+guarantee~(b) lets the output be loaded, without a deduplication pass, into the two structures used by all later
+stages: the open-addressed ordered-pair table $(u < v) \mapsto w$ queried by the $2 \to 1$ / $3 \to 0$ contraction of
+Stage~\ref{stage:contract}, and the CSR adjacency of $G_3$ from which Stage~\ref{stage:slab} builds its greedy MIS
+orderings. Because a pair $\{u, v\}$ determines at most one third column in a cleaned DEM, the triplets through a
+column $u$ are exactly $\{u, z, w(u, z)\}$ for the $G_3$-neighbors $z$ of $u$, so the same two structures also suffice
+for the shared-hub search of the canonicalizer in Stage~\ref{stage:conv}. Exactness matters as much as speed: the
+loss-free Stern filter of Theorem~\ref{thm:contraction_dominance}(b) assumes that every triplet realized as a
+fundamental circuit $C_P(x)$ is available to the contraction, which a sampled or capped enumeration would not
+guarantee (such triplets consist of three columns with nonzero syndromes and are therefore covered by~(b)). Finally,
+the remark on $G_\emptyset$ yields a free early exit: a pure-logical column certifies $d = 1$ before the first
+\ttt{RW} step.
 
 \medskip
 On \ttt{dgross\_288} ($m = 2{,}736, n = 26{,}208$), mean bucket size is $|G_i| = 9.58$, so
@@ -980,6 +1026,21 @@ elementary coset minimality (Section~\ref{subsec:dems}). The bound $|c \cap J| \
 the extra information-set positions forced by pivot pairs of weight-3 degeneracies for any logical codeword $c$---is
 to our knowledge new.
 
+\paragraph{Relevance and role in the proposed pipeline.}
+Theorem~\ref{thm:ambush} is the diagnosis that motivates Stages~\ref{stage:contract} and~\ref{stage:slab}. Realized
+pivot pairs are ubiquitous on standard steps: on \ttt{bb\_72\_simp}, a uniform \ttt{RW} basis contains on average
+$74.6$ triplets with two elements in $P$ and the third in $J$, and a \ttt{win=256} basis $81.2$
+(Section~\ref{subsec:paradox}, where $N_3^H(J) = N_3(J)$ because $d = 6 > 3$). By~\eqref{eq:ambush_bound}, a single
+ambushed column of $c$ already hides $c$ from the Prange scan and two hide it from Stern pairs, however favorably the
+rest of $c$ is placed. The theorem points to two complementary remedies, both used in the pipeline: \emph{prevent}
+ambushes by placing a greedy MIS of $G_3$ first (Theorem~\ref{thm:mis_push}(a)), as the slab windows of
+Stage~\ref{stage:slab} do inside each sub-DEM, or \emph{repair} them after elimination by contracting the
+gauge-dressed circuit $C_P(b)$ (Theorem~\ref{thm:contraction_dominance}(a)), as Stage~\ref{stage:contract} does on
+every step. The benchmarks favor repair as the universal default: with contraction enabled, \ttt{V4\_cnt\_uni} beats
+\ttt{V5\_cnt\_psh} on every run with hits (Section~\ref{sec:benchmarks}), because each triplet $\{i, j, k\}$ meeting
+$c^*$ at $k$ then offers two success channels ($k \in P$ or $\{i, j\} \subseteq P$) instead of one. The pipeline
+therefore does not push back on full-width uniform or window steps.
+
 % ----------------------------------------------------------------------------
 \subsection{MIS Drop vs.\ MIS Push-Back: Conservation Laws and Bucket-0 Deflation}\label{subsec:drop_vs_push}
 % ----------------------------------------------------------------------------
@@ -1051,6 +1112,26 @@ $\gamma^d$ in the disjoint-triplet model). The disjoint-triplet model, the finit
 (\alpha M)_{d-p}$, and the asymptotic ratio~\eqref{eq:drop_hit_ratio} are new here; they constitute a mean-field
 model (uniform $r$-subsets in place of greedy bases) rather than an exact evaluation under the greedy basis law of
 Theorem~\ref{thm:infoset_likelihood}.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Proposition~\ref{prop:mis_drop} acts as a negative design rule that determines what the pipeline does \emph{not} do.
+Part~(a) shows that no column ordering (MIS push-back, windows, or $d_3$-biasing) can raise the \emph{average} pivot
+probability above $r/n$: an ordering only redistributes pivot probability among columns, so any gain from reordering
+must come from favoring the columns of $c^*$ jointly (as time-localized windows do for localized logicals), while
+gains that do not rely on guessing where $c^*$ lies must come from post-elimination processing
+(Stage~\ref{stage:contract}). Static $d_3$-biasing is such a guess, and its circuit-dependent sign
+(Table~\ref{tab:d3_bias}) is why it is not a default. Part~(b) shows that permanently discarding $[n] \setminus F$
+shortens the code and, in the mean-field limit, multiplies the per-step hit probability by $\gamma^p ((1 - \alpha)/(1
+- \gamma\alpha))^p < \gamma^p$, which even an ideal $\gamma^{-1}$ elimination speedup cannot repay (the rate factor
+is $< 1$ for $p = 1$ and $< \gamma$ for Stern $p = 2$). Consistently, \ttt{V1\_drop} reaches only
+$0.00\times$--$0.84\times$ of \ttt{V0\_unif} and finds no hit on \ttt{shyps\_225} or \ttt{bidir\_sNESENn}
+(Table~\ref{tab:bench_summary}). MIS Drop is therefore excluded, and MIS orderings enter the pipeline only in
+push-back form, which keeps every column available as a non-pivot. The same accounting governs
+Stage~\ref{stage:slab}, which also restricts the candidate set, namely to the slab interior $C_W$
+of~\eqref{eq:subdem}: a time-localized $c^*$ survives this restriction whenever the slab contains the detector
+supports of all its columns---a condition set by the slab geometry rather than a factor $\gamma^d$ as under MIS
+Drop---which is why slab windows pay off on deep DEMs ($m \ge 600$) and complement, rather than replace, full-width
+steps.
 
 \medskip
 When we instead \emph{push} $B = [n] \setminus F$ behind $F$ (\ttt{V2\_push}), all $n$ columns remain available as
@@ -1124,6 +1205,25 @@ decoding~\cite{FossorierLin1995}, of quantum BP+OSD~\cite{PanteleevKalachev2021}
 though immediate from the definition of $G_3$. Equation~\eqref{eq:bucket0_prob} is the zero-window factor of the
 per-iteration success probability of Stern's algorithm~\cite{Stern1988,CanteautChabaud1998,BernsteinLangePeters2008},
 namely $\binom{r-s}{l}/\binom{r}{l}$ evaluated at $s = 2$.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Theorem~\ref{thm:mis_push} governs two mechanisms of the pipeline. Part~(a) is the guarantee behind the MIS
+Push-Back ordering inside the row-slab windows of Stage~\ref{stage:slab} (as benchmarked in \ttt{V8\_subwin}). It
+applies verbatim to the slab sub-DEM $H_{M_W, C_W}$ of~\eqref{eq:subdem} with $F$ a greedy MIS of $G_3$ restricted to
+$C_W$: every column of $C_W$ vanishes outside $M_W$, so the triplets inside $C_W$ are triplets of the full DEM, and
+whenever $F$ spans the slab ($\rank H_{M_W, F} = \rank H_{M_W, C_W}$), every slab step is free of the ambushes of
+Theorem~\ref{thm:ambush} ($t = 0$), yet, unlike under MIS Drop, no column of $C_W$ is lost as a non-pivot candidate.
+The condition costs nothing to check at run time (no pivot is accepted after the prefix $F$); its full-width analogue
+$\rank(H_F) = r_H$ held in every draw on all qLDPC and color-code DEMs of Table~\ref{tab:mis_anatomy}, but not on the
+surface-code DEMs (mean deficit $\approx 1$). Part~(b) quantifies the cost of \emph{not} pushing back on the uniform
+and \ttt{win=256} steps of the pipeline (see the discussion after Theorem~\ref{thm:ambush}): each of the $N_3(J)$
+realized triplet columns ($\mathrm{sig}(x) = 0$, $w_x = 2$) falls into Stern's Bucket~0 with probability $(1 -
+l/r)(1 - l/(r - 1)) \approx 92\%$--$99.1\%$, where it is paired with the nontrivial columns of that bucket. The
+$35\%$--$76\%$ reduction of Stern pair checks under \ttt{V2\_push} at equal pair slack (Section~\ref{sec:benchmarks})
+indicates the size of this Bucket-0 condensate. Stage~\ref{stage:contract} instead removes exactly these columns
+from the buckets (columns with $\mathrm{sig}(x) = 0$ and $w_x \le 1$ cannot occur in a cleaned DEM) without
+constraining the pivot order, and Theorem~\ref{thm:contraction_dominance}(b) proves that this loses no weight-$d$
+hit.
 
 \paragraph{Remark on degree-biased MIS (\ttt{V3\_low\_d3} / \ttt{V3\_high\_d3}).}
 Because column-averaged pivot marginals equal $r/n$ by Proposition~\ref{prop:mis_drop}(a), one might bias $F$ by
@@ -1293,6 +1393,24 @@ known low-weight degeneracies, analogous to the stabilizer moves of Markov-chain
 decoders~\cite{WoottonLoss2012,HutterWoottonLoss2014}; we are not aware of its prior use inside information-set
 decoding.
 
+\paragraph{Relevance and role in the proposed pipeline.}
+Theorem~\ref{thm:contraction_dominance} is the algorithmic core of Stage~\ref{stage:contract}, the highest-return
+upgrade that applies to every DEM ($2.8\times$--$20.2\times$ over \ttt{win=256}). Part~(a) fixes the screening rules
+of the $p = 1$ scan. Contraction preserves $L 1_C$, so a candidate with $\mathrm{sig}(y) = 0$ can never be contracted
+into a logical fault, whereas every ambushed circuit has $\mathrm{sig}(b) = L 1_{c^*} \neq 0$; hence testing
+$\mathrm{sig}(y) \neq 0$ first---in $O(1)$ once the \ttt{srows} reduction of $L$ is hoisted ahead of the $p = 1$
+scan---never discards an ambushed representative of $c^*$. Since $|C_P(b)| \le d + t$, the weight cap $|C_P(y)| \le
+d_{\max} + \Delta w_1$ for invoking \ttt{greedy\_shorten\_cw} ($\Delta w_1 = 8$; see below) retains every
+representative with up to $t \le \Delta w_1$ ambushes. Together, these rules turn steps that standard \ttt{RW} wastes
+into hits on both uniform and \ttt{win=256} steps; e.g., \ttt{V4\_cnt\_uni} raises the per-step hit probability on
+\ttt{bb\_72\_simp} ($l = 0$) from $8.9\%$ to $40.8\%$ (Section~\ref{sec:benchmarks}). Part~(b) licenses the Stern
+Bucket-0 filter: in the column loop of \ttt{rw\_pairs\_step()} ($p = 2$), columns whose reduced logical syndrome
+\ttt{sig} is known to vanish and whose pivot-support weight \ttt{wt} is at most $2$ can be skipped before bucketing,
+draining the condensate of Theorem~\ref{thm:mis_push}(b) with no loss of weight-$d$ hits. The hypothesis of Part~(b)
+is also a deployment constraint: the filter is loss-free only if $p = 1$ candidates of weight up to $d_{\max} + 1$
+are contracted using the complete triplet list of Lemma~\ref{lem:min_det_bucket}, so it must be enabled together
+with contraction ($\Delta w_1 \ge 1$), never on its own.
+
 \paragraph{Cache-resident contraction (\ttt{greedy\_shorten\_cw}).}
 On startup, each $T = \{u, v, w\} \in \Tc$ is stored as its three ordered pairs $(u < v) \mapsto w$, $(u < w)
 \mapsto v$, $(v < w) \mapsto u$ in an open-addressed table of $2^{\lceil \log_2(6|\Tc| + 32) \rceil}$ slots of $12$
@@ -1377,6 +1495,21 @@ sequence with dense Gauss--Jordan elimination is the standard equivalence of the
 incremental elimination has been used to amortize per-iteration Gaussian
 elimination~\cite{CanteautChabaud1998,BernsteinLangePeters2008}, whereas the $m \times m$-inverse formulation with
 $O(|h_c|)$ logical and bucket screening specialized to sparse DEMs with $n \gg m$ is new here.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Proposition~\ref{prop:sparse_dual} specifies the alternative elimination engine of Stage~\ref{stage:dual}. Because
+Part~(a) guarantees the same ordered pivot sequence $P$ and the same pivot supports $S_c(P)$ as dense Gauss--Jordan
+elimination for \emph{every} permutation $\pi$, whether a step calls \ttt{dist-m4ri}'s dense \ttt{rw\_eliminate()} or
+a sparse-dual engine is a pure performance decision: fundamental circuits, $\mathrm{sig}$, $\mathrm{bkey}$, the
+contraction and filter of Stage~\ref{stage:contract}, and the information-set law $\Pr(J)$ of
+Theorem~\ref{thm:infoset_likelihood} underlying the stopping statistics of Stage~\ref{stage:conv} are all unchanged.
+The engine can therefore be selected per DEM by the heuristic cache-spill gate of Stage~\ref{stage:dual}, without
+recalibration and without any loss of hits, with the precomputed rank $r$ supplying the halting criterion. Part~(b)
+supplies the screening interface: once the dual frames $(\hat{\ell}_q, \hat{b}_q)$ of~\eqref{eq:detector_frames} are
+formed from $M$ after elimination, $\mathrm{sig}(c)$ and $\mathrm{bkey}(c)$ cost $|R(c)|$ scalar XORs per column (on
+average $3$--$7.5$ detectors per column in Table~\ref{tab:d3_bias}), so the $\mathrm{sig}(c) \neq 0$ test of
+Stage~\ref{stage:contract} and Stern bucketing precede, and can avoid, the materialization of the $\lceil r/64
+\rceil$-word support $1_{S_c(P)}$ (lazy materialization, as in the \ttt{V2\_dual} prototype).
 
 \paragraph{Row-slab restricted sub-DEM windows (\ttt{V8\_subwin}).}
 In \ttt{dist-m4ri}'s localized window mode (\ttt{win=256}), $256$ contiguous columns are placed first in $\pi$, yet
@@ -1655,6 +1788,26 @@ Held--Karp-type subset dynamic program~\cite{HeldKarp1962} in which all closure 
 follow from one zeta (subset-sum) transform~\cite{BjorklundHusfeldtKaskiKoivisto2007}---stated explicitly
 elsewhere, nor any prior use of these formulas for information-set likelihoods in ISD.
 
+\paragraph{Relevance and role in the proposed pipeline.}
+Theorem~\ref{thm:infoset_likelihood} is the probabilistic foundation of the convergence calibration in
+Stage~\ref{stage:conv}. First, it identifies the law that \ttt{RW} actually samples: $\Pr(J)$ is fixed by the matroid
+$\mathcal{M}(H)$ and is far from the uniform $(n - r)$-subset law assumed by classical ISD success formulas, including
+the hypergeometric factor $w\binom{n-w}{n-r-1}/\binom{n}{n-r}$ of \ttt{dist-m4ri}'s analytical diagnostic
+\ttt{rw\_infoset\_find\_prob}. Evaluated via~\eqref{eq:prJ_closure}, typical uniform-\ttt{RW} bases on
+\ttt{bb\_72\_simp} are $\approx 2.7 \times 10^7$ times more probable than a uniform $r$-subset (geometric mean), and
+\ttt{win=256} bases another $\approx 167\times$ (Section~\ref{subsec:paradox}). The analytical diagnostic thus rests
+on the wrong sampling law, in addition to ignoring codeword multiplicity and contraction
+(Section~\ref{subsec:stopping_failures}), which is why Stage~\ref{stage:conv} relies on empirical nonparametric
+estimators rather than on a model of $\Pr(J)$. Second, the theorem fixes the sampling design of those estimators:
+uniform steps are independent draws from one law $\Pr(J)$---exactly the i.i.d.\ sampling occasions assumed by
+Good--Turing and Chao2---whereas window and slab steps sample different (for windows, more concentrated) laws, and
+pooling them would violate the identical-distribution assumption. Stage~\ref{stage:conv} therefore accumulates
+stopping incidences only from uniform steps (\ttt{cnt\_u}), while window and slab steps remain free to lower
+$d_{\max}$. The exact DP~\eqref{eq:dp_recursion} ($O(r 2^r)$) is a validation tool rather than a production
+component: it is the reference for the $O(n - r)$ bounds of Corollary~\ref{cor:harmonic_hub}, and the closure
+form~\eqref{eq:prJ_closure} also yields the Monte Carlo estimator of Table~\ref{tab:infoset_corr} (rows 4a--4b) for
+occasional sharper diagnostics.
+
 % ----------------------------------------------------------------------------
 \subsection{Unique Realized Triplets, Jensen and Harris\texorpdfstring{--}{-}FKG Bounds, and Hub
   Correlation}\label{subsec:cor_harmonic}
@@ -1761,6 +1914,25 @@ of the Harris--FKG correlation inequality for monotone functions of independent 
 variables~\cite{Harris1960,EsaryProschanWalkup1967,FortuinKasteleynGinibre1971}, combined in~(c) with the Wallis
 (Beta) integral $\int_0^1 (1 - u^2)^\nu\,du = (2\nu)!!/(2\nu + 1)!!$. Their application as zero-extra-cost
 information-set log-likelihood bounds in ISD is new here.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Corollary~\ref{cor:harmonic_hub} turns Theorem~\ref{thm:infoset_likelihood} into the essentially free runtime
+diagnostic of Stage~\ref{stage:conv}. Part~(b) needs only the popcounts $|S_a(P)| = |C_P(a)| - 1$ of the rows of
+$A^\top$, which \ttt{RW} already evaluates (in full in the column loop of \ttt{rw\_pairs\_step()}, and up to the
+current weight limit in the $p = 1$ scan, whose early exit would be skipped on logged steps), so $\LFKG(J)$ (and
+$\LH(J)$) can be accumulated in $O(n - r)$ additions from a lookup table of $\ln(1 + s)$, $0 \le s \le r$, without
+any extra elimination work. Logging running means separately over uniform and window steps compares how concentrated
+the two sampling laws are, and since $\LFKG(J) \le \ln \Pr(J)$,
+any step with $\LFKG(J) > -\ln\binom{n}{r}$ certifies that its basis is more probable than under the uniform-subset
+model behind \ttt{rw\_infoset\_find\_prob}. Part~(c) shows where this bound is loosest: for $\nu$ triangles sharing a
+hub pivot, the exact joint factor scales as $(1/2)^\nu$ (up to a factor $\propto \nu^{-1/2}$) rather than
+$(1/3)^\nu$, so the logged score is conservative on hub-rich bases. Parts~(a) and~(c) also guard against a natural
+pitfall: together with the degree conservation identity~\eqref{eq:d3_sum_rule}, they explain the Node-Marginal
+Paradox of Section~\ref{subsec:paradox}, i.e., why the static score $\sum_{a \in J} d_3(a)$ is anticorrelated with
+$\ln \Pr(J)$ (Pearson correlation $-0.51$ in Table~\ref{tab:infoset_corr}), whereas realized triangles and hub pivots
+carry the likelihood. The pipeline therefore logs basis-dependent scores computed from $|S_a(P)|$ rather than static
+$d_3$-based scores, consistent with not using static $d_3$-biasing as a default (Remark after
+Theorem~\ref{thm:mis_push}).
 
 % ----------------------------------------------------------------------------
 \subsection{Exact DP Verification and Resolution of the Node-Marginal Paradox}\label{subsec:paradox}
@@ -1911,6 +2083,27 @@ uniqueness to establish that $Q$ is a single 4-circuit. Part~(b) is the weight i
 that sample error-equivalence classes~\cite{WoottonLoss2012,HutterWoottonLoss2014}. Identifying shared-hub triplet
 pairs as the generator of these moves in circuit DEMs and applying them for $\Tc$-canonicalization are new here.
 
+\paragraph{Relevance and role in the proposed pipeline.}
+Proposition~\ref{prop:plaquette_swap} powers the $\Tc$-plaquette canonicalizer $\mathrm{canon}_{\Tc}$ of
+Stage~\ref{stage:conv} (prototyped as \ttt{canon\_t3\_greedy} in \ttt{exp4\_convergence.py}). Part~(b) guarantees
+that every greedy step $c \mapsto c \triangle Q$ maps a minimum-weight codeword to another one in the same logical
+class $L 1_c$, so $\bar{c} = \mathrm{canon}_{\Tc}(c)$ never merges distinct logical classes: keying the uncapped
+Zobrist coverage table of Stage~\ref{stage:conv} by $\bar{c}$ instead of the raw vector $c$ can only collapse
+degenerate siblings within a class, never hide a logical class. Part~(a) guarantees that each move exchanges exactly
+two columns for two others, and since the moves are generated by triplet pairs sharing a hub, they are found from the
+pair table and $G_3$ adjacency built in Stage~\ref{stage:enum}, without a separate list of weight-4 degeneracies. The
+proof of~(b) uses only $|c \cap T| \le 1$ for all $T \in \Tc$, so the disjointness test $\{v_a, v_b\} \cap (c
+\setminus \{u_a, u_b\}) = \emptyset$ of Section~\ref{subsec:gt_chao_gauge} holds automatically for any $c$ of minimum
+weight in its error-equivalence class and serves only as a safeguard while the current minimum weight exceeds $d$.
+Collapsing sibling clouds lets the uniform-step Good--Turing / Chao1--Chao2 rule~\eqref{eq:stopping_rule} track
+logical structure rather than gauge copies (Table~\ref{tab:conv_bench}): on single-logical DEMs it stopped
+$2.75\times$--$19.4\times$ earlier (\ttt{color\_xyz}, \ttt{surf\_d3}) or more often within budget ($180/200$ vs.\
+$93/200$ on \ttt{surf\_d5}, where its additional missed clusters are gauge copies within the single logical class)
+without missing a logical class, and on \ttt{bb\_72\_simp} ($k = 12$) it never stopped early, whereas the vector rule
+missed a logical class in $177/200$ resamples. Because greedy canonicalization stops at local minima, one plaquette
+component can still map to several representatives (e.g., $4$ for the single component of \ttt{surf\_d3}), which only
+makes the coverage criterion $N_{\mathrm{unif}}/C_{\mathrm{obs}} \ge \ttt{min\_hits}$ stricter, not looser.
+
 % ----------------------------------------------------------------------------
 \subsection{Limitations of Vector-Level Stopping Heuristics on Circuit DEMs}\label{subsec:stopping_failures}
 % ----------------------------------------------------------------------------
@@ -2027,34 +2220,55 @@ $4{,}896$ (missing $52.1\%$ of clusters, $0\%$ logical classes).
   \texorpdfstring{\ttt{dist-m4ri}}{dist-m4ri}}\label{sec:roadmap}
 % ============================================================================
 
-Our theoretical and empirical results suggest five backward-compatible upgrades for \ttt{dist-m4ri}:
-\begin{enumerate}[label=(\arabic*)]
-  \item \textbf{Automatic startup $\Tc$ enumeration:} Run Lemma~\ref{lem:min_det_bucket}'s minimum-detector Zobrist
-    hash scan whenever a DEM is loaded ($\le 18.4\text{ ms}$ and $\approx 3.9\text{ MB}$ RAM [$3.75\text{ MiB}$]
-    including the $3.0\text{ MiB}$ pair hash table and $0.75\text{ MiB}$ CSR adjacency at $n = 26{,}208, |\Tc| =
-    28{,}512$).
-  \item \textbf{Post-elimination greedy $2 \to 1$ / $3 \to 0$ contraction + Stern $w_x \le 2$ Bucket-0 pruning:}
-    Hoist 64-bit reduced-logical syndrome evaluation (\ttt{srows}) ahead of the $p = 1$ scan so $\mathrm{sig}(y)
-    \neq 0$ is tested in $O(1)$ before unpacking support bits; run \ttt{greedy\_shorten\_cw} on $p = 1$ candidates
-    with $|C_P(y)| \le d_{\max} + 8$ and omit all $\mathrm{sig}(x) = 0, w_x \le 2$ columns from Stern $p = 2$
-    buckets (Theorem~\ref{thm:contraction_dominance}), yielding a $2.8\times$--$20.2\times$ wall-clock \ttt{hits/s}
-    speedup over windowed \ttt{RW}.
-  \item \textbf{Row-slab restricted sub-DEM windows ($m \ge 600$):} While our benchmark prototype activates slab
-    restriction whenever $m > m_{\mathrm{sub}} = 320$ (yielding $0.33\times$--$2.13\times$ over \ttt{win=256} at $m
-    \in [420, 561]$ and missing boundary codewords under uniform $r_0$ on \ttt{dgross\_288}), deep multi-round DEMs
-    with $m \ge 600$ achieve $49\times$--$493\times$ higher window \ttt{hits/s} over \ttt{win=256} (\ttt{shyps\_225},
-    \ttt{bidir\_sNESENn}); production deployment should gate slab windows on $m \ge 600$ and assign positive weight
-    to boundary slabs $r_0 = 0$ and $r_0 = m - m_{\mathrm{sub}}$.
-  \item \textbf{Sparse-Dual $m \times m$ Inverse RREF (when $m \times n$ spills L2 cache and $n/m \ge 20$ or $m \ge
-    1{,}400$):} Across $m \ge 420$, \ttt{V2\_dual} / \ttt{V2\_push} step rate spans $0.83\times$--$2.66\times$
-    ($0.83\times$--$0.96\times$ at $m \le 600, n/m < 15$, versus $1.16\times$ on \ttt{bidir\_sNESENn}, $1.36\times$
-    on \ttt{bb\_72\_full}, and $2.66\times$ on \ttt{dgross\_288}); an empirical heuristic gate requiring L2 cache
-    spill together with $n/m \ge 20$ or $m \ge 1{,}400$ captures the $1.16\times$--$2.66\times$ speedups on our
-    benchmark set while avoiding cache-resident overhead.
-  \item \textbf{Calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 convergence reporting:} Key the uncapped
-    codeword hash table by $\bar{c} = \mathrm{canon}_{\Tc}(c)$, accumulate stopping counts from uniform-step
-    incidences (\ttt{cnt\_u}), gate \ttt{min\_hits} convergence on~\eqref{eq:stopping_rule}, and optionally log the
-    zero-cost Harris--FKG Score $\LFKG(J)$~\eqref{eq:LFKG_def} as an information-set concentration diagnostic.
+Our theoretical and empirical results suggest five backward-compatible upgrades for \ttt{dist-m4ri}, which we refer
+to as Stages~1--5 of the proposed pipeline. Each stage below cites the formal statements that justify it; the
+\emph{Relevance and role in the proposed pipeline} paragraph following each statement discusses its role in detail.
+\begin{enumerate}[label=\textbf{Stage~\arabic*.}, ref=\arabic*, wide=0pt]
+  \item\label{stage:enum} \textbf{Automatic startup $\Tc$ enumeration:} Run Lemma~\ref{lem:min_det_bucket}'s
+    minimum-detector Zobrist hash scan whenever a DEM is loaded (\ttt{fdem=}; $\le 18.4\text{ ms}$ and $\approx
+    3.9\text{ MB}$ RAM [$3.75\text{ MiB}$] including the $3.0\text{ MiB}$ pair hash table and $0.75\text{ MiB}$ CSR
+    adjacency at $n = 26{,}208, |\Tc| = 28{,}512$). \emph{Justification:} Proposition~\ref{prop:hook_triangulation}
+    predicts triangles at noisy CNOT gates, so $\Tc$ is generic in circuit DEMs and spans $\Dc$ on $12$ of $14$
+    tested DEMs (Table~\ref{tab:t3_span}); Lemma~\ref{lem:min_det_bucket} enumerates it exactly and without
+    duplicates, feeding the pair table and $G_3$ adjacency used by Stages~\ref{stage:contract}, \ref{stage:slab},
+    and~\ref{stage:conv}.
+  \item\label{stage:contract} \textbf{Post-elimination greedy $2 \to 1$ / $3 \to 0$ contraction + Stern $w_x \le 2$
+    Bucket-0 pruning:} Hoist 64-bit reduced-logical syndrome evaluation (\ttt{srows}) ahead of the $p = 1$ scan so
+    $\mathrm{sig}(y) \neq 0$ is tested in $O(1)$ before unpacking support bits; run \ttt{greedy\_shorten\_cw} on $p
+    = 1$ candidates with $|C_P(y)| \le d_{\max} + 8$ and omit all $\mathrm{sig}(x) = 0, w_x \le 2$ columns from
+    Stern $p = 2$ buckets (Theorem~\ref{thm:contraction_dominance}), yielding a $2.8\times$--$20.2\times$ wall-clock
+    \ttt{hits/s} speedup over windowed \ttt{RW}. \emph{Justification:} Theorem~\ref{thm:ambush} identifies the
+    pivot-pair ambushes that the contraction repairs (Theorem~\ref{thm:contraction_dominance}(a)), and
+    Theorem~\ref{thm:mis_push}(b) quantifies the Bucket-0 condensate that the filter removes without loss of
+    weight-$d$ hits (Theorem~\ref{thm:contraction_dominance}(b), valid only with contraction enabled).
+  \item\label{stage:slab} \textbf{Row-slab restricted sub-DEM windows ($m \ge 600$):} While our benchmark prototype
+    activates slab restriction whenever $m > m_{\mathrm{sub}} = 320$ (yielding $0.33\times$--$2.13\times$ over
+    \ttt{win=256} at $m \in [420, 561]$ and missing boundary codewords under uniform $r_0$ on \ttt{dgross\_288}),
+    deep multi-round DEMs with $m \ge 600$ achieve $49\times$--$493\times$ higher window \ttt{hits/s} over
+    \ttt{win=256} (\ttt{shyps\_225}, \ttt{bidir\_sNESENn}); production deployment should gate slab windows on $m
+    \ge 600$ and assign positive weight to boundary slabs $r_0 = 0$ and $r_0 = m - m_{\mathrm{sub}}$. As in
+    \ttt{V8\_subwin}, each slab is ordered by MIS Push-Back and processed with Stage~\ref{stage:contract}.
+    \emph{Justification:} Theorem~\ref{thm:mis_push}(a) makes slab steps free of the ambushes of
+    Theorem~\ref{thm:ambush} whenever the MIS spans the slab, and the survival-versus-speed accounting of
+    Proposition~\ref{prop:mis_drop}(b) explains why restricting the candidates to a slab pays off on deep DEMs
+    whereas MIS Drop does not.
+  \item\label{stage:dual} \textbf{Sparse-Dual $m \times m$ Inverse RREF (when $m \times n$ spills L2 cache and $n/m
+    \ge 20$ or $m \ge 1{,}400$):} Across $m \ge 420$, \ttt{V2\_dual} / \ttt{V2\_push} step rate spans
+    $0.83\times$--$2.66\times$ ($0.83\times$--$0.96\times$ at $m \le 600, n/m < 15$, versus $1.16\times$ on
+    \ttt{bidir\_sNESENn}, $1.36\times$ on \ttt{bb\_72\_full}, and $2.66\times$ on \ttt{dgross\_288}); an empirical
+    heuristic gate requiring L2 cache spill together with $n/m \ge 20$ or $m \ge 1{,}400$ captures the
+    $1.16\times$--$2.66\times$ speedups on our benchmark set while avoiding cache-resident overhead.
+    \emph{Justification:} Proposition~\ref{prop:sparse_dual} guarantees identical pivots, fundamental circuits,
+    $\mathrm{sig}$, and $\mathrm{bkey}$, so the dispatch is invisible to all other stages and leaves $\Pr(J)$
+    unchanged.
+  \item\label{stage:conv} \textbf{Calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 convergence reporting:} Key
+    the uncapped codeword hash table by $\bar{c} = \mathrm{canon}_{\Tc}(c)$, accumulate stopping counts from
+    uniform-step incidences (\ttt{cnt\_u}), gate \ttt{min\_hits} convergence on~\eqref{eq:stopping_rule}, and
+    optionally log the zero-cost Harris--FKG Score $\LFKG(J)$~\eqref{eq:LFKG_def} as an information-set concentration
+    diagnostic. \emph{Justification:} Proposition~\ref{prop:plaquette_swap} makes $\mathrm{canon}_{\Tc}$
+    class-preserving; Theorem~\ref{thm:infoset_likelihood} shows that only uniform steps are i.i.d.\ draws from one
+    fixed law, far from the uniform-subset model behind \ttt{rw\_infoset\_find\_prob}; and
+    Corollary~\ref{cor:harmonic_hub} supplies the zero-cost diagnostic and rules out static $d_3$-based predictors.
 \end{enumerate}
 
 \appendix
