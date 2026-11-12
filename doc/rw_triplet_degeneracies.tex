@@ -1,0 +1,2221 @@
+% doc/rw_triplet_degeneracies.tex -- Weight-3 degeneracies in circuit DEMs:
+% accelerating Random Window distance search, exact information-set likelihoods,
+% and Good-Turing/Chao1 convergence calibration in dist-m4ri.
+% Build: pdflatex rw_triplet_degeneracies && biber rw_triplet_degeneracies \
+%        && pdflatex rw_triplet_degeneracies && pdflatex rw_triplet_degeneracies \
+%        && pdflatex rw_triplet_degeneracies
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{microtype}
+\setlength{\emergencystretch}{2em}
+\usepackage[
+  backend=biber,
+  style=numeric-comp,
+  sorting=nyt,
+  maxbibnames=15,
+  doi=true,
+  url=true,
+  eprint=true
+]{biblatex}
+\appto{\bibsetup}{\sloppy}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+\IfFileExists{doc/rw_triplet_degeneracies.bib}{%
+  \addbibresource{doc/rw_triplet_degeneracies.bib}%
+}{%
+  \addbibresource{rw_triplet_degeneracies.bib}%
+}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+\newtheorem{example}{Example}
+
+\newcommand{\Ftwo}{\mathbb{F}_2}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\DeclareMathOperator{\supp}{supp}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\cl}{cl}
+\DeclareMathOperator{\Unif}{Unif}
+\DeclareMathOperator{\Exp}{Exp}
+\newcommand{\Dc}{\mathcal{D}}
+\newcommand{\Tc}{\mathcal{T}_3}
+\newcommand{\LH}{\mathcal{L}_{\mathrm{J}}}
+\newcommand{\LFKG}{\mathcal{L}_{\mathrm{FKG}}}
+\newcommand{\ttt}[1]{\texttt{#1}}
+
+\begin{document}
+
+\title{Exploiting Weight-3 Circuit Degeneracies in Random Window Distance Search:\\
+Algorithmic Acceleration, Exact Information-Set Likelihoods,\\
+and Calibrated Convergence Stopping}
+\author{Technical Notes for \ttt{dist-m4ri}}
+\date{November 2026}
+\maketitle
+
+\begin{abstract}
+Fault-tolerant quantum error-correcting (QEC) syndrome-extraction circuits are characterized by detector error
+models (DEMs) whose binary check and observable matrices $(H, L)$ exhibit pervasive spacetime gauge degeneracy.
+Across fourteen representative topological, non-CSS, bivariate bicycle (BB), two-block group algebra (2BGA),
+mitten, and subsystem hypergraph product simplex (SHYPS) circuit DEMs, we show that after removing trivial and
+duplicate fault columns, $100\%$ of all columns in every tested DEM participate in weight-3 degeneracies---triplets
+of fault mechanisms whose joint detector syndrome and logical action both vanish---and that on twelve of the
+fourteen DEMs (all except two unreduced two-sector BB circuits prior to passive-detector removal) these weight-3
+degeneracies span $100\%$ of the circuit degeneracy space $\Dc = \ker H \cap \ker L$. Written as a self-contained
+pedagogical exposition for quantum physicists, this document develops the discrete-mathematical theory and
+algorithmic consequences of weight-3 degeneracies for the Random Window / Random Information Set (\ttt{RW})
+minimum-distance search algorithm in \ttt{dist-m4ri}. First, we analyze pivot-pair obstructions (``triplet
+ambushes''), show within an idealized symmetric mean-field model why dropping triplet partners degrades Stern
+collision search whereas pushing them behind a greedy maximal independent set (MIS) eliminates all realized
+weight-3 degeneracy circuits, and derive three exact accelerations: post-elimination greedy $2 \to 1$ / $3 \to 0$
+contraction with a loss-free Stern Bucket-0 filter, sparse-dual $m \times m$ Gauss--Jordan elimination, and
+row-slab restricted sub-DEM windows, achieving $2.8\times$--$493\times$ wall-clock speedups over windowed \ttt{RW}
+($2.6\times$--$2{,}997\times$ over uniform \ttt{RW}). Second, using matroid theory and a continuous-time Poisson
+arrival-race coupling, we derive exact integral, Laplace-transform, and flat-closure formulas for the probability
+$\Pr(J)$ of any information set $J$, resolve a counterintuitive ``Node-Marginal Paradox,'' and obtain zero-cost
+harmonic Jensen and tighter Harris--FKG lower bounds that capture $82\%$ of the variance of $\ln \Pr(J)$ on an
+exhaustively enumerated surface-code sub-DEM. Third, we prove that pairs of shared-hub triplets form minimal
+weight-4 degeneracies inducing weight-preserving $2 \leftrightarrow 2$ plaquette swaps, and introduce a
+deterministic $\Tc$-canonicalization paired with Good--Turing and Chao1/Chao2 unseen-species estimators that
+avoids premature stopping across our bootstrap tests while reducing over-running on single-logical topological
+DEMs.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Introduction}\label{sec:intro}
+% ============================================================================
+
+A central figure of merit of any quantum error-correcting (QEC) protocol is its \emph{circuit-level fault
+distance} $d_{\mathrm{circ}}$: the minimum number of elementary physical fault events (noisy gates, idle
+decoherence channels, state-preparation errors, or measurement bit-flips) in a syndrome-extraction circuit that
+produce no detector events yet induce a nontrivial logical transformation on the encoded quantum
+information~\cite{Gottesman1997,
+DennisKitaevLandahlPreskill2002,Fowler2012,BaconFlammiaHarrowShi2017,Pryadko2020MLD}. Even when an underlying
+static stabilizer or Calderbank--Shor--Steane (CSS) code~\cite{CalderbankShor1996,Steane1996} has a large
+code-capacity distance $d_{\mathrm{code}}$, an unfavorable CNOT gate schedule can propagate single ancilla faults
+(``hook errors'') onto multiple data qubits, reducing $d_{\mathrm{circ}}$ well below
+$d_{\mathrm{code}}$~\cite{DennisKitaevLandahlPreskill2002,Fowler2012,
+BravyiCrossGambettaMaslovRallYoder2024,ChengGuoPan2026Tropidist}.
+Consequently, as quantum low-density parity-check (qLDPC) code
+constructions~\cite{BreuckmannEberhardt2021,PanteleevKalachev2022,LinPryadko2024} advance into finite-length
+fault-tolerant architectures, fast and reliable algorithms for estimating and certifying $d_{\mathrm{circ}}$
+directly from circuit-level Detector Error Models (DEMs)~\cite{Gidney2021Stim,DelfossePaetznick2023} have become
+essential~\cite{BravyiCrossGambettaMaslovRallYoder2024,
+Malcolm2025SHYPS,Bhardwaj2026Mitten,Webster2026Distance,ChengGuoPan2026Tropidist}.
+
+Exact certification of $d_{\mathrm{circ}}$---via connected-cluster (CC) branch-and-bound~\cite{DKP17}, integer
+linear programming, Boolean satisfiability, or tropical tensor-network contraction~\cite{Webster2026Distance,
+ChengGuoPan2026Tropidist}---is computationally demanding and relies on a tight heuristic upper bound $d_{\max}$ to
+prune its search space. In \ttt{QDistRnd}~\cite{PryadkoShabashovKozin2022QDistRnd} and its bit-packed C/M4RI
+companion \ttt{dist-m4ri}~\cite{PryadkoZeng2026DistM4RI}, heuristic upper bounds are obtained via randomized
+\emph{Information-Set Decoding} (ISD)~\cite{Prange1962,Leon1988,Stern1988,CanteautChabaud1998}, referred to in
+\ttt{dist-m4ri} as the \emph{Random Window} (\ttt{RW}) algorithm. In each \ttt{RW} iteration, the $n$ columns of
+the detector parity-check matrix $H \in \Ftwo^{m \times n}$ are randomly permuted, Gaussian elimination selects a
+maximal linearly independent set of $r = \rank(H)$ \emph{pivot} columns $P$, and each remaining \emph{non-pivot}
+column $a \in J = [n] \setminus P$ (or pair of $p = 2$ non-pivot columns in Stern's variant) uniquely determines a
+zero-syndrome fault configuration supported on $\{a\} \cup P$ whose logical action and Hamming weight are tested.
+
+When transitioning from code-capacity CSS matrices ($n \sim 10^2$--$10^3$) to multi-round circuit DEMs
+($n \sim 10^3$--$10^5$), two striking phenomena emerge:
+\begin{enumerate}[label=(\roman*)]
+  \item \textbf{Pervasive weight-3 gauge degeneracies.} After discarding trivial zero-effect faults and merging
+    fault mechanisms that trigger identical detectors and logical observables, every column in our tested circuit
+    DEMs belongs to multiple \emph{weight-3 degeneracies}---triplets of fault mechanisms $\{i, j, k\}$ whose
+    detector syndromes and logical actions both sum to zero modulo $2$. Because no minimum-weight logical fault can
+    contain two or three elements of such a triplet (otherwise XORing the triplet would strictly reduce its weight
+    without changing its syndrome or logical effect), two natural questions arise: \emph{can \ttt{RW} be
+    accelerated by forbidding or deferring triplet partners during pivot selection, or by exploiting triplets after
+    elimination?}
+  \item \textbf{Severe concentration of information-set probabilities and distortion of convergence metrics.} Even
+    for dense uniform random matrices over $\Ftwo$, only $\prod_{i=1}^\infty (1 - 2^{-i}) \approx 28.9\%$ of
+    $r$-subsets of columns have full rank; sparse circuit degeneracies further restrict valid bases and concentrate
+    the greedy sampling measure $\Pr(J)$ of \ttt{RW} onto an exponentially small, non-uniform subset of information
+    sets. Simultaneously, pairs of weight-3 degeneracies sharing a hub fault generate large families of
+    equal-weight degenerate logical siblings, causing vector-level codeword-hit stopping criteria to either
+    over-run substantially on single-logical topological codes or stop prematurely while missing logical fault
+    classes on high-rate qLDPC circuits.
+\end{enumerate}
+
+\paragraph{Purpose and pedagogical structure of this document.}
+This document presents a self-contained theoretical and empirical analysis of both phenomena. Because our study
+combines ideas from fault-tolerant QEC with several branches of discrete mathematics---coding-theoretic ISD, linear
+matroid theory, graph/hypergraph independent sets, Four-Russians bit-packed $\Ftwo$ linear algebra, universal
+hashing, and nonparametric unseen-species statistics---Section~\ref{sec:background} introduces all required
+mathematical tools from first principles in physical QEC terms. To keep every formal result self-contained:
+\begin{itemize}
+  \item Every theorem, proposition, lemma, and corollary is preceded by a dedicated \textbf{Notation and setup}
+    paragraph explicitly defining all symbols and quantities appearing in its statement;
+  \item Every formal statement is followed both by an intuitive \textbf{Physical idea of the proof} (framed in
+    terms of spacetime syndromes, stabilizer gauge fixing, CNOT hooks, or Poisson arrival races) and by a
+    \textbf{detailed step-by-step formal proof} (placed in the text for concise arguments, or in
+    Appendices~\ref{app:drop_proof}--\ref{app:infoset_proof} for longer derivations); and
+  \item Every formal statement concludes with a \textbf{Prior work and attribution} paragraph situating the result
+    within the coding, matroid, optimization, probability, and QEC literatures and distinguishing known or folklore
+    ingredients from new specializations and derivations.
+\end{itemize}
+
+\paragraph{Outline.}
+Section~\ref{sec:background} provides the pedagogical primer and notation summary. Section~\ref{sec:anatomy}
+establishes the physical origin (Proposition~\ref{prop:hook_triangulation}), millisecond-scale enumeration
+(Lemma~\ref{lem:min_det_bucket}), and empirical span of weight-3 degeneracies across $14$ circuit DEMs.
+Section~\ref{sec:rw_mods} analyzes pivot-pair ambushes (Theorem~\ref{thm:ambush}), shows within a symmetric
+mean-field model why dropping triplet partners degrades Stern $p = 2$ search (Proposition~\ref{prop:mis_drop})
+while pushing them back eliminates realized triplet circuits (Theorem~\ref{thm:mis_push}), and derives post-RREF
+$2 \to 1$ contraction with Stern Bucket-0 pruning (Theorem~\ref{thm:contraction_dominance}), sparse-dual $m \times
+m$ inverse elimination (Proposition~\ref{prop:sparse_dual}), and row-slab sub-DEM windows.
+Section~\ref{sec:benchmarks} reports C/OpenMP benchmarks across $9$ circuit DEMs. Section~\ref{sec:infosets}
+derives exact information-set likelihoods (Theorem~\ref{thm:infoset_likelihood} and
+Corollary~\ref{cor:harmonic_hub}) and resolves the Node-Marginal Paradox. Section~\ref{sec:convergence}
+establishes $2 \leftrightarrow 2$ plaquette exchanges (Proposition~\ref{prop:plaquette_swap}) and evaluates the
+calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 stopping gauge. Section~\ref{sec:roadmap} summarizes
+practical integration guidelines for \ttt{dist-m4ri}.
+
+% ============================================================================
+\section{Pedagogical Background: From Quantum Circuits to Discrete Mathematics}\label{sec:background}
+% ============================================================================
+
+We write $\Ftwo = \{0, 1\}$ for the two-element finite field with addition $x \oplus y = (x + y) \bmod 2$ (logical
+XOR) and multiplication $x \cdot y$ (logical AND). For a positive integer $N$, $[N] = \{1, 2, \dots, N\}$. Every
+subset $S \subseteq [N]$ is identified with its binary indicator column vector $1_S \in \Ftwo^N$, whose $j$-th
+entry is $1$ if $j \in S$ and $0$ otherwise; vector addition $1_A \oplus 1_B = 1_{A \triangle B}$ corresponds to
+the symmetric difference $A \triangle B = (A \setminus B) \cup (B \setminus A)$, and the Hamming weight $|x|$ of
+$x \in \Ftwo^N$ is the cardinality $|\supp(x)|$ of its support $\supp(x) = \{j \in [N] : x_j = 1\}$.
+Table~\ref{tab:notation} summarizes the principal notation used throughout this document.
+
+\begin{table}[htbp]
+\centering
+\caption{Summary of principal notation used throughout this document.}\label{tab:notation}
+\smallskip
+\footnotesize
+\setlength{\tabcolsep}{4.0pt}
+\begin{tabular}{@{}p{0.28\textwidth}>{\raggedright\arraybackslash}p{0.51\textwidth}l@{}}
+\toprule
+Symbol & Meaning & Reference \\
+\midrule
+$H \in \Ftwo^{m \times n},\; L \in \Ftwo^{k \times n}$ &
+  Cleaned detector check ($m$ rows) and logical ($k$ rows) matrices & Sec.~\ref{subsec:dems} \\
+$h_j \in \Ftwo^m,\; \ell_j \in \Ftwo^k,\; R(j)$ &
+  $j$-th column of $H, L$; detector support $R(j) = \supp(h_j) \subseteq [m]$ &
+  Secs.~\ref{subsec:dems}, \ref{subsec:enumeration} \\
+$r \equiv r_H = \rank(H),\; k_{\mathrm{eff}}$ &
+  Check rank of $H$; effective logical rank $\rank[H; L] - r_H \le k$ & Def.~\ref{def:degen} \\
+$d,\; d_{\max}$ &
+  Exact circuit distance~\eqref{eq:d_def}; current \ttt{RW} bound ($d_{\max} \ge d$) &
+  Def.~\ref{def:degen}, Sec.~\ref{subsec:contraction} \\
+$\Dc,\; \Tc$ &
+  Circuit degeneracy space $\ker H \cap \ker L$; weight-3 set~\eqref{eq:T3_def} & Def.~\ref{def:degen} \\
+$d_3(u),\; G_3 = ([n], E_3),\; F$ &
+  Triplet degree $|\{T \in \Tc : u \in T\}|$; 2-section graph; MIS $F$ &
+  Secs.~\ref{subsec:alg_bg}, \ref{subsec:triplet_graph} \\
+$P,\; J = [n] \setminus P$ &
+  Greedy pivot basis ($|P| = r$) and information set ($|J| = n - r$) & Sec.~\ref{subsec:isd_bg} \\
+$S_a(P),\; C_P(a),\; \mathrm{sig}(a)$ &
+  Pivot support~\eqref{eq:Sa_def}; circuit $\{a\} \cup S_a(P)$; $L 1_{C_P(a)}$~\eqref{eq:sig_def} &
+  Sec.~\ref{subsec:isd_bg} \\
+$w_x = |S_x(P)|,\; l,\; \mathrm{bkey}(x)$ &
+  Pivot-support weight of $x \in J$; Stern window size; $l$-bit key & Sec.~\ref{subsec:isd_bg} \\
+$\mathcal{M}(H),\; \cl(S)$ &
+  Binary vector matroid on $[n]$; flat closure (span) of $S$~\eqref{eq:closure_def} &
+  Def.~\ref{def:matroid} \\
+$N_3(J),\; N_3^H(J)$ &
+  Realized $\Tc$-circuits ($\mathrm{sig}=0$,~\eqref{eq:N3J_def}); $H$-triangles ($|S_a|=2$,~\eqref{eq:N3H_def}) &
+  Secs.~\ref{subsec:drop_vs_push}, \ref{subsec:cor_harmonic} \\
+$h_s,\; \LH(J),\; \LFKG(J)$ &
+  Harmonic number $\sum_{j=1}^s j^{-1}$; Jensen~\eqref{eq:LH_def}, FKG~\eqref{eq:LFKG_def} bounds &
+  Cor.~\ref{cor:harmonic_hub} \\
+$Q = T_1 \triangle T_2,\; \bar{c}$ &
+  Shared-hub 4-circuit; greedy $2 \leftrightarrow 2$ canonical form $\mathrm{canon}_{\Tc}(c)$ &
+  Sec.~\ref{sec:convergence} \\
+$f_1, f_2,\; Q_1^{\mathrm{inc}}, Q_2^{\mathrm{inc}}$ &
+  Abundance singletons/doubletons (Chao1) and step incidences (Chao2) &
+  Secs.~\ref{subsec:good_turing}, \ref{subsec:gt_chao_gauge} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ----------------------------------------------------------------------------
+\subsection{Stabilizer Codes, Circuit DEMs, and the Error-Equivalence Group}\label{subsec:dems}
+% ----------------------------------------------------------------------------
+
+In a static $[[n_{\mathrm{q}}, k, d_{\mathrm{code}}]]$ stabilizer QEC code~\cite{Gottesman1997,CalderbankShor1996,
+Steane1996}, physical $n_{\mathrm{q}}$-qubit Pauli errors modulo global phases map onto binary symplectic vectors
+of length $2 n_{\mathrm{q}}$. Commutation with the stabilizer generators defines a binary parity-check matrix $H$
+such that $H e = 0$ if and only if the Pauli error $e$ triggers a trivial syndrome. Unlike classical linear codes
+where every nonzero vector in $\ker H$ is an undetectable logical error, a quantum stabilizer code possesses a
+subgroup of \emph{trivial} (or \emph{degenerate}) zero-syndrome errors---namely, the stabilizer operators
+themselves, which act as the identity on the logical
+codespace~\cite{DennisKitaevLandahlPreskill2002,PanteleevKalachev2021}.
+
+In a noisy Clifford syndrome-extraction circuit~\cite{Fowler2012,Gidney2021Stim}, errors are \emph{spacetime fault
+events} occurring at specific circuit locations and time steps. Following the circuit-to-code and spacetime-code
+frameworks of Bacon, Flammia, Harrow, and Shi~\cite{BaconFlammiaHarrowShi2017}, Pryadko~\cite{Pryadko2020MLD},
+Gidney~\cite{Gidney2021Stim}, and Delfosse and Paetznick~\cite{DelfossePaetznick2023}:
+\begin{itemize}
+  \item The circuit noise model specifies independent elementary Pauli fault mechanisms indexed by $j \in [n]$.
+    Propagating fault $j$ forward through the noiseless remainder of the Clifford circuit determines (i) which
+    \emph{detectors} (fixed modulo-2 parities of ancilla and final data measurements that vanish deterministically
+    in a noiseless run, analogous to local spacetime Gauss-law checks) are flipped, and (ii) which \emph{logical
+    observables} at the end of the circuit are flipped.
+  \item Recording these propagated parities as columns $h_j \in \Ftwo^m$ and $\ell_j \in \Ftwo^k$ yields the
+    \emph{Detector Error Model} (DEM) pair $(H, L)$, where $H = [h_1 \cdots h_n] \in \Ftwo^{m \times n}$ is the
+    detector check matrix ($m$ detectors, $n$ fault mechanisms) and $L = [\ell_1 \cdots \ell_n] \in \Ftwo^{k
+    \times n}$ is the logical observable matrix ($k$ tracked logical parities).
+\end{itemize}
+
+Because our target is the minimum Hamming weight $d$ of a nontrivial logical fault (as opposed to total logical
+error probability under a noise prior, where parallel fault probabilities are summed), two elementary preprocessing
+reductions preserve $d$ unconditionally:
+\begin{enumerate}[label=(\arabic*)]
+  \item \emph{Zero-column removal:} any fault mechanism $j$ with $(h_j, \ell_j) = (0, 0)$ acts trivially on both
+    detectors and logicals and can be removed from any fault set without altering its syndrome or logical action;
+  \item \emph{Duplicate-column deduplication:} if two distinct physical fault events $i \neq j$ have identical
+    propagated action $(h_i, \ell_i) = (h_j, \ell_j)$ (for example, an $X$-flip on an ancilla target $|0\rangle$
+    immediately before a $\mathrm{CNOT}(q \to a)$ gate and an idle $X$-flip on the same target wire immediately
+    afterward), they are error-equivalent of weight $2$ and are merged into a single representative column.
+\end{enumerate}
+Throughout this document, $(H, L)$ denotes a \emph{cleaned} DEM in which all $(0, 0)$ columns have been removed
+and all identical columns $(h_i, \ell_i) = (h_j, \ell_j)$ have been merged, so the $n$ columns of the stacked $(m
++ k) \times n$ matrix $\bigl[\begin{smallmatrix} H \\ L \end{smallmatrix}\bigr]$ are nonzero and pairwise
+distinct.
+
+\begin{definition}[Codewords, circuit degeneracy space $\Dc$, and weight-3 degeneracies $\Tc$]\label{def:degen}
+Let $H \in \Ftwo^{m \times n}$ and $L \in \Ftwo^{k \times n}$ be a cleaned DEM.
+\begin{enumerate}[label=(\alph*)]
+  \item A fault set $C \subseteq [n]$ (or vector $e = 1_C \in \Ftwo^n$) is a \emph{zero-syndrome configuration} (or
+    \emph{codeword} of $\ker H$) if $H 1_C = \bigoplus_{j \in C} h_j = 0$.
+  \item The \emph{circuit degeneracy space} (or \emph{error-equivalence group}~\cite{Pryadko2020MLD}) is the
+    $\Ftwo$-linear subspace of undetectable, logically trivial fault patterns:
+    \begin{equation}\label{eq:D_def}
+      \Dc \coloneqq \ker H \cap \ker L = \ker \begin{bmatrix} H \\ L \end{bmatrix} \subseteq \Ftwo^n, \qquad
+      \dim(\Dc) = n - \rank\begin{bmatrix} H \\ L \end{bmatrix} = n - r_H - k_{\mathrm{eff}},
+    \end{equation}
+    where $r_H = \rank(H)$ and $k_{\mathrm{eff}} = \rank\bigl[\begin{smallmatrix} H \\ L \end{smallmatrix}\bigr] -
+    r_H \le k$ is the number of independent nontrivial logical observables realized on $\ker H$. Two fault vectors
+    $e, e' \in \Ftwo^n$ are \emph{error-equivalent} ($e \simeq e'$) if and only if $e \oplus e' \in \Dc$.
+  \item A codeword $C \subseteq [n]$ with $H 1_C = 0$ is \emph{nontrivial} (a \emph{logical fault}) if $L 1_C \neq
+    0$ (equivalently, $1_C \notin \Dc$), and its \emph{logical class} (or \emph{$L$-coset}) is the nonzero vector
+    $L 1_C \in \Ftwo^k \setminus \{0\}$. The \emph{circuit fault distance} is
+    \begin{equation}\label{eq:d_def}
+      d \coloneqq \min\bigl\{|C| : C \subseteq [n],\; H 1_C = 0,\; L 1_C \neq 0\bigr\}.
+    \end{equation}
+  \item Because $(H, L)$ is cleaned, $\Dc$ contains no vectors of weight $1$ or $2$. The set of \emph{weight-3
+    degeneracies} is the collection of unordered column triplets
+    \begin{equation}\label{eq:T3_def}
+      \Tc \coloneqq \bigl\{\, T = \{i, j, k\} \subseteq [n] : |T| = 3,\;
+      h_i \oplus h_j \oplus h_k = 0,\; \ell_i \oplus \ell_j \oplus \ell_k = 0 \,\bigr\}.
+    \end{equation}
+\end{enumerate}
+\end{definition}
+
+Physically, adding $1_T \in \Dc$ to a fault pattern $e$ is a local \emph{spacetime gauge transformation}: it
+deforms the worldline of the fault chain without moving its syndrome endpoints ($H 1_T = 0$) and without altering
+its logical homology class ($L 1_T = 0$). In particular, if a nontrivial logical fault $C$ contained $\ge 2$
+elements of any $T \in \Tc$, then $C' = C \triangle T$ would still satisfy $H 1_{C'} = 0$ and $L 1_{C'} = L 1_C
+\neq 0$, yet have strictly smaller weight $|C'| = |C| + 3 - 2|C \cap T| \le |C| - 1$. Hence \emph{every
+minimum-weight nontrivial codeword $c^*$ satisfies $|c^* \cap T| \le 1$ for all $T \in \Tc$}.
+
+% ----------------------------------------------------------------------------
+\subsection{Information-Set Decoding (\texorpdfstring{\ttt{RW}}{RW}), Pivots, and Fundamental
+  Circuits}\label{subsec:isd_bg}
+% ----------------------------------------------------------------------------
+
+How does the Random Window (\ttt{RW}) algorithm~\cite{Prange1962,Leon1988,Stern1988,CanteautChabaud1998,
+PryadkoShabashovKozin2022QDistRnd,PryadkoZeng2026DistM4RI} search for a minimum-weight codeword $c^*$ ($|c^*| =
+d$) inside an exponentially large kernel $\ker H$ of dimension $n - r$ ($r \equiv r_H = \rank H$)?
+
+\paragraph{Physical picture: Gauge-fixing a spanning frame of faults.}
+Order the $n$ fault mechanisms according to a random permutation $\pi = (\pi_1, \dots, \pi_n)$ of $[n]$ and scan
+them from left to right, performing full Gauss--Jordan row reduction on $H \Pi$ (where $\Pi$ is the column
+permutation matrix). Whenever a column $\pi_j$ has a nonzero entry below the already reduced rows---meaning its
+detector syndrome $h_{\pi_j}$ cannot be reproduced by any linear combination of earlier columns---we accept $\pi_j$
+as a \emph{pivot} column and use row operations (XORing rows of $H$) to clear all other $1$s in that pivot's row.
+After scanning all $n$ columns, we have partitioned $[n] = P \sqcup J$ into:
+\begin{itemize}
+  \item The \emph{pivot basis} $P = \{p_1, \dots, p_r\}$ ($|P| = r$), whose columns $H_P$ are linearly independent
+    and span the achievable syndrome space $\operatorname{colspace}(H) \subseteq \Ftwo^m$. Physically, $P$ is a
+    \emph{gauge-fixed recovery frame}: for every syndrome in $\operatorname{colspace}(H)$, there is a unique subset
+    of pivot faults in $P$ producing that syndrome.
+  \item The \emph{information set} $J = [n] \setminus P$ ($|J| = n - r$) of \emph{non-pivot} (free)
+    columns.\footnote{In coding theory, when $G$ is an $(n-r) \times n$ generator matrix of $\ker H$ (whose dual
+    weight enumerator obeys the MacWilliams identities~\cite{MacWilliams1963}), a subset $J$ of size $n - r$ is an
+    \emph{information set} of $\ker H$ precisely when the complementary $r$-subset $P = [n] \setminus J$ is a
+    full-rank column basis of $H$: choosing the $n - r$ free coordinates on $J$ uniquely determines the remaining
+    $r$ coordinates on $P$ so that the total vector lies in $\ker H$~\cite{Prange1962,MacWilliamsSloane1977}.}
+\end{itemize}
+
+Up to row permutations (discarding $m - r$ all-zero redundant detector rows), Gauss--Jordan elimination brings the
+column-grouped matrix $[H_P \mid H_J]$ into reduced row-echelon form (RREF):
+\begin{equation}\label{eq:rref}
+  E [H_P \mid H_J] = \begin{bmatrix} I_r & A \\ 0 & 0 \end{bmatrix}, \qquad A \in \Ftwo^{r \times (n-r)},
+\end{equation}
+where $E \in \mathrm{GL}_m(\Ftwo)$ records the cumulative row operations. Throughout this work, we index the $n -
+r$ columns of $A$ directly by their original ground-set labels $a \in J$ (writing $A_{:, a} \in \Ftwo^r$ for the
+column of $A$ corresponding to $a \in J$, and $(A^\top)_{a, :}$ for the corresponding row of $A^\top$). Entry $i$
+of $A_{:, a}$ identifies whether pivot $p_i \in P$ participates in cancelling $h_a$, defining the unique pivot
+support
+\begin{equation}\label{eq:Sa_def}
+  S_a(P) \coloneqq \{p_i \in P : A_{i, a} = 1\} \subseteq P \qquad\text{satisfying}\qquad
+  h_a = \bigoplus_{p \in S_a(P)} h_p.
+\end{equation}
+Activating the single non-pivot fault $a \in J$ together with its compensating pivot faults $S_a(P) \subseteq P$
+yields a zero-syndrome codeword called the \emph{fundamental circuit} of $a$ with respect to $P$:
+\begin{equation}\label{eq:fund_circuit}
+  C_P(a) \coloneqq \{a\} \cup S_a(P), \qquad H 1_{C_P(a)} = h_a \oplus \bigoplus_{p \in S_a(P)} h_p = 0.
+\end{equation}
+Moreover, $\{1_{C_P(a)} : a \in J\}$ is a basis of $\ker H$: every codeword $C \in \ker H$ is uniquely the modulo-2
+sum of the fundamental circuits of its non-pivot elements, $1_C = \bigoplus_{a \in C \cap J} 1_{C_P(a)}$. Defining
+for each $a \in J$ its \emph{reduced logical column}
+\begin{equation}\label{eq:sig_def}
+  \mathrm{sig}(a) \coloneqq L 1_{C_P(a)} = \ell_a \oplus \bigoplus_{p \in S_a(P)} \ell_p \in \Ftwo^k,
+\end{equation}
+linearity gives $L 1_C = \bigoplus_{a \in C \cap J} \mathrm{sig}(a)$.
+
+\paragraph{Prange ($p = 1$) and Stern ($p = 2$) checks in \ttt{dist-m4ri}.}
+After transposing $A$ in~\eqref{eq:rref} so each row $(A^\top)_{a, :}$ stores the $r$-bit pivot mask $1_{S_a(P)}$
+in packed 64-bit machine words:
+\begin{itemize}
+  \item \textbf{Single-column ($p = 1$) check~\cite{Prange1962,PryadkoShabashovKozin2022QDistRnd}:} Scan each $a
+    \in J$. If $|C_P(a)| = 1 + |S_a(P)|$ improves or matches the target weight bound and $\mathrm{sig}(a) \neq 0$,
+    record $C_P(a)$. Because $1_C = \bigoplus_{a \in C \cap J} 1_{C_P(a)}$, \emph{the $p = 1$ scan discovers a
+    codeword $c^*$ if and only if $|c^* \setminus P| = 1$} ($d - 1$ elements of $c^*$ in $P$ and $1$ in $J$).
+  \item \textbf{Stern pair ($p = 2$) collision check~\cite{Stern1988,Leon1988}:} Requiring $d - 1$ of $d$ columns
+    of $c^*$ to land in $P$ becomes rare as $d$ grows, whereas $|c^* \setminus P| = 2$ ($c^* \cap J = \{x, y\}$) is
+    substantially more probable; then $1_{c^*} = 1_{C_P(x)} \oplus 1_{C_P(y)} = 1_{\{x, y\} \cup (S_x(P) \triangle
+    S_y(P))}$. Checking all $\binom{|J|}{2}$ pairs directly is quadratic, so Stern's meet-in-the-middle method
+    samples $l$ distinct pivot rows without replacement (typically $l \in [8, 12]$; see also Leon~\cite{Leon1988}
+    and Canteaut--Chabaud~\cite{CanteautChabaud1998}). If $c^*$ puts zero weight on those $l$ pivot rows---an event
+    of probability $\binom{r - (d - 2)}{l} / \binom{r}{l}$---then $S_x(P)$ and $S_y(P)$ share the same $l$-bit
+    projection $\mathrm{bkey}(x) = \mathrm{bkey}(y) \in \{0, \dots, 2^l - 1\}$. Bucketing $a \in J$ by
+    $\mathrm{bkey}(a)$ into $2^l$ buckets reduces pair checks by $\approx 2^l$, inspecting only intra-bucket pairs
+    $(x, y)$ with $\mathrm{sig}(x) \oplus \mathrm{sig}(y) \neq 0$.
+  \item \textbf{Localized sliding windows (\ttt{win}$>0$):} Minimum-weight logical faults on multi-round spacetime
+    DEMs are typically localized in time (spanning a few syndrome rounds). Placing a contiguous block of
+    $W_{\mathrm{win}}$ columns (e.g., $W_{\mathrm{win}} = 256$) at the front of the permutation concentrates pivots
+    into one temporal neighborhood, increasing the probability that $d - 1$ or $d - 2$ columns of a localized $c^*$
+    simultaneously become pivots.
+\end{itemize}
+
+% ----------------------------------------------------------------------------
+\subsection{Linear Matroids, Flat Closures, and the Rado\texorpdfstring{--}{-}Gale\texorpdfstring{--}{-}Edmonds
+  Greedy Theorem}\label{subsec:matroids}
+% ----------------------------------------------------------------------------
+
+Why does left-to-right greedy Gaussian elimination on a random column permutation induce a distribution $\Pr(J)$
+that can be integrated in closed form? The structural reason comes from \emph{matroid theory}, introduced by
+Whitney in 1935~\cite{Whitney1935} to unify linear independence of vectors with cycle-freeness of spanning forests
+in graphs (see Oxley~\cite{Oxley2011} for a comprehensive modern exposition).
+
+\begin{definition}[Linear matroid, circuits, rank, and flat closure]\label{def:matroid}
+Given $H = [h_1 \cdots h_n] \in \Ftwo^{m \times n}$, the \emph{linear (vector) matroid} $\mathcal{M}(H) = ([n],
+\mathcal{I})$ has ground set $[n]$ and family of \emph{independent sets} $\mathcal{I} = \{I \subseteq [n] :
+\text{the columns } \{h_j\}_{j \in I} \text{ are linearly independent over } \Ftwo\}$.
+\begin{enumerate}[label=(\alph*)]
+  \item A \emph{basis} $P \in \mathcal{I}$ is a maximal independent set; all bases have identical size $|P| = r =
+    \rank(H)$ by the Steinitz exchange property.
+  \item A \emph{circuit} $C \subseteq [n]$ is a minimal dependent set ($C \notin \mathcal{I}$, while every proper
+    subset of $C$ lies in $\mathcal{I}$); in coding terminology (cf.\ irreducible codewords in~\cite{DKP17}; over
+    $\Ftwo$, irreducibility coincides with minimal nonempty support), circuits of $\mathcal{M}(H)$ are the minimal
+    nonempty codewords of $\ker H$, and for any basis $P$ and $a \notin P$, the fundamental circuit $C_P(a)$
+    in~\eqref{eq:fund_circuit} is the unique circuit contained in $P \cup \{a\}$.
+  \item The \emph{matroid rank} of any subset $S \subseteq [n]$ is $\mathrm{rk}(S) = \rank(H_S)$, and the \emph{flat
+    closure} (or \emph{span}) of $S$ is the set of all columns whose syndromes lie in the subspace spanned by $S$:
+    \begin{equation}\label{eq:closure_def}
+      \cl(S) \coloneqq \{j \in [n] : \mathrm{rk}(S \cup \{j\}) = \mathrm{rk}(S)\}
+                     = \bigl\{j \in [n] : h_j \in \operatorname{span}_{\Ftwo}\{h_s : s \in S\}\bigr\}.
+    \end{equation}
+    If $S \subseteq P$ is a subset of a fixed basis $P$, uniqueness of expansion~\eqref{eq:Sa_def} in $P$ implies
+    $h_a \in \operatorname{span}_{\Ftwo}\{h_s : s \in S\}$ for $a \in J$ if and only if $S_a(P) \subseteq S$; thus
+    \begin{equation}\label{eq:closure_basis}
+      \cl(S) = S \cup \{a \in J : S_a(P) \subseteq S\} \qquad (\forall S \subseteq P).
+    \end{equation}
+\end{enumerate}
+\end{definition}
+
+The bridge between random permutations and continuous arrival times is the \emph{greedy characterization of
+matroids} due to Rado~\cite{Rado1957}, Gale~\cite{Gale1968}, and Edmonds~\cite{Edmonds1971} (generalizing Kruskal's
+minimum-spanning-tree algorithm on graphs~\cite{Kruskal1956}): \emph{if every element $j \in [n]$ is assigned
+distinct real weights $\omega_j \in \R$, sorting $[n]$ in increasing order of $\omega_j$ and greedily adding each
+element that preserves independence outputs the unique basis $P$ that minimizes total weight $\sum_{p \in P}
+\omega_p$ (and simultaneously minimizes the $j'$-th smallest element weight for every $1 \le j' \le r$)}. Viewing
+$\omega_j$ as the single-particle energy of fault mode $j$ with linearly dependent mode occupancies forbidden,
+zero-temperature greedy filling always reaches the unique global ground-state basis without frustration.
+
+\begin{example}[A five-fault toy DEM]\label{ex:toy_dem}
+Consider $m = 2$ detectors, $k = 1$ logical observable, and $n = 5$ cleaned fault mechanisms:
+\[
+  H = \begin{pmatrix} 1 & 0 & 1 & 1 & 0 \\ 0 & 1 & 1 & 0 & 1 \end{pmatrix}, \qquad
+  L = \begin{pmatrix} 0 & 0 & 0 & 1 & 1 \end{pmatrix}.
+\]
+Here $\rank(H) = 2$, $\dim(\Dc) = 5 - 3 = 2$, and $\Tc$ consists of two weight-3 degeneracies sharing hub column~$3$,
+namely $T_1 = \{1, 2, 3\}$ and $T_2 = \{3, 4, 5\}$, which span $100\%$ of $\Dc$. The minimum-weight logical faults have
+distance $d = 2$: $c^* = \{1, 4\}$ and its sibling $c' = \{2, 5\} = c^* \triangle (T_1 \triangle T_2)$ related by the
+weight-4 plaquette $T_1 \triangle T_2 = \{1, 2, 4, 5\} \in \Dc$. Suppose an \ttt{RW} step selects pivot basis
+$P = \{2, 3\}$ ($J = \{1, 4, 5\}$): the pivot pair $\{2, 3\} \subseteq P$ ambushes $1 \in c^*$, forcing $|c^* \cap J| =
+|\{1, 4\}| = 2$, so standard $p = 1$ \ttt{RW} misses $c^*$ (though finding its sibling $c' = C_P(5) = \{2, 5\}$). Yet
+the row of $A^\top$ indexed by~$4$ holds the fundamental circuit $C_P(4) = \{2, 3, 4\}$ of weight~$3$ and logical
+syndrome~$1$, and a single $2 \to 1$ contraction $\{2, 3\} \to \{1\}$ via $T_1$ recovers $c^* = \{1, 4\}$. Finally, for
+$P = \{1, 3\}$ ($J = \{2, 4, 5\}$), $S_4(P) = \{1\}$ and $S_2(P) = S_5(P) = \{1, 3\}$, so $\cl(\emptyset) = \emptyset$,
+$\cl(\{1\}) = \{1, 4\}$, and $\cl(\{3\}) = \{3\}$; by Theorem~\ref{thm:infoset_likelihood}, Eq.~\eqref{eq:prJ_closure},
+its exact likelihood is $\Pr(J) = \frac{1}{5 \cdot 3} + \frac{1}{5 \cdot 4} = \frac{7}{60} \approx 0.1167$ (above the
+Harris--FKG bound $\frac{1}{2 \cdot 3 \cdot 3} = \frac{1}{18} \approx 0.0556$ and Jensen bound $e^{-4} \approx 0.0183$
+of Corollary~\ref{cor:harmonic_hub}(b)), summing with the three other hub bases at $\frac{7}{60}$ and four non-hub
+bases at $\frac{8}{60}$ to $\frac{28}{60} + \frac{32}{60} = 1$.
+\end{example}
+
+% ----------------------------------------------------------------------------
+\subsection{Graphs, Hypergraphs, Four-Russians \texorpdfstring{$\Ftwo$}{GF(2)} Elimination, and Universal
+  Hashing}\label{subsec:alg_bg}
+% ----------------------------------------------------------------------------
+
+Three compact algorithmic tools complete our discrete-math background:
+
+\paragraph{1. Graph vs.\ hypergraph independent sets.}
+Given $\Tc$, one can view $([n], \Tc)$ as a \emph{3-uniform hypergraph} whose hyperedges are the 3-element sets $T
+= \{i, j, k\} \in \Tc$. A subset $S \subseteq [n]$ satisfying $|S \cap T| \le 2$ for all $T \in \Tc$ is a
+\emph{weak hypergraph independent set}, whereas a subset $F \subseteq [n]$ satisfying $|F \cap T| \le 1$ for all $T
+\in \Tc$ is a \emph{strong hypergraph independent set}---which is precisely an ordinary graph \emph{independent
+set} of the \emph{2-section (triplet) graph} $G_3 = ([n], E_3)$ obtained by replacing every triplet $\{i, j, k\}
+\in \Tc$ with a triangle of three edges $(i, j), (j, k), (i, k)$. An independent set $F$ of $G_3$ is
+\emph{maximal} (a \emph{MIS}) if no vertex $v \in [n] \setminus F$ can be added without creating an edge; scanning
+$[n]$ in random order and accepting $u$ whenever none of its $G_3$-neighbors was accepted earlier constructs a
+random-order greedy MIS $F$ in linear time $O(|E_3| + n)$.
+
+\paragraph{2. Method of the Four Russians (\ttt{M4RI}) over $\Ftwo$.}
+Modern CPUs pack $64$ entries of $\Ftwo$ into one \ttt{uint64\_t} register, performing $64$ parallel field
+additions in a single instruction via bitwise XOR (\ttt{\^{}}). Even with bit-packing, row-by-row Gaussian
+elimination of an $m \times n$ matrix performs $O(m r \cdot n/64)$ word reads and writes, becoming
+memory-bandwidth bound when the matrix exceeds L1/L2 cache. The \emph{Method of the Four Russians}---introduced by
+Arlazarov, Dinic, Kronrod, and Faradzev in 1970~\cite{Arlazarov1970} for Boolean transitive closure and adapted to
+dense $\Ftwo$ row echelonization/inversion (\ttt{M4RI}) by Bard~\cite{Bard2006} and dense matrix multiplication
+(\ttt{M4RM}) by Albrecht, Bard, and Hart~\cite{AlbrechtBardHart2010}---processes $K$ pivot rows simultaneously
+(typically $K \in [5, 8]$): one precomputes a lookup table of all $2^K$ linear combinations of those $K$ pivot rows
+via a Gray-code walk (one row XOR per table entry), and clears all $K$ columns in each remaining row with one table
+lookup and one row XOR instead of $K/2$ passes over memory.
+
+\paragraph{3. Zobrist $\Ftwo$-linear universal hashing.}
+To test equality or XOR relationships among sparse high-dimensional vectors $v \in \Ftwo^{m+k}$ in $O(1)$ expected
+time, assign an independent uniformly random 64-bit word $z_i \sim \Unif(\{0, 1\}^{64})$ to each coordinate $i \in
+[m + k]$ and define the \emph{Zobrist hash}~\cite{Zobrist1970,CarterWegman1979}
+\begin{equation}\label{eq:zobrist}
+  \zeta(v) \coloneqq \bigoplus_{i \in \supp(v)} z_i \in \{0, 1\}^{64}.
+\end{equation}
+Because $\zeta$ is an $\Ftwo$-linear homomorphism, $\zeta(u \oplus v) = \zeta(u) \oplus \zeta(v)$. For any two
+distinct vectors $u \neq v$, $u \oplus v \neq 0$ contains at least one coordinate $i^* \in \supp(u \oplus v)$, so
+$\zeta(u \oplus v) = z_{i^*} \oplus \bigoplus_{i \in \supp(u \oplus v) \setminus \{i^*\}} z_i$ is uniformly
+distributed on $\{0, 1\}^{64}$, giving collision probability $\Pr[\zeta(u) = \zeta(v)] = 2^{-64} \approx 5.4 \times
+10^{-20}$~\cite{CarterWegman1979}. Every hash match is verified by exact sparse-support comparison, ensuring zero
+false positives and zero false negatives.
+
+% ----------------------------------------------------------------------------
+\subsection{Unseen-Species Statistics: Good\texorpdfstring{--}{-}Turing, Chao1, and Chao2
+  Estimators}\label{subsec:good_turing}
+% ----------------------------------------------------------------------------
+
+Suppose an idealized sequence of independent uniform draws discovers minimum-weight codeword equivalence classes
+(species) $q = 1, \dots, S_{\mathrm{tot}}$ with unknown per-hit discovery probabilities $(p_1, \dots,
+p_{S_{\mathrm{tot}}})$, $\sum_q p_q = 1$. After $N_{\mathrm{hits}}$ i.i.d.\ draws, let $m_q \ge 0$ be the number of
+times class $q$ was observed, and let $f_r = |\{q : m_q = r\}|$ be the \emph{frequency-of-frequencies} count: $f_1$
+is the number of \emph{singletons} (classes seen once), $f_2$ is the number of \emph{doubletons} (seen twice),
+$C_{\mathrm{obs}} = \sum_{r \ge 1} f_r$ is the number of observed classes, and $f_0 = S_{\mathrm{tot}} -
+C_{\mathrm{obs}}$ is the unknown number of \emph{unseen} classes.
+
+Two classical nonparametric estimators assess whether unseen classes remain under heterogeneous $\{p_q\}$:
+\begin{itemize}
+  \item \textbf{Good--Turing missing probability mass~\cite{Good1953}:} Developed by Turing and Good during
+    cryptanalytic work and published in 1953, the Good--Turing identity shows that the total probability mass
+    $P_{\mathrm{unseen}} = \sum_{q : m_q = 0} p_q$ residing in all currently unseen classes satisfies
+    $\E[P_{\mathrm{unseen}}] \approx \E[f_1] / N_{\mathrm{hits}}$. When rare classes are still arriving for the
+    first time ($f_1 \gg 0$), comparable probability mass remains unseen; once every discoverable class has been
+    hit multiple times, singletons vanish ($f_1 = 0$) and $\hat{p}_{\mathrm{GT}} = f_1 / N_{\mathrm{hits}}$ drops
+    to zero.
+  \item \textbf{Chao1 and step-incidence Chao2 lower bounds~\cite{Chao1984,Chao1987,ChiuWangWaltherChao2014}:}
+    Under Poissonized i.i.d.\ sampling with rates $\lambda_q = N_{\mathrm{hits}} p_q$, $\E[f_0] = \sum_q
+    e^{-\lambda_q}$, $\E[f_1] = \sum_q \lambda_q e^{-\lambda_q}$, and $\E[f_2] = \frac{1}{2}\sum_q \lambda_q^2
+    e^{-\lambda_q}$. Cauchy--Schwarz gives $\bigl(\sum_q \lambda_q e^{-\lambda_q}\bigr)^2 \le \bigl(\sum_q
+    e^{-\lambda_q}\bigr)\bigl(\sum_q \lambda_q^2 e^{-\lambda_q}\bigr)$, hence $\E[f_0] \ge (\E[f_1])^2 / (2
+    \E[f_2])$ (with equality iff all $\lambda_q$ are equal), motivating Chao's original estimator $f_1^2 /
+    (2 f_2)$~\cite{Chao1984} and its small-sample bias-corrected form (due to Chao; see~\cite{ChiuWangWaltherChao2014}
+    and references therein, omitting the $(N_{\mathrm{hits}} - 1)/N_{\mathrm{hits}} \approx 1$ factor)
+    \begin{equation}\label{eq:chao1_bg}
+      \hat{C}_0 \coloneqq \frac{f_1 (f_1 - 1)}{2 (f_2 + 1)}, \qquad
+      \hat{\phi}_{\mathrm{unseen}} \coloneqq \frac{\hat{C}_0}{C_{\mathrm{obs}} + \hat{C}_0},
+    \end{equation}
+    which remains an asymptotic lower-bound estimator under arbitrary heterogeneity of $\{p_q\}$. In \ttt{RW}
+    search, individual codeword hits within a single step share the same information set $J$ (and contraction can
+    map multiple candidates in one step onto the same class), violating strict hit-level independence when multiple
+    hits occur per step. Because successive uniform \ttt{RW} \emph{steps} $t = 1, \dots, T_{\mathrm{u}}$ are truly
+    independent and identically distributed sampling occasions, one can also record replicated \emph{incidence}
+    counts ($Q_1^{\mathrm{inc}}$ and $Q_2^{\mathrm{inc}}$, the numbers of classes detected in exactly one or two
+    uniform steps) and apply the bias-corrected Chao2 incidence estimator~\cite{Chao1987,ChiuWangWaltherChao2014},
+    $\hat{C}_0^{(\mathrm{Chao2})} = \frac{T_{\mathrm{u}} - 1}{T_{\mathrm{u}}} \frac{Q_1^{\mathrm{inc}}
+    (Q_1^{\mathrm{inc}} - 1)}{2(Q_2^{\mathrm{inc}} + 1)}$,
+    eliminating intra-step multiplicity correlations completely.
+\end{itemize}
+
+% ============================================================================
+\section{Anatomy of Weight-3 Degeneracies \texorpdfstring{$\Tc$}{T3} in Circuit DEMs}\label{sec:anatomy}
+% ============================================================================
+
+\subsection{Physical Origin: Pauli Triangles and CNOT Hook-Step Triangulation}\label{subsec:origin}
+
+Why do cleaned circuit DEMs contain thousands of weight-3 degeneracies $\Tc$---even in single-sector reduced CSS
+DEMs where $X$- and $Z$-faults have already been separated so $Y = iXZ$ correlations are absent? Two distinct
+physical mechanisms are responsible.
+
+First, in unreduced depolarizing noise models, a single-qubit channel (\ttt{DEPOLARIZE1}) emits $\{X, Y,
+Z\}$ faults satisfying $X \cdot Z \propto Y$; because detector parities and Pauli observable commutations are
+homomorphisms from the Pauli group modulo phases to $\Ftwo$, $(h_X, \ell_X) \oplus (h_Y, \ell_Y) \oplus (h_Z,
+\ell_Z) = (0, 0)$. Similarly, a two-qubit depolarizing gate (\ttt{DEPOLARIZE2}) emits the $15$ non-identity
+two-qubit Paulis, forming the $3$-dimensional projective geometry $\mathrm{PG}(3, 2)$ over $\Ftwo$ with
+$\binom{15}{2}/3 = 35$ projective lines $\{P_1, P_2, P_1 P_2\}$ of weight-3 relations per gate prior to duplicate
+merging.
+
+Second, even in a single-sector CSS DEM (for instance, keeping only $X$-type faults and $Z$-type detectors), the
+sequential CNOT syndrome-extraction schedule triangulates higher-weight spacetime stabilizer cycles into weight-3
+simplices.
+
+\paragraph{Notation and setup for Proposition~\ref{prop:hook_triangulation}.}
+Write $(h(e), \ell(e)) \in \Ftwo^{m+k}$ for the unmerged DEM column vector of any elementary circuit fault $e$.
+\begin{itemize}
+  \item For Part~(a), consider a $Z$-check measurement round in a CSS circuit in which an ancilla $a$, initialized
+    in $|0\rangle$ and measured in the $Z$ basis after $w \ge 2$ layers, acts as target of $w$ sequential CNOT
+    gates $\mathrm{CNOT}(q_1 \to a), \dots, \mathrm{CNOT}(q_w \to a)$ controlled by distinct data qubits $q_1,
+    \dots, q_w$ (recall $\mathrm{CNOT}(q \to a)$ maps $X_q \mapsto X_q X_a$ and $X_a \mapsto X_a$; by $X
+    \leftrightarrow Z$ duality with reversed CNOT direction, the same applies to an $X$-check ancilla under $Z$
+    faults). For $s \in [w]$, let $e^{(da)}_s$ be the correlated $X_{q_s} X_a$ fault immediately after the $s$-th
+    CNOT (which has the same propagated effect as a pre-gate $X_{q_s}$ fault), and let $e^{(d)}_s$ and $e^{(a)}_s$
+    be single-qubit $X_{q_s}$ and $X_a$ faults immediately after the $s$-th CNOT.
+  \item For Part~(b1), fix a data qubit $q$ that acts as control in $u \ge 1$ $Z$-check CNOTs $\mathrm{CNOT}(q \to
+    b_1), \dots, \mathrm{CNOT}(q \to b_u)$ during round $t$ (with ancillas $b_1, \dots, b_u$). Let
+    $e^{(d)}_{q, j-1}$ and $e^{(d)}_{q, j}$ be single-qubit $X_q$ faults immediately before and after the $j$-th
+    such CNOT (so $e^{(d)}_{q, 0}$ and $e^{(d)}_{q, u}$ are the inter-round data $X_q$ faults before and after
+    round $t$), let $e^{(da)}_{q, j}$ be the post-gate $X_q X_{b_j}$ fault on the $j$-th CNOT, let
+    $e^{(b_j)}_{\mathrm{post}, j}$ be the post-gate $X_{b_j}$ fault, and let $M_{b_j}^{(t)}$ be the $Z$-measurement
+    readout flip on ancilla $b_j$ at the end of round $t$ (assuming no subsequent multi-qubit gates propagate
+    $X_{b_j}$ back onto data qubits, so $(h(e^{(b_j)}_{\mathrm{post}, j}), \ell(e^{(b_j)}_{\mathrm{post}, j})) =
+    (h(M_{b_j}^{(t)}), \ell(M_{b_j}^{(t)}))$).
+  \item For Part~(b2), consider an $X$-check ancilla $a'$ initialized in $|+\rangle$, coupled via $\mathrm{CNOT}(a'
+    \to q_s)$ ($s = 1, \dots, w$) to data qubits $q_1, \dots, q_w$, and measured in the $X$ basis. Let
+    $e^{(a')}_s$ ($0 \le s \le w$) be an $X_{a'}$ fault immediately after step $s$ (note $(h(e^{(a')}_0),
+    \ell(e^{(a')}_0)) = (h(e^{(a')}_w), \ell(e^{(a')}_w)) = (0, 0)$ since $X|+\rangle = |+\rangle$ and $X$ readout
+    is insensitive to $X_{a'}$), let $e^{(a' d)}_s$ be the post-gate $X_{a'} X_{q_s}$ fault on step $s$ (whose
+    propagated effect equals that of $e^{(a')}_{s-1}$), and let $e^{(d)'}_s$ be the post-gate $X_{q_s}$ fault.
+\end{itemize}
+
+\begin{proposition}[CNOT Hook-Step Triangulation of Spacetime Plaquettes]\label{prop:hook_triangulation}
+Under the CSS circuit definitions above:
+\begin{enumerate}[label=(\alph*)]
+  \item \emph{(Single-CNOT triangle.)} For every CNOT step $s \in [w]$,
+    \begin{equation}\label{eq:tri_gate}
+      \bigl(h(e^{(da)}_s), \ell(e^{(da)}_s)\bigr) \oplus \bigl(h(e^{(d)}_s), \ell(e^{(d)}_s)\bigr)
+      \oplus \bigl(h(e^{(a)}_s), \ell(e^{(a)}_s)\bigr) = (0, 0),
+    \end{equation}
+    yielding a weight-3 degeneracy in $\Tc$ whenever the three cleaned DEM columns are nonzero and pairwise
+    distinct.
+  \item \emph{(Telescoping of time-like and space-like stabilizer cycles.)}
+    \begin{enumerate}[label=(b\arabic*)]
+      \item The weight-$(2 + u)$ phenomenological time-like plaquette on data qubit $q$ across round $t$,
+        \[
+          \bigl(h(e^{(d)}_{q, 0}), \ell(e^{(d)}_{q, 0})\bigr) \oplus
+          \bigl(h(e^{(d)}_{q, u}), \ell(e^{(d)}_{q, u})\bigr) \oplus
+          \bigoplus_{j=1}^u \bigl(h(M_{b_j}^{(t)}), \ell(M_{b_j}^{(t)})\bigr) = (0, 0),
+        \]
+        is the telescoping $\Ftwo$-sum over $j = 1, \dots, u$ of the $u$ weight-3 gate triangles
+        $\{e^{(d)}_{q, j-1}, e^{(d)}_{q, j}, e^{(b_j)}_{\mathrm{post}, j}\}$ (using the weight-2 duplicate merges
+        $(h(e^{(d)}_{q, j-1}), \ell(e^{(d)}_{q, j-1})) = (h(e^{(da)}_{q, j}), \ell(e^{(da)}_{q, j}))$ and
+        $(h(e^{(b_j)}_{\mathrm{post}, j}), \ell(e^{(b_j)}_{\mathrm{post}, j})) = (h(M_{b_j}^{(t)}),
+        \ell(M_{b_j}^{(t)}))$).
+      \item The staggered weight-$w$ spatial $X$-stabilizer $\bigoplus_{s=1}^w \bigl(h(e^{(d)'}_s),
+        \ell(e^{(d)'}_s)\bigr) = (0, 0)$ is the telescoping $\Ftwo$-sum over $s = 1, \dots, w$ of the relations
+        $\bigl(h(e^{(a')}_{s-1}), \ell(e^{(a')}_{s-1})\bigr) \oplus \bigl(h(e^{(a')}_s), \ell(e^{(a')}_s)\bigr)
+        \oplus \bigl(h(e^{(d)'}_s), \ell(e^{(d)'}_s)\bigr) = (0, 0)$, where the $w - 2$ interior steps $2 \le s \le
+        w - 1$ form weight-3 degeneracies in $\Tc$ whenever their three columns are nonzero and distinct, while the
+        two boundary steps $s = 1, w$ reduce to weight-2 duplicate merges because $e^{(a')}_0$ and $e^{(a')}_w$
+        have $(0, 0)$ columns.
+    \end{enumerate}
+\end{enumerate}
+\end{proposition}
+
+\paragraph{Physical idea of the proof.}
+In a phenomenological model with instantaneous syndrome measurements, the elementary time-like gauge loop around a
+data qubit $q$ touching $u$ $Z$-checks in round $t$ has weight $2 + u$ (weight $4$ when $u = 2$): flip $q$ before
+round $t$, flip $q$ again after round $t$, and flip the readouts of all $u$ $Z$-check ancillas containing $q$ in
+round $t$. In a gate-level circuit, each CNOT gate $\mathrm{CNOT}(q \to b_j)$ emits correlated two-qubit faults
+such as $X_q X_{b_j}$, which act as a diagonal chord across each spacetime step: applying $X_q X_{b_j}$ followed
+immediately by $X_q$ and $X_{b_j}$ produces $X_q^2 X_{b_j}^2 = I$ prior to all subsequent gates, decomposing both
+time-like plaquettes and ancilla-injected spatial stabilizers into weight-3 triangles and weight-2 duplicate
+merges.
+
+\begin{proof}
+For~(a), immediately after $\mathrm{CNOT}(q_s \to a)$, $e^{(da)}_s$ inserts $X_{q_s} X_a$ while $e^{(d)}_s$ and
+$e^{(a)}_s$ insert $X_{q_s}$ and $X_a$ at the same circuit slice. Their product $(X_{q_s} X_a) X_{q_s} X_a = I$ acts
+trivially on all subsequent gates and measurements; by $\Ftwo$-linearity of the DEM map $e \mapsto (h(e), \ell(e))$,
+\eqref{eq:tri_gate} holds, defining an element of $\Tc$ whenever the three merged representatives are nonzero and
+distinct.
+
+For~(b1), conjugating $X_q$ just before $\mathrm{CNOT}(q \to b_j)$ yields $X_q X_{b_j}$ just after the gate, so
+$(h(e^{(d)}_{q, j-1}), \ell(e^{(d)}_{q, j-1})) = (h(e^{(da)}_{q, j}), \ell(e^{(da)}_{q, j}))$. Since $X_{b_j}$
+propagates unchanged through remaining $\mathrm{CNOT}(\cdot \to b_j)$ targets to flip only $M_{b_j}^{(t)}$,
+$(h(e^{(b_j)}_{\mathrm{post}, j}), \ell(e^{(b_j)}_{\mathrm{post}, j})) = (h(M_{b_j}^{(t)}), \ell(M_{b_j}^{(t)}))$.
+Applying~(a) at step $j$ gives $(h(e^{(d)}_{q, j-1}), \ell(e^{(d)}_{q, j-1})) \oplus (h(e^{(d)}_{q, j}),
+\ell(e^{(d)}_{q, j})) \oplus (h(M_{b_j}^{(t)}), \ell(M_{b_j}^{(t)})) = (0, 0)$; summing over $j = 1, \dots, u$
+cancels all intermediate terms $e^{(d)}_{q, 1}, \dots, e^{(d)}_{q, u-1}$ modulo $2$.
+
+For~(b2), conjugating $X_{a'}$ across $\mathrm{CNOT}(a' \to q_s)$ gives $X_{a'} X_{q_s}$, so
+$(h(e^{(a')}_{s-1}), \ell(e^{(a')}_{s-1})) = (h(e^{(a' d)}_s), \ell(e^{(a' d)}_s))$. Applying the same post-gate
+identity $(X_{a'} X_{q_s}) X_{a'} X_{q_s} = I$ yields $(h(e^{(a')}_{s-1}), \ell(e^{(a')}_{s-1})) \oplus
+(h(e^{(a')}_s), \ell(e^{(a')}_s)) \oplus (h(e^{(d)'}_s), \ell(e^{(d)'}_s)) = (0, 0)$ for each $s \in [w]$. Because
+$(h(e^{(a')}_0), \ell(e^{(a')}_0)) = (h(e^{(a')}_w), \ell(e^{(a')}_w)) = (0, 0)$, steps $s = 1$ and $s = w$ equate
+$e^{(a')}_1$ with $e^{(d)'}_1$ and $e^{(a')}_{w-1}$ with $e^{(d)'}_w$ (weight-2 merges), whereas steps $2 \le s \le
+w - 1$ form weight-3 relations in $\Tc$ whenever their three columns are nonzero and distinct, and summing all $w$
+relations telescopes $e^{(a')}_1, \dots, e^{(a')}_{w-1}$ to give $\bigoplus_{s=1}^w (h(e^{(d)'}_s),
+\ell(e^{(d)'}_s)) = (0, 0)$.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+The weight-3 relations of Proposition~\ref{prop:hook_triangulation} are instances of the local gate relations that
+generate the gauge group of the circuit subsystem code of Bacon, Flammia, Harrow, and
+Shi~\cite{BaconFlammiaHarrowShi2017}: a Pauli fault immediately before a Clifford gate is equivalent to its
+conjugated image immediately after it (for $\mathrm{CNOT}(q \to a)$, $X_q^{\mathrm{pre}} \simeq
+X_q^{\mathrm{post}} X_a^{\mathrm{post}}$, a weight-3 generator). Pryadko~\cite{Pryadko2020MLD} identified this
+gauge group with the circuit error-equivalence group and described its generators as single-gate propagation
+relations; equivalent formulations are the stabilizer group of the spacetime code~\cite{DelfossePaetznick2023} and
+the detecting regions of~\cite{McEwenBaconGidney2023}. Part~(a), like the $\{X, Y, Z\}$ triangles of single-qubit
+depolarizing channels, is the simplest case (Pauli faults at one spacetime location whose product is the identity);
+Stim's decomposition of composite error mechanisms into graphlike components relies on the same
+relations~\cite{Gidney2021Stim,StimDocs}. Specific to this work is the cleaned-DEM bookkeeping: after merging
+identical columns, these gauge generators survive as weight-3 column relations $T \in \Tc$, and Part~(b) expresses
+both the time-like phenomenological plaquette and the ancilla-injected spatial stabilizer as telescoping sums of
+them.
+
+% ----------------------------------------------------------------------------
+\subsection{Exact Millisecond-Scale Enumeration of \texorpdfstring{$\Tc$}{T3}}\label{subsec:enumeration}
+% ----------------------------------------------------------------------------
+
+To exploit $\Tc$ inside \ttt{dist-m4ri}, enumerating $\Tc$ must be negligible compared to \ttt{RW} runtime. A
+naive scan over unordered column pairs $\{a, b\} \subseteq [n]$ followed by hash lookup of $h_a \oplus h_b$
+requires $\binom{n}{2}$ probes---already $3.43 \times 10^8$ probes on the reduced $[[288, 12, 18]]$ double-gross
+DEM ($n = 26{,}208$) and $2.30 \times 10^9$ probes on the full $[[144, 12, 12]]$ gross DEM ($n = 67{,}824$). A
+leading-index parity property of symmetric differences reduces this work by three orders of magnitude.
+
+\paragraph{Notation and setup for Lemma~\ref{lem:min_det_bucket}.}
+Let $(H, L)$ be a cleaned DEM with $m$ detector rows $\{1, \dots, m\}$ and $n$ columns. For each column $j \in
+[n]$, let $R(j) = \supp(h_j) \subseteq [m]$ be the set of detector rows triggered by fault $j$. Partition the
+columns with nonempty detector support into $m$ disjoint \emph{minimum-detector buckets}
+\begin{equation}\label{eq:Gr_buckets}
+  G_i \coloneqq \bigl\{j \in [n] : R(j) \neq \emptyset \text{ and } \min R(j) = i\bigr\} \qquad (i \in [m]),
+\end{equation}
+and let $G_\emptyset = \{j \in [n] : R(j) = \emptyset\}$ be the set of pure-logical columns (if $G_\emptyset \neq
+\emptyset$, any $j \in G_\emptyset$ has $\ell_j \neq 0$ since $(H, L)$ has no $(0, 0)$ columns, which already
+implies $d = 1$). Let $\zeta : \Ftwo^{m+k} \to \{0, 1\}^{64}$ be a 64-bit Zobrist hash~\eqref{eq:zobrist} of the
+stacked column $(h_j, \ell_j)$.
+
+\begin{lemma}[Minimum-Detector Bucketing for Duplicate-Free $\Tc$ Enumeration]\label{lem:min_det_bucket}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item If $T = \{a, b, c\} \in \Tc$ has nonempty detector supports $R(a), R(b), R(c) \subseteq [m]$ and
+    $i^* = \min\bigl(R(a) \cup R(b) \cup R(c)\bigr) \in [m]$, then exactly two of the three columns in $T$ belong to
+    the bucket $G_{i^*}$, and the third column belongs to a strictly higher bucket $G_{i'}$ with $i' > i^*$.
+  \item Iterating over $i \in [m]$ and over unordered pairs $\{a, b\} \subseteq G_i$ ($a < b$), looking up
+    $\zeta(h_a, \ell_a) \oplus \zeta(h_b, \ell_b)$ in a hash table of all columns, and accepting matches $c \in
+    [n]$ verified to satisfy $(h_c, \ell_c) = (h_a \oplus h_b, \ell_a \oplus \ell_b)$ enumerates every $T \in \Tc$
+    having $|T \cap G_\emptyset| \le 1$ \textbf{exactly once} in $\sum_{i=1}^m \binom{|G_i|}{2}$ hash probes (and
+    if $|G_\emptyset| \ge 3$, scanning unordered pairs inside $G_\emptyset$ finds any pure-logical triplets $T
+    \subseteq G_\emptyset$ in $\binom{|G_\emptyset|}{2}$ additional probes).
+\end{enumerate}
+\end{lemma}
+
+\paragraph{Physical idea of the proof.}
+If three fault mechanisms $a, b, c$ cancel every detector excitation when applied together, consider the earliest
+spacetime detector $i^*$ triggered by any of the three faults. That detector cannot be triggered by only one fault
+(it would remain uncancelled) or by all three faults ($1 \oplus 1 \oplus 1 = 1 \neq 0$). Thus \emph{exactly two} of
+the three faults share $i^*$ as their minimum detector index, while the third fault starts at a strictly higher
+detector index $i' > i^*$ (or has empty detector support), giving every triplet a unique earliest cancelling pair
+inside a single bucket $G_{i^*}$.
+
+\begin{proof}
+Because $T = \{a, b, c\} \in \Tc$, we have $h_a \oplus h_b \oplus h_c = 0 \in \Ftwo^m$, so for every row $i \in
+[m]$, $|\{x \in T : i \in R(x)\}| \in \{0, 2\}$. When $R(a), R(b), R(c)$ are nonempty, $i^* = \min(R(a) \cup R(b)
+\cup R(c))$ belongs to exactly two of them, say $i^* \in R(a) \cap R(b)$ and $i^* \notin R(c)$. Since no element of
+$R(a) \cup R(b) \cup R(c)$ is smaller than $i^*$, we have $\min R(a) = \min R(b) = i^*$ and $\min R(c) = i' > i^*$,
+proving~(a).
+
+For~(b), note first that no $T \in \Tc$ can have $|T \cap G_\emptyset| = 2$ (that would force the third column to
+have $h_c = 0$ as well). If $|T \cap G_\emptyset| = 0$, by~(a) a pair $\{u, v\} \subseteq T$ lies in a common
+bucket $G_i$ iff $\{u, v\} = \{a, b\}$ and $i = i^*$. If $|T \cap G_\emptyset| = 1$, say $c \in G_\emptyset$ and
+$a, b \notin G_\emptyset$, then $h_a \oplus h_b = h_c = 0 \implies R(a) = R(b) \neq \emptyset$, so again $\{a, b\}$
+lies in the unique bucket $G_{\min R(a)}$ while $c \notin \bigcup_{i=1}^m G_i$. Because $(H, L)$ is cleaned, at most
+one column $c \in [n]$ equals $(h_a \oplus h_b, \ell_a \oplus \ell_b)$, and $c \notin \{a, b\}$ since $(h_a,
+\ell_a), (h_b, \ell_b) \neq (0, 0)$ are distinct. Hence every $T \in \Tc$ with $|T \cap G_\emptyset| \le 1$ is
+produced exactly once in $\sum_{i=1}^m \binom{|G_i|}{2}$ probes, and any $T \subseteq G_\emptyset$ is found once by
+scanning pairs $\{a, b\} \subseteq G_\emptyset$ with $a < b < c$.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+Part~(a) of Lemma~\ref{lem:min_det_bucket} is the elementary leading-index (pivot) property of $\Ftwo$-vectors used
+throughout Gaussian elimination: if $x \oplus y \oplus z = 0$, the smallest index of $\supp(x) \cup \supp(y) \cup
+\supp(z)$ lies in exactly two of the three supports. Restricting candidate pairs to those that collide on their
+low-order coordinates and completing each pair by a hash lookup is the three-list special case of the
+generalized-birthday (``$k$-tree'') merging of Wagner~\cite{Wagner2002}, in which lists are joined on partial
+collisions of low-order bits; for sparse DEM columns the leading detector is deterministic, so every triplet is
+produced once without a random collision filter. The $\Ftwo$-linear Zobrist hash is
+standard~\cite{Zobrist1970,CarterWegman1979}. We are not aware of an earlier explicit statement of the
+duplicate-free enumeration~(b) for detector error models and regard it as a folklore-level observation.
+
+\medskip
+On \ttt{dgross\_288} ($m = 2{,}736, n = 26{,}208$), mean bucket size is $|G_i| = 9.58$, so
+Lemma~\ref{lem:min_det_bucket} evaluates only $155{,}853$ pairs instead of $\binom{26208}{2} = 3.43 \times 10^8$
+($2{,}200\times$ fewer), completing exact $\Tc$ enumeration in $14.8$--$18.4\text{ ms}$ on a single CPU thread.
+
+% ----------------------------------------------------------------------------
+\subsection{Empirical Span of \texorpdfstring{$\Tc$}{T3} Across 14 Circuit DEMs}\label{subsec:span_table}
+% ----------------------------------------------------------------------------
+
+Does $\Tc$ merely supply local triangles, or does it span the entire circuit degeneracy space $\Dc = \ker H \cap
+\ker L$? Table~\ref{tab:t3_span} compares $\dim(\Dc)$ against $\rank(\Tc) \coloneqq \dim
+\operatorname{span}_{\Ftwo}\{1_T : T \in \Tc\}$ across $14$ cleaned circuit DEMs:
+\begin{itemize}
+  \item unreduced two-sector rotated surface-code memory circuits~\cite{DennisKitaevLandahlPreskill2002,
+    BombinMartinDelgado2007,Fowler2012} (\ttt{surf\_d3}, \ttt{surf\_d5\_H/L}, \ttt{surf\_d7\_H/L});
+  \item a non-CSS $XYZ$ color-code memory circuit~\cite{BombinMartinDelgado2006Color,Gidney2021Stim}
+    (\ttt{color\_xyz\_d5}, generated via Stim's \ttt{color\_code:memory\_xyz} task with \ttt{C\_XYZ} data rotations
+    and circuit distance $d = 3$);
+  \item bivariate bicycle (\ttt{bb\_72}), gross (\ttt{gross\_144}), and double-gross (\ttt{dgross\_288})
+    codes~\cite{BravyiCrossGambettaMaslovRallYoder2024} under the superconducting-inspired \ttt{si1000} circuit
+    noise model~\cite{GidneyNewmanFowlerBroughton2021}, in
+    both unreduced two-sector form (\ttt{full}) and single-sector passive-detector-dropped form (\ttt{simp},
+    produced by \ttt{dist-m4ri}'s \ttt{drop=auto} preprocessing, with \ttt{r6}/\ttt{r12}/\ttt{r18} denoting $6,
+    12,$ or $18$ syndrome rounds);
+  \item non-abelian mitten codes~\cite{Bhardwaj2026Mitten} under \ttt{custom} and hardware-efficient (\ttt{hef})
+    CNOT schedules (\ttt{simp});
+  \item an unreduced $10$-round two-block group algebra circuit (\ttt{2bga\_102}~\cite{LinPryadko2024}), an
+    unreduced $9$-round subsystem hypergraph product simplex circuit (\ttt{shyps\_225}~\cite{Malcolm2025SHYPS}),
+    and an unreduced 2D torus qLDPC circuit compiled with native controlled-$Z$-plus-SWAP (\ttt{CZSWAP}) gates
+    (\ttt{torus\_n60\_d14}).
+\end{itemize}
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of the circuit degeneracy dimension $\dim(\Dc) = n - r_H - k_{\mathrm{eff}}$ and the
+$\Ftwo$-rank $\rank(\Tc)$ spanned by weight-3 degeneracies across $14$ cleaned circuit DEMs ($\mathrm{GAP}
+\coloneqq \dim(\Dc) - \rank(\Tc)$). Single-thread C enumeration times (\ttt{Enum}) use
+Lemma~\ref{lem:min_det_bucket}.}\label{tab:t3_span}
+\smallskip
+\footnotesize
+\setlength{\tabcolsep}{4.0pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+DEM / Circuit & $m$ & $r_H$ & $k$ & $n$ & $\dim(\Dc)$ & $|\Tc|$ & $\rank(\Tc)$ & $\mathrm{GAP}$ & Enum \\
+\midrule
+\ttt{surf\_d3.dem} (full) & 24 & 24 & 1 & 221 & 196 & 726 & \textbf{196} & \textbf{0} & 0.09 ms \\
+\ttt{surf\_d5\_H/L} (full) & 120 & 120 & 1 & 1,679 & 1,558 & 5,739 & \textbf{1,558} & \textbf{0} & 3.98 ms \\
+\ttt{surf\_d7\_H/L} (full) & 336 & 336 & 1 & 5,473 & 5,136 & 18,937 & \textbf{5,136} & \textbf{0} & --- \\
+\ttt{color\_xyz\_d5} (non-CSS) & 45 & 45 & 1 & 1,104 & 1,058 & 5,032 & \textbf{1,058} & \textbf{0} & 1.63 ms \\
+\ttt{bb\_72} si1000 r6 X (simp) & 252 & 246 & 12 & 2,232 & 1,974 & 2,376 & \textbf{1,974} & \textbf{0} & 0.67 ms \\
+\ttt{bb\_72} si1000 r6 X (full) & 432 & 426 & 12 & 16,200 & 15,762 & 56,556 & 15,756 & 6 & 36.1 ms \\
+\ttt{mitten\_150} custom (simp) & 420 & 420 & 30 & 5,910 & 5,460 & 5,760 & \textbf{5,460} & \textbf{0} & 3.35 ms \\
+\ttt{mitten\_150} hef (simp) & 420 & 420 & 30 & 5,910 & 5,460 & 5,940 & \textbf{5,460} & \textbf{0} & --- \\
+\ttt{mitten\_210} custom (simp) & 504 & 504 & 42 & 6,930 & 6,384 & 6,720 & \textbf{6,384} & \textbf{0} & --- \\
+\ttt{2bga\_102} r10 X (full) & 561 & 551 & 20 & 8,262 & 7,691 & 8,160 & \textbf{7,691} & \textbf{0} & 6.39 ms \\
+\ttt{shyps\_225} r9 Z (full) & 600 & 584 & 16 & 8,325 & 7,725 & 25,500 & \textbf{7,725} & \textbf{0} & 8.38 ms \\
+\ttt{torus\_n60\_d14} X (full) & 120 & 116 & 8 & 10,710 & 10,586 & 41,430 & \textbf{10,586} & \textbf{0} & --- \\
+\ttt{gross\_144} si1000 r12 X (full) & 1,728 & 1,722 & 12 & 67,824 & 66,090 & 237,096 & 66,084 & 6 & --- \\
+\ttt{dgross\_288} si1000 r18 X (simp) & 2,736 & 2,730 & 12 & 26,208 & 23,466 & 28,512 & \textbf{23,466} & \textbf{0} &
+  14.8 ms \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:t3_span} highlights two structural findings:
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{Exact generation ($\mathrm{GAP} = 0$) on $12$ of $14$ DEMs:} Across all surface-code, non-CSS color,
+    reduced BB/double-gross, mitten, unreduced 2BGA, 2D torus, and subsystem SHYPS DEMs---including circuits with
+    redundant check rows ($m - r_H \in \{4, 6, 10, 16\}$)---$\Tc$ spans $100.00\%$ of $\Dc$, so a basis of the full
+    circuit degeneracy space can be selected purely from weight-3 degeneracies.
+  \item \textbf{Anatomy of $\mathrm{GAP} = 6$ in unreduced two-sector BB DEMs:} Only \ttt{bb\_72\_full} ($15{,}756$
+    of $15{,}762$, $99.96\%$) and \ttt{gross\_144\_full} ($66{,}084$ of $66{,}090$, $99.99\%$) have $\mathrm{GAP} =
+    6$. Extracting explicit coset representatives of $\Dc / \operatorname{span}(\Tc)$ on \ttt{bb\_72\_full} (and
+    shortening them modulo $\Tc$) yields five weight-6 time-like ancilla-readout chains supported on the $5$
+    difference layers $\{b + 72 s : 0 \le s \le 4\}$ of single passive $Z$-checks ($b \in \{37, 38, 41, 66, 67\}$)
+    and one weight-7 representative on $b = 40$ (representative weights depend on the chosen coset reduction). We
+    attribute this residual rank-$6$ quotient to the $\dim \ker(H_Z^\top) = 6$ stabilizer metachecks of BB
+    codes~\cite{BravyiCrossGambettaMaslovRallYoder2024} in the unanchored passive $Z$-sector of an $X$-memory
+    experiment; once \ttt{drop=auto} removes passive $Z$-detectors (\ttt{bb\_72\_simp}), $\mathrm{GAP}$ drops to
+    $0$ even though $m - r_H = 6$ active $X$-metachecks remain.
+\end{enumerate}
+
+% ----------------------------------------------------------------------------
+\subsection{The Triplet Graph \texorpdfstring{$G_3$}{G3} and Greedy Maximal Independent
+  Sets}\label{subsec:triplet_graph}
+% ----------------------------------------------------------------------------
+
+For each column $u \in [n]$, let $d_3(u) \coloneqq |\{T \in \Tc : u \in T\}|$ denote its \emph{triplet degree}, and
+let $G_3 = ([n], E_3)$ be the 2-section graph where $(u, v) \in E_3$ iff $\{u, v, w\} \in \Tc$ for some $w \in
+[n]$. The rule ``whenever column $u$ is chosen up front, exclude or push back the other two columns $v, w$ of every
+triplet $\{u, v, w\} \in \Tc$'' constructs a greedy Maximal Independent Set (MIS) $F \subseteq [n]$ of $G_3$.
+Table~\ref{tab:mis_anatomy} summarizes $d_3(u)$, $|F|/n$, and $\rank(H_F)$ across random-order greedy MIS draws.
+
+\begin{table}[htbp]
+\centering
+\caption{Triplet participation, triplet degree $d_3(u)$, greedy MIS size $|F|$, and restricted check rank
+$\rank(H_F)$ compared to $r_H = \rank(H)$ ($10$ random-order greedy MIS draws per DEM; $5$ draws for $n >
+10^4$).}\label{tab:mis_anatomy}
+\smallskip
+\footnotesize
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{@{}lrrll@{}}
+\toprule
+DEM & In $\Tc$ & Mean $d_3$ [max] & Greedy MIS $|F|$ ($\%\,n$) & $\rank(H_F)$ vs.\ $r_H$ \\
+\midrule
+\ttt{surf\_d3.dem} & $100.0\%$ & $9.86$ [33] & $27.3 \pm 2.9$ ($12.4\%$) & $22.8$ vs.\ $24$ (deficit $1.2$) \\
+\ttt{surf\_d7\_H/L} & $100.0\%$ & $10.38$ [39] & $582.2 \pm 10.4$ ($10.6\%$) & $334.9$ vs.\ $336$ (deficit $1.1$) \\
+\ttt{color\_xyz\_d5} & $100.0\%$ & $13.67$ [50] & $96.6 \pm 4.0$ ($8.8\%$) & $\mathbf{45.0}$ vs.\ $45$ (deficit
+  $0.0$) \\
+\ttt{bb\_72} X (simp) & $100.0\%$ & $3.19$ [6] & $684.5 \pm 10.7$ ($30.7\%$) & $\mathbf{246.0}$ vs.\ $246$ (deficit
+  $0.0$) \\
+\ttt{bb\_72} X (full) & $100.0\%$ & $10.47$ [55] & $1578.0 \pm 24.3$ ($9.7\%$) & $\mathbf{426.0}$ vs.\ $426$
+  (deficit $0.0$) \\
+\ttt{mitten\_150} custom & $100.0\%$ & $2.92$ [9] & $1854.2 \pm 9.6$ ($31.4\%$) & $\mathbf{420.0}$ vs.\ $420$
+  (deficit $0.0$) \\
+\ttt{mitten\_150} hef & $100.0\%$ & $3.02$ [9] & $2089.0 \pm 23.9$ ($35.3\%$) & $\mathbf{420.0}$ vs.\ $420$ (deficit
+  $0.0$) \\
+\ttt{dgross\_288} X (simp) & $100.0\%$ & $3.26$ [6] & $7884.6 \pm 39.6$ ($30.1\%$) & $\mathbf{2730.0}$ vs.\ $2730$
+  (deficit $0.0$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In reduced single-sector CSS DEMs, $|F|/n \approx 30\%$--$35\%$ (close to the $1/3$ density of disjoint triangles),
+whereas in full depolarizing and non-CSS DEMs with dense 15-Pauli gate cliques, $|F|/n$ shrinks to
+$8.8\%$--$12.4\%$; on every qLDPC and color-code DEM tested, $H_F$ retains $100.0\%$ of the full check rank $r_H$.
+
+% ============================================================================
+\section{Modifying Random Window Search with Weight-3 Degeneracies}\label{sec:rw_mods}
+% ============================================================================
+
+We now analyze how weight-3 degeneracies obstruct standard \ttt{RW} pivot selection, evaluate the MIS Drop and MIS
+Push-Back strategies, and derive three exact algorithmic accelerations.
+
+% ----------------------------------------------------------------------------
+\subsection{The Triplet Pivot-Pair Ambush}\label{subsec:ambush}
+% ----------------------------------------------------------------------------
+
+Why is allowing two partner columns $\{i, j\}$ of a weight-3 degeneracy $T = \{i, j, k\} \in \Tc$ to enter the
+pivot basis $P$ harmful when $k$ belongs to a target logical codeword $c$? Theorem~\ref{thm:ambush} establishes an
+exact lower bound on $|c \cap J|$ that holds for every nontrivial logical codeword.
+
+\paragraph{Notation and setup for Theorem~\ref{thm:ambush}.}
+Let $(H, L)$ be a cleaned DEM, and let $\Tc$ be its set of weight-3 degeneracies~\eqref{eq:T3_def}. Let $c
+\subseteq [n]$ ($H 1_c = 0$, $L 1_c \neq 0$) be any nontrivial logical codeword, and let $P \subseteq [n]$ ($|P| =
+r = \rank H$) be any full-rank pivot basis with complementary information set $J = [n] \setminus P$. Suppose $t \ge
+1$ distinct fault columns $k_1, \dots, k_t \in c$ belong to weight-3 degeneracies $T_s = \{i_s, j_s, k_s\} \in \Tc$
+($s = 1, \dots, t$) whose remaining two elements satisfy $\{i_s, j_s\} \subseteq P$ (the pairs $\{i_s, j_s\}$ for
+different $s$ need not be disjoint; for a minimal codeword $|c| = d$, each $T \in \Tc$ meets $c$ in at most one
+column, and our hypothesis is that the other two columns of $T_s$ lie in $P$).
+
+\begin{theorem}[Triplet Pivot-Pair Ambush Obstruction]\label{thm:ambush}
+Under the assumptions and notation defined above:
+\begin{enumerate}[label=(\alph*)]
+  \item Every ambushed column $k_s$ ($1 \le s \le t$) lies outside the pivot basis: $k_1, \dots, k_t \in J$.
+  \item At least \textbf{one additional} column $b \in c \setminus \{k_1, \dots, k_t\}$ must also lie outside $P$;
+    consequently,
+    \begin{equation}\label{eq:ambush_bound}
+      |c \setminus P| = |c \cap J| \ge t + 1.
+    \end{equation}
+    In particular, standard single-column ($p = 1$) \ttt{RW} cannot find $c$ whenever $t \ge 1$, and Stern pair
+    ($p = 2$) \ttt{RW} cannot find $c$ whenever $t \ge 2$.
+\end{enumerate}
+\end{theorem}
+
+\paragraph{Physical idea of the proof.}
+First, if both gauge partners $i_s$ and $j_s$ of a fault $k_s \in c$ belong to $P$, their detector syndromes span
+$h_{k_s} = h_{i_s} \oplus h_{j_s}$, so $k_s$ is linearly dependent on $\{i_s, j_s\} \subseteq P$ and must fall into
+$J$. Second, applying the $t$ local spacetime gauge transformations $T_1, \dots, T_t$ to $c$ replaces each ambushed
+fault $k_s$ by its pivot partners $\{i_s, j_s\} \subseteq P$. The deformed fault pattern $v = 1_c \oplus
+\bigoplus_{s=1}^t 1_{T_s}$ retains zero detector syndrome ($H v = 0$) and nonzero logical action ($L v = L 1_c \neq
+0$, so $v \neq 0$). If all remaining faults of $c$ lay inside $P$, then $v$ would be a nonzero kernel vector of $H$
+supported entirely inside the linearly independent pivot frame $P$, which is impossible.
+
+\begin{proof}
+Since $|T_s| = 3$ and $T_s = \{i_s, j_s, k_s\}$, we have $k_s \notin \{i_s, j_s\}$. For each $s \in [t]$, $T_s \in
+\Tc$ implies $h_{k_s} = h_{i_s} \oplus h_{j_s} \in \operatorname{span}_{\Ftwo}(H_P)$ because $\{i_s, j_s\}
+\subseteq P$. By linear independence of $H_P$ and $k_s \notin \{i_s, j_s\}$, $k_s \notin P$ (otherwise
+$1_{\{i_s, j_s, k_s\}}$ would be a nonzero dependency supported inside $P$). Thus $k_1, \dots, k_t \in J$,
+proving~(a).
+
+To prove~(b), assume for contradiction that $c \setminus \{k_1, \dots, k_t\} \subseteq P$, and consider
+\[
+  v \coloneqq 1_c \oplus \bigoplus_{s=1}^t 1_{T_s} \in \Ftwo^n.
+\]
+For any $s' \neq s$, $k_{s'} \notin T_s$ because $T_s \setminus \{k_s\} = \{i_s, j_s\} \subseteq P$, whereas
+$k_{s'} \in J$ by~(a) and $k_{s'} \neq k_s$ by distinctness of $k_1, \dots, k_t$. Hence each $k_s$ has multiplicity
+$1$ in $1_c$, $1$ in $1_{T_s}$, and $0$ in every $1_{T_{s'}}$ ($s' \neq s$), giving $v_{k_s} = 0$. Every other
+nonzero coordinate of $v$ lies in $(c \setminus \{k_1, \dots, k_t\}) \cup \bigcup_{s=1}^t \{i_s, j_s\} \subseteq
+P$, so $\supp(v) \subseteq P$. Since $1_{T_s} \in \Dc = \ker H \cap \ker L$, linearity gives $H v = H 1_c = 0$ and
+$L v = L 1_c \neq 0$, whence $v \neq 0$, contradicting linear independence of $H_P$. Thus $|c \cap J| \ge t + 1$.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+Part~(a) of Theorem~\ref{thm:ambush} is the uniqueness of fundamental circuits in a
+matroid~\cite[Cor.~1.2.6]{Oxley2011}: when $h_i, h_j, h_k$ are pairwise distinct and nonzero, $T \in \Tc$ is a
+circuit of $\mathcal{M}(H)$, and a circuit all of whose elements save one lie in $P$ is the fundamental circuit of
+the remaining element. The criterion that an ISD pass enumerating combinations of at most $p$ non-pivot columns
+recovers $c$ if and only if $|c \cap J| \le p$ is standard in Prange-, Lee--Brickell-, Leon-, and Stern-type
+ISD~\cite{Prange1962,LeeBrickell1988,Leon1988,Stern1988}, and $|c^* \cap T| \le 1$ for minimum-weight logicals is
+elementary coset minimality (Section~\ref{subsec:dems}). The bound $|c \cap J| \ge t + 1$ of Part~(b)---quantifying
+the extra information-set positions forced by pivot pairs of weight-3 degeneracies for any logical codeword $c$---is
+to our knowledge new.
+
+% ----------------------------------------------------------------------------
+\subsection{MIS Drop vs.\ MIS Push-Back: Conservation Laws and Bucket-0 Deflation}\label{subsec:drop_vs_push}
+% ----------------------------------------------------------------------------
+
+Motivated by Theorem~\ref{thm:ambush}, consider two natural pre-elimination strategies using a random-order greedy
+MIS $F \subseteq [n]$ of the triplet graph $G_3$:
+\begin{itemize}
+  \item \textbf{Variant A (\ttt{V1\_drop}, MIS Drop):} discard $B = [n] \setminus F$ and run \ttt{RW} on the
+    narrower $m \times |F|$ submatrix $H_F$; or
+  \item \textbf{Variant B (\ttt{V2\_push}, MIS Push-Back):} place $F$ (in random order) at the front of $\pi$ and
+    append $B = [n] \setminus F$ (in random order) behind $F$.
+\end{itemize}
+
+Proposition~\ref{prop:mis_drop} shows within an idealized mean-field model why \ttt{V1\_drop}, despite accelerating
+per-step elimination by $1.5\times$--$10.2\times$, loses overall in wall-clock codeword discovery rate, especially
+for Stern $p = 2$.
+
+\paragraph{Notation and setup for Proposition~\ref{prop:mis_drop}.}
+Let $(H, L)$ be a cleaned DEM of rank $r = \rank(H)$ and distance $d$. For Part~(a), let $\mathcal{P}$ be any
+probability distribution over full-rank bases $P \subseteq [n]$ ($|P| = r$). For Part~(b), consider an idealized
+\emph{symmetric disjoint-triplet mean-field model} in which $[n] = \bigsqcup_{\mu=1}^M T_\mu$ partitions into $M =
+n / 3$ disjoint triplets with $\Tc = \{T_1, \dots, T_M\}$ exactly (so $G_3$ is a disjoint union of $M$ triangles
+$K_3$ and every greedy MIS $F$ chooses one uniform vertex per $T_\mu$ independently, giving $|F| = M$ and $\gamma
+\coloneqq |F|/n = 1/3$), $\rank(H_F) = r = \alpha M$ for fixed $\alpha \in (0, 1)$, $c^*$ ($|c^*| = d$) contains
+one column from $d$ distinct triplets, and $P$ is modeled as a uniformly random $r$-subset of $F$ (under MIS Drop)
+or of $[n]$ (under Uniform \ttt{RW}). Write $(x)_q = x(x - 1)\cdots(x - q + 1)$ for the falling factorial and
+$P_{\mathrm{hit}}^{(p)}$ for the per-step probability that $|c^* \cap P| = d - p$ and $c^* \setminus P$ lies in the
+searched candidate set ($F \setminus P$ for MIS Drop, $[n] \setminus P$ for Uniform \ttt{RW}).
+
+\begin{proposition}[Pivot-Marginal Conservation and Mean-Field Scaling of MIS Drop]\label{prop:mis_drop}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item \emph{(Conservation of average 1-point pivot marginals.)} Under \textbf{any} probability distribution over
+    full-rank bases $P \subseteq [n]$ ($|P| = r$), the column-averaged pivot inclusion probability is conserved:
+    \begin{equation}\label{eq:marginal_conservation}
+      \frac{1}{n} \sum_{u=1}^n \Pr(u \in P) = \frac{r}{n}.
+    \end{equation}
+  \item \emph{(Mean-field rate--speed penalty of MIS Drop.)} In the symmetric disjoint-triplet model ($\gamma =
+    1/3$), for any fixed $d \ge p \ge 1$, the ratio of per-step hit probabilities satisfies
+    \begin{equation}\label{eq:drop_hit_ratio}
+      \frac{P_{\mathrm{hit}}^{(p)}(\mathrm{Drop})}{P_{\mathrm{hit}}^{(p)}(\mathrm{Unif})}
+      = \gamma^d \frac{\bigl((1 - \alpha) M\bigr)_p\,(M/\gamma)_d}{(M)_d\,\bigl((1/\gamma - \alpha) M\bigr)_p}
+      \;\xrightarrow{M \to \infty}\;
+      \gamma^p \left(\frac{1 - \alpha}{1 - \gamma \alpha}\right)^p < \gamma^p.
+    \end{equation}
+    Consequently, as $M \to \infty$, even if restricting elimination from $n$ columns to $|F| = \gamma n$ columns
+    speeds up each step by the ideal linear factor $\gamma^{-1}$, the asymptotic wall-clock discovery rate scales by
+    $\gamma^{p-1} \bigl(\frac{1-\alpha}{1-\gamma\alpha}\bigr)^p < \gamma^{p-1}$: below $1$ for $p = 1$, and bounded
+    above by $\gamma$ for Stern $p = 2$.
+\end{enumerate}
+\end{proposition}
+
+\paragraph{Physical idea of the proof.}
+Part~(a) reflects fixed basis size: every full-rank recovery frame $P$ contains $r$ fault columns regardless of the
+permutation law. In the symmetric triplet model, $F$ retains a fraction $\gamma = 1/3$ of faults, and inside $F$ a
+fraction $r / |F| = r / (\gamma n)$ become pivots; their product $\gamma \cdot \frac{r}{\gamma n} = \frac{r}{n}$
+leaves the 1-point pivot density unchanged for the $d - p$ pivot elements of $c^*$. However, under MIS Drop, $[n]
+\setminus F$ is discarded before candidate scanning, so all $p$ \emph{non-pivot} faults of $c^*$ must also survive
+into $F$, incurring an extra factor $\gamma^p$. For $p = 1$, $\gamma^1$ cancels an ideal $\gamma^{-1}$ step
+speedup up to $(1 - \alpha)/(1 - \gamma\alpha) < 1$; for Stern $p = 2$, $\gamma^2$ outweighs $\gamma^{-1}$ by a
+factor $< \gamma$. The formal proof is given in Appendix~\ref{app:drop_proof}.
+
+\paragraph{Prior work and attribution.}
+Part~(a) of Proposition~\ref{prop:mis_drop} is linearity of expectation (every basis has $r$ elements). Part~(b)
+applies the hypergeometric success-probability calculus underlying ISD complexity
+estimates~\cite{Prange1962,Leon1988,Stern1988,CanteautChabaud1998} to MIS Drop, which is ISD on the code $\ker H$
+shortened to the coordinates in $F$ (a codeword survives shortening iff $c^* \subseteq F$, of probability
+$\gamma^d$ in the disjoint-triplet model). The disjoint-triplet model, the finite-$M$ cancellation of $\binom{d}{p}
+(\alpha M)_{d-p}$, and the asymptotic ratio~\eqref{eq:drop_hit_ratio} are new here; they constitute a mean-field
+model (uniform $r$-subsets in place of greedy bases) rather than an exact evaluation under the greedy basis law of
+Theorem~\ref{thm:infoset_likelihood}.
+
+\medskip
+When we instead \emph{push} $B = [n] \setminus F$ behind $F$ (\ttt{V2\_push}), all $n$ columns remain available as
+non-pivots, avoiding the $\gamma^p$ shortening loss while eliminating realized weight-3 degeneracies.
+
+\paragraph{Notation and setup for Theorem~\ref{thm:mis_push}.}
+Let $(H, L)$ be a cleaned DEM of rank $r = \rank(H)$, let $G_3 = ([n], E_3)$ be its triplet graph, and let $F
+\subseteq [n]$ be any independent set of $G_3$ placed at the front of $\pi$, so $\{\pi_1, \dots, \pi_{|F|}\} = F$
+and $\{\pi_{|F|+1}, \dots, \pi_n\} = [n] \setminus F$. Let $P \subseteq [n]$ ($|P| = r$) be the greedy pivot basis
+produced by Gaussian elimination under $\pi$, with $J = [n] \setminus P$, fundamental circuits $C_P(a) = \{a\} \cup
+S_a(P)$~\eqref{eq:fund_circuit}, and reduced logical columns $\mathrm{sig}(a)$~\eqref{eq:sig_def}. Define the count
+of \emph{basis-realized weight-3 degeneracies}
+\begin{equation}\label{eq:N3J_def}
+  N_3(J) \coloneqq \bigl|\bigl\{a \in J : |S_a(P)| = 2 \text{ and } \mathrm{sig}(a) = 0\bigr\}\bigr|.
+\end{equation}
+In Stern $p = 2$ search, suppose $l$ distinct pivot rows ($1 \le l \le r$) are sampled uniformly at random without
+replacement to form the $l$-bit bucket key $\mathrm{bkey}(x) \in \{0, \dots, 2^l - 1\}$ for each $x \in J$.
+
+\begin{theorem}[Zero-Triplet-Circuit Property and Stern Bucket-0 Deflation]\label{thm:mis_push}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item Whenever $\rank(H_F) = r$, the greedy pivot basis satisfies $P \subseteq F$, and the number of
+    basis-realized weight-3 degeneracies vanishes identically:
+    \begin{equation}\label{eq:N3_zero}
+      N_3(J) = 0.
+    \end{equation}
+    In particular, the triplet pivot-pair ambush count $t$ of Theorem~\ref{thm:ambush} equals $0$ for every
+    nontrivial logical codeword $c$.
+  \item Under any basis $P$ (such as those produced by Uniform or Window \ttt{RW} where $N_3(J) \gg 0$), every
+    column $x \in J$ with $|S_x(P)| = 2$ lands in Stern's zero bucket ($\mathrm{bkey}(x) = 0$) with probability
+    \begin{equation}\label{eq:bucket0_prob}
+      \Pr_{\mathrm{Stern}}\bigl[\mathrm{bkey}(x) = 0 \;\big|\; |S_x(P)| = 2\bigr]
+      = \frac{\binom{r - 2}{l}}{\binom{r}{l}}
+      = \left(1 - \frac{l}{r}\right)\left(1 - \frac{l}{r - 1}\right).
+    \end{equation}
+    Hence MIS Push-Back eliminates all $N_3(J)$ realized weight-3 degeneracies from populating Stern Bucket~0
+    whenever $\rank(H_F) = r$.
+\end{enumerate}
+\end{theorem}
+
+\paragraph{Physical idea of the proof.}
+In Uniform \ttt{RW}, many non-pivot columns $x \in J$ realize weight-3 fundamental circuits $C_P(x) = \{x, p_1,
+p_2\} \in \Tc$ supported on just two pivot rows out of $r \sim 250$--$2{,}730$. When Stern samples $l \in [10, 12]$
+pivot rows without replacement, a weight-2 pivot column $\{p_1, p_2\}$ avoids all $l$ sampled rows with probability
+$(1 - l/r)(1 - l/(r-1)) \approx 92.0\%$--$99.1\%$ ($92.0\%$ at $r = 246, l = 10$; $99.1\%$ at $r = 2{,}730, l =
+12$), concentrating trivial $\mathrm{sig} = 0$ columns into Bucket~0. Under MIS Push-Back, $\rank(H_F) = r$ forces
+all $r$ pivots to be chosen within $F$; because $F$ is an independent set of $G_3$, no two pivots in $P$ belong to a
+common triplet in $\Tc$, so $N_3(J) = 0$.
+
+\begin{proof}
+For~(a), left-to-right greedy elimination accepts $\pi_j$ whenever $h_{\pi_j}$ is linearly independent of earlier
+pivots. After scanning $\{\pi_1, \dots, \pi_{|F|}\} = F$, the accepted pivots span $\operatorname{colspace}(H_F)$ of
+dimension $\rank(H_F) = r = \rank(H)$, so zero pivots are accepted from $[n] \setminus F$ and $P \subseteq F$. If
+there existed $a \in J$ with $S_a(P) = \{p_1, p_2\} \subseteq P$ and $\mathrm{sig}(a) = 0$,
+then~\eqref{eq:fund_circuit}--\eqref{eq:sig_def} would give $T = \{a, p_1, p_2\} \in \Tc$, placing $(p_1, p_2) \in
+E_3$ inside $P \subseteq F$, contradicting that $F$ is an independent set of $G_3$. Thus $N_3(J) = 0$, and no pair
+$\{i_s, j_s\} \subseteq P$ belongs to any $T_s \in \Tc$.
+
+For~(b), when $|S_x(P)| = 2$, $\mathrm{bkey}(x) = 0$ holds iff the $l$-subset $R_{\mathrm{Stern}} \subseteq P$
+sampled without replacement is disjoint from $S_x(P)$. Exactly $\binom{r-2}{l}$ of the $\binom{r}{l}$ equally likely
+$l$-subsets avoid $S_x(P)$, giving $\binom{r-2}{l} / \binom{r}{l} = \bigl(1 - \frac{l}{r}\bigr)\bigl(1 -
+\frac{l}{r-1}\bigr)$.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+That greedy elimination over an order whose prefix $F$ spans $\operatorname{colspace}(H)$ returns a basis $P
+\subseteq F$ is a basic property of the matroid greedy algorithm~\cite{Rado1957,Edmonds1971,Oxley2011}, and steering
+the selected basis by reordering columns before elimination is the mechanism of ordered-statistics
+decoding~\cite{FossorierLin1995}, of quantum BP+OSD~\cite{PanteleevKalachev2021}, and of windowed
+\ttt{RW}~\cite{PryadkoZeng2026DistM4RI}. The consequence $N_3(J) = 0$ for an independent set $F$ of $G_3$ is new,
+though immediate from the definition of $G_3$. Equation~\eqref{eq:bucket0_prob} is the zero-window factor of the
+per-iteration success probability of Stern's algorithm~\cite{Stern1988,CanteautChabaud1998,BernsteinLangePeters2008},
+namely $\binom{r-s}{l}/\binom{r}{l}$ evaluated at $s = 2$.
+
+\paragraph{Remark on degree-biased MIS (\ttt{V3\_low\_d3} / \ttt{V3\_high\_d3}).}
+Because column-averaged pivot marginals equal $r/n$ by Proposition~\ref{prop:mis_drop}(a), one might bias $F$ by
+sorting columns according to $d_3(u)$ before constructing the greedy MIS. As Table~\ref{tab:d3_bias} shows,
+however, whether minimum-weight codewords $c^*$ have smaller or larger $d_3(u)$ than bulk columns depends on the
+circuit and noise model: in reduced CSS \ttt{si1000} DEMs (\ttt{bb\_72\_simp}, \ttt{dgross\_288}), boundary and
+data faults have $d_3 \in [1, 3]$ while ancilla readout flips have $d_3 \in [5, 6]$ (so low-$d_3$ bias improves
+\ttt{hits/s} by $7.68\times$ at $l = 10$ and $25.55\times$ at $l = 0$ on \ttt{bb\_72\_simp}). Conversely, on full
+\ttt{DEPOLARIZE2} DEMs (\ttt{color\_xyz\_d5}, \ttt{bidir\_sNESENn}), minimum-weight hook faults lie inside dense
+15-Pauli gate cliques where low-$d_3$ bias hurts ($0.24\times$--$0.93\times$) and high-$d_3$ bias helps
+($1.39\times$--$134.0\times$), while high-$d_3$ bias finds zero hits on \ttt{mitten\_150} and \ttt{2bga\_102}.
+Static $d_3$-biasing is therefore circuit-dependent and unsafe as a general default, motivating unbiased
+post-elimination methods.
+
+\begin{table}[htbp]
+\centering
+\caption{Mean triplet degree $d_3(u)$ and detector column weight $|h_u|$ across all DEM columns versus columns
+belonging to distinct minimum-weight codewords $c^*$ (column-occurrence averages over the variant discovering the
+largest number \ttt{uniq} of distinct weight-$d$ vectors), alongside relative \ttt{hits/s} of low-$d_3$ and
+high-$d_3$ greedy MIS push-back variants.}\label{tab:d3_bias}
+\smallskip
+\footnotesize
+\setlength{\tabcolsep}{4.0pt}
+\begin{tabular}{@{}lrrrrrll@{}}
+\toprule
+DEM & $d$ & Bulk $d_3$ & $c^*\,d_3$ & Bulk $|h_u|$ & $c^*\,|h_u|$ & \ttt{V3\_low\_d3} & \ttt{V3\_high\_d3} \\
+\midrule
+\ttt{dgross\_288} X (simp) & 18 & 3.26 & \textbf{1.00} & 3.49 & 3.00 & wins (15 vs.\ 0) & 0 hits \\
+\ttt{bb\_72} X (simp, $l=10$) & 6 & 3.19 & \textbf{3.04} & 3.48 & 3.47 & \textbf{7.68x} (25.55x $l{=}0$) & 0.28x \\
+\ttt{shyps\_225} Z (full) & 8 & 9.19 & \textbf{8.87} & 5.88 & 5.98 & 1.03x & 1.07x \\
+\ttt{mitten\_150} custom & 7 & 2.92 & \textbf{3.02} & 5.23 & 3.50 & 0.23x & \textbf{0.00x (0 hits)} \\
+\ttt{2bga\_102} X (full) & 8 & 2.96 & \textbf{3.31} & 7.46 & 9.92 & 0.68x & \textbf{0.00x (0 hits)} \\
+\ttt{surf\_d5} (full) & 5 & 10.25 & \textbf{11.58} & 2.98 & 2.62 & 1.77x & 3.49x \\
+\ttt{bb\_72} X (full) & 6 & 10.47 & \textbf{13.59} & 5.63 & 3.82 & 1,902x & 764x \\
+\ttt{color\_xyz\_d5} & 3 & 13.67 & \textbf{17.73} & 3.75 & 2.15 & 0.24x & 1.39x \\
+\ttt{bidir\_sNESENn} X & 7 & 10.14 & \textbf{25.13} & 5.14 & 2.84 & 0.93x & \textbf{133.98x} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ----------------------------------------------------------------------------
+\subsection{Post-Elimination \texorpdfstring{$2 \to 1$ / $3 \to 0$}{2->1 / 3->0} Contraction and Stern Bucket-0
+  Pruning}\label{subsec:contraction}
+% ----------------------------------------------------------------------------
+
+Consider Theorem~\ref{thm:ambush} from the dual perspective. Suppose we do \emph{not} forbid pivot pairs $\{i_s,
+j_s\} \subseteq P$, and suppose $t \ge 1$ faults $k_1, \dots, k_t \in c^*$ of a minimum-weight codeword are
+ambushed by pivot pairs $\{i_s, j_s\} \subseteq P$ ($T_s = \{i_s, j_s, k_s\} \in \Tc$), while \textbf{only one}
+remaining column $b \in c^* \setminus \{k_1, \dots, k_t\}$ lands in $J$. What stands in row $b$ of $A^\top$?
+
+Theorem~\ref{thm:contraction_dominance} shows that $C_P(b)$ is a gauge-dressed representative of $c^*$ of weight
+$\le d + t$ with nonzero logical syndrome $L 1_{C_P(b)} = L 1_{c^*} \neq 0$, so post-elimination greedy $2 \to 1$ /
+$3 \to 0$ contraction converts triplet ambushes into hits---and simultaneously proves that omitting all
+$\mathrm{sig}(x) = 0, w_x \le 2$ columns from Stern $p = 2$ buckets loses no weight-$d$ hit.
+
+\paragraph{Notation and setup for Theorem~\ref{thm:contraction_dominance}.}
+Let $(H, L)$ be a cleaned DEM of circuit distance $d$, let $d_{\max} \ge d$ denote the current best upper bound on
+$d$ maintained by \ttt{RW}, let $\Tc$ be its weight-3 degeneracies, and let $P \subseteq [n]$ ($|P| = r$) be any
+pivot basis with $J = [n] \setminus P$, fundamental circuits $C_P(a) = \{a\} \cup S_a(P)$, and reduced logical
+syndromes $\mathrm{sig}(a) = L 1_{C_P(a)}$. Define a \emph{single-step $\Tc$-contraction} on any fault subset $C
+\subseteq [n]$ to be the replacement $C \mapsto C \triangle T$ for some $T = \{u, v, w\} \in \Tc$ satisfying $|C
+\cap T| \ge 2$: if $|C \cap T| = 2$ ($\{u, v\} \subseteq C, w \notin C$), this is a \emph{$2 \to 1$ contraction}
+replacing $\{u, v\}$ by $\{w\}$ ($|C \triangle T| = |C| - 1$); if $|C \cap T| = 3$, this is a \emph{$3 \to 0$
+cancellation} deleting $\{u, v, w\}$ ($|C \triangle T| = |C| - 3$). Both preserve $H 1_{C \triangle T} = H 1_C$ and
+$L 1_{C \triangle T} = L 1_C$. For Part~(a), suppose $c^*$ ($|c^*| = d$) satisfies $c^* \cap J = \{k_1, \dots, k_t,
+b\}$ ($t \ge 1$) where each $k_s \in T_s = \{i_s, j_s, k_s\} \in \Tc$ with $\{i_s, j_s\} \subseteq P$. For
+Part~(b), let $x \in J$ have $\mathrm{sig}(x) = 0$ and pivot-support weight $w_x \coloneqq |S_x(P)| \le 2$, and let
+$y \in J$ ($y \neq x$) have $\mathrm{sig}(y) \neq 0$ and $p = 1$ circuit weight $\mathrm{wt}_1(y) \coloneqq
+|C_P(y)| = |S_y(P)| + 1$, with $p = 2$ pair codeword $C_2(x, y) \coloneqq C_P(x) \triangle C_P(y)$ of weight
+$\mathrm{wt}_2(x, y) = |C_2(x, y)|$.
+
+\begin{theorem}[Fundamental-Circuit Recovery via $\Tc$-Contraction and Stern $w_x \le 2$
+  Dominance]\label{thm:contraction_dominance}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item \emph{(Exact formula for the ambushed $p = 1$ fundamental circuit.)} The fundamental circuit of $b \in c^*
+    \cap J$ is
+    \begin{equation}\label{eq:ambushed_circuit}
+      1_{C_P(b)} = 1_{c^*} \oplus \bigoplus_{s=1}^t 1_{T_s},
+    \end{equation}
+    which satisfies $\mathrm{sig}(b) = L 1_{c^*} \neq 0$ and $|C_P(b)| \le d + t$ (with equality when the sets
+    $c^* \setminus \{k_1, \dots, k_t\}$ and $\{i_1, j_1\}, \dots, \{i_t, j_t\}$ are pairwise disjoint, in which case
+    applying the $t$ contractions $\{i_s, j_s\} \to \{k_s\}$ reduces $C_P(b)$ directly to $c^*$).
+  \item \emph{(Stern $p = 2$ dominance over $\mathrm{sig}(x) = 0, w_x \le 2$.)} For any $x \in J$ with
+    $\mathrm{sig}(x) = 0$ and $w_x = |S_x(P)| \le 2$ and any $y \in J \setminus \{x\}$ with $\mathrm{sig}(y) \neq
+    0$:
+    \begin{itemize}
+      \item $w_x = 0$ is impossible in a cleaned DEM;
+      \item if $w_x = 1$ ($S_x(P) = \{p_1\}$), then $\mathrm{wt}_2(x, y) \in \{\mathrm{wt}_1(y),\; \mathrm{wt}_1(y)
+        + 2\} \ge \mathrm{wt}_1(y)$;
+      \item if $w_x = 2$ ($S_x(P) = \{p_1, p_2\}$, so $T_x \coloneqq C_P(x) = \{x, p_1, p_2\} \in \Tc$), then
+        \begin{equation}\label{eq:w2_cases}
+          \mathrm{wt}_2(x, y) = \mathrm{wt}_1(y) + 3 - 2\bigl|\{p_1, p_2\} \cap S_y(P)\bigr|
+          \in \{\mathrm{wt}_1(y) + 3,\; \mathrm{wt}_1(y) + 1,\; \mathrm{wt}_1(y) - 1\},
+        \end{equation}
+        attaining $\mathrm{wt}_1(y) - 1$ \textbf{if and only if} $\{p_1, p_2\} \subseteq S_y(P)$, in which case
+        $C_2(x, y) = C_P(y) \triangle T_x$ is the single $2 \to 1$ $\Tc$-contraction $\{p_1, p_2\} \to \{x\}$ on
+        $C_P(y)$.
+    \end{itemize}
+    Consequently, whenever $p = 1$ candidates $C_P(y)$ ($\mathrm{sig}(y) \neq 0$) of weight $\le d_{\max} + 1$
+    undergo greedy $\Tc$-contraction, omitting all columns $x \in J$ with $\mathrm{sig}(x) = 0$ and $w_x \le 2$
+    from Stern $p = 2$ buckets \textbf{loses no weight-$d$ hit} (and recovers the exact vector $C_2(x, y)$ whenever
+    $T_x$ is the unique contractible triplet in $C_P(y)$).
+\end{enumerate}
+\end{theorem}
+
+\paragraph{Physical idea of the proof.}
+In Part~(a), when $b$ is the single un-ambushed fault of $c^*$ outside $P$, Gaussian elimination cancels $h_b$
+along $c^* \setminus \{b\}$, detouring around each ambushed non-pivot fault $k_s$ through its pivot pair $\{i_s,
+j_s\} \subseteq P$. Row $b$ of $A^\top$ therefore contains $c^*$ dressed with $t$ local detour pairs $\{i_s,
+j_s\}$; contracting $\{i_s, j_s\} \to \{k_s\}$ via a pair hash table recovers $c^*$. (Note that when $t \ge 2$ or
+additional triplets meet $C_P(b)$ in two elements---e.g., $\{i_1, i_2, z\} \in \Tc$---an unguided greedy pass can
+contract a non-detour pair first and stall in a local minimum above $d$, or reach an alternate weight-$d$ sibling;
+furthermore, a $3 \to 0$ cancellation never acts on $C_P(y)$ at the first step because a fundamental circuit is
+minimal dependent in $\mathcal{M}(H)$ and cannot properly contain $T \in \Tc$, though $3 \to 0$ steps can arise
+after a prior contraction or on $p = 2$ candidates.) Crucially, each triplet $T = \{i, j, k\}$ meeting $c^*$ at $k$
+now gives two ways to succeed in $p = 1$: either $k \in P$ or $\{i, j\} \subseteq P$, explaining why Uniform and
+Window \ttt{RW} with contraction (\ttt{V4\_cnt\_uni}, \ttt{V6\_cnt\_win}) outperform MIS Push-Back with contraction
+(\ttt{V5\_cnt\_psh}) in Section~\ref{sec:benchmarks}.
+
+In Part~(b), if $w_x = 2$ and $\mathrm{sig}(x) = 0$, $C_P(x) = \{x, p_1, p_2\}$ is itself an element of $\Tc$.
+Adding $C_P(x)$ to $C_P(y)$ lowers weight only when $\{p_1, p_2\} \subseteq S_y(P)$, which is a $2 \to 1$
+contraction on $C_P(y)$ already executed deterministically during the $p = 1$ scan without Stern's $l$-row window
+miss probability.
+
+\begin{proof}
+For~(a), set $w \coloneqq 1_{c^*} \oplus \bigoplus_{s=1}^t 1_{T_s} \in \Ftwo^n$. As in the proof of
+Theorem~\ref{thm:ambush}(b), each $k_s \in J$ cancels between $1_{c^*}$ and $1_{T_s}$ and does not lie in $T_{s'}$
+for $s' \neq s$, while $b \notin T_s$ for all $s \in [t]$ because $b \in J \setminus \{k_1, \dots, k_t\}$ and $T_s
+\cap J = \{k_s\}$. Since $c^* \cap J = \{k_1, \dots, k_t, b\}$, we obtain $\supp(w) \cap J = \{b\}$ and $H w = 0$.
+By linear independence of $H_P$, $1_{C_P(b)}$ is the unique vector in $\ker H$ whose support meets $J$ in $\{b\}$;
+hence $w = 1_{C_P(b)}$, proving~\eqref{eq:ambushed_circuit}. Applying $L$ yields $\mathrm{sig}(b) = L 1_{c^*} \neq
+0$, and writing $w = 1_{c^* \setminus \{k_1, \dots, k_t\}} \oplus \bigoplus_{s=1}^t 1_{\{i_s, j_s\}}$ gives $|w|
+\le (d - t) + 2t = d + t$, with equality iff the $t + 1$ sets are pairwise disjoint.
+
+For~(b), since $C_P(x) \cap J = \{x\}$ and $C_P(y) \cap J = \{y\}$ with $x \neq y$, we have $C_2(x, y) = \{x, y\}
+\sqcup (S_x(P) \triangle S_y(P))$ and $\mathrm{wt}_2(x, y) = \mathrm{wt}_1(y) + 1 + w_x - 2|S_x(P) \cap S_y(P)|$.
+\begin{itemize}
+  \item If $w_x = 0$, $C_P(x) = \{x\}$ has $h_x = 0$ and $\ell_x = \mathrm{sig}(x) = 0$, impossible in a cleaned
+    DEM.
+  \item If $w_x = 1$ ($S_x(P) = \{p_1\}$), $|S_x(P) \cap S_y(P)| \in \{0, 1\}$, giving $\mathrm{wt}_2(x, y) \in
+    \{\mathrm{wt}_1(y) + 2, \mathrm{wt}_1(y)\} \ge \mathrm{wt}_1(y)$ (and $w_x = 1, \mathrm{sig}(x) = 0$ implies
+    $(h_x, \ell_x) = (h_{p_1}, \ell_{p_1})$, also absent in a cleaned DEM).
+  \item If $w_x = 2$ ($S_x(P) = \{p_1, p_2\}$), $H 1_{\{x, p_1, p_2\}} = 0$ and $L 1_{\{x, p_1, p_2\}} =
+    \mathrm{sig}(x) = 0$, so $T_x = \{x, p_1, p_2\} \in \Tc$ and~\eqref{eq:w2_cases} holds. In particular,
+    $\mathrm{wt}_2(x, y) < \mathrm{wt}_1(y)$ iff $\{p_1, p_2\} \subseteq S_y(P)$ while $x \notin C_P(y)$, so
+    $C_2(x, y) = C_P(y) \triangle T_x$ is the $2 \to 1$ contraction $\{p_1, p_2\} \to \{x\}$ of weight
+    $\mathrm{wt}_1(y) - 1$.
+\end{itemize}
+Finally, if $\mathrm{wt}_2(x, y) = d$, then either $\mathrm{wt}_1(y) = d$ (already a weight-$d$ hit at $y$ in $p =
+1$) or $\mathrm{wt}_1(y) = d + 1 \le d_{\max} + 1$ with $\{p_1, p_2\} \subseteq C_P(y)$, so $C_P(y)$ admits at
+least one $2 \to 1$ contraction (namely $T_x$), and greedy $\Tc$-contraction on $C_P(y)$ returns a valid codeword
+of weight $\le d$ (hence equal to $d$ by minimality of $d$, and equal to $C_2(x, y)$ whenever $T_x$ is the unique
+contractible triplet in $C_P(y)$).
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+Equation~\eqref{eq:ambushed_circuit} rests on the classical fact that $1_{C_P(b)}$ is the unique element of $\ker
+H$ whose restriction to $J$ equals $1_{\{b\}}$, i.e., that the fundamental circuits are the rows of the systematic
+generator matrix associated with the information set $J$~\cite{Prange1962,MacWilliamsSloane1977},
+\cite[Cor.~1.2.6]{Oxley2011}; the identity itself, the bound $|C_P(b)| \le d + t$, and the recovery of $c^*$ by $2
+\to 1$ contractions are new. Part~(b) (the case analysis for Stern pairs with $\mathrm{sig}(x) = 0, w_x \le 2$, and
+the resulting loss-free pruning of such columns from the collision buckets) is also new; it complements the
+standard quantum-ISD rule of discarding candidates with trivial logical
+action~\cite{PryadkoShabashovKozin2022QDistRnd}. Greedy $\Tc$-contraction is a local weight-descent step along
+known low-weight degeneracies, analogous to the stabilizer moves of Markov-chain
+decoders~\cite{WoottonLoss2012,HutterWoottonLoss2014}; we are not aware of its prior use inside information-set
+decoding.
+
+\paragraph{Cache-resident contraction (\ttt{greedy\_shorten\_cw}).}
+On startup, each $T = \{u, v, w\} \in \Tc$ is stored as its three ordered pairs $(u < v) \mapsto w$, $(u < w)
+\mapsto v$, $(v < w) \mapsto u$ in an open-addressed table of $2^{\lceil \log_2(6|\Tc| + 32) \rceil}$ slots of $12$
+bytes ($8$-byte key + $4$-byte value): $192\text{ KB}$ ($2^{14}$ slots) on \ttt{bb\_72\_simp} ($|\Tc| = 2{,}376$)
+and $3.0\text{ MB}$ ($2^{18}$ slots) on \ttt{dgross\_288} ($|\Tc| = 28{,}512$). During \ttt{RW}, we evaluate
+$\mathrm{sig}(y)$ before unpacking support bits (via a byte-lookup table in $\lceil r / 8 \rceil$ lookups in our
+standalone benchmark, or in $O(1)$ via a single 64-bit word read when \ttt{dist-m4ri}'s \ttt{srows} reduction is
+hoisted ahead of the $p = 1$ scan), and invoke \ttt{greedy\_shorten\_cw} only when $\mathrm{sig}(y) \neq 0$ and
+$|C_P(y)| \le d_{\max} + \Delta w_1$ ($\Delta w_1 = 8$). Each contraction pass over a candidate of weight $w$
+probes at most $\binom{w}{2}$ pairs ($120$ probes at $w = 16$ for $d \le 8$, $325$ probes at $w = 26$ for
+\ttt{dgross\_288}), restarting after each accepted contraction (at most $\Delta w_1$ passes; when deleting indices
+in a $3 \to 0$ step, indices are removed in decreasing order to preserve support validity).
+
+% ----------------------------------------------------------------------------
+\subsection{Sparse-Dual \texorpdfstring{$m \times m$}{m x m} Inverse RREF and Row-Slab Sub-DEM
+  Windows}\label{subsec:dual_and_slab}
+% ----------------------------------------------------------------------------
+
+While $2 \to 1$ contraction increases per-step hits, we can also accelerate the elimination step itself on wide,
+multi-round circuit DEMs where $n \gg m$ ($n / m \in [8.9, 89.3]$ across Table~\ref{tab:t3_span}).
+
+\paragraph{Notation and setup for Proposition~\ref{prop:sparse_dual}.}
+Let $(H, L)$ be a cleaned DEM with $H \in \Ftwo^{m \times n}$ of precomputed rank $r = \rank(H)$, $L \in \Ftwo^{k
+\times n}$ ($k \le 64$, packed as a 64-bit mask $\ell_c \in \{0, 1\}^{64}$ per column $c \in [n]$), and sparse
+column supports $R(c) = \supp(h_c) \subseteq [m]$. Fix any column permutation $\pi = (\pi_1, \dots, \pi_n)$. In
+standard dense Gauss--Jordan elimination, one maintains the full $m \times n$ matrix $\widetilde{H}$ initialized to
+$H \Pi$. In \emph{Sparse-Dual Inverse RREF} (\ttt{V2\_dual}), one maintains only a dense $m \times m$ binary
+transformation matrix $M \in \Ftwo^{m \times m}$ initialized to $I_m$, applying row swaps and row XORs exclusively
+to the $\lceil m / 64 \rceil$ machine words of $M$ while evaluating any needed entry $(i, c)$ via
+\begin{equation}\label{eq:dual_entry}
+  (M h_c)_i = \bigoplus_{q \in R(c)} M_{i, q} \in \Ftwo,
+\end{equation}
+and halting column scanning once $r$ pivots $P = (p_1, \dots, p_r)$ have been reduced to unit vectors $M h_{p_i} =
+e_i$ ($1 \le i \le r$). Given $l$ distinct Stern pivot row indices $1 \le i_1 < \dots < i_l \le r$, define for each
+detector $q \in [m]$ its \emph{dual detector logical frame} and \emph{dual detector Stern mask}:
+\begin{equation}\label{eq:detector_frames}
+  \hat{\ell}_q \coloneqq \bigoplus_{i=1}^r M_{i, q}\,\ell_{p_i} \in \{0, 1\}^{64}, \qquad
+  \hat{b}_q \coloneqq \sum_{u=1}^l M_{i_u, q}\,2^{u-1} \in \{0, \dots, 2^l - 1\}.
+\end{equation}
+
+\begin{proposition}[Exact Equivalence of Sparse-Dual $m \times m$ Inverse RREF and $O(|h_c|)$
+  Screening]\label{prop:sparse_dual}
+Under the notation and setup above, for every column permutation $\pi \in S_n$:
+\begin{enumerate}[label=(\alph*)]
+  \item Sparse-Dual Inverse RREF selects the \textbf{exact same} ordered pivot sequence $P = (p_1, \dots, p_r)$ as
+    dense $m \times n$ Gauss--Jordan elimination, and for every non-pivot column $c \in J = [n] \setminus P$, its
+    reduced pivot-support vector $1_{S_c(P)} \in \Ftwo^r$ equals the top $r$ rows of $M h_c$:
+    \begin{equation}\label{eq:dual_Sc}
+      1_{S_c(P)} = \bigoplus_{q \in R(c)} (M_{1..r, q}).
+    \end{equation}
+  \item For every non-pivot column $c \in J$, its reduced logical syndrome $\mathrm{sig}(c)$~\eqref{eq:sig_def} and
+    $l$-bit Stern bucket key $\mathrm{bkey}(c)$ satisfy the exact $O(|R(c)|)$ scalar identities
+    \begin{equation}\label{eq:dual_screening}
+      \mathrm{sig}(c) = \ell_c \oplus \bigoplus_{q \in R(c)} \hat{\ell}_q, \qquad
+      \mathrm{bkey}(c) = \bigoplus_{q \in R(c)} \hat{b}_q,
+    \end{equation}
+    allowing $c$ to be screened for nontriviality and bucketed in $|R(c)|$ scalar XORs prior to materializing the
+    $\lceil r/64 \rceil$-word vector $1_{S_c(P)}$ in~\eqref{eq:dual_Sc}.
+\end{enumerate}
+\end{proposition}
+
+\paragraph{Physical idea of the proof.}
+In dense RREF, every row operation updates all $n$ fault columns ($n \sim 16{,}000$--$68{,}000$), even though any
+change of detector basis is completely specified by an $m \times m$ linear transformation $M$ on the $m$ detectors
+alone ($m \sim 400$--$2{,}700$). Physically, $M_{1..r, q}$ is the dual syndrome response (Green's function) telling
+us which pivot faults in $P$ cancel a unit excitation on detector $q$, and $\hat{\ell}_q$ is the logical observable
+flipped by that unit-detector recovery. Because an elementary circuit fault $c$ excites only $|R(c)| \approx 3$--$6$
+detectors, summing $\hat{\ell}_q$ and $\hat{b}_q$ over $q \in R(c)$ yields $\mathrm{sig}(c)$ and $\mathrm{bkey}(c)$
+in a few scalar XORs without maintaining an $m \times n$ matrix. The formal proof is given in
+Appendix~\ref{app:dual_proof}.
+
+\paragraph{Prior work and attribution.}
+Proposition~\ref{prop:sparse_dual} is the $\Ftwo$ analogue of the revised simplex
+method~\cite{Dantzig1953RM1266,DantzigOrchardHays1954}: rather than updating the full $m \times n$ tableau, one
+updates only the $m \times m$ matrix $M$ of accumulated row operations (whose top $r$ rows form a left inverse of
+$H_P$, the analogue of $B^{-1}$) and regenerates any needed column $M h_c$ in $O(|h_c|)$ operations. In this
+dictionary $\hat{\ell} = L_P M_{1..r,:}$ plays the role of the simplex multipliers $y^\top = c_B^\top B^{-1}$, so
+$\mathrm{sig}(c) = \ell_c \oplus \bigoplus_{q \in R(c)} \hat{\ell}_q$ corresponds to reduced-cost pricing $c_j -
+y^\top a_j$, and $\mathrm{bkey}(c)$ corresponds to row-wise pricing of the $l$ selected tableau rows
+(cf.~\cite{HuangfuHall2018} for these operations in modern revised-simplex solvers); the identity of the pivot
+sequence with dense Gauss--Jordan elimination is the standard equivalence of the revised and tableau forms. In ISD,
+incremental elimination has been used to amortize per-iteration Gaussian
+elimination~\cite{CanteautChabaud1998,BernsteinLangePeters2008}, whereas the $m \times m$-inverse formulation with
+$O(|h_c|)$ logical and bucket screening specialized to sparse DEMs with $n \gg m$ is new here.
+
+\paragraph{Row-slab restricted sub-DEM windows (\ttt{V8\_subwin}).}
+In \ttt{dist-m4ri}'s localized window mode (\ttt{win=256}), $256$ contiguous columns are placed first in $\pi$, yet
+Gauss--Jordan elimination and transposition still execute over the full $m \times n$ matrix. For multi-round DEMs
+($m > 320$), we can instead select a contiguous \emph{detector row slab} $M_W = \{r_0 + 1, \dots, r_0 +
+m_{\mathrm{sub}}\} \subseteq [m]$ with $m_{\mathrm{sub}} = \min(320, m)$ and restrict to the \emph{interior column
+sub-DEM}
+\begin{equation}\label{eq:subdem}
+  C_W \coloneqq \{c \in [n] : R(c) \subseteq M_W\}.
+\end{equation}
+Because every $c \in C_W$ has $h_c = 0$ outside $M_W$, any zero-syndrome vector of $H_{M_W, C_W}$ is an exact
+zero-syndrome vector of the full $m \times n$ matrix $H$. Running MIS Push-Back, Four-Russians elimination on
+$m_{\mathrm{sub}} \times |C_W|$, global $\Tc$-contraction, and Stern $w_x \le 2$ pruning raises step throughput by
+$3.5\times$ (\ttt{shyps\_225}), $45.5\times$ (\ttt{bidir\_sNESENn}), and $114.8\times$ (\ttt{dgross\_288}) over
+uniform dense \ttt{RW}. (In our benchmark prototype $r_0$ is drawn uniformly on $\{0, \dots, m - m_{\mathrm{sub}}\}$;
+for production deployment we recommend assigning positive probability mass directly to the boundary slabs $r_0 = 0$
+and $r_0 = m - m_{\mathrm{sub}}$ so boundary-localized logical faults are sampled consistently.)
+
+% ============================================================================
+\section{C/OpenMP Benchmark Results Across Circuit DEMs}\label{sec:benchmarks}
+% ============================================================================
+
+To evaluate all twelve \ttt{RW} variants on equal footing, we implemented a standalone C/OpenMP benchmark
+(\ttt{scratch/triplet\_rw/rw\_triplet\_bench.c}, compiled with \ttt{gcc -O3 -march=native -fopenmp} and executed on
+a dual-socket AMD EPYC 7B13 machine) featuring Four-Russians blocked Gauss--Jordan elimination (stripe width $K =
+5$, $4$ Gray tables per $20$-pivot block), $64 \times 64$ bit-block transposition, byte-lookup-table observable
+evaluation, Zobrist $\Tc$ precomputation (Lemma~\ref{lem:min_det_bucket}), without-replacement Stern row sampling,
+and optional exact $H v = 0, L v \neq 0$ hit verification. In addition to eight DEMs from Table~\ref{tab:t3_span},
+we include \ttt{bidir\_sNESENn} ($m = r_H = 1{,}442, k = 4, n = 29{,}174, |\Tc| = 98{,}600, d = 7$), a $d = 7$
+directional planar circuit (\ttt{sNESENn}) with uniform $0.1\%$ circuit depolarizing noise added via
+\ttt{dist\_m4ri.add\_noise}. Step budgets and OpenMP thread counts (\ttt{exp2\_rw\_variants.py}) are $4{,}000$
+steps on $16$ threads for \ttt{surf\_d5}, \ttt{color\_xyz\_d5}, and \ttt{bb\_72\_simp} ($l = 0, 10$), and $32$
+threads for \ttt{mitten\_150}, \ttt{2bga\_102}, and \ttt{shyps\_225} ($3{,}000$ steps), \ttt{bb\_72\_full}
+($1{,}200$ steps), \ttt{bidir\_sNESENn} ($800$ steps), and \ttt{dgross\_288} ($400$ steps).
+
+The twelve benchmarked variants are:
+\begin{itemize}
+  \item \ttt{V0\_unif} (\ttt{unif}) and \ttt{V0\_win256} (\ttt{win}): baseline Uniform \ttt{RW} and contiguous
+    sliding-window (\ttt{win=256}) \ttt{RW};
+  \item \ttt{V1\_drop} (\ttt{drop}) and \ttt{V2\_push} (\ttt{push}): random-order greedy MIS Drop and greedy MIS
+    Push-Back on $G_3$;
+  \item \ttt{V3\_low\_d3} and \ttt{V3\_high\_d3}: jittered low-$d_3$ and high-$d_3$ greedy MIS Push-Back
+    (summarized in Table~\ref{tab:d3_bias});
+  \item \ttt{V2\_dual}: Sparse-Dual $m \times m$ Inverse RREF (Proposition~\ref{prop:sparse_dual}) with MIS
+    Push-Back;
+  \item \ttt{V4\_cnt\_uni} (\ttt{cnt}), \ttt{V5\_cnt\_psh} (\ttt{cpsh}), and \ttt{V6\_cnt\_win} (\ttt{wcnt}):
+    Uniform, MIS Push-Back, and \ttt{win=256} \ttt{RW} augmented with greedy $2 \to 1$ / $3 \to 0$
+    $\Tc$-contraction ($\Delta w_1 = 8$, Stern pair slack $\Delta w_2 = 1$) and $\mathrm{sig}=0, w_x \le 2$
+    Bucket-0 pruning (Theorem~\ref{thm:contraction_dominance});
+  \item \ttt{V7\_hyb\_lo}: $50/50$ hybrid interleaving \ttt{V6\_cnt\_win} with low-$d_3$ MIS Push-Back +
+    contraction;
+  \item \ttt{V8\_subwin} (\ttt{slab}): row-slab sub-DEM windows ($m_{\mathrm{sub}} = \min(320, m)$,~\eqref{eq:subdem})
+    with MIS Push-Back, contraction, and $w_x \le 2$ pruning (note that when $m \le 320$, $m_{\mathrm{sub}} = m$ so
+    \ttt{V8\_subwin} performs no row restriction and reduces to \ttt{V5\_cnt\_psh} plus submatrix repacking).
+\end{itemize}
+
+\begin{table}[htbp]
+\centering
+\caption{Wall-clock discovery rate at the circuit distance $d$ (\ttt{hits/s} for \ttt{V0\_unif}, and speedup
+multipliers relative to \ttt{V0\_unif}; final column \ttt{wcnt/win} gives the speedup of \ttt{V6\_cnt\_win} over
+\ttt{V0\_win256}). Here \ttt{hits/s} counts all weight-$d$ candidate events; see Table~\ref{tab:bench_detail} for
+distinct-step hit counts (\ttt{hit\_st}) and unique vectors (\ttt{uniq}). On \ttt{dgross\_288} ($d = 18$), uniform
+runs found $0$ hits in $400$ steps, so raw \ttt{hits/s} are shown; \ttt{(bound.)} indicates that uniform slab
+offsets $r_0 \in \{0, \dots, 2{,}416\}$ missed boundary-supported weight-18 codewords.}\label{tab:bench_summary}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{3.3pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+DEM ($m \times n,\; d,\; l$) & \ttt{unif} & \ttt{win} & \ttt{drop} & \ttt{push} & \ttt{cnt} & \ttt{cpsh} &
+  \ttt{wcnt} & \ttt{slab} & \ttt{wcnt/win} \\
+\midrule
+\ttt{surf\_d5} ($120{\times}1679, 5, 8$) & 482,342/s & 1.00x & 0.13x & 1.51x & 4.67x & 4.33x & \textbf{4.82x} &
+  3.53x & \textbf{4.84x} \\
+\ttt{color\_xyz} ($45{\times}1104, 3, 8$) & 379,708/s & 0.73x & 0.02x & 0.88x & \textbf{3.54x} & 2.56x & 2.62x &
+  2.09x & \textbf{3.59x} \\
+\ttt{bb\_72\_simp} ($252{\times}2232, 6, 0$) & 2,950/s & 2.02x & 0.72x & 1.37x & 12.89x & 2.75x & \textbf{31.36x}
+  & 2.51x & \textbf{15.52x} \\
+\ttt{bb\_72\_simp} ($252{\times}2232, 6, 10$) & 31,982/s & 1.46x & 0.33x & 1.35x & 3.36x & 2.71x & \textbf{5.32x}
+  & 2.21x & \textbf{3.65x} \\
+\ttt{bb\_72\_full} ($432{\times}16200, 6, 10$) & 60.2/s & 17.13x & 0.84x & 1.09x & 3.62x & 2.51x & \textbf{98.39x}
+  & 5.57x & \textbf{5.74x} \\
+\ttt{mitten\_150} ($420{\times}5910, 7, 10$) & 211.5/s & 2.58x & 0.15x & 1.01x & 2.51x & 1.59x & \textbf{7.21x} &
+  2.49x & \textbf{2.79x} \\
+\ttt{2bga\_102} ($561{\times}8262, 8, 10$) & 409.9/s & 1.32x & 0.22x & 1.09x & 2.63x & 1.77x & \textbf{4.53x} &
+  2.83x & \textbf{3.42x} \\
+\ttt{shyps\_225} ($600{\times}8325, 8, 10$) & 50.7/s & 20.02x & 0.00x & 1.29x & 13.51x & 4.77x & 405.2x &
+  \textbf{978.7x} & \textbf{20.24x} \\
+\ttt{bidir\_sNES} ($1442{\times}29174, 7, 10$) & 1.48/s & 6.08x & 0.00x & 1.15x & 5.77x & 4.10x & 40.09x &
+  \textbf{2,997x} & \textbf{6.60x} \\
+\ttt{dgross\_288} ($2736{\times}26208, 18, 12$) & 0.00/s & 0.22/s & 0.00/s & 0.00/s & 0.00/s & 0.00/s &
+  \textbf{0.69/s} & (bound.) & \textbf{3.18x} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Detailed breakdown on reduced \ttt{bb\_72\_simp} ($4{,}000$ steps, $16$ threads, Prange $l = 0$ vs.\ Stern
+$l = 10$) and subsystem \ttt{shyps\_225\_Z} ($3{,}000$ steps, $32$ threads, Stern $l = 10$), reporting $p = 1$
+hits, $p = 2$ hits, steps producing $\ge 1$ weight-$d$ hit (\ttt{hit\_st}, giving per-step hit probability
+$P_{\mathrm{step}} = \text{\ttt{hit\_st}}/\text{steps}$), Stern pair checks (\ttt{pair\_chk}; note contraction
+variants use pair slack $\Delta w_2 = 1$, testing pairs up to weight $d + 1$), distinct weight-$d$ vectors
+(\ttt{uniq}), \ttt{steps/s}, and \ttt{hits/s}.}\label{tab:bench_detail}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{3.3pt}
+\begin{tabular}{@{}llrrrrrrrr@{}}
+\toprule
+Circuit DEM & Variant & $p = 1$ & $p = 2$ & \ttt{hit\_st} & \ttt{pair\_chk} & \ttt{uniq} & \ttt{steps/s} &
+  \ttt{hits/s} & Speedup \\
+\midrule
+\ttt{bb\_72\_simp} & \ttt{V0\_unif} & 391 & --- & 355 & --- & 337 & 30,180 & 2,950 & 1.00x \\
+($d = 6, l = 0$) & \ttt{V0\_win256} & 1,010 & --- & 819 & --- & 699 & 23,609 & 5,961 & 2.02x \\
+ & \ttt{V1\_drop} & 191 & --- & 182 & --- & 168 & 44,181 & 2,110 & 0.72x \\
+ & \ttt{V2\_push} & 577 & --- & 512 & --- & 441 & 27,944 & 4,031 & 1.37x \\
+ & \ttt{V4\_cnt\_uni} & 5,044 & --- & 1,632 & --- & 1,132 & 30,153 & 38,023 & 12.89x \\
+ & \ttt{V5\_cnt\_psh} & 1,126 & --- & 514 & --- & 441 & 28,794 & 8,105 & 2.75x \\
+ & \ttt{V6\_cnt\_win} & 16,331 & --- & 2,633 & --- & \textbf{1,369} & 22,658 & 92,508 & 31.36x \\
+ & \ttt{V7\_hyb\_lo} & \textbf{19,346} & --- & \textbf{3,207} & --- & 1,247 & 22,250 & \textbf{107,612} &
+   \textbf{36.48x} \\
+\midrule
+\ttt{bb\_72\_simp} & \ttt{V0\_unif} & 392 & 8,135 & 3,252 & 73.4M & 1,512 & 15,003 & 31,982 & 1.00x \\
+($d = 6, l = 10$) & \ttt{V0\_win256} & 1,051 & 13,530 & 3,655 & 148.5M & 1,520 & 12,794 & 46,639 & 1.46x \\
+ & \ttt{V1\_drop} & 169 & 874 & 887 & 2.0M & 527 & 40,307 & 10,510 & 0.33x \\
+ & \ttt{V2\_push} & 580 & 10,026 & 3,535 & \textbf{47.7M} & 1,497 & 16,301 & 43,222 & 1.35x \\
+ & \ttt{V4\_cnt\_uni} & 5,027 & 22,500 & 3,820 & 88.8M & 1,523 & 15,618 & 107,480 & 3.36x \\
+ & \ttt{V5\_cnt\_psh} & 1,181 & 20,641 & 3,526 & 57.3M & 1,497 & 15,882 & 86,645 & 2.71x \\
+ & \ttt{V6\_cnt\_win} & 16,109 & 40,351 & 3,947 & 178.2M & \textbf{1,524} & 12,051 & 170,093 & 5.32x \\
+ & \ttt{V7\_hyb\_lo} & \textbf{18,642} & \textbf{68,451} & \textbf{3,966} & 108.9M & 1,522 & 11,971 &
+   \textbf{260,647} & \textbf{8.15x} \\
+\midrule
+\ttt{shyps\_225\_Z} & \ttt{V0\_unif} & 0 & 43 & 41 & 292.3M & 43 & 3,534 & 50.7 & 1.00x \\
+($d = 8, l = 10$) & \ttt{V0\_win256} & 53 & 840 & 606 & 483.9M & 721 & 3,407 & 1,014.2 & 20.02x \\
+ & \ttt{V1\_drop} & 0 & 0 & 0 & 0.0M & 0 & 19,851 & 0.0 & 0.00x \\
+ & \ttt{V2\_push} & 2 & 52 & 50 & \textbf{70.9M} & 54 & 3,628 & 65.3 & 1.29x \\
+ & \ttt{V4\_cnt\_uni} & 337 & 235 & 211 & 333.5M & 245 & 3,589 & 684.3 & 13.51x \\
+ & \ttt{V5\_cnt\_psh} & 12 & 191 & 66 & 81.2M & 70 & 3,573 & 241.8 & 4.77x \\
+ & \ttt{V6\_cnt\_win} & \textbf{13,775} & 4,109 & \textbf{2,034} & 557.2M & \textbf{2,404} & 3,443 & 20,522.1 &
+   405.15x \\
+ & \ttt{V8\_subwin} & 4,222 & \textbf{7,953} & 1,208 & \textbf{18.1M} & 559 & \textbf{12,216} & \textbf{49,574.9} &
+   \textbf{978.72x} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tables~\ref{tab:bench_summary} and~\ref{tab:bench_detail} are consistent with the theoretical analysis of
+Section~\ref{sec:rw_mods}:
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{Qualitative agreement with Proposition~\ref{prop:mis_drop} (\ttt{V1\_drop}):} Across all nine runs
+    with hits, \ttt{V1\_drop} degrades wall-clock discovery to $0.00\times$--$0.84\times$ of \ttt{V0\_unif}
+    ($0.13\times$ on \ttt{surf\_d5}, $0.22\times$ on \ttt{2bga\_102}, $0.15\times$ on \ttt{mitten\_150}, $0.02\times$
+    on \ttt{color\_xyz\_d5}, and $0.00\times$ on \ttt{shyps\_225} and \ttt{bidir\_sNESENn}). Examining the two factors
+    separately on \ttt{bb\_72\_simp} ($\gamma = 0.307, \alpha = 0.359$) shows why Proposition~\ref{prop:mis_drop}
+    should be interpreted qualitatively: at $l = 0$, the measured per-step hit ratio is $191 / 391 = 0.488$ (less
+    severe than the disjoint-triangle mean-field value $\gamma(1-\alpha)/(1-\gamma\alpha) = 0.221$ due to shared
+    triplets and non-uniform greedy basis weights) while the measured step-rate speedup is $44{,}181 / 30{,}180 =
+    1.46\times$ (below the ideal $1/\gamma = 3.26\times$ due to submatrix repacking overhead), multiplying to
+    $0.72\times$; at $l = 10$, \ttt{V1\_drop} gives $0.33\times$, slightly above the idealized disjoint-triplet
+    ceiling $\gamma^{p-1} = 0.307$.
+  \item \textbf{Bucket-0 deflation under Theorem~\ref{thm:mis_push} (\ttt{V2\_push}) and interaction with
+    contraction (\ttt{V5\_cnt\_psh}):} At identical pair slack ($\Delta w_2 = 0$), \ttt{V2\_push} cuts Stern pair
+    evaluations by $35\%$ on \ttt{bb\_72\_simp} ($73.4\text{M} \to 47.7\text{M}$), $62\%$ on \ttt{dgross\_288}
+    ($431.6\text{M} \to 164.2\text{M}$), and $76\%$ on \ttt{shyps\_225\_Z} ($292.3\text{M} \to 70.9\text{M}$),
+    achieving $0.88\times$--$1.51\times$ relative \ttt{hits/s} ($\ge 1.01\times$ on $8$ of $9$ runs with hits).
+    When contraction is enabled, however, \ttt{V4\_cnt\_uni} surpasses \ttt{V5\_cnt\_psh} on every run with hits
+    ($38{,}023$ vs.\ $8{,}105\text{ hits/s}$ and $1{,}632$ vs.\ $514$ hit steps on \ttt{bb\_72\_simp} $l=0$; $684.3$
+    vs.\ $241.8\text{ hits/s}$ and $211$ vs.\ $66$ hit steps on \ttt{shyps\_225\_Z}), confirming that realized pivot
+    pairs act as extra success channels under $2 \to 1$ contraction.
+  \item \textbf{Consistent $2.8\times$--$20.2\times$ speedup over \ttt{win=256} via $\Tc$-contraction
+    (\ttt{V6\_cnt\_win}):} Across every benchmark DEM, \ttt{V6\_cnt\_win} outperforms \ttt{V0\_win256} by
+    $2.79\times$--$20.24\times$ (and \ttt{V0\_unif} by $2.62\times$--$405.2\times$ on the nine runs with uniform
+    hits). Because \ttt{hits/s} counts intra-step candidate multiplicities, Table~\ref{tab:bench_detail} also reports
+    \ttt{hit\_st}: on \ttt{bb\_72\_simp} ($l = 0$), \ttt{V4\_cnt\_uni} raises per-step hit probability
+    $P_{\mathrm{step}}$ from $8.9\%$ ($355/4{,}000$, expected wall-clock time to first hit $\mathrm{TTF} =
+    0.37\text{ ms}$) to $40.8\%$ ($1{,}632/4{,}000$, $\mathrm{TTF} = 0.081\text{ ms}$, a $4.6\times$ reduction in
+    $\mathrm{TTF}$), and on \ttt{shyps\_225\_Z}, \ttt{V6\_cnt\_win} raises $P_{\mathrm{step}}$ from $1.37\%$
+    (\ttt{V0\_unif}, $\mathrm{TTF} = 20.7\text{ ms}$) and $20.2\%$ (\ttt{V0\_win256}, $\mathrm{TTF} = 1.45\text{
+    ms}$) to $67.8\%$ ($\mathrm{TTF} = 0.43\text{ ms}$) while increasing \ttt{uniq} from $721$ to $2{,}404$.
+  \item \textbf{Sparse-Dual RREF (\ttt{V2\_dual}), Hybrid (\ttt{V7\_hyb\_lo}), and Row-Slab Windows
+    (\ttt{V8\_subwin}):} Across the six DEMs with $m \ge 420$, \ttt{V2\_dual} / \ttt{V2\_push} step-rate ratios are
+    $0.85\times$ (\ttt{mitten\_150}, $n/m = 14.1$), $0.83\times$ (\ttt{2bga\_102}, $n/m = 14.7$), $0.96\times$
+    (\ttt{shyps\_225}, $n/m = 13.9$), $1.16\times$ (\ttt{bidir\_sNESENn}, $m = 1{,}442, n/m = 20.2$), $1.36\times$
+    (\ttt{bb\_72\_full}, $m = 432, n/m = 37.5$; $1.40\times$ over \ttt{V0\_unif}, $2{,}980$ vs.\ $2{,}192\text{
+    steps/s}$), and $2.66\times$ (\ttt{dgross\_288}, $m = 2{,}736$; $2.58\times$ over \ttt{V0\_unif}, $198.0$ vs.\
+    $74.4\text{ steps/s}$, where dense $m \times n$ spills L2/L3 cache). On \ttt{dgross\_288}, dense \ttt{V7\_hyb\_lo}
+    reaches $3.64\text{ hits/s}$ ($18$ hits across $11$ steps, $16.9\times$ over \ttt{V0\_win256}). For row-slab
+    windows ($m > 320$), \ttt{V8\_subwin} / \ttt{V0\_win256} is $0.33\times$ on \ttt{bb\_72\_full} ($m = 432$),
+    $0.96\times$ on \ttt{mitten\_150} ($m = 420$), $2.13\times$ on \ttt{2bga\_102} ($m = 561$), $48.9\times$ on
+    \ttt{shyps\_225\_Z} ($m = 600$, $49{,}575\text{ hits/s}$, $979\times$ over \ttt{V0\_unif}), and $493\times$ on
+    \ttt{bidir\_sNESENn} ($m = 1{,}442$, $4{,}425\text{ hits/s}$, $2{,}997\times$ over \ttt{V0\_unif}), while finding
+    $0$ hits in $400$ interior-slab steps on boundary-localized \ttt{dgross\_288}.
+\end{enumerate}
+
+% ============================================================================
+\section{Information-Set Likelihoods and the Node-Marginal Paradox}\label{sec:infosets}
+% ============================================================================
+
+We now address our second central question: \emph{in the presence of weight-3 degeneracies, what is the exact
+probability $\Pr(J)$ that Uniform \ttt{RW} selects a given information set $J = [n] \setminus P$, and how do
+realized short circuits govern $\Pr(J)$?}
+
+% ----------------------------------------------------------------------------
+\subsection{Exact Integral, Laplace, and Matroid Closure Formulas for
+  \texorpdfstring{$\Pr(J)$}{Pr(J)}}\label{subsec:thm_infoset}
+% ----------------------------------------------------------------------------
+
+\paragraph{Notation and setup for Theorem~\ref{thm:infoset_likelihood}.}
+Let $H \in \Ftwo^{m \times n}$ be any binary check matrix of rank $r = \rank(H)$. Fix any full-rank pivot basis $P
+= \{p_1, \dots, p_r\} \subseteq [n]$ ($|P| = r$) and its complementary information set $J = [n] \setminus P$ ($|J|
+= n - r$). For each non-pivot column $a \in J$, let $S_a(P) \subseteq P$ denote the unique pivot support of $a$'s
+fundamental circuit~\eqref{eq:Sa_def} ($h_a = \bigoplus_{p \in S_a(P)} h_p$), with the convention $\max_{p \in
+\emptyset} x_p \coloneqq 0$ if $h_a = 0$. For any subset $S \subseteq P$, recall from~\eqref{eq:closure_basis}
+that its matroid flat closure is $\cl(S) = S \cup \{a \in J : S_a(P) \subseteq S\}$, of cardinality $|\cl(S)| =
+|S| + |\{a \in J : S_a(P) \subseteq S\}|$. Let $\pi \sim \Unif(S_n)$ be a uniformly random permutation of $[n]$,
+and let $\Pr(J)$ denote the probability that left-to-right greedy Gaussian elimination on $H \Pi$ selects the
+basis $P$ (equivalently, outputs $J$; note that $\Pr(J)$ depends solely on $\mathcal{M}(H)$ and not on $L$). Write
+$S_r$ for the symmetric group of all $r!$ permutations $\sigma$ of $\{1, \dots, r\}$, and $\Exp(1)$ for the
+unit-rate exponential distribution on $[0, \infty)$ with density $e^{-t}\,dt$.
+
+\begin{theorem}[Exact Information-Set Likelihood Under Uniform Permutations]\label{thm:infoset_likelihood}
+Under the notation and setup above, the exact probability $\Pr(J)$ of obtaining information set $J = [n] \setminus
+P$ satisfies the three equivalent identities
+\begin{align}
+  \Pr(J)
+  &= \int_{[0, 1]^r} \prod_{a \in J} \left(1 - \max_{p \in S_a(P)} u_p\right) du_{p_1} \cdots du_{p_r}
+     \label{eq:prJ_unif} \\
+  &= \E_{T_{p_1}, \dots, T_{p_r} \stackrel{\mathrm{i.i.d.}}{\sim} \Exp(1)}
+     \left[ \exp\!\left( - \sum_{a \in J} \max_{p \in S_a(P)} T_p \right) \right]
+     \label{eq:prJ_exp} \\
+  &= \sum_{\sigma \in S_r} \prod_{t=0}^{r-1}
+     \frac{1}{n - \bigl|\cl\bigl(\{p_{\sigma(1)}, \dots, p_{\sigma(t)}\}\bigr)\bigr|}.
+     \label{eq:prJ_closure}
+\end{align}
+Moreover, summing~\eqref{eq:prJ_closure} by subsets $S \subseteq P$ evaluates $\Pr(J)$ \textbf{exactly} in $O(r
+2^r + (n-r) r)$ arithmetic operations via the subset dynamic-programming recursion
+\begin{equation}\label{eq:dp_recursion}
+  Z(\emptyset) = 1, \qquad
+  Z(S) = \sum_{p \in S} \frac{Z(S \setminus \{p\})}{n - |\cl(S \setminus \{p\})|} \quad (\emptyset \neq S \subseteq
+    P),
+  \qquad \Pr(J) = Z(P).
+\end{equation}
+\end{theorem}
+
+\paragraph{Physical idea of the proof.}
+Attach an independent continuous arrival clock $U_j \sim \Unif(0, 1)$ (or $T_j = -\ln(1 - U_j) \sim \Exp(1)$) to
+each fault column $j \in [n]$, and rank the columns in increasing order of arrival time. By the
+Rado--Gale--Edmonds matroid greedy theorem~\cite{Rado1957,Gale1968,Edmonds1971} (Section~\ref{subsec:matroids}),
+greedy pivot selection is Kruskal's minimum-weight basis algorithm~\cite{Kruskal1956} on $\mathcal{M}(H)$. The
+candidate basis $P$ wins over every competing basis if and only if no non-basis column $a \in J$ arrives early
+enough to displace a pivot in its fundamental circuit $S_a(P)$---that is, $U_a > \max_{p \in S_a(P)} U_p$ for all
+$a \in J$. Conditioned on $\{U_p = u_p\}_{p \in P}$, the $n - r$ clocks $\{U_a\}_{a \in J}$ are independent and
+exceed $\max_{p \in S_a(P)} u_p$ with probability $1 - \max_{p \in S_a(P)} u_p$, giving~\eqref{eq:prJ_unif}.
+Substituting $1 - u_p = e^{-T_p}$ yields the Laplace/partition-function form~\eqref{eq:prJ_exp}. Partitioning $[0,
+\infty)^r$ into the $r!$ orderings $T_{p_{\sigma(1)}} < \dots < T_{p_{\sigma(r)}}$ and integrating the exponential
+waiting times between successive pivot arrivals gives~\eqref{eq:prJ_closure}: once $S_t = \{p_{\sigma(1)}, \dots,
+p_{\sigma(t)}\}$ have arrived, every column in $\cl(S_t)$ is spanned and ignored, so the next pivot wins among the
+$n - |\cl(S_t)|$ unspanned columns with probability $(n - |\cl(S_t)|)^{-1}$. The formal proof is given in
+Appendix~\ref{app:infoset_proof}.
+
+\paragraph{Prior work and attribution.}
+Under a uniformly random column order, greedy elimination selects pivots by sampling without replacement modulo
+span: given the first $t$ pivots $S_t$, the next pivot is uniform over the $n - |\cl(S_t)|$ columns outside their
+span, so the ordered basis $(p_{\sigma(1)}, \dots, p_{\sigma(r)})$ has probability $\prod_{t=0}^{r-1} (n -
+|\cl(S_t)|)^{-1}$. This sequential law is the uniform-weight case of the stationary distribution of the matroid
+analogue of the Tsetlin library (random-to-top on ordered bases), which extends the hyperplane-arrangement walks of
+Bidigare, Hanlon, and Rockmore and of Brown and Diaconis~\cite{BidigareHanlonRockmore1999,BrownDiaconis1998} and was
+developed for matroids in Brown's left-regular-band framework~\cite{Brown2000LRB}
+and for interval greedoids by Bj\"orner~\cite{Bjorner2008};
+Eq.~\eqref{eq:prJ_closure} is its marginal on unordered bases. The integral~\eqref{eq:prJ_unif} integrates the
+classical fundamental-circuit optimality condition of greedy minimum-weight
+bases~\cite{Kruskal1956,Rado1957,Gale1968,Edmonds1971} against i.i.d.\ uniform labels, the standard coupling in the
+theory of random minimal spanning trees and forests~\cite{LyonsPeresSchramm2006}. We have not found
+Eq.~\eqref{eq:prJ_unif}, the Laplace form~\eqref{eq:prJ_exp}, or the recursion~\eqref{eq:dp_recursion}---a
+Held--Karp-type subset dynamic program~\cite{HeldKarp1962} in which all closure sizes $|\cl(S)|$, $S \subseteq P$,
+follow from one zeta (subset-sum) transform~\cite{BjorklundHusfeldtKaskiKoivisto2007}---stated explicitly
+elsewhere, nor any prior use of these formulas for information-set likelihoods in ISD.
+
+% ----------------------------------------------------------------------------
+\subsection{Unique Realized Triplets, Jensen and Harris\texorpdfstring{--}{-}FKG Bounds, and Hub
+  Correlation}\label{subsec:cor_harmonic}
+% ----------------------------------------------------------------------------
+
+Because $\Pr(J)$ in Theorem~\ref{thm:infoset_likelihood} depends on $H$ alone, the natural weight-3 circuit count
+governing $\Pr(J)$ is the number of \emph{basis-realized weight-3 circuits of $\mathcal{M}(H)$} ($H$-triangles),
+\begin{equation}\label{eq:N3H_def}
+  N_3^H(J) \coloneqq \bigl|\bigl\{a \in J : |S_a(P)| = 2\bigr\}\bigr| \ge N_3(J),
+\end{equation}
+which counts both trivial ($\mathrm{sig}(a) = 0$) and logical ($\mathrm{sig}(a) \neq 0$, present when $d \le 3$)
+weight-3 fundamental circuits.
+
+\paragraph{Notation and setup for Corollary~\ref{cor:harmonic_hub}.}
+Retain all notation of Theorem~\ref{thm:infoset_likelihood} for a cleaned DEM $(H, L)$ with basis $P$ ($|P| = r$)
+and information set $J = [n] \setminus P$. For any integer $s \ge 0$, let $h_s \coloneqq \sum_{j=1}^s \frac{1}{j}$
+($h_0 \coloneqq 0$, $h_1 = 1$, $h_2 = \frac{3}{2}$, $h_s = \ln s + \gamma_{\mathrm{EM}} + O(s^{-1})$) denote the
+$s$-th harmonic number (written $h_s$ to avoid confusion with check submatrices $H_S$), and define the
+\emph{Harmonic Jensen Score} and \emph{Harris--FKG Score} of $J$:
+\begin{align}
+  \LH(J) &\coloneqq - \sum_{a \in J} h_{|S_a(P)|}, \label{eq:LH_def} \\
+  \LFKG(J) &\coloneqq - \sum_{a \in J} \ln\bigl(1 + |S_a(P)|\bigr). \label{eq:LFKG_def}
+\end{align}
+For Part~(c), suppose $\nu \ge 2$ distinct non-pivot columns $a_1, \dots, a_\nu \in J$ form weight-3 circuits
+$C_P(a_j) = \{a_j, p_1, q_j\}$ ($j = 1, \dots, \nu$) sharing a common \emph{hub pivot} $p_1 \in P$ paired with
+$\nu$ distinct leaf pivots $q_1, \dots, q_\nu \in P \setminus \{p_1\}$.
+
+\begin{corollary}[Unique Realized Triplet, Harris--FKG and Harmonic Bounds, and Hub Boost]\label{cor:harmonic_hub}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item \emph{(At most one realized weight-3 circuit per $a \in J$.)} Even when $d_3(a) \gg 1$, at most one
+    weight-3 circuit $C$ of $\mathcal{M}(H)$ (and hence at most one $T \in \Tc$) containing $a \in J$ can satisfy
+    $C \setminus \{a\} \subseteq P$: $|\{C : |C| = 3,\; a \in C,\; C \setminus \{a\} \subseteq P\}| \in \{0, 1\}$,
+    equaling $1$ iff $|S_a(P)| = 2$ (and lying in $\Tc$ iff additionally $\mathrm{sig}(a) = 0$).
+  \item \emph{(Harris--FKG and Harmonic Jensen lower bounds.)} Every information set $J = [n] \setminus P$
+    satisfies the chain of universal lower bounds
+    \begin{equation}\label{eq:fkg_jensen_bounds}
+      \ln \Pr(J) \;\ge\; \LFKG(J) = - \sum_{a \in J} \ln\bigl(1 + |S_a(P)|\bigr)
+      \;\ge\; \LH(J) = - \sum_{a \in J} h_{|S_a(P)|},
+    \end{equation}
+    where the second inequality is strict whenever $\max_{a \in J} |S_a(P)| \ge 1$. Each realized weight-3 circuit
+    ($|S_a(P)| = 2$) incurs an exact single-factor Harris--FKG penalty of $\ln 3 \approx 1.099$ nats (and Jensen
+    penalty $h_2 = 1.5$ nats), compared to $\ln(1 + s)$ (respectively $h_s$) nats for heavier circuits of pivot
+    weight $s \gg 2$.
+  \item \emph{(Positive correlation of shared-hub triplets.)} For the $\nu \ge 2$ shared-hub circuits
+    $\{a_j, p_1, q_j\}$ ($1 \le j \le \nu$), their joint survival factor in~\eqref{eq:prJ_unif} strictly exceeds
+    the independent-factor product $(1/3)^\nu$:
+    \begin{equation}\label{eq:hub_integral}
+      \int_{[0,1]^{\nu+1}} \prod_{j=1}^\nu \bigl(1 - \max(u_{p_1}, u_{q_j})\bigr)\,du_{p_1}\,du_{q_1}\cdots
+        du_{q_\nu}
+      = \frac{\nu!}{(2\nu + 1)!!} = \frac{2^\nu (\nu!)^2}{(2\nu + 1)!} > \left(\frac{1}{3}\right)^\nu,
+    \end{equation}
+    scaling for large $\nu$ as $\frac{\sqrt{\pi}}{2\sqrt{\nu}} \bigl(\frac{1}{2}\bigr)^\nu$ rather than
+    $\bigl(\frac{1}{3}\bigr)^\nu$.
+\end{enumerate}
+\end{corollary}
+
+\paragraph{Physical idea of the proof.}
+First, if two distinct weight-3 circuits $\{a, p_1, p_2\}$ and $\{a, p_3, p_4\}$ both had their partner pairs
+inside $P$, their modulo-2 sum would cancel $a$ and create a nonzero zero-syndrome dependency inside the
+independent basis $P$. Second, each survival factor $g_a(u) = 1 - \max_{p \in S_a(P)} u_p$ in~\eqref{eq:prJ_unif}
+is coordinatewise nonincreasing in the independent arrival times $u_p$ (earlier pivot arrivals help \emph{every}
+non-pivot circuit survive simultaneously); positive association (Harris--FKG) therefore bounds the expectation of
+their product below by the product of their marginal expectations $\E[g_a(U)] = (1 + |S_a(P)|)^{-1}$, which
+dominates the first-cumulant Jensen bound $e^{-\E[\max T_p]} = e^{-h_{|S_a(P)|}}$ term by term. Third, when $\nu$
+weight-3 circuits share a hub pivot $p_1 \in P$, an early hub arrival $u_{p_1} \ll 1$ simultaneously lifts the
+survival probability of all $\nu$ petals toward $1/2$.
+
+\begin{proof}
+For~(a), any weight-3 circuit $C = \{a, p_1, p_2\}$ of $\mathcal{M}(H)$ with $\{p_1, p_2\} \subseteq P$ satisfies
+$h_a = h_{p_1} \oplus h_{p_2}$; by uniqueness of~\eqref{eq:Sa_def}, $\{p_1, p_2\} = S_a(P)$, uniquely fixing $C =
+C_P(a)$, and $C \in \Tc$ iff $L 1_{C_P(a)} = \mathrm{sig}(a) = 0$.
+
+For~(b), for each $a \in J$ the function $g_a(u) \coloneqq 1 - \max_{p \in S_a(P)} u_p \ge 0$ on $[0, 1]^r$ is
+coordinatewise nonincreasing in $(u_{p_1}, \dots, u_{p_r})$. Under the product uniform measure on $[0, 1]^r$,
+coordinatewise nonincreasing nonnegative functions are positively associated by Harris's inequality~\cite{Harris1960,
+EsaryProschanWalkup1967,FortuinKasteleynGinibre1971}, so $\E\bigl[\prod_{a \in J} g_a(U)\bigr] \ge \prod_{a \in J}
+\E[g_a(U)]$. For $|S_a(P)| = s \ge 0$, $\E[g_a(U)] = \int_0^1 (1 - v)\,d(v^s) = \frac{1}{1 + s}$ (including $s =
+0$, where $g_a \equiv 1$), proving $\ln \Pr(J) \ge \LFKG(J)$. Next, Jensen's inequality on~\eqref{eq:prJ_exp} gives
+$\ln \Pr(J) \ge -\sum_{a \in J} \E[\max_{p \in S_a(P)} T_p]$; for $s \ge 1$ i.i.d.\ $\Exp(1)$ variables, the order
+spacings $Y_j = T_{(j)} - T_{(j-1)}$ are independent $\Exp(s - j + 1)$ variables, giving $\E[T_{(s)}] = \sum_{j=1}^s
+j^{-1} = h_s$, while for every $s \ge 1$, $\ln(1 + s) = \int_1^{1+s} x^{-1}\,dx < \sum_{j=1}^s j^{-1} = h_s$,
+completing~\eqref{eq:fkg_jensen_bounds}.
+
+For~(c), conditioning on $u_{p_1} = u \in [0, 1]$, each leaf integral equals $\int_0^1 (1 - \max(u, v))\,dv = u(1 -
+u) + \frac{1}{2}(1 - u)^2 = \frac{1}{2}(1 - u^2)$. Integrating over $u \in [0, 1]$ via $u = \cos\theta$ gives
+\[
+  \int_0^1 \left(\frac{1 - u^2}{2}\right)^\nu du
+  = \frac{1}{2^\nu} \int_0^{\pi/2} \sin^{2\nu+1}\theta\,d\theta
+  = \frac{1}{2^\nu} \cdot \frac{(2\nu)!!}{(2\nu + 1)!!}
+  = \frac{\nu!}{(2\nu + 1)!!}.
+\]
+Since $\frac{j}{2j+1} > \frac{1}{3}$ for every $j \ge 2$, $\frac{\nu!}{(2\nu+1)!!} = \frac{1}{3}\prod_{j=2}^\nu
+\frac{j}{2j+1} > (1/3)^\nu$ for all $\nu \ge 2$, with Stirling asymptotics
+$\frac{\sqrt{\pi}}{2\sqrt{\nu}}(1/2)^\nu$.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+Part~(a) of Corollary~\ref{cor:harmonic_hub} is again the uniqueness of fundamental
+circuits~\cite[Cor.~1.2.6]{Oxley2011}. In Part~(b), $\E[\max_{p \in S} T_p] = h_{|S|}$ for i.i.d.\ $\Exp(1)$
+variables follows from R\'enyi's representation of exponential order statistics by independent
+spacings~\cite{Renyi1953}, while the tighter bound $\LFKG(J)$ and the strict inequality in Part~(c) are applications
+of the Harris--FKG correlation inequality for monotone functions of independent random
+variables~\cite{Harris1960,EsaryProschanWalkup1967,FortuinKasteleynGinibre1971}, combined in~(c) with the Wallis
+(Beta) integral $\int_0^1 (1 - u^2)^\nu\,du = (2\nu)!!/(2\nu + 1)!!$. Their application as zero-extra-cost
+information-set log-likelihood bounds in ISD is new here.
+
+% ----------------------------------------------------------------------------
+\subsection{Exact DP Verification and Resolution of the Node-Marginal Paradox}\label{subsec:paradox}
+% ----------------------------------------------------------------------------
+
+To test Theorem~\ref{thm:infoset_likelihood} and Corollary~\ref{cor:harmonic_hub} without approximation, we
+extracted the $6$-detector, $18$-column interior sub-DEM on detectors $\{0, \dots, 5\}$ of \ttt{surf\_d3.dem} ($m =
+r = 6$, $n = 18$, $|\Tc| = 16$, verified to have a single connected bipartite Tanner graph component). Out of
+$\binom{18}{6} = 18{,}564$ six-column subsets, $14{,}521$ ($78.2\%$, modestly above the dense uniform $\Ftwo$
+baseline $1 - \prod_{i=1}^6 (1 - 2^{-i}) = 70.7\%$) are rank-deficient, leaving $4{,}043$ valid bases $P$
+(information sets $J$). Evaluating $\Pr(J)$ via the exact subset-closure DP~\eqref{eq:dp_recursion} across all
+$4{,}043$ bases confirmed $\sum_{J} \Pr(J) = 1.000000000000$, with $\max_J \Pr(J) / \min_J \Pr(J) = 3.39$, and
+comparing against empirical basis frequencies over $5 \times 10^5$ uniform random permutations gave reduced
+multinomial chi-square $\chi^2 / \mathrm{dof} = 0.986$ and $R^2 = 0.857$
+(\ttt{exp3b\_gap\_and\_exact\_infoset.py}).
+
+On the complete \ttt{bb\_72\_simp} DEM ($r = 246, n = 2{,}232$), evaluating log-mean-exp over $32$ random pivot
+orderings in~\eqref{eq:prJ_closure} across $120$ greedy bases $J$ drawn under Uniform \ttt{RW} (an estimator that is
+unbiased for $\Pr(J)$ and hence slightly conservative for $\ln \Pr(J)$ by Jensen's inequality) gives a sample mean
+of $-753.70$ nats (sample standard deviation $2.65$ nats across the $120$ sampled bases $J$), compared to the
+uniform subset baseline $-\ln\binom{2232}{246} = -770.81$---an $e^{17.11} \approx \mathbf{2.7 \times 10^7\times}$
+probability concentration---while non-wrapping \ttt{win=256} bases average $-748.58$ nats (standard deviation $3.79$
+nats, another $e^{5.12} \approx 167\times$ higher, with $\langle N_3^H(J) \rangle = 81.2$ vs.\ $74.6$).
+
+\begin{table}[htbp]
+\centering
+\caption{Correlation of candidate information-set scores with exact $\ln \Pr(J)$ across all $4{,}043$ valid
+information sets of the Tanner-connected $m = 6, n = 18$ surface-code sub-DEM.}\label{tab:infoset_corr}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}llrr>{\raggedright\arraybackslash}p{0.29\textwidth}@{}}
+\toprule
+Predictor of $\ln \Pr(J)$ & Cost / step & Pearson $r$ & $R^2$ & Behavior / Tightness \\
+\midrule
+1.\ Static $\sum_{a \in J} d_3(a)$ & $O(n - r)$ & $\mathbf{-0.5119}$ & $0.2621$ &
+  Opposite sign to marginal ansatz \\
+2a.\ Realized $\Tc$-circuits $N_3(J)$ ($\mathrm{sig}=0$) & $O(n - r)$ & $+0.4889$ & $0.2390$ &
+  Excludes logical $H$-triangles \\
+2b.\ Realized $H$-triangles $N_3^H(J)$ ($|S_a|=2$) & $O(n - r)$ & $\mathbf{+0.7882}$ & $0.6213$ &
+  $\le 1$ per $a \in J$; depends on $H$ only \\
+3a.\ Harmonic Jensen $\LH(J) = -\sum_a h_{|S_a|}$ & $O(n - r)$ & $+0.9047$ & $0.8185$ &
+  Lower bound, mean gap $12.70$ nats \\
+3b.\ Harris--FKG $\LFKG(J) = -\sum_a \ln(1 + |S_a|)$ & $O(n - r)$ & $\mathbf{+0.9058}$ & $\mathbf{0.8205}$ &
+  Tighter bound, mean gap $7.49$ nats \\
+4a.\ Closure MC ($32$ draws $\sigma \in S_r$) & $O(32\sum|S_a|)$ & $+0.8302$ & $0.6892$ &
+  RMSE $0.17$ nats on narrow range \\
+4b.\ Closure MC ($256$ draws $\sigma \in S_r$) & $O(256\sum|S_a|)$ & $\mathbf{+0.9727}$ & $\mathbf{0.9462}$ &
+  RMSE $0.06$ nats across $4{,}043$ bases \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Resolution of the Node-Marginal Paradox.}
+Table~\ref{tab:infoset_corr} resolves the apparent tension between single-column marginals and joint information-set
+likelihoods:
+\begin{itemize}
+  \item For a single column $u \in [n]$, higher triplet degree $d_3(u)$ reduces $\Pr(u \in P)$ and increases $\Pr(u
+    \in J)$ ($\operatorname{corr}(d_3(u), \Pr(u \in J)) = +0.50$ on \ttt{surf\_d3}, $+0.31$ on \ttt{surf\_d5},
+    $+0.26$ on \ttt{bb\_72\_simp}, $+0.12$ on \ttt{color\_xyz\_d5}), because $u$ has more partner pairs that can
+    arrive earlier and span $h_u$.
+  \item An independent-marginals ansatz $\Pr_{\mathrm{naive}}(J) \propto \prod_{a \in J} \Pr(a \in J)$ would
+    therefore predict positive correlation between $\sum_{a \in J} d_3(a)$ and $\ln \Pr(J)$, whereas the exact
+    correlation is negative: $r = -0.5119$.
+  \item The reason is the degree conservation identity
+    \begin{equation}\label{eq:d3_sum_rule}
+      \sum_{a \in J} d_3(a) + \sum_{p \in P} d_3(p) = 3|\Tc| = \text{const}.
+    \end{equation}
+    Making $\sum_{a \in J} d_3(a)$ large forces $\sum_{p \in P} d_3(p)$ to be small, depriving $P$ of the high-$d_3$
+    hub pivots required by Corollary~\ref{cor:harmonic_hub}(a),(c) to realize short fundamental circuits. Counting
+    realized $H$-triangles $N_3^H(J)$ restores the positive correlation ($r = +0.7882$, vs.\ $+0.4889$ for $N_3(J)$
+    because $\Pr(J)$ is blind to $L$), and the Harris--FKG bound $\LFKG(J)$ improves the mean log-likelihood gap
+    over $\LH(J)$ from $12.70$ to $7.49$ nats while capturing $82.1\%$ of the variance of $\ln \Pr(J)$ ($r =
+    +0.9058$) from column popcounts $|S_a(P)|$ already computed during \ttt{RW}.
+\end{itemize}
+
+% ============================================================================
+\section{Calibrating \texorpdfstring{\ttt{RW}}{RW} Convergence via \texorpdfstring{$\Tc$}{T3}-Plaquette
+  Canonicalization}\label{sec:convergence}
+% ============================================================================
+
+Finally, we examine why circuit DEMs exhibit large multiplicities of minimum-weight vectors within each logical
+class and show how $\Tc$-canonicalization improves \ttt{RW} convergence diagnostics.
+
+% ----------------------------------------------------------------------------
+\subsection{Weight-Preserving \texorpdfstring{$2 \leftrightarrow 2$}{2<->2} Plaquette Exchanges from Shared-Hub
+  Triplets}\label{subsec:plaquette}
+% ----------------------------------------------------------------------------
+
+A single triplet $T \in \Tc$ satisfies $|c^* \cap T| \le 1$ for every minimum-weight codeword $c^*$ ($|c^*| = d$),
+so adding a single $1_T$ increases weight to $d + 1$ or $d + 3$. By contrast, \emph{pairs} of triplets sharing a
+hub column form minimal weight-4 degeneracies that act directly within the minimum-weight manifold.
+
+\paragraph{Notation and setup for Proposition~\ref{prop:plaquette_swap}.}
+Let $(H, L)$ be a cleaned DEM of circuit distance $d$ with degeneracy space $\Dc$ and weight-3 degeneracies $\Tc$.
+Let $T_1 = \{u_1, v_1, w\} \in \Tc$ and $T_2 = \{u_2, v_2, w\} \in \Tc$ be two distinct triplets sharing a common
+\emph{hub column} $w \in [n]$, and let $c^* \subseteq [n]$ ($|c^*| = d$, $H 1_{c^*} = 0$, $L 1_{c^*} \neq 0$) be
+any minimum-weight nontrivial codeword.
+
+\begin{proposition}[Weight-Preserving $2 \leftrightarrow 2$ Plaquette Exchanges]\label{prop:plaquette_swap}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item The symmetric difference $Q \coloneqq T_1 \triangle T_2 = \{u_1, v_1\} \triangle \{u_2, v_2\}$ satisfies
+    $|Q| = 4$ ($\{u_1, v_1\} \cap \{u_2, v_2\} = \emptyset$) and is a \textbf{single four-element circuit} of
+    $\mathcal{M}\bigl(\bigl[\begin{smallmatrix} H \\ L \end{smallmatrix}\bigr]\bigr)$, i.e., a minimal weight-4
+    degeneracy $1_Q = 1_{T_1} \oplus 1_{T_2} \in \Dc$.
+  \item Neither $\{u_1, v_1\}$ nor $\{u_2, v_2\}$ can lie in $c^*$; however, whenever $\{u_1, u_2\} \subseteq c^*$,
+    we automatically have $w, v_1, v_2 \notin c^*$, and the swapped configuration
+    \begin{equation}\label{eq:2to2_swap}
+      c' \coloneqq c^* \triangle Q = \bigl(c^* \setminus \{u_1, u_2\}\bigr) \cup \{v_1, v_2\}
+    \end{equation}
+    is a minimum-weight nontrivial codeword ($|c'| = d$, $H 1_{c'} = 0$) in the same logical class ($L 1_{c'} = L
+    1_{c^*}$) and error-equivalence class ($1_{c'} \oplus 1_{c^*} = 1_Q \in \Dc$).
+\end{enumerate}
+\end{proposition}
+
+\paragraph{Physical idea of the proof.}
+Recall Proposition~\ref{prop:hook_triangulation}: a weight-4 spacetime plaquette $Q = \{u_1, v_1, u_2, v_2\}$ was
+triangulated along its diagonal chord $w$ into $T_1 = \{u_1, v_1, w\}$ and $T_2 = \{u_2, v_2, w\}$. Adding $1_{T_1}
+\oplus 1_{T_2}$ cancels $w$ and reconstructs $Q$. Whenever a minimum-weight logical chain $c^*$ traverses two sides
+$\{u_1, u_2\}$ of $Q$, XORing $Q$ reroutes $c^*$ across the opposite two sides $\{v_1, v_2\}$ without changing
+weight or logical class; chaining $s$ independent plaquette deformations along $c^*$ produces $2^s$ distinct binary
+vectors representing equivalent fault configurations modulo $\Dc$.
+
+\begin{proof}
+For~(a), since $T_1 \neq T_2$ both contain $w$, $\{u_1, v_1\} \neq \{u_2, v_2\}$. If $\{u_1, v_1\} \cap \{u_2,
+v_2\} \neq \emptyset$, say $u_1 = u_2$, then $1_{T_1} \oplus 1_{T_2} = 1_{\{v_1, v_2\}} \in \Dc$ with $v_1 \neq
+v_2$, implying $(h_{v_1}, \ell_{v_1}) = (h_{v_2}, \ell_{v_2})$, impossible in a cleaned DEM. Thus $|Q| = 4$ and
+$1_Q \in \Dc \setminus \{0\}$. To see that $Q$ is a single circuit of
+$\mathcal{M}\bigl(\bigl[\begin{smallmatrix} H \\ L \end{smallmatrix}\bigr]\bigr)$, suppose $Q$ properly contained a
+nonempty dependent subset $C \subsetneq Q$. In a cleaned DEM $\Dc$ has no vectors of weight $1$ or $2$, so $|C| = 3$.
+Any $3$-subset of $\{u_1, v_1, u_2, v_2\}$ contains one complete pair, say $\{u_1, v_1, u_2\}$; then $1_C \in \Dc$
+gives $(h_{u_2}, \ell_{u_2}) = (h_{u_1} \oplus h_{v_1}, \ell_{u_1} \oplus \ell_{v_1}) = (h_w, \ell_w)$, making $u_2$
+a duplicate of $w$ (since $w \notin Q$, $u_2 \neq w$), again contradicting that $(H, L)$ is cleaned.
+
+For~(b), minimality of $|c^*| = d$ gives $|c^* \cap T_1| \le 1$ and $|c^* \cap T_2| \le 1$, forbidding $\{u_i, v_i\}
+\subseteq c^*$. If $\{u_1, u_2\} \subseteq c^*$, then $|c^* \cap T_1| = |c^* \cap T_2| = 1$ forces $w, v_1, v_2
+\notin c^*$, so $c^* \cap Q = \{u_1, u_2\}$ has size $2$. Thus $|c'| = d + 4 - 2(2) = d$, $H 1_{c'} = H 1_{c^*} =
+0$, $L 1_{c'} = L 1_{c^*} \neq 0$, and $1_{c'} \oplus 1_{c^*} = 1_Q \in \Dc$.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+Part~(a) of Proposition~\ref{prop:plaquette_swap} uses the binary-matroid characterization that the symmetric
+difference of two circuits is a disjoint union of circuits~\cite[Thm.~9.1.2]{Oxley2011}, applied to
+$\mathcal{M}\bigl(\bigl[\begin{smallmatrix} H \\ L \end{smallmatrix}\bigr]\bigr)$, strengthened by cleaned-DEM
+uniqueness to establish that $Q$ is a single 4-circuit. Part~(b) is the weight identity $|c \triangle Q| = |c| +
+|Q| - 2|c \cap Q|$; weight-preserving stabilizer moves are the zero-energy transitions of Markov-chain decoders
+that sample error-equivalence classes~\cite{WoottonLoss2012,HutterWoottonLoss2014}. Identifying shared-hub triplet
+pairs as the generator of these moves in circuit DEMs and applying them for $\Tc$-canonicalization are new here.
+
+% ----------------------------------------------------------------------------
+\subsection{Limitations of Vector-Level Stopping Heuristics on Circuit DEMs}\label{subsec:stopping_failures}
+% ----------------------------------------------------------------------------
+
+In \ttt{dist-m4ri} v0.16.1 (\ttt{src/util\_io.c}), convergence monitoring already incorporates several safeguards:
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{Vector-level hit statistics (\ttt{codeword\_hit\_stats}):} Up to \ttt{cov\_cws} (default $100$)
+    minimum-weight binary vectors are stored in a hash table (retaining heavier codewords when fewer than
+    \ttt{cov\_cws} minimum-weight vectors exist and defining $\langle n \rangle$ as the minimum of the mean hit
+    count at $w_{\min}$ and the mean across the lowest weight classes totaling $\ge \ttt{cov\_cws}$ codewords,
+    generalizing \ttt{QDistRnd}'s $\langle n \rangle$ rule~\cite{PryadkoShabashovKozin2022QDistRnd}). Version
+    0.16.1 also records uniform and window hit counts separately (\ttt{cnt\_u}, \ttt{cnt\_w}) and runs a
+    zero-truncated Poisson chi-square dispersion warning (\ttt{codeword\_hit\_check}). Nevertheless, keying the
+    coverage table on raw binary vectors exposes two structural issues under Proposition~\ref{prop:plaquette_swap}:
+    \begin{itemize}
+      \item \emph{Over-running on $k = 1$ topological DEMs:} On \ttt{surf\_d3} ($d = 3, k = 1$), all $128$
+        minimum-weight vectors belong to a single $2 \leftrightarrow 2$ plaquette component; accumulating $5$ hits
+        across $100$ individual sibling vectors (or across heavier classes when $< 100$ weight-$d$ vectors exist, as
+        on \ttt{color\_xyz\_d5} with $65$ weight-3 vectors) expends up to $19\times$ more steps after the unique
+        logical class has been thoroughly sampled. On \ttt{surf\_d5} ($d = 5$), $4{,}734$ of $4{,}962$ sampled
+        weight-5 vectors lie in one giant plaquette component.
+      \item \emph{Premature convergence on $k > 1$ qLDPC hybrid runs:} On \ttt{bb\_72\_simp} ($d = 6, k = 12$, where
+        a single $16{,}000$-step $p = 1$ hybrid trajectory already observes $1{,}281$ weight-6 vectors spanning at
+        least $119$ distinct nontrivial logical classes $L 1_c \neq 0$ and $883$ sampled-induced plaquette
+        components), tracking only the first $100$ minimum-weight vectors with pooled uniform+window hits triggers
+        $\langle n \rangle \ge 5$ at mean step $6{,}493$ in $200/200$ bootstrap resamples---missing $35.6\%$ of the
+        $883$ sampled-induced clusters on average, and missing at least one observed weight-6 logical class in
+        $177/200$ resamples ($88.5\%$).
+    \end{itemize}
+  \item \textbf{Analytical single-codeword binomial diagnostic (\ttt{rw\_infoset\_find\_prob}):} Classic
+    ISD formulas~\cite{Leon1988,CanteautChabaud1998} implemented in \ttt{dist-m4ri}'s $P_1(w) + P_2(w)$ diagnostic
+    assume an isolated ($M_{\mathrm{eff}} = 1$) codeword under uniform permutations without contraction,
+    overestimating steps to first discovery by roughly $30\times$--$4{,}000\times$ across our \ttt{exp4} benchmarks
+    when $M_{\mathrm{eff}} \sim 10^2$--$10^4$, while providing no empirical check for unseen rare logical classes at
+    $w_{\min}$.
+\end{enumerate}
+
+% ----------------------------------------------------------------------------
+\subsection{Greedy \texorpdfstring{$\Tc$}{T3}-Canonicalization and Good\texorpdfstring{--}{-}Turing / Chao1--Chao2
+  Stopping}\label{subsec:gt_chao_gauge}
+% ----------------------------------------------------------------------------
+
+Both issues are addressed by combining Proposition~\ref{prop:plaquette_swap} with the unseen-species estimators of
+Section~\ref{subsec:good_turing}:
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{Deterministic greedy $2 \leftrightarrow 2$ canonicalization ($\bar{c} =
+    \mathrm{canon}_{\Tc}(c)$):} Given a discovered codeword $c = \{u_1 < \dots < u_w\}$ at $w = w_{\min}$,
+    repeatedly scan pairs $\{u_a, u_b\} \subseteq c$; using the $\Tc$ hub adjacency list, iterate over shared hubs
+    $z$ with $\{u_a, v_a, z\}, \{u_b, v_b, z\} \in \Tc$ and $\{v_a, v_b\} \cap (c \setminus \{u_a, u_b\}) =
+    \emptyset$; replace $c$ by the lexicographically smallest neighbor $(c \setminus \{u_a, u_b\}) \cup \{v_a,
+    v_b\} <_{\mathrm{lex}} c$ until reaching a local minimum $\bar{c}$. Because $\mathrm{canon}_{\Tc}(c)$ steps
+    directly across unsampled intermediate weight-$d$ siblings via $\Tc$, it can even merge components that are
+    disconnected within an incomplete sample: in our pure $p = 1$ run on \ttt{bb\_72\_simp} ($1{,}281$ sampled
+    vectors out of $\ge 1{,}524$), $\mathrm{canon}_{\Tc}$ yields $881$ canonical representatives versus $883$
+    sampled-induced BFS components, and on \ttt{surf\_d5} it compresses $4{,}962$ sampled vectors to $109$ canonical
+    representatives (versus $141$ sampled-induced BFS components).
+  \item \textbf{Uniform-step Good--Turing + Chao1/Chao2 stopping rule:} Maintain an uncapped 64-bit Zobrist hash
+    table of canonical representatives $\bar{c}$, accumulating stopping statistics \textbf{exclusively from
+    uniform steps} (\ttt{cnt\_u}, leaving window steps free to lower $w_{\min}$ without biasing coverage). Let
+    $C_{\mathrm{obs}} = |\{q : m_q^{(\mathrm{unif})} \ge 1\}|$, $N_{\mathrm{unif}} = \sum_q m_q^{(\mathrm{unif})}$,
+    $f_1 = |\{q : m_q^{(\mathrm{unif})} = 1\}|$, and $f_2 = |\{q : m_q^{(\mathrm{unif})} = 2\}|$. Declare
+    convergence at target \ttt{min\_hits} (default $5$) iff $N_{\mathrm{unif}} \ge 15$ and
+    \begin{equation}\label{eq:stopping_rule}
+      \frac{N_{\mathrm{unif}}}{C_{\mathrm{obs}}} \ge \ttt{min\_hits}, \qquad
+      \hat{p}_{\mathrm{GT}} = \frac{f_1}{N_{\mathrm{unif}}} \le \varepsilon_{\mathrm{GT}}, \qquad
+      \hat{\phi}_{\mathrm{unseen}} = \frac{\hat{C}_0}{C_{\mathrm{obs}} + \hat{C}_0} \le \varepsilon_{\mathrm{Chao}},
+    \end{equation}
+    with $\hat{C}_0 = \frac{f_1(f_1 - 1)}{2(f_2 + 1)}$~\eqref{eq:chao1_bg} and thresholds $\varepsilon_{\mathrm{GT}}
+    = 0.02$, $\varepsilon_{\mathrm{Chao}} = 0.05$ (when Stern pairs or contraction produce multiple hits per step,
+    replacing $(f_1, f_2)$ in $\hat{C}_0$ by step-incidence counts $(Q_1^{\mathrm{inc}}, Q_2^{\mathrm{inc}})$ via
+    Chao2~\cite{Chao1987,ChiuWangWaltherChao2014} removes intra-step hit correlations).
+\end{enumerate}
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of a simplified minimum-weight-only vector rule (\ttt{cov\_cws = 100}, $\langle n \rangle \ge
+5$, pooling uniform and window hits; $n_{\mathrm{stop}}/200$ gives the fraction of resamples stopping within the
+step budget, with conditional mean stopping step and ``miss'' denoting $\ge 1$ missed observed logical class)
+against the uniform-step $\Tc$-canonical Good--Turing / Chao1 rule~\eqref{eq:stopping_rule} across $200$ bootstrap
+resamples of a recorded pure $p = 1$ \ttt{RW} trajectory (\ttt{unif} = uniform, \ttt{hyb} = $50/50$ window/uniform,
+\ttt{canon} = greedy $\mathrm{canon}_{\Tc}$ class count, and $119L$ = observed nontrivial $L$-classes;
+\ttt{exp4\_convergence.py}).}\label{tab:conv_bench}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{2.3pt}
+\begin{tabular}{@{}llll@{}}
+\toprule
+DEM ($d$, budget) & Vecs $\to$ BFS (canon) & Vector (\ttt{cov=100}, $\langle n \rangle \ge 5$) &
+  $\Tc$-Canonical Good--Turing / Chao1 \\
+\midrule
+\ttt{surf\_d3} ($3$, 4k unif) & $128 \to 1$ (canon $4$) & $200/200$, step \textbf{194} ($0\%$ miss) &
+  $200/200$, step \textbf{10} (\textbf{19.4x}, $0\%$ miss) \\
+\ttt{color\_xyz} ($3$, 4k hyb) & $65 \to 2$ (canon $9$) & $200/200$, step \textbf{1,083} ($0\%$ miss) &
+  $200/200$, step \textbf{394} (\textbf{2.75x}, $0\%$ miss) \\
+\ttt{surf\_d5} ($5$, 10k hyb) & $4{,}962 \to 141$ (canon $109$) & $93/200$, step \textbf{8,422} ($0\%$ miss) &
+  $180/200$, step \textbf{4,896} ($0\%$ miss) \\
+\ttt{bb\_72\_simp} ($6$, 16k hyb) & $1{,}281 \to 883$ ($119L$, $881$) & $200/200$, step $6{,}493$ (\textbf{177/200
+  miss}) & \textbf{0/200 early stops} ($\hat{p}_{\mathrm{GT}}{>}0.02$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:conv_bench} shows that~\eqref{eq:stopping_rule} prevents premature stopping across all $200$
+bootstrap resamples on $12$-logical \ttt{bb\_72\_simp} (where $f_1 / N_{\mathrm{unif}} > 0.02$ flags the remaining
+singleton tail) while halting $2.75\times$--$19.4\times$ earlier on uncensored \ttt{color\_xyz} and \ttt{surf\_d3}
+runs ($200/200$ stops, $0\%$ missed clusters and $0\%$ missed logical classes). On \ttt{surf\_d5} ($10{,}000$-step
+horizon), the vector rule halts in $93/200$ resamples at conditional mean step $8{,}422$ (missing $32.9\%$ of the
+$141$ sampled-induced clusters---i.e., small satellite clusters alongside the $4{,}734$-vector giant component---and
+$0\%$ logical classes) whereas~\eqref{eq:stopping_rule} halts in $180/200$ resamples at conditional mean step
+$4{,}896$ (missing $52.1\%$ of clusters, $0\%$ logical classes).
+
+% ============================================================================
+\section{Summary and Practical Implementation Roadmap for
+  \texorpdfstring{\ttt{dist-m4ri}}{dist-m4ri}}\label{sec:roadmap}
+% ============================================================================
+
+Our theoretical and empirical results suggest five backward-compatible upgrades for \ttt{dist-m4ri}:
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{Automatic startup $\Tc$ enumeration:} Run Lemma~\ref{lem:min_det_bucket}'s minimum-detector Zobrist
+    hash scan whenever a DEM is loaded ($\le 18.4\text{ ms}$ and $\approx 3.9\text{ MB}$ RAM [$3.75\text{ MiB}$]
+    including the $3.0\text{ MiB}$ pair hash table and $0.75\text{ MiB}$ CSR adjacency at $n = 26{,}208, |\Tc| =
+    28{,}512$).
+  \item \textbf{Post-elimination greedy $2 \to 1$ / $3 \to 0$ contraction + Stern $w_x \le 2$ Bucket-0 pruning:}
+    Hoist 64-bit reduced-logical syndrome evaluation (\ttt{srows}) ahead of the $p = 1$ scan so $\mathrm{sig}(y)
+    \neq 0$ is tested in $O(1)$ before unpacking support bits; run \ttt{greedy\_shorten\_cw} on $p = 1$ candidates
+    with $|C_P(y)| \le d_{\max} + 8$ and omit all $\mathrm{sig}(x) = 0, w_x \le 2$ columns from Stern $p = 2$
+    buckets (Theorem~\ref{thm:contraction_dominance}), yielding a $2.8\times$--$20.2\times$ wall-clock \ttt{hits/s}
+    speedup over windowed \ttt{RW}.
+  \item \textbf{Row-slab restricted sub-DEM windows ($m \ge 600$):} While our benchmark prototype activates slab
+    restriction whenever $m > m_{\mathrm{sub}} = 320$ (yielding $0.33\times$--$2.13\times$ over \ttt{win=256} at $m
+    \in [420, 561]$ and missing boundary codewords under uniform $r_0$ on \ttt{dgross\_288}), deep multi-round DEMs
+    with $m \ge 600$ achieve $49\times$--$493\times$ higher window \ttt{hits/s} over \ttt{win=256} (\ttt{shyps\_225},
+    \ttt{bidir\_sNESENn}); production deployment should gate slab windows on $m \ge 600$ and assign positive weight
+    to boundary slabs $r_0 = 0$ and $r_0 = m - m_{\mathrm{sub}}$.
+  \item \textbf{Sparse-Dual $m \times m$ Inverse RREF (when $m \times n$ spills L2 cache and $n/m \ge 20$ or $m \ge
+    1{,}400$):} Across $m \ge 420$, \ttt{V2\_dual} / \ttt{V2\_push} step rate spans $0.83\times$--$2.66\times$
+    ($0.83\times$--$0.96\times$ at $m \le 600, n/m < 15$, versus $1.16\times$ on \ttt{bidir\_sNESENn}, $1.36\times$
+    on \ttt{bb\_72\_full}, and $2.66\times$ on \ttt{dgross\_288}); an empirical heuristic gate requiring L2 cache
+    spill together with $n/m \ge 20$ or $m \ge 1{,}400$ captures the $1.16\times$--$2.66\times$ speedups on our
+    benchmark set while avoiding cache-resident overhead.
+  \item \textbf{Calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 convergence reporting:} Key the uncapped
+    codeword hash table by $\bar{c} = \mathrm{canon}_{\Tc}(c)$, accumulate stopping counts from uniform-step
+    incidences (\ttt{cnt\_u}), gate \ttt{min\_hits} convergence on~\eqref{eq:stopping_rule}, and optionally log the
+    zero-cost Harris--FKG Score $\LFKG(J)$~\eqref{eq:LFKG_def} as an information-set concentration diagnostic.
+\end{enumerate}
+
+\appendix
+
+% ============================================================================
+\section{Formal Proof of \texorpdfstring{Proposition~\ref{prop:mis_drop}}{Proposition 2}}\label{app:drop_proof}
+% ============================================================================
+
+\begin{proof}[Proof of Proposition~\ref{prop:mis_drop}]
+\emph{Part~(a).} Let $P \sim \mathcal{P}$ be drawn from any probability distribution supported on subsets $P
+\subseteq [n]$ of fixed cardinality $|P| = r$. Writing $|P| = \sum_{u=1}^n \mathbf{1}_{\{u \in P\}}$ and taking
+expectations by linearity of expectation gives
+\[
+  r = \E[|P|] = \sum_{u=1}^n \E\bigl[\mathbf{1}_{\{u \in P\}}\bigr] = \sum_{u=1}^n \Pr(u \in P),
+\]
+and dividing both sides by $n$ yields~\eqref{eq:marginal_conservation}.
+
+\emph{Part~(b).} Partition $[n] = \bigsqcup_{\mu=1}^M T_\mu$ into $M$ disjoint triplets ($n = 3M$) with $\Tc =
+\{T_1, \dots, T_M\}$, so $G_3$ is the disjoint union of $M$ triangles $K_3$. A random-order greedy MIS $F$ of $G_3$
+chooses uniformly and independently one vertex from each $T_\mu$, giving $|F| = M$ and $\gamma = |F|/n = 1/3$. Let
+$c^*$ ($|c^*| = d$) consist of one column from $d$ distinct triplets. Under MIS Drop, $B = [n] \setminus F$ is
+discarded before elimination, so $c^*$ is found from $d - p$ pivots in $P \subseteq F$ and $p$ non-pivots in $F
+\setminus P$ only if $(c^* \cap P) \sqcup (c^* \setminus P) = c^* \subseteq F$, which occurs with probability
+$\Pr(c^* \subseteq F) = (1/3)^d = \gamma^d$.
+
+Conditioned on $c^* \subseteq F$, under the symmetric hypergeometric basis model where $P \subseteq F$ is a
+uniformly random $r$-subset of $F$ ($|F| = M, r = \alpha M$), the conditional probability that $|c^* \cap P| = d -
+p$ is
+\[
+  \Pr\bigl(|c^* \cap P| = d - p \;\big|\; c^* \subseteq F\bigr)
+  = \frac{\binom{d}{d - p}\binom{M - d}{r - (d - p)}}{\binom{M}{r}}
+  = \binom{d}{p} \frac{(r)_{d-p}\,(M - r)_p}{(M)_d}.
+\]
+Multiplying by $\Pr(c^* \subseteq F) = \gamma^d$ gives
+\[
+  P_{\mathrm{hit}}^{(p)}(\mathrm{Drop})
+  = \gamma^d \binom{d}{p} \frac{(\alpha M)_{d-p}\,\bigl((1 - \alpha) M\bigr)_p}{(M)_d}.
+\]
+Under Uniform \ttt{RW} on the corresponding hypergeometric model over $[n]$ ($n = M/\gamma$, $r = \alpha M$), all
+$n$ columns remain present so any $p$ columns of $c^*$ in $J = [n] \setminus P$ lie in the searched candidate set:
+\[
+  P_{\mathrm{hit}}^{(p)}(\mathrm{Unif})
+  = \frac{\binom{d}{d - p}\binom{n - d}{r - (d - p)}}{\binom{n}{r}}
+  = \binom{d}{p} \frac{(\alpha M)_{d-p}\,\bigl((1/\gamma - \alpha) M\bigr)_p}{(M/\gamma)_d}.
+\]
+Cancelling $\binom{d}{p} (\alpha M)_{d-p}$ at finite $M$ and taking $M \to \infty$ at fixed $d, p, \alpha, \gamma$
+(using $(c M)_q / M^q \to c^q$) yields
+\[
+  \frac{P_{\mathrm{hit}}^{(p)}(\mathrm{Drop})}{P_{\mathrm{hit}}^{(p)}(\mathrm{Unif})}
+  = \gamma^d \frac{\bigl((1 - \alpha) M\bigr)_p\,(M/\gamma)_d}{(M)_d\,\bigl((1/\gamma - \alpha) M\bigr)_p}
+  \;\xrightarrow{M \to \infty}\;
+  \gamma^d \frac{(1 - \alpha)^p\,\gamma^{-d}}{((1 - \gamma\alpha)/\gamma)^p}
+  = \gamma^p \left(\frac{1 - \alpha}{1 - \gamma\alpha}\right)^p.
+\]
+Since $\alpha \in (0, 1)$ and $\gamma = 1/3 \in (0, 1)$, we have $0 < 1 - \alpha < 1 - \gamma\alpha$, proving the
+strict bound $< \gamma^p$ in~\eqref{eq:drop_hit_ratio}. If per-step time scales as $T_{\mathrm{step}}(\mathrm{Drop})
+= \gamma T_{\mathrm{step}}(\mathrm{Unif})$, then $P_{\mathrm{hit}}^{(p)} / T_{\mathrm{step}}$ scales asymptotically
+by $\gamma^{-1} \gamma^p \bigl(\frac{1-\alpha}{1-\gamma\alpha}\bigr)^p = \gamma^{p-1}
+\bigl(\frac{1-\alpha}{1-\gamma\alpha}\bigr)^p < \gamma^{p-1}$.
+\end{proof}
+
+% ============================================================================
+\section{Formal Proof of \texorpdfstring{Proposition~\ref{prop:sparse_dual}}{Proposition 3}}\label{app:dual_proof}
+% ============================================================================
+
+\begin{proof}[Proof of Proposition~\ref{prop:sparse_dual}]
+\emph{Part~(a).} Let $\Pi \in \Ftwo^{n \times n}$ be the permutation matrix of $\pi = (\pi_1, \dots, \pi_n)$. In
+dense Gauss--Jordan elimination on $\widetilde{H}^{(0)} = H \Pi$, each elementary row operation at step $s$ (either
+swapping two rows or XORing a pivot row into a subset of other rows, including blocked Four-Russians Gray-table
+updates) left-multiplies by an invertible matrix $E_s \in \mathrm{GL}_m(\Ftwo)$, so $\widetilde{H}^{(s)} = E_s
+\cdots E_1 H \Pi$.
+
+In Sparse-Dual RREF, $M^{(0)} = I_m$ undergoes the identical sequence of left row operations, maintaining $M^{(s)} =
+E_s \cdots E_1$. Hence for every column $c \in [n]$ and row $i \in [m]$,
+\[
+  \bigl(M^{(s)} h_c\bigr)_i = \sum_{q=1}^m M^{(s)}_{i, q} H_{q, c} \bmod 2 = \bigoplus_{q \in R(c)} M^{(s)}_{i, q}
+  = \widetilde{H}^{(s)}_{i, \pi^{-1}(c)}.
+\]
+By induction on column index $j = 1, \dots, n$, because pivot detection (finding the first row $i > t$ with
+$(M^{(s)} h_{\pi_j})_i = 1$) and clearing coefficients ($(M^{(s)} h_{\pi_j})_{i'}$ for $i' \neq t+1$) depend solely
+on the vector $M^{(s)} h_{\pi_j} = \widetilde{H}^{(s)}_{:, j}$, both algorithms select the identical ordered pivot
+sequence $P = (p_1, \dots, p_r)$ and execute the identical matrices $E_1, \dots, E_{\mathrm{fin}}$. Once $t = r =
+\rank(H)$ pivots have been reduced, $\widetilde{H}^{(\mathrm{fin})}_{r+1..m, :} = 0$ identically (since the first
+$r$ pivot columns span $\operatorname{colspace}(H)$), so halting at precomputed $t = r$ omits zero row operations.
+At termination, $M H_P = \bigl[\begin{smallmatrix} I_r \\ 0 \end{smallmatrix}\bigr]$, so for every $c \in J$, $M
+h_c = M \bigl(\bigoplus_{i=1}^r A_{i, c} h_{p_i}\bigr) = \bigl[\begin{smallmatrix} A_{:, c} \\ 0
+\end{smallmatrix}\bigr]$, whose top $r$ entries give $1_{S_c(P)} = A_{:, c} = \bigoplus_{q \in R(c)} M_{1..r, q}$,
+proving~\eqref{eq:dual_Sc}.
+
+\emph{Part~(b).} By~\eqref{eq:sig_def},~\eqref{eq:dual_Sc}, and $\Ftwo$-bilinearity over $i \in [r]$ and $q \in
+R(c)$, for every $c \in J$:
+\[
+  \mathrm{sig}(c)
+  = \ell_c \oplus \bigoplus_{i=1}^r \left(\bigoplus_{q \in R(c)} M_{i, q}\right) \ell_{p_i}
+  = \ell_c \oplus \bigoplus_{q \in R(c)} \left(\bigoplus_{i=1}^r M_{i, q}\,\ell_{p_i}\right)
+  = \ell_c \oplus \bigoplus_{q \in R(c)} \hat{\ell}_q.
+\]
+Likewise, the $u$-th bit ($1 \le u \le l$) of $\mathrm{bkey}(c)$ is $(1_{S_c(P)})_{i_u} = \bigoplus_{q \in R(c)}
+M_{i_u, q}$; packing bits $u = 1, \dots, l$ into an integer via bitwise XOR gives $\mathrm{bkey}(c) = \bigoplus_{q
+\in R(c)} \hat{b}_q$, proving~\eqref{eq:dual_screening}.
+\end{proof}
+
+% ============================================================================
+\section{Formal Proof of \texorpdfstring{Theorem~\ref{thm:infoset_likelihood}}{Theorem 4}}\label{app:infoset_proof}
+% ============================================================================
+
+\begin{proof}[Proof of Theorem~\ref{thm:infoset_likelihood}]
+Couple a uniformly random permutation $\pi \sim \Unif(S_n)$ to i.i.d.\ arrival times $U_1, \dots, U_n
+\stackrel{\mathrm{i.i.d.}}{\sim} \Unif(0, 1)$: almost surely all $U_j$ are distinct, and by exchangeability their
+ranking permutation $\pi$ satisfying $U_{\pi_1} < U_{\pi_2} < \dots < U_{\pi_n}$ is uniform on $S_n$.
+
+\emph{Step 1: Necessary and sufficient arrival-time characterization.} Fix a basis $P = \{p_1, \dots, p_r\}$ and
+$J = [n] \setminus P$. On the probability-$1$ event of distinct arrival times, left-to-right greedy basis selection
+on $\pi$ outputs $P$ if and only if
+\begin{equation}\label{eq:iff_arrival}
+  U_a > \max_{p \in S_a(P)} U_p \qquad \text{for every } a \in J.
+\end{equation}
+\emph{Sufficiency ($\Leftarrow$):} Suppose~\eqref{eq:iff_arrival} holds, yet $P_{\mathrm{greedy}} \neq P$. Let
+$\pi_j$ be the earliest column where membership differs, so $P_{\mathrm{greedy}} \cap \{\pi_1, \dots, \pi_{j-1}\} =
+P \cap \{\pi_1, \dots, \pi_{j-1}\} \eqqcolon I_{j-1}$:
+\begin{itemize}
+  \item \emph{Case 1: $\pi_j = p \in P$, yet greedy rejects $p$.} Then $h_p \in
+    \operatorname{span}_{\Ftwo}(H_{I_{j-1}}) \subseteq \operatorname{span}_{\Ftwo}(H_{P \setminus \{p\}})$,
+    contradicting linear independence of $P$.
+  \item \emph{Case 2: $\pi_j = a \in J$, yet greedy accepts $a$.} Necessarily $h_a \neq 0$, so $S_a(P) \neq
+    \emptyset$. By~\eqref{eq:iff_arrival}, every $p \in S_a(P)$ satisfies $U_p < U_a = U_{\pi_j}$, hence belongs to
+    $P \cap \{\pi_1, \dots, \pi_{j-1}\} = I_{j-1}$. Thus $h_a = \bigoplus_{p \in S_a(P)} h_p \in
+    \operatorname{span}_{\Ftwo}(H_{I_{j-1}})$, contradicting acceptance of $a$.
+\end{itemize}
+\emph{Necessity ($\Rightarrow$):} Conversely, if~\eqref{eq:iff_arrival} fails for some $a \in J$, then $S_a(P) \neq
+\emptyset$ and $U_a < U_{p^*}$ for $p^* = \arg\max_{p \in S_a(P)} U_p$. By fundamental-circuit exchange, $P'
+\coloneqq (P \setminus \{p^*\}) \cup \{a\}$ is another valid basis of $\mathcal{M}(H)$ with strictly smaller total
+weight $\sum_{x \in P'} U_x = \sum_{x \in P} U_x - U_{p^*} + U_a < \sum_{x \in P} U_x$. By the Rado--Gale--Edmonds
+greedy optimality theorem~\cite{Rado1957,Gale1968,Edmonds1971}, greedy selection outputs the unique minimum-weight
+basis of $\mathcal{M}(H)$ and therefore cannot output $P$.
+
+\emph{Step 2: Derivation of~\eqref{eq:prJ_unif} and~\eqref{eq:prJ_exp}.}
+By Step~1 and Fubini's theorem, conditioning on $U_{p_i} = u_{p_i} \in (0, 1)$ ($1 \le i \le r$), the variables
+$\{U_a\}_{a \in J}$ are i.i.d.\ $\Unif(0, 1)$, so $\Pr\bigl(U_a > \max_{p \in S_a(P)} u_p\;\forall a \in J \,\big|\,
+\{U_p = u_p\}_{p \in P}\bigr) = \prod_{a \in J} (1 - \max_{p \in S_a(P)} u_p)$, whose integral over $[0, 1]^r$
+gives~\eqref{eq:prJ_unif}. Substituting $u_{p_i} = 1 - e^{-t_{p_i}}$ ($t_{p_i} \in [0, \infty)$, $du_{p_i} =
+e^{-t_{p_i}}\,dt_{p_i}$) transforms $1 - \max_{p \in S_a(P)} u_p = \exp\bigl(-\max_{p \in S_a(P)} t_p\bigr)$,
+establishing~\eqref{eq:prJ_exp}.
+
+\emph{Step 3: Derivation of~\eqref{eq:prJ_closure} and~\eqref{eq:dp_recursion}.} Up to Lebesgue-null boundaries,
+$[0, \infty)^r$ partitions into the $r!$ open simplices $\Omega_\sigma = \{t \in (0, \infty)^r : 0 <
+t_{p_{\sigma(1)}} < \dots < t_{p_{\sigma(r)}}\}$ ($\sigma \in S_r$). Fix $\sigma \in S_r$, set $t_{p_{\sigma(0)}}
+\coloneqq 0$, let $S_j^\sigma \coloneqq \{p_{\sigma(1)}, \dots, p_{\sigma(j)}\}$ ($0 \le j \le r$), and define
+spacings $\Delta_j \coloneqq t_{p_{\sigma(j)}} - t_{p_{\sigma(j-1)}} > 0$ ($1 \le j \le r$, Jacobian $1$). Then
+$\sum_{j=1}^r t_{p_{\sigma(j)}} = \sum_{u=1}^r (r - u + 1)\Delta_u$. On $\Omega_\sigma$, for each $a \in J$ with
+$S_a(P) \neq \emptyset$, let $j(a) = \max\{j \in [r] : p_{\sigma(j)} \in S_a(P)\}$; for any $u \in [r]$, $u \le
+j(a) \iff S_a(P) \not\subseteq S_{u-1}^\sigma \iff a \in J \setminus \cl(S_{u-1}^\sigma)$ by~\eqref{eq:closure_basis}
+(which also holds trivially when $S_a(P) = \emptyset$). Summing over $a \in J$ gives $\sum_{a \in J} \max_{p \in
+S_a(P)} t_p = \sum_{u=1}^r |J \setminus \cl(S_{u-1}^\sigma)|\,\Delta_u$. Adding $(r - u + 1) = |P \setminus
+\cl(S_{u-1}^\sigma)|$ yields total exponent coefficient $n - |\cl(S_{u-1}^\sigma)| \ge 1$ for each $\Delta_u$.
+Integrating $\Delta_1, \dots, \Delta_r$ over $(0, \infty)^r$ gives $\prod_{t=0}^{r-1} (n -
+|\cl(S_t^\sigma)|)^{-1}$, and summing over $\sigma \in S_r$ proves~\eqref{eq:prJ_closure}. Grouping orderings of
+any nonempty $S \subseteq P$ by their final element $p \in S$ yields~\eqref{eq:dp_recursion} by induction on $|S|$.
+\end{proof}
+
+% ============================================================================
+\printbibliography[heading=bibintoc,title={References}]
+
+\end{document}
