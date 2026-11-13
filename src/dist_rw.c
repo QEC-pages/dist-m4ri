@@ -364,7 +364,15 @@ int do_CC_dist(params_t * const p);
 int main(int argc, char **argv){
   params_t * const p = &prm;
 
+  /* the RW stages of dist_m4ri (rw_opt) are not implemented here: the RW search of version 0.16.1 (hybrid windows for
+   * n >= 500 also for matrices, as the input summary says) */
+  p->rw_opt = 0;
   var_init(argc,argv,p);
+  if (p->rw_opt != 0) {
+    fprintf(stderr, "# WARNING: rw_opt=%d is ignored by dist_m4ri_old (the RW stages are those of dist_m4ri)\n",
+            p->rw_opt);
+    p->rw_opt = 0;
+  }
 
   if (p->finC) {
     nzlist_read(p->finC, p);

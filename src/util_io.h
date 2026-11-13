@@ -47,6 +47,29 @@
 #define MAX_W 100 
 struct CW_VEC_T;
 typedef struct CW_VEC_T cw_vec_t;
+
+/* The stages of the RW search selected by `rw_opt=[int]` (a bitmask; -1: automatic, 0: none, as in version 0.16.1),
+ * see rw_triplet.h and doc/rw_triplet_degeneracies.tex (Sec. 9, Stages 1-5 and the dispatch rules D1-D5) */
+#define RW_OPT_T3     0x01 /**< Stage 1 (T_3 enumeration) and 2a (contraction, hoisted L syndromes, Stern filter) */
+#define RW_OPT_GEN    0x02 /**< Stage 2b: shortening by the rows of G (finG) and the realized-generator filter */
+#define RW_OPT_SLAB   0x04 /**< Stage 3: row-slab windows of a DEM with MIS push-back order */
+#define RW_OPT_DUAL   0x08 /**< Stage 4: sparse-dual m x m inverse elimination */
+#define RW_OPT_CANON  0x10 /**< Stage 5: canonical classes, coalesced hits, Good-Turing / Chao2 stopping, FKG score */
+#define RW_OPT_EXPAND 0x20 /**< the expansion of the collected codewords by T_3 before the export (outC) */
+#define RW_OPT_ALL    0x3f /**< all stages */
+
+/** @brief Stage 5 (RW_OPT_CANON): the statistics of the canonical classes of the minimum weight w in the uniform RW
+ *         steps, see rw_canon_tab_t in rw_triplet.h (each class counted at most once per step). */
+typedef struct {
+  int active;           /**< 1: the canonical stopping rule replaces the `min_hits` rule of codeword_hit_stats() */
+  int full;             /**< 1: too many classes for the table (the rule of codeword_hit_stats() is used) */
+  int w;                /**< the weight of the classes (the current min_w; INT_MAX: none yet) */
+  long long classes;    /**< C_obs: the canonical classes of weight w seen in the uniform steps */
+  long long raw;        /**< the distinct raw codewords of weight w seen in the uniform steps */
+  long long n_unif;     /**< N_unif: the sum of the uniform-step incidences of the classes */
+  long long f1, f2;     /**< Q1, Q2: the classes with exactly one and two uniform-step incidences */
+} rw_canon_stats_t;
+
 typedef struct{
   int debug; /* debug output bitmap, see DBG_SUMMARY etc. (default DBG_DEFAULT) */
   int classical; /* 1 for a classical code, i.e., no `G=Hz` matrix*/
@@ -147,6 +170,10 @@ typedef struct{
                      256 columns for a DEM, 512 for matrices (see rw_hybrid_window()) */
   int pairs;      /* RW pairs of non-pivot columns (p=2) agreeing on `pairs` random pivot rows (0: off; -1: auto, see
                      rw_pairs_bits()) */
+  int rw_opt;     /* the RW stages (bitmask of RW_OPT_T3 etc.): -1 (default) automatic, 0 none (as in version 0.16.1);
+                     ignored by dist_m4ri_old */
+  int rw_active;  /* the RW stages in use, resolved from rw_opt by dist_m4ri at the start of the run (0 before) */
+  rw_canon_stats_t canon; /* Stage 5 (RW_OPT_CANON): the statistics of the canonical classes (rw_canon_converged()) */
   int round_D;    /* the rounds of a DEM (debug&1, see dem_round_estimate()): detectors per round (0: none found) */
   int round_L;    /* columns per round, n D / m (0: none found) */
   double round_score; /* the score of the estimate (accepted if >= 0.5; -1: not estimated) */
@@ -273,6 +300,17 @@ static inline int rw_hybrid_window(const params_t * const p, const int nvar) {
   const int cap = (nvar * 3) / 4;
   return (w < cap) ? w : cap;
 }
+
+/**
+ * @brief Whether the hybrid RW steps (kwin=0, n >= 500) use index windows on every other step: always with rw_opt=0
+ *        (as in version 0.16.1); otherwise only for a DEM (columns in circuit order), or with win_hyb > 0 (Rule D3 of
+ *        doc/rw_triplet_degeneracies.tex: windows do not help the matrices of codes and extended matrices, whose
+ *        column order is not local).  dist_m4ri only.
+ */
+static inline int rw_hybrid_on(const params_t * const p, const int nvar) {
+  return (p->kwin == 0) && (nvar >= 500) && ((p->rw_opt == 0) || (p->fdem != NULL) || (p->win_hyb > 0));
+}
+
 
 /** @brief The largest number of random pivot rows of the buckets of the RW pairs (`pairs`, a 64-bit key). */
 #define RW_PAIRS_MAX_BITS 64
@@ -424,12 +462,23 @@ void codeword_hit_stats(const params_t * const p, cw_hit_stats_t * const st);
  * Returns 1 if p->min_hits > 0 and the average number of hits <n> (see codeword_hit_stats())
  * reaches p->min_hits, both for the codewords of weight p->min_w and for the representative set
  * of up to p->cov_cws lowest-weight codewords.  A single codeword (e.g., for a classical code
- * with k=1) suffices.  Otherwise returns 0.
+ * with k=1) suffices.  Otherwise returns 0.  With the canonical classes of rw_opt (RW_OPT_CANON, p->canon.active),
+ * the rule of rw_canon_converged() is used instead.
  *
  * @param p Pointer to the params_t structure.
  * @return 1 if convergence criterion is met, 0 otherwise.
  */
 int check_min_hits_convergence(const params_t * const p);
+
+/**
+ * @brief The canonical stopping rule of rw_opt (RW_OPT_CANON, Sec. 7.3 of doc/rw_triplet_degeneracies.tex): with the
+ *        statistics p->canon of the canonical classes of the minimum weight in the uniform RW steps (each class
+ *        counted at most once per step), returns 1 if N_unif >= max(15, 3 min_hits), N_unif / C_obs >= min_hits, the
+ *        Good-Turing estimate of the unseen probability mass p_GT = Q1 / N_unif <= min(0.02, 3 exp(-min_hits)), and
+ *        the unseen fraction C0 / (C_obs + C0) <= 0.05 of the bias-corrected Chao2 estimate C0 = Q1 (Q1 - 1) /
+ *        (2 (Q2 + 1)) of the unseen classes.
+ */
+int rw_canon_converged(const params_t * const p);
 
 /**
  * @brief Check the uniformity of the hit counts within each weight class of the representative set.
@@ -557,8 +606,8 @@ void print_short_help(const char *prog);
   "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, start_scan,\n" \
   "  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n" \
-  "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, min_hits,\n" \
-  "  cov_cws, refresh, finC, outC, maxC, dW, irred, ortho, seed, debug\n\n" \
+  "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, rw_opt,\n" \
+  "  min_hits, cov_cws, refresh, finC, outC, maxC, dW, irred, ortho, seed, debug\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -617,6 +666,7 @@ void print_short_help(const char *prog);
   "  win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity\n" \
   "  win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)\n" \
   "  pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)\n" \
+  "  rw_opt=[int] (-1)      RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63\n" \
   "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
   "  refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
@@ -884,7 +934,8 @@ void print_short_help(const char *prog);
   "                     step (alias: win=[int]).  Default: 0 = automatic hybrid for\n" \
   "                     n>=500: every other step uses an index window (win_mode=1)\n" \
   "                     of win_hyb columns, the other steps uniform random\n" \
-  "                     permutations (also for codewords which are not local).\n" \
+  "                     permutations (also for codewords which are not local);\n" \
+  "                     with rw_opt != 0, only for a DEM or with win_hyb > 0.\n" \
   "                     kwin=-1 (any negative value): no windows, uniform random\n" \
   "                     permutations in every step.\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
@@ -916,6 +967,57 @@ void print_short_help(const char *prog);
   "                     distance.  Not with ksub.  With debug&1, the binary prints\n" \
   "                     the pairs checked per step and the codewords found by pairs\n" \
   "                     and by single columns.\n" \
+  "  rw_opt=[int]       RW stages with the weight-3 degeneracies T3 (triplets of\n" \
+  "                     columns with zero syndromes of H and L) and the known\n" \
+  "                     generators (doc/rw_triplet_degeneracies.tex).  Default: -1\n" \
+  "                     = automatic (the stages below which apply to the input);\n" \
+  "                     0: none (the RW search of version 0.16.1); or the sum of\n" \
+  "                     the stages to use (1 to 63, also as 0x..):\n" \
+  "                     1: enumerate T3 (after merge and drop) and contract the\n" \
+  "                        single-column candidates (2 -> 1, 3 -> 0 columns, up to\n" \
+  "                        the weight dmax+8); skip the columns with a zero L\n" \
+  "                        syndrome and at most 3 columns in the pairs (when\n" \
+  "                        collecting codewords with outC or maxC, only with 32);\n" \
+  "                        a zero column of H with a nonzero column of L gives\n" \
+  "                        d=1 at once (automatic: quantum codes, steps > 2);\n" \
+  "                     2: with finG, also shorten the candidates by the rows of\n" \
+  "                        G (steepest descent, up to the weight dmax+w_G-2) and\n" \
+  "                        skip the columns whose circuits are rows of G in the\n" \
+  "                        pairs (not when collecting; automatic: off);\n" \
+  "                     4: row-slab windows of a DEM in time order (kwin=0):\n" \
+  "                        every other step, the columns inside a range of\n" \
+  "                        min(320, m/2) detectors (the first or the last range\n" \
+  "                        with 15%% probability each), a random independent set\n" \
+  "                        of the triplet graph first (automatic: off; on deep\n" \
+  "                        circuit DEMs, the index windows with 1 found more\n" \
+  "                        minimum-weight codewords per second);\n" \
+  "                     8: sparse-dual elimination: an m x m inverse instead of\n" \
+  "                        the m x n matrix (the same information sets, less\n" \
+  "                        memory per RW thread; automatic: m x n above 512 KiB,\n" \
+  "                        and n >= 20 m or m >= 1400; up to 64 rows of L);\n" \
+  "                     16: canonical classes: the codewords of the minimum weight\n" \
+  "                        found in the uniform RW steps are counted by their\n" \
+  "                        canonical form (2 <-> 2 exchanges across two triplets\n" \
+  "                        with a common column, or half-overlap exchanges with\n" \
+  "                        the even rows of G), each at most once per step, and\n" \
+  "                        min_hits stops RW by the Good-Turing / Chao2 rule (see\n" \
+  "                        min_hits; automatic: quantum codes; not with kwin > 0);\n" \
+  "                        the codewords of a RW step are recorded at its end\n" \
+  "                        (lighter ones at once), each at most once (also with 1\n" \
+  "                        or 2);\n" \
+  "                     32: with outC or maxC, add the codewords obtained from the\n" \
+  "                        codewords found by T3 before the export: 2 <-> 2\n" \
+  "                        exchanges and 1 -> 2 splits, up to the weight min_w+dW\n" \
+  "                        (see irred and maxC).\n" \
+  "                     With rw_opt != 0, matrices (finH) use uniform random\n" \
+  "                     permutations in all RW steps unless kwin > 0 or win_hyb\n" \
+  "                     > 0 (the hybrid windows are for DEMs, see kwin).  Only\n" \
+  "                     with full-matrix RW (ksub=0) and steps > 0.  With debug&1,\n" \
+  "                     the binary prints the stages used and their statistics\n" \
+  "                     (lines '# RW triplets', '# RW canonical', and '# RW FKG\n" \
+  "                     score': the mean Harris-FKG bound -sum ln(1 + |S_a|) on\n" \
+  "                     ln Pr(J) of the steps with pairs, and -ln C(n, r)).\n" \
+  "                     dist_m4ri_old ignores rw_opt.\n" \
   "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off;\n" \
   "                     alias: max_hits).  Stops RW when the average number of hits\n" \
   "                     <n> per codeword (by all RW steps, with or without windows,\n" \
@@ -934,6 +1036,15 @@ void print_short_help(const char *prog);
   "                     With min_hits=0, RW records only the codewords lighter than\n" \
   "                     the upper bound (unless collecting codewords with outC or\n" \
   "                     maxC), so that the repeated hits are not counted.\n" \
+  "                     With the canonical classes of rw_opt (16, automatic for\n" \
+  "                     quantum codes, kwin <= 0), RW stops instead once the\n" \
+  "                     canonical classes of the minimum weight found in the\n" \
+  "                     uniform steps (C of them, Q1 and Q2 found in exactly one\n" \
+  "                     and two steps, N step incidences in total) give N >=\n" \
+  "                     max(15, 3 min_hits), N/C >= min_hits, the Good-Turing\n" \
+  "                     unseen mass Q1/N <= min(0.02, 3 exp(-min_hits)), and the\n" \
+  "                     Chao2 unseen fraction C0/(C+C0) <= 0.05 with C0 = Q1(Q1-1)\n" \
+  "                     /(2(Q2+1)).\n" \
   "  cov_cws=[int]      Size of the representative set of lowest-weight codewords\n" \
   "                     for min_hits (default: 100; 0 = only the minimum weight).\n" \
   "                     Without outC and maxC, at most cov_cws minimum-weight\n" \
@@ -957,7 +1068,8 @@ void print_short_help(const char *prog);
   "           or overridden parameters, and the confinement profile with smax > 0\n" \
   "    1    : Summary (default): input matrices (and the rounds of a DEM, RW\n" \
   "           windows), warnings, stop reason, codeword and hit statistics,\n" \
-  "           RW information sets, pairs, and step types, export\n" \
+  "           RW information sets, pairs, step types, and stages (rw_opt),\n" \
+  "           export\n" \
   "    2    : Progress (default): run plan (threads, steps, timeout, seed),\n" \
   "           finished CC rounds, new upper bounds, RW convergence\n" \
   "    4    : Periodic status (after 1, 2, 4, ... s, then every 60 s): bounds,\n" \

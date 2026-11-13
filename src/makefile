@@ -20,8 +20,8 @@ all: dist_m4ri dist_m4ri_old
 test: all
 	./tests/test_run.sh
 
-dist_m4ri: dist_m4ri.c dist_m4ri.h dist_cc.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
-	${CC} ${CFLAGS} -pthread -o dist_m4ri $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm -lpthread
+dist_m4ri: dist_m4ri.c dist_m4ri.h dist_cc.h rw_triplet.h util_io.o util_m4ri.o mmio.o dist_cc.o rw_triplet.o makefile
+	${CC} ${CFLAGS} -pthread -o dist_m4ri $< dist_cc.o mmio.o util_m4ri.o util_io.o rw_triplet.o -lm4ri -lm -lpthread
 
 dist_m4ri_old: dist_rw.c dist_m4ri.h dist_cc.h util_io.o util_m4ri.o mmio.o dist_cc.o makefile 
 	${CC} ${CFLAGS} -DSTANDALONE -o dist_m4ri_old $< dist_cc.o mmio.o util_m4ri.o util_io.o -lm4ri -lm
@@ -34,6 +34,9 @@ util_m4ri.o: util_m4ri.c util_m4ri.h mmio.h util_hash.h makefile
 
 util_io.o: util_io.c util_io.h util_m4ri.h mmio.h util_hash.h makefile 
 	${CC} ${CFLAGS} -c -o util_io.o $<  
+
+rw_triplet.o: rw_triplet.c rw_triplet.h util_io.h util_m4ri.h mmio.h util_hash.h makefile
+	${CC} ${CFLAGS} -c -o rw_triplet.o $<
 
 dist_cc.o: dist_cc.c dist_cc.h util_io.h util_m4ri.h mmio.h util_hash.h makefile 
 	${CC} ${CFLAGS} -c -o dist_cc.o $<  
@@ -55,8 +58,8 @@ tags:
 veryclean: clean
 	rm -f dist_m4ri dist_m4ri_old distfork *.exe 
 
-src = dist_m4ri.c dist_rw.c dist_cc.c util_io.c util_m4ri.c mmio.c dist_m4ri.h dist_cc.h util_io.h util_m4ri.h \
-      util_hash.h mmio.h sort.h uthash.h makefile
+src = dist_m4ri.c dist_rw.c dist_cc.c util_io.c util_m4ri.c mmio.c rw_triplet.c dist_m4ri.h dist_cc.h util_io.h \
+      util_m4ri.h rw_triplet.h util_hash.h mmio.h sort.h uthash.h makefile
 zip: ${src}
 	zip -9 -o dist_m4ri.zip ${src} ../Doxyfile ../README.md
 

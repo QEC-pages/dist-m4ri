@@ -122,6 +122,20 @@ def _has_qec_cert() -> bool:
         return False
 
 
+def _qec_cert_available() -> bool:
+    """
+    Whether qec_cert can be found, without importing it (importlib.util.find_spec): engine='auto' imports qec_cert
+    (about 0.6 s) only when its Stage B runs, see _auto_two_stage().
+    """
+    if _qec_cert_mod is not None:
+        return True
+    try:
+        import importlib.util
+        return importlib.util.find_spec("qec_cert") is not None
+    except Exception:  # (ValueError for a module without __spec__, ...)
+        return False
+
+
 def __getattr__(name: str) -> Any:
     """Lazily resolves module attributes without loading heavy dependencies at startup."""
     if name == "_HAS_STIM":
@@ -300,6 +314,12 @@ def rw_infoset_find_prob(n: int, rank: int, w: int, pairs_l: int = 0) -> float:
     are non-pivot columns and its other w - 2 positions avoid the l pivot rows of the buckets:
     P2(w) = C(w, 2) C(n-w, k-2) / C(n, k) * C(r - w + 2, l) / C(r, l), and the probability is P1 + P2.
 
+    This is the isolated-codeword uniform-subset baseline, a diagnostic and not a bound: the information sets of RW
+    do not follow the uniform-subset law for any H of rank 2 <= r <= n - 2, and codewords which differ by the weight-3
+    relations of the columns (T3) or by rows of G are found together (doc/rw_triplet_degeneracies.tex, Cor. 2).  With
+    the canonical classes of the binary (rw_opt bit 16, since version 0.17.0), the empirical coverage of the classes
+    of minimum-weight codewords is in _last_run_stats["rw_canon"] (see _parse_stderr_stats() and explain_bounds()).
+
     Args:
         n: Block length (number of columns of H).
         rank: Rank r of H.
@@ -335,7 +355,8 @@ def rw_infoset_estimate(
     see rw_infoset_find_prob()) is used: a single codeword of this weight is missed in `steps` RW steps with uniform
     random permutations with probability (1 - P)^steps.  The number of RW steps for the target miss probability is
     given in total, with the fraction steps / steps_total of uniform steps as in the run (localized windows, used in
-    about half of the steps for n >= 500, are not counted).  Same as print_rw_infoset_estimate() in the binary.
+    about half of the steps for n >= 500, are not counted).  Same as print_rw_infoset_estimate() in the binary.  Like
+    rw_infoset_find_prob(), this is the isolated-codeword uniform-subset baseline, a diagnostic and not a bound.
 
     Args:
         n: Block length (number of columns of H).
@@ -396,6 +417,20 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
     "predicted": the predicted work (None if not known), "time": the wall time of the round in s, "threads": the CC
     threads (at the end of the round in method=3), "nodes": the calls of the CC recursion (None from binaries before
     0.15.0)}, and "cc_nodes", the total of the nodes of these rounds.
+
+    The RW pipeline of the binary (rw_opt != 0, since version 0.17.0; debug & 1) adds three entries, each only if the
+    binary printed its line:
+    - "rw_triplets" (from '# RW triplets: T3=..., G_rows=..., rw_opt=0x...'): {"T3": the number of weight-3 relations
+      of the columns found by Stage 1, "ms": the time to find them in ms, "G_rows": the rows of G indexed (finG),
+      "rw_opt": the stages active in the run (the resolved bitmask)};
+    - "rw_canon" (from '# RW canonical (w=...): ...', with bit 16): the canonical classes of the codewords of the
+      minimum weight found, {"w": the weight, "classes": the classes C_obs, "raw_cws": the distinct codewords,
+      "M_eff": raw_cws / classes, "unif_inc": the class incidences N_unif of the uniform RW steps (a class counts once
+      per step), "f1", "f2": the classes seen in exactly one and two uniform steps, "p_GT": the Good-Turing unseen
+      mass f1 / N_unif, "C0_Chao2": the Chao2 estimate of the classes not seen};
+    - "rw_fkg" (from '# RW FKG score: ...'): the running means of the Harris-FKG score L_FKG(J) of the information
+      sets, {"mean_unif", "steps_unif": over the uniform RW steps, "mean_win", "steps_win": over the window steps,
+      "neg_lnC": the value printed as -lnC (the uniform-subset model, -ln C(n, r))}.
     """
     import re
     stats: Dict[str, Any] = {"extra_weights": [], "rw_converged": False, "hit_warnings": []}
@@ -403,6 +438,7 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
         return stats
     hit_warning: Optional[List[str]] = None
     skip_estimate = False
+    num = r"([-+]?(?:\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?|[iI][nN][fF]|[nN][aA][nN]))"  # (%g, %f)
     for line in stderr.splitlines():
         line_s = line.strip()
         if line_s.startswith("#   information-set estimate"):  # printed by the binary after a hit warning
@@ -462,6 +498,30 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 stats.setdefault("rw_step_types", {})[v[0]] = {
                     "uniform_cws": v[1], "uniform_hits": v[2], "window_cws": v[3], "window_hits": v[4],
                     "both_cws": v[5], "cws": v[6]}
+            continue
+        if line_s.startswith("# RW triplets:"):  # the RW pipeline (rw_opt != 0): Stage 1, the weight-3 relations T3
+            m_t = re.search(rf"T3=(-?\d+) \({num} ms\), G_rows=(-?\d+), rw_opt=0x([0-9a-fA-F]+)", line_s)
+            if m_t:
+                g = m_t.groups()
+                stats["rw_triplets"] = {"T3": int(g[0]), "ms": float(g[1]), "G_rows": int(g[2]),
+                                        "rw_opt": int(g[3], 16)}
+            continue
+        if line_s.startswith("# RW canonical (w="):  # rw_opt bit 16: the canonical classes of the minimum weight
+            m_c = re.search(rf"\(w=(-?\d+)\): classes=(-?\d+), raw_cws=(-?\d+), M_eff={num}, unif_inc=(-?\d+), "
+                            rf"f1=(-?\d+), f2=(-?\d+), p_GT={num}, C0_Chao2={num}", line_s)
+            if m_c:
+                g = m_c.groups()
+                stats["rw_canon"] = {
+                    "w": int(g[0]), "classes": int(g[1]), "raw_cws": int(g[2]), "M_eff": float(g[3]),
+                    "unif_inc": int(g[4]), "f1": int(g[5]), "f2": int(g[6]), "p_GT": float(g[7]),
+                    "C0_Chao2": float(g[8])}
+            continue
+        if line_s.startswith("# RW FKG score:"):  # the running means of the Harris-FKG score of the information sets
+            m_f = re.search(rf"mean_unif={num} \(steps=(-?\d+)\), mean_win={num} \(steps=(-?\d+)\), -lnC={num}", line_s)
+            if m_f:
+                g = m_f.groups()
+                stats["rw_fkg"] = {"mean_unif": float(g[0]), "steps_unif": int(g[1]), "mean_win": float(g[2]),
+                                   "steps_win": int(g[3]), "neg_lnC": float(g[4])}
             continue
         if line_s.startswith("#   rounds of the DEM:"):  # the input summary (debug & 1, a DEM)
             m_r = re.search(r"D=(\d+) detectors and L=(\d+) columns per round \(estimated: score ([0-9.]+)\)", line_s)
@@ -634,6 +694,13 @@ def explain_bounds(
                 lines.append(f"  {prefix}WARNING: {hw}")
         else:
             lines.append(f"  {prefix}Codewords accumulated: 0 distinct non-trivial codewords found.")
+    tri = stats.get("rw_triplets") if stats else None
+    if tri:  # the RW pipeline of the binary (rw_opt != 0, since version 0.17.0)
+        g_str = f"; {tri['G_rows']} rows of G indexed for the shortening" if tri.get("G_rows", 0) > 0 else ""
+        ms = tri.get("ms", 0.0)
+        t_str = f"{ms / 1000.0:.3g} s" if ms >= 1000.0 else f"{ms:.3g} ms"
+        lines.append(f"  {prefix}RW pipeline (active stages rw_opt=0x{tri['rw_opt']:x}): {tri['T3']} weight-3 "
+                     f"relations T3 of the columns (found in {t_str}){g_str}.")
 
     # The RW upper bound is not certified: estimated probability that RW missed a lighter codeword
     if stats and num_rw > 0 and dmax > max(dmin, 1) and not stopped:
@@ -663,11 +730,11 @@ def explain_bounds(
                 t_str = (f", ~{_format_duration(est['time_target'])}" if est["time_target"] is not None else "")
                 p_str = f" with pairs, l = {pairs_l}" if pairs_l > 0 else ""
                 lines.append(
-                    f"  {prefix}Information-set estimate (uniform random information sets{p_str}; n = {n_cols}, "
-                    f"rank(H) = {rank}, {n_unif} of {stats.get('rw_steps', n_unif)} RW steps uniform): a single "
-                    f"codeword of weight {est['w']} < {dmax} is found with probability {est['p_find']:.3g} per RW "
-                    f"step and would be missed with probability {est['p_miss']:.2g}; 1% after about "
-                    f"{est['steps_target']} RW steps in total{t_str}."
+                    f"  {prefix}Information-set estimate (baseline: an isolated codeword, uniform random information "
+                    f"sets{p_str}; n = {n_cols}, rank(H) = {rank}, {n_unif} of {stats.get('rw_steps', n_unif)} RW "
+                    f"steps uniform): a single codeword of weight {est['w']} < {dmax} is found with probability "
+                    f"{est['p_find']:.3g} per RW step and would be missed with probability {est['p_miss']:.2g}; 1% "
+                    f"after about {est['steps_target']} RW steps in total{t_str}."
                 )
                 # (with min_hits=0, the binary does not count the hits: each codeword then has a single hit)
                 if stats.get("min_w") == dmax and "hits_avg" in stats and stats.get("min_hits", 0) > 0:
@@ -690,6 +757,30 @@ def explain_bounds(
         elif stats.get("rw_n", 0) > 0:
             lines.append(f"  {prefix}Information-set estimate: not available (ksub > 0 or kwin > 0: no uniform "
                          f"random information sets).")
+        canon = stats.get("rw_canon")
+        if canon and canon.get("classes", 0) > 0:  # the RW pipeline of the binary (rw_opt bit 16): measured coverage
+            lines.append(
+                f"  {prefix}Canonical class coverage (w = {canon['w']}; codewords equal up to the weight-3 relations "
+                f"T3 of the columns or the rows of G form a class): {canon['classes']} classes of {canon['raw_cws']} "
+                f"distinct codewords (M_eff = {canon['M_eff']:.2f} codewords per class); {canon['unif_inc']} class "
+                f"incidences in the uniform RW steps, f1 = {canon['f1']} classes seen in one step, f2 = {canon['f2']} "
+                f"in two: Good-Turing unseen mass p_GT = {canon['p_GT']:.3g}, Chao2 estimate of the classes not seen "
+                f"C0 = {canon['C0_Chao2']:.1f} (empirical, not a bound)."
+            )
+        fkg = stats.get("rw_fkg")
+        if fkg and (fkg.get("steps_unif", 0) > 0 or fkg.get("steps_win", 0) > 0):
+            win_str = (f", {fkg['mean_win']:.2f} over {fkg['steps_win']} window steps" if fkg.get("steps_win", 0) > 0
+                       else "")
+            lines.append(
+                f"  {prefix}Harris-FKG concentration score of the information sets J (a lower bound on ln Pr(J), "
+                f"used as a correlate, not a certificate): mean {fkg['mean_unif']:.2f} nats over {fkg['steps_unif']} "
+                f"uniform RW steps{win_str}, against -ln C(n, r) = {fkg['neg_lnC']:.2f} for the uniform-subset model "
+                f"of the baseline estimate."
+            )
+
+    auto = stats.get("engine_auto") if stats else None
+    if auto:  # engine='auto': the two-stage portfolio dist_m4ri -> qec_cert (see _auto_two_stage())
+        lines.append(f"  {prefix}engine='auto': {_format_auto_info(auto)}.")
 
     return "\n".join(lines)
 
@@ -1232,7 +1323,7 @@ _CODEDISTANCE_UNUSED: Dict[str, Any] = {
     "dstop": 0, "wmin": 1, "wmax": 0, "smax": None, "dW": -1, "maxC": 0, "finC": None, "nothrottle": False,
     "chunk_size": 0, "ksub": 0, "kwin": 0, "win_mode": 0, "win_hyb": 0, "pairs": -1, "sort_rows": None,
     "cc_prune": None, "min_hits": None, "cov_cws": 100, "refresh": None, "dist_m4ri": None, "pmin": 0.0,
-    "merge": True, "drop": None, "expand": False,
+    "merge": True, "drop": None, "expand": False, "rw_opt": None,
 }
 
 
@@ -1326,6 +1417,30 @@ def _warn_ortho(ortho: Any, has_g: bool, solver: str = "dist_m4ri") -> None:
         sys.stderr.write(_ortho_warning_text())
     else:
         _warn_ignored("ortho=0 has no effect without G (the check H G^T = 0 needs G)")
+
+
+def _check_rw_opt(rw_opt: Any) -> None:
+    """
+    Raises ValueError unless rw_opt (the expert option of the RW stages of the binary, since version 0.17.0, see
+    run_dist_m4ri()) is None (the binary's default), -1 (automatic), 0 (all off), or a bitmask 1..63.
+    """
+    if rw_opt is None:
+        return
+    if isinstance(rw_opt, bool) or not isinstance(rw_opt, numbers.Integral) or not -1 <= int(rw_opt) <= 63:
+        raise ValueError(f"invalid rw_opt={rw_opt!r}: rw_opt should be -1 (automatic), 0 (off), or a bitmask 1 to 63")
+
+
+def _parse_rw_opt(val: str, arg: str) -> int:
+    """The CLI value of rw_opt (decimal, or hexadecimal 0x...; see _check_rw_opt()); ValueError if not valid."""
+    s = str(val).strip()
+    try:
+        v = int(s[2:], 16) if s.lower().startswith("0x") else int(s, 10)
+    except ValueError:
+        v = None
+    if v is None or not -1 <= v <= 63:
+        raise ValueError(f"invalid '{arg}': rw_opt should be -1 (automatic), 0 (off), or a bitmask 1 to 63 (also "
+                         f"0x...)")
+    return v
 
 
 def _check_kwargs(func: Callable[..., Any], kwargs: Dict[str, Any], aliases: Sequence[str] = ("win",)) -> None:
@@ -1460,6 +1575,35 @@ def _resolve_cert_engine(solver: str = "dist_m4ri", engine: Optional[str] = None
     raise ValueError(f"invalid solver={solver!r}: expected 'dist_m4ri', 'codedistance', 'auto', or 'cert'")
 
 
+def _auto_cert_eligible(
+    *,
+    method: int = 3,
+    do_cws: bool = False,
+    outC: Optional[str] = None,
+    finC: Optional[str] = None,
+    smax: Optional[int] = None,
+    dW: int = -1,
+    maxC: int = 0,
+    start_list: Optional[List[int]] = None,
+    outD: Optional[Any] = None,
+    out_reduced: Optional[Any] = None,
+    pmin: float = 0.0,
+    classical: bool = False,
+) -> bool:
+    """
+    engine='auto': whether a calculation may use qec_cert at all, without importing it: a distance-only method=3 call
+    (no codeword enumeration do_cws / outC / dW / maxC, no finC, smax, start list, outD, out_reduced, or pmin > 0) of
+    a quantum code, a CSS sector, or a DEM; never for a classical code (classical=True: the dist_m4ri binary is much
+    faster there than the import of qec_cert alone, about 0.6 s).
+    """
+    if classical or do_cws or outC:
+        return False
+    return not (
+        method != 3 or finC or (smax is not None and smax > 0) or dW >= 0 or maxC > 0
+        or start_list is not None or outD or out_reduced or pmin > 0.0
+    )
+
+
 def _can_delegate_to_cert(
     mode: str,
     *,
@@ -1474,11 +1618,14 @@ def _can_delegate_to_cert(
     outD: Optional[Any] = None,
     out_reduced: Optional[Any] = None,
     pmin: float = 0.0,
+    classical: bool = False,
 ) -> bool:
     """
     Whether a distance calculation should be delegated to `qec_cert`.
-    In 'auto' mode, delegates only when safe (no codeword enumeration, finC, smax, start list, outD, out_reduced,
-    pmin > 0, or single-sided method 1/2, and `qec_cert` is importable).
+    In 'auto' mode, delegates only when safe (see _auto_cert_eligible(): no codeword enumeration, finC, smax, start
+    list, outD, out_reduced, pmin > 0, single-sided method 1/2, or classical code) and `qec_cert` is importable; the
+    compute_*() functions run the two-stage portfolio of engine='auto' (_auto_two_stage()) instead, which imports
+    qec_cert only when its Stage B runs.  In 'cert' mode, always (classical codes too).
     """
     if mode == "off":
         return False
@@ -1487,10 +1634,8 @@ def _can_delegate_to_cert(
             raise ValueError("Codeword extraction is not supported with engine='cert'; use solver='dist_m4ri'.")
         return False
     if mode == "auto":
-        if (
-            method != 3 or finC or (smax is not None and smax > 0) or dW >= 0 or maxC > 0
-            or start_list is not None or outD or out_reduced or pmin > 0.0
-        ):
+        if not _auto_cert_eligible(method=method, finC=finC, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
+                                   outD=outD, out_reduced=out_reduced, pmin=pmin, classical=classical):
             return False
         return _has_qec_cert()
     _get_qec_cert()
@@ -1528,6 +1673,7 @@ def _cert_extract_bounds(cert: Any, certified_dmin: int = 1) -> Tuple[int, int]:
     - An exact result (dmin = dmax = d) only if status == 'exact', witness_verified is True, and not conditional.
     - For bounds, an upper bound dmax only if witness_verified is True, and a lower bound dmin only when
       status in ('exact', 'bounds', 'timeout') and not lb_conditional.
+    A lower bound conditional only on lb_assumed_wmin <= certified_dmin is accepted (see _cert_wmin_discharged()).
     """
     get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
     status = str(get("status", "") or "")
@@ -1546,11 +1692,30 @@ def _cert_extract_bounds(cert: Any, certified_dmin: int = 1) -> Tuple[int, int]:
     return c_lb, c_ub
 
 
+def _cert_search_no_symmetry(d: Dict[str, Any]) -> bool:
+    """
+    Whether a search stage of qec_cert (or the params of its cc_mitm_search reduction) used no symmetry and no trusted
+    input: every column an anchor (sym_kind 'unknown', not verified, and none of the rules sym_anchors, schreier,
+    centroid, trust_sym, trust_quot), e.g., with no symmetry found or more than max_sym_cols columns.  qec_cert marks
+    such a search lb_conditional only for the caller's floor wmin > 1 (unless trust_sym or trust_quot is passed, which
+    dist_m4ri does not do).  A symmetry file, also one of kind 'unknown' (version 1), always sets the rule
+    sym_anchors, and an unverified symmetry or quotient file is used only with trust_sym or trust_quot (as checked in
+    src/search/driver.c, sym.c, and quot.c of qec_cert).
+    """
+    rules = d.get("rules")
+    if not isinstance(rules, (list, tuple)) or d.get("sym_kind") != "unknown" or bool(d.get("sym_verified")):
+        return False
+    return not {"sym_anchors", "schreier", "centroid", "trust_sym", "trust_quot"} & {str(r) for r in rules}
+
+
 def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
     """
     True iff the certificate's conditionality is caused solely by an assumed lower bound
     lb_assumed_wmin <= certified_dmin (already certified in _distance_cache), with no trust
     flags, no precondition violation, and no other conditional stage or reduction.
+
+    A conditional search must have a verified symmetry (or verified polymer pinning), or no symmetry at all (since
+    version 0.17.0, see _cert_search_no_symmetry()).
     """
     if certified_dmin <= 1:
         return False
@@ -1588,7 +1753,7 @@ def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
             if sname == "search":
                 sym_ok = bool(s.get("sym_verified", True)) or (
                     s.get("sym_kind") == "pinned" and pinned_ok
-                )
+                ) or _cert_search_no_symmetry(s)
                 if not sym_ok:
                     return False
             elif sname != "p1_projection_lb" and not sname.startswith("fold_mod_"):
@@ -1611,7 +1776,7 @@ def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
             if rname == "cc_mitm_search":
                 sym_ok = bool(rp.get("sym_verified", True)) or (
                     rp.get("sym_kind") == "pinned" and pinned_red_ok
-                )
+                ) or _cert_search_no_symmetry(rp)
                 wmin_r = int(rp.get("wmin", 0) or 0)
                 if not sym_ok or (wmin_r > certified_dmin):
                     return False
@@ -1632,9 +1797,16 @@ def _cert_code_distance(
     eff_cache_file: Optional[str] = None,
     debug: int = 0,
     verbose: bool = False,
+    certified_dmin: int = 0,
 ) -> Dict[str, Any]:
     """
     Runs a qec_cert certification callback with dist_m4ri cache lookup and safe cache write-back.
+
+    The callback gets wmin = max(1, dmin) and wmax = dmax - 1 (or wmax, dstop - 1), with dmin and dmax tightened by
+    the cache record.  A lower bound of qec_cert which is conditional only on its assumption lb_assumed_wmin (wmin > 1)
+    is accepted if lb_assumed_wmin <= the certified lower bound: the dmin of the cache record, or certified_dmin (the
+    dmin certified by the CC of the dist_m4ri binary in Stage A of engine='auto', also with the cache disabled; 0:
+    none), see _cert_wmin_discharged().  A caller's dmin is a hint only (it is not certified here).
     """
     global _distance_cache
     code_key: Optional[str] = None
@@ -1663,8 +1835,8 @@ def _cert_code_distance(
     if dstop > 0:
         w_hi = min(w_hi, max(1, dstop - 1)) if (wmax > 0 or eff_dmax > 0) else max(1, dstop - 1)
     cert = run_cert_fn(w_lo, max(w_lo, w_hi))
-    c_lb, c_ub = _cert_extract_bounds(cert, (entry.get("dmin", 0) or 0) if entry else 0)
     p_dmin = (entry.get("dmin", 0) or 0) if entry else 0
+    c_lb, c_ub = _cert_extract_bounds(cert, max(p_dmin, certified_dmin))
     p_dmax = (entry.get("dmax", 0) or 0) if entry else 0
     p_rw = (entry.get("rw_steps", 0) or 0) if entry else 0
     p_cws = list(entry.get("cws", [])) if entry else []
@@ -1690,6 +1862,343 @@ def _cert_code_distance(
         "dist": dist, "dmin": dmin_res, "dmax": dmax_res, "rw_steps": p_rw,
         "d_info": format_bounds_list(dmin_res, dmax_res, p_rw), "cws": p_cws, "cached": False,
     }
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# engine='auto' (since version 0.17.0): the two-stage portfolio dist_m4ri -> qec_cert, see _auto_two_stage().
+#
+# - Classical codes: always the dist_m4ri binary (see _auto_cert_eligible()).
+# - A DEM (or Stim circuit) with more than _AUTO_DEM_FAST_PATH_ERRORS raw error mechanisms and a timeout of at least
+#   _AUTO_DEM_FAST_PATH_MIN_TIMEOUT s (or none): qec_cert first, whose exact reductions of large DEMs (the spacetime
+#   P1 sandwich, twin retraction, ...) come before any search (see _auto_cert_first()).
+# - Otherwise (quantum codes, the sectors of CSS codes, and smaller DEMs): Stage A, the binary (method=3) for
+#   tau_1 = timeout if timeout <= 2 s, else min(max(2, timeout / 2), 30) s; then, if the bracket is still open and
+#   more than _AUTO_STAGE_B_MIN_TIME s are left, Stage B, qec_cert with the remaining time, seeded with the bounds of
+#   Stage A.  qec_cert (about 0.6 s to import) is imported only for Stage B.
+# ---------------------------------------------------------------------------------------------------------------
+_AUTO_DEM_FAST_PATH_ERRORS = 25000  # raw DEM error mechanisms above which engine='auto' runs qec_cert first
+_AUTO_DEM_FAST_PATH_MIN_TIMEOUT = 3.0  # ... only with a timeout of at least this many seconds (or no timeout)
+_AUTO_STAGE_B_MIN_TIME = 1.0  # Stage B (qec_cert) only with more than this many seconds left after Stage A
+_AUTO_STAGE1_MIN = 2.0  # Stage A: the whole timeout up to this many seconds, otherwise at least this many seconds
+_AUTO_STAGE1_FRAC = 0.5  # ... and this fraction of the timeout
+_AUTO_STAGE1_MAX = 30.0  # ... but at most this many seconds
+
+
+def _auto_timeout(timeout: Optional[float]) -> float:
+    """The timeout of a run of the binary in seconds: 0 for no limit, 60 (its default) for None or a negative value."""
+    if timeout is None or timeout < 0:
+        return 60.0
+    return float(timeout)
+
+
+def _timeout_at_least(timeout: Optional[float], seconds: float) -> bool:
+    """Whether the timeout of the binary (see _auto_timeout(); 0: no limit) is at least `seconds`."""
+    t = _auto_timeout(timeout)
+    return t <= 0 or t >= seconds
+
+
+def _auto_stage_a_budget(timeout: Optional[float]) -> float:
+    """
+    engine='auto': the time budget tau_1 of Stage A (the dist_m4ri binary, method=3) of the two-stage portfolio: the
+    whole timeout if it is at most _AUTO_STAGE1_MIN = 2 s (also 0: no limit), otherwise
+    min(max(_AUTO_STAGE1_MIN, _AUTO_STAGE1_FRAC * timeout), _AUTO_STAGE1_MAX) = min(max(2, timeout / 2), 30) s (the
+    module constants, e.g., for benchmarks of other budgets).
+    """
+    t = _auto_timeout(timeout)
+    if t <= _AUTO_STAGE1_MIN:
+        return t
+    return min(max(_AUTO_STAGE1_MIN, _AUTO_STAGE1_FRAC * t), _AUTO_STAGE1_MAX)
+
+
+def _dem_num_raw_errors(dem: Any, limit: int = 0) -> int:
+    """
+    The number of error mechanisms of a DEM (a stim.DetectorErrorModel, a .dem file, or the text of a DEM), counted as
+    stim's num_errors: an error in a repeat block once for each repetition, equal errors separately (-1 if unknown).
+    With limit > 0, the count of the text of a DEM may stop as soon as it exceeds the limit.
+    """
+    n = getattr(dem, "num_errors", None)
+    if n is not None:
+        try:
+            return int(n)
+        except (TypeError, ValueError):
+            return -1
+
+    def count(lines: Any) -> int:
+        total, mult = 0, [1]
+        for line in lines:
+            s = line.split("#", 1)[0].strip()
+            if s.startswith("error"):
+                total += mult[-1]
+                if 0 < limit < total:
+                    break
+            elif s.startswith("repeat"):
+                try:
+                    mult.append(mult[-1] * max(0, int(s.split()[1])))
+                except (IndexError, ValueError):
+                    return -1
+            elif s.startswith("}") and len(mult) > 1:
+                mult.pop()
+        return total
+
+    try:
+        if isinstance(dem, (str, Path)) and os.path.isfile(str(dem)):
+            with open(str(dem)) as f:
+                return count(f)
+        return count(str(dem).splitlines())
+    except (OSError, ValueError, UnicodeDecodeError):
+        return -1
+
+
+def _format_auto_info(info: Dict[str, Any]) -> str:
+    """The stages of engine='auto' (the dict _last_run_stats['engine_auto'], see _auto_two_stage()) on one line."""
+    parts = []
+    if info.get("path") == "qec_cert first":
+        parts.append(f"qec_cert first ({info.get('num_errors')} raw DEM error mechanisms > "
+                     f"{_AUTO_DEM_FAST_PATH_ERRORS})")
+    a = info.get("stage_a")
+    if a is not None:
+        tau = info.get("tau_1", 0.0) or 0.0
+        t_str = f"at most {tau:.3g} s" if tau > 0 else "no time limit"
+        src = "cached" if info.get("stage_a_cached") else f"in {info.get('stage_a_time', 0.0):.3g} s"
+        parts.append(f"Stage A, dist_m4ri ({t_str}): [{a[0]}, {a[1]}] {src}")
+    b = info.get("stage_b")
+    if b is not None:
+        tl = info.get("stage_b_time_limit", 0.0) or 0.0
+        tl_str = f"time limit {tl:.3g} s" if tl > 0 else "no time limit"
+        parts.append(f"{'Stage B, ' if a is not None else ''}qec_cert ({tl_str}): [{b[0]}, {b[1]}] in "
+                     f"{info.get('stage_b_time', 0.0):.3g} s")
+    c = info.get("stage_c")
+    if c is not None:
+        parts.append(f"dist_m4ri with the remaining {info.get('stage_c_timeout', 0.0):.3g} s: [{c[0]}, {c[1]}]")
+    if info.get("reason"):
+        parts.append(str(info["reason"]))
+    return "; ".join(parts)
+
+
+def _auto_done_reason(res: Dict[str, Any], stage: str, dstop: int, wmax: int, t_all: float, rem: float) -> str:
+    """engine='auto': why no further stage runs after `stage` with the result res ('' if one should run)."""
+    r_dmin, r_dmax = res["dmin"], res["dmax"]
+    if r_dmin > 0 and r_dmin == r_dmax:
+        return f"exact after {stage}"
+    if dstop > 0 and r_dmin >= dstop:
+        return f"dmin >= dstop={dstop} after {stage}"
+    if wmax > 0 and r_dmin > wmax:
+        return f"CC reached wmax={wmax} in {stage}"
+    if t_all <= 0:
+        return f"no time limit: {stage} ran until the end"
+    if rem <= _AUTO_STAGE_B_MIN_TIME:
+        return f"{max(rem, 0.0):.3g} s left after {stage}"
+    return ""
+
+
+def _auto_seed_bounds(dmin: int, dmax: int, res: Dict[str, Any]) -> Tuple[int, int]:
+    """The bounds for the next stage of engine='auto': the caller's (dmin, dmax) tightened by those of res."""
+    ub = [x for x in (dmax, res["dmax"]) if x > 0]
+    return max(dmin, res["dmin"]), (min(ub) if ub else 0)
+
+
+def _auto_add_rw(res: Dict[str, Any], prev_rw: int) -> Dict[str, Any]:
+    """
+    The result of a later stage of engine='auto' with the RW steps of the earlier runs of the binary (prev_rw) added if
+    the cache is disabled (with the cache, the record counts all of them).
+    """
+    if _use_distance_cache or prev_rw <= 0:
+        return res
+    res = dict(res)
+    res["rw_steps"] = (res.get("rw_steps", 0) or 0) + prev_rw
+    res["d_info"] = format_bounds_list(res["dmin"], res["dmax"], res["rw_steps"])
+    return res
+
+
+def _auto_native_tail(
+    run_native: Callable[[float, int, int], Dict[str, Any]],
+    res: Dict[str, Any],
+    info: Dict[str, Any],
+    *,
+    t0: float,
+    t_all: float,
+    dmin: int,
+    dmax: int,
+    prev_rw: int,
+    say: bool,
+) -> Dict[str, Any]:
+    """
+    engine='auto': the dist_m4ri binary with the time left (more than _AUTO_STAGE_B_MIN_TIME s, see
+    _auto_done_reason()), seeded with the bounds of res (certified, as those of the binary); res if no time is left.
+    """
+    global _last_run_stats
+    rem = t_all - (time.monotonic() - t0)
+    if rem <= _AUTO_STAGE_B_MIN_TIME:
+        _last_run_stats["engine_auto"] = info
+        return res
+    s_dmin, s_dmax = _auto_seed_bounds(dmin, dmax, res)
+    if say:
+        print(f"[dist_m4ri] engine='auto': dist_m4ri with the remaining {rem:.3g} s from the bounds [{s_dmin}, "
+              f"{s_dmax}]")
+    res_c = _auto_add_rw(run_native(rem, s_dmin, s_dmax), prev_rw)
+    info.update(stage_c=[res_c["dmin"], res_c["dmax"]], stage_c_timeout=rem)
+    _last_run_stats["engine_auto"] = info
+    return res_c
+
+
+def _auto_two_stage(
+    run_native: Callable[[float, int, int], Dict[str, Any]],
+    run_cert: Callable[[int, int, int, float], Dict[str, Any]],
+    *,
+    timeout: Optional[float],
+    dmin: int = 0,
+    dmax: int = 0,
+    dstop: int = 0,
+    wmax: int = 0,
+    label: str = "code",
+    debug: int = 0,
+    verbose: bool = False,
+) -> Dict[str, Any]:
+    """
+    engine='auto' (since version 0.17.0): the two-stage portfolio for a quantum code, a sector of a CSS code, or a
+    DEM, for a distance-only method=3 call (see _auto_cert_eligible()).
+
+    Stage A runs the dist_m4ri binary (method=3) with the time budget tau_1 (see _auto_stage_a_budget()); a cache
+    record with the exact distance (or dmin >= dstop) answers the request as usual, without a run.  The result of
+    Stage A is returned at once, without importing qec_cert, if it is exact, if dmin >= dstop > 0, if CC has reached
+    wmax > 0, if at most _AUTO_STAGE_B_MIN_TIME s of the timeout are left, or with timeout=0 (no limit: the binary
+    runs until the bounds meet).  Otherwise, Stage B runs qec_cert (see _cert_code_distance()) with the remaining
+    time, from the bounds of Stage A: wmin = max(1, dmin_A) and wmax = dmax_A - 1 (dmax_A: the weight of a codeword
+    found and verified by the binary), passed explicitly, so that this also holds with the cache disabled; with
+    dmax_A > 0, qec_cert skips its randomized upper-bound stage (use_ub=False: the codeword is known).  The
+    assumption lb_assumed_wmin <= dmin_A of qec_cert is discharged by the lower bound dmin_A certified by the CC of
+    Stage A (certified_dmin, see _cert_wmin_discharged()); a lower bound of qec_cert which is conditional for any
+    other reason is not used.  If qec_cert ends early with an open bracket, the binary runs with the time left.  The
+    result is never weaker than that of Stage A.
+
+    If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None); if its import
+    or qec_cert fails, a warning is written to stderr, and the binary continues with the time left.  The stages are
+    recorded in _last_run_stats["engine_auto"] (see explain_bounds()).
+
+    Args:
+        run_native: (timeout, dmin, dmax) -> the result of _cached_code_distance() for the binary.
+        run_cert: (dmin, dmax, certified_dmin, time_limit) -> the result of _cert_code_distance() for qec_cert.
+        timeout: The timeout of the call in seconds (0: no limit; None: 60 s).
+        dmin / dmax: The caller's bounds (dmax: a known upper bound; 0 for a CSS sector).
+        dstop / wmax: The stop target and the CC weight limit of the call.
+        label: The kind of distance, for the messages.
+        debug / verbose: With verbose or the debug bit PY_DBG_COMMANDS, the stages are reported.
+
+    Returns:
+        The result dict, as returned by _cached_code_distance().
+    """
+    global _last_run_stats
+    say = verbose or bool(debug & PY_DBG_COMMANDS)
+    t_all = _auto_timeout(timeout)
+    if not _qec_cert_available():
+        res = run_native(timeout, dmin, dmax)
+        _last_run_stats["engine_auto"] = {"stage": "native", "stage_a": None, "stage_b": None,
+                                          "reason": "qec_cert is not installed: dist_m4ri with the whole timeout"}
+        return res
+    tau_1 = _auto_stage_a_budget(timeout)
+    if say:
+        t_str = f"timeout={tau_1:g} s" if tau_1 > 0 else "no time limit"
+        print(f"[dist_m4ri] engine='auto': Stage A, dist_m4ri (method=3, {t_str}) for the {label} distance")
+    t0 = time.monotonic()
+    res_a = run_native(timeout if tau_1 == t_all else tau_1, dmin, dmax)  # (the whole timeout: as given)
+    t_a = time.monotonic() - t0
+    a_rw = res_a.get("rw_steps", 0) or 0
+    info: Dict[str, Any] = {
+        "stage": "A", "timeout": t_all, "tau_1": tau_1, "stage_a": [res_a["dmin"], res_a["dmax"], a_rw],
+        "stage_a_time": t_a, "stage_a_cached": bool(res_a.get("cached")), "stage_b": None, "reason": ""}
+    reason = _auto_done_reason(res_a, "Stage A", dstop, wmax, t_all, t_all - t_a)
+    if reason:
+        info["reason"] = reason
+        _last_run_stats["engine_auto"] = info
+        if say:
+            print(f"[dist_m4ri] engine='auto': Stage A bounds [{res_a['dmin']}, {res_a['dmax']}] in {t_a:.3g} s; "
+                  f"{reason}: no qec_cert run")
+        return res_a
+    s_dmin, s_dmax = _auto_seed_bounds(dmin, dmax, res_a)
+    if say:
+        print(f"[dist_m4ri] engine='auto': Stage A bounds [{res_a['dmin']}, {res_a['dmax']}] in {t_a:.3g} s; "
+              f"Stage B, qec_cert with the remaining {t_all - t_a:.3g} s")
+    t_b0 = time.monotonic()
+    try:
+        _get_qec_cert()  # (the import, before the time limit of qec_cert is set)
+        t_lim = max(t_all - (time.monotonic() - t0), 0.1)  # (never 0.0: no limit in qec_cert)
+        info["stage_b_time_limit"] = t_lim
+        res_b = run_cert(s_dmin, s_dmax, res_a["dmin"], t_lim)
+    except Exception as e:  # (ImportError of a broken installation, or an error in qec_cert)
+        sys.stderr.write(f"# Warning: engine='auto': qec_cert failed ({type(e).__name__}: {e}); using the dist_m4ri "
+                         f"bounds [{res_a['dmin']}, {res_a['dmax']}]\n")
+        info["reason"] = "qec_cert failed"
+        return _auto_native_tail(run_native, res_a, info, t0=t0, t_all=t_all, dmin=dmin, dmax=dmax, prev_rw=a_rw,
+                                 say=say)
+    t_b = time.monotonic() - t_b0
+    res_b = _auto_add_rw(dict(res_b, cached=False), a_rw)
+    info.update(stage="B", stage_b=[res_b["dmin"], res_b["dmax"]], stage_b_time=t_b)
+    if say:
+        print(f"[dist_m4ri] engine='auto': Stage B (qec_cert) bounds [{res_b['dmin']}, {res_b['dmax']}] in "
+              f"{t_b:.3g} s")
+    reason = _auto_done_reason(res_b, "Stage B", dstop, wmax, t_all, t_all - (time.monotonic() - t0))
+    if reason:
+        info["reason"] = reason
+        _last_run_stats["engine_auto"] = info
+        return res_b
+    info["reason"] = "qec_cert ended early with an open bracket"
+    return _auto_native_tail(run_native, res_b, info, t0=t0, t_all=t_all, dmin=dmin, dmax=dmax, prev_rw=a_rw,
+                             say=say)
+
+
+def _auto_cert_first(
+    run_native: Callable[[float, int, int], Dict[str, Any]],
+    run_cert: Callable[[int, int, int, float], Dict[str, Any]],
+    *,
+    timeout: Optional[float],
+    dmin: int = 0,
+    dmax: int = 0,
+    dstop: int = 0,
+    wmax: int = 0,
+    num_errors: int = 0,
+    debug: int = 0,
+    verbose: bool = False,
+) -> Dict[str, Any]:
+    """
+    engine='auto' for a DEM with more than _AUTO_DEM_FAST_PATH_ERRORS raw error mechanisms and a timeout of at least
+    _AUTO_DEM_FAST_PATH_MIN_TIMEOUT s (or none): qec_cert first, with the whole timeout, as with engine='cert' (a
+    cache record with the exact distance answers without importing qec_cert).  If qec_cert is not installed, the
+    binary runs with the whole timeout; if qec_cert fails (a warning) or ends early with an open bracket, the binary
+    runs with the time left (see _auto_two_stage() for the arguments).
+    """
+    global _last_run_stats
+    say = verbose or bool(debug & PY_DBG_COMMANDS)
+    t_all = _auto_timeout(timeout)
+    info: Dict[str, Any] = {"path": "qec_cert first", "num_errors": num_errors, "stage": "B", "timeout": t_all,
+                            "stage_a": None, "stage_b": None, "reason": ""}
+    if not _qec_cert_available():
+        res = run_native(timeout, dmin, dmax)
+        info.update(stage="native", reason="qec_cert is not installed: dist_m4ri with the whole timeout")
+        _last_run_stats["engine_auto"] = info
+        return res
+    if say:
+        print(f"[dist_m4ri] engine='auto': {num_errors} raw DEM error mechanisms (more than "
+              f"{_AUTO_DEM_FAST_PATH_ERRORS}): qec_cert first")
+    t0 = time.monotonic()
+    try:
+        info["stage_b_time_limit"] = t_all
+        res = run_cert(dmin, dmax, 0, t_all)
+    except Exception as e:
+        sys.stderr.write(f"# Warning: engine='auto': qec_cert failed ({type(e).__name__}: {e}); using dist_m4ri\n")
+        info.update(stage="native", reason="qec_cert failed")
+        rem = t_all - (time.monotonic() - t0)
+        res = run_native(max(rem, _AUTO_STAGE_B_MIN_TIME) if t_all > 0 else 0.0, dmin, dmax)
+        _last_run_stats["engine_auto"] = info
+        return res
+    _last_run_stats = {}  # (no run of the binary)
+    info.update(stage_b=[res["dmin"], res["dmax"]], stage_b_time=time.monotonic() - t0)
+    reason = _auto_done_reason(res, "qec_cert", dstop, wmax, t_all, t_all - (time.monotonic() - t0))
+    if reason:
+        info["reason"] = reason
+        _last_run_stats["engine_auto"] = info
+        return res
+    info["reason"] = "qec_cert ended early with an open bracket"
+    return _auto_native_tail(run_native, res, info, t0=t0, t_all=t_all, dmin=dmin, dmax=dmax, prev_rw=0, say=say)
 
 
 def _merge_start_into_plain(
@@ -1836,7 +2345,8 @@ def run_dist_m4ri(
     warn_ksub: bool = True,
     start_scan: bool = False,
     ortho: bool = True,
-    warn_ortho: bool = True
+    warn_ortho: bool = True,
+    rw_opt: Optional[int] = None
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
@@ -1905,6 +2415,23 @@ def run_dist_m4ri(
             distance.  With debug & 1, the binary prints the pairs checked per step and the codewords found by pairs
             and by single columns (also in _last_run_stats).  The pairs of disjoint codewords are skipped (their sum
             is reducible: the binary records only irreducible codewords, its default irred=1).
+
+    RW pipeline:
+        rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary, passed as rw_opt=N if
+            not None (None, the default: the binary's default -1).  -1: automatic, the stages which apply to the input
+            (the rules D1-D5 of doc/rw_triplet_degeneracies.tex: 1 + 16 for quantum codes, also 8 for wide DEMs and
+            32 when collecting codewords; 2 and 4 only if listed; none for classical codes); 0: all stages off (the RW
+            of version 0.16.1, e.g., for regression and ablation runs); a bitmask 1..63: only the stages listed: 1,
+            the weight-3 relations T3 of the columns (found after merge and drop) with the contraction of the
+            candidates of a RW step and the Stern filter of its pairs; 2, the shortening of the candidates by the rows
+            of G (finG); 4, row-slab windows of a multi-round DEM; 8, the sparse-dual elimination (an m x m inverse
+            instead of the m x n matrix); 16, the canonical classes of the minimum-weight codewords, which the
+            min_hits stopping rule counts (Good-Turing and Chao2 on the uniform RW steps), and the Harris-FKG score;
+            32, the codewords collected (outC, maxC) expanded by the T3 relations.  Only with full-matrix RW (ksub=0).
+            With rw_opt != 0, the automatic hybrid windows (kwin=0) are used only for a DEM (matrices: uniform
+            permutations, unless kwin > 0 or win_hyb > 0).  The distance found is valid with any rw_opt, and the cache
+            key does not depend on it.  With debug & 1 (or verbose=True), the binary prints the stages used, |T3|, the
+            canonical classes, and the Harris-FKG score (in _last_run_stats, see _parse_stderr_stats()).
 
     RW stopping criterion:
         min_hits: Passed as min_hits=N if not None and >= 0 (None, the default, or a negative value: the binary's
@@ -1982,6 +2509,7 @@ def run_dist_m4ri(
 
     if cc_prune is not None and cc_prune not in (0, 1, 2):
         raise ValueError(f"invalid cc_prune={cc_prune!r}: cc_prune should be 0, 1, or 2")
+    _check_rw_opt(rw_opt)
 
     if method == 2 and wmax <= 0:
         if dmax > 0:
@@ -2037,6 +2565,7 @@ def run_dist_m4ri(
     if min_hits is not None and min_hits >= 0: cmd.append(f"min_hits={min_hits}")
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh is not None: cmd.append(f"refresh={refresh}")
+    if rw_opt is not None: cmd.append(f"rw_opt={int(rw_opt)}")
 
     if eff_debug & PY_DBG_COMMANDS:
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
@@ -4028,7 +4557,8 @@ def _cached_code_distance(
     win_hyb: int = 0,
     pairs: int = -1,
     cc_prune: Optional[int] = None,
-    ortho: bool = True
+    ortho: bool = True,
+    rw_opt: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
@@ -4037,8 +4567,8 @@ def _cached_code_distance(
     shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
     compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
     and the CC search cc_prune (see run_dist_m4ri()) do not change the result, nor the cache key; nor do the RW window
-    size win_hyb, the RW pairs (pairs), and the expert option ortho (False: the binary does not check H G^T = 0) change
-    the cache key.
+    size win_hyb, the RW pairs (pairs), the RW stages rw_opt, and the expert option ortho (False: the binary does not
+    check H G^T = 0) change the cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -4203,7 +4733,8 @@ def _cached_code_distance(
             min_hits=min_hits,
             cov_cws=cov_cws,
             refresh=refresh,
-            verbose=verbose
+            verbose=verbose,
+            rw_opt=rw_opt
         )
 
         cws: List[List[int]] = []
@@ -4286,6 +4817,7 @@ def compute_classical_distance(
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     engine: Optional[str] = None,
+    rw_opt: Optional[int] = None,
     **kwargs
 ) -> Any:
     """
@@ -4366,14 +4898,21 @@ def compute_classical_distance(
         seed: Random seed.
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
+        engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert (distance only, see
+            compute_quantum_distance()); "auto": the dist_m4ri binary (since version 0.17.0, a classical code is never
+            delegated to qec_cert, whose import alone takes longer than most runs of the binary).
+        rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
+            the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
+            see run_dist_m4ri()).  The result and the cache key do not depend on it.
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
-        ValueError: for an invalid option value (e.g., start, or cc_prune other than 0, 1, or 2), for method=2 with
-            timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
+        ValueError: for an invalid option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63),
+            for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
+            solver="codedistance".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
         RuntimeError: if the binary exits with an error (e.g., for a missing input file).
         ImportError: if solver="codedistance" but the codedistance package is not installed.
@@ -4381,6 +4920,7 @@ def compute_classical_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_classical_distance, kwargs)
+    _check_rw_opt(rw_opt)
     cert_mode = _resolve_cert_engine(solver, engine)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
@@ -4411,7 +4951,7 @@ def compute_classical_distance(
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
     if _can_delegate_to_cert(
         cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC,
-        start_list=start_list,
+        start_list=start_list, classical=True,  # (engine='auto': never for a classical code)
     ):
         _, qec_io, qec_pipeline = _get_qec_cert()
         mode_arg = "ub" if method == 1 else "auto"
@@ -4438,7 +4978,7 @@ def compute_classical_distance(
         eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
         chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0),
         win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune
+        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, rw_opt=rw_opt
     )
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
@@ -4497,6 +5037,7 @@ def compute_quantum_distance(
     cc_prune: Optional[int] = None,
     ortho: bool = True,
     engine: Optional[str] = None,
+    rw_opt: Optional[int] = None,
     **kwargs
 ) -> Any:
     """
@@ -4585,6 +5126,17 @@ def compute_quantum_distance(
         seed: Random seed.
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
+        engine: None or "dist_m4ri" (default): the dist_m4ri binary.  "cert": qec_cert (an error for codeword
+            extraction; a lower bound of qec_cert is cached only if it is unconditional, and an upper bound only with
+            a verified witness).  "auto" (since version 0.17.0, a two-stage portfolio for a distance-only method=3
+            call; otherwise the binary, see _auto_two_stage()): Stage A, the binary for tau_1 = timeout if timeout
+            <= 2 s, else min(max(2, timeout / 2), 30) s; if its bracket is still open and more than 1 s is left,
+            Stage B, qec_cert with the remaining time, from the bounds of Stage A (wmin = dmin_A, wmax = dmax_A - 1);
+            the binary only, with the whole timeout, if qec_cert is not installed.  A cached exact result is used
+            without a run (and without importing qec_cert).  The details are in _last_run_stats["engine_auto"].
+        rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
+            the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
+            see run_dist_m4ri()).  The result and the cache key do not depend on it.
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
@@ -4592,8 +5144,9 @@ def compute_quantum_distance(
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         ValueError: if neither or both of G and L are given (or G is not given, with solver="codedistance"), for an
-            invalid option value (e.g., start, or cc_prune other than 0, 1, or 2), for method=2 with timeout <= 0
-            but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
+            invalid option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63), for
+            method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
+            solver="codedistance".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
         RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for rows
             of H and G which are not orthogonal).
@@ -4602,6 +5155,7 @@ def compute_quantum_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_quantum_distance, kwargs)
+    _check_rw_opt(rw_opt)
     cert_mode = _resolve_cert_engine(solver, engine)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
@@ -4649,6 +5203,42 @@ def compute_quantum_distance(
         return d
 
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+
+    def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int) -> Dict[str, Any]:
+        # (the native multithreaded dist_m4ri; the cache records are shared with the sectors of CSS codes)
+        return _cached_code_distance(
+            H, G, L, False, "quantum", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=t_budget,
+            num_steps=num_steps, d_exp=d_exp, dmin=dmin_s, dmax=dmax_s, dstop=dstop, wmin=wmin, wmax=wmax,
+            smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
+            eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
+            chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0),
+            win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
+            sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, ortho=ortho, rw_opt=rw_opt
+        )
+
+    if cert_mode == "auto" and _auto_cert_eligible(
+        method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
+    ):
+        def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
+            def certify(w_lo: int, w_hi: int) -> Any:
+                _, qec_io, qec_pipeline = _get_qec_cert()
+                return qec_pipeline.certify(
+                    qec_io.DistanceProblem(
+                        _cert_to_csr(H, qec_io), _cert_to_csr(L, qec_io), _cert_to_csr(G, qec_io)
+                    ),
+                    wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8), seed=seed if seed != 0 else 1,
+                    time_limit=t_lim, mode="auto", use_ub=dmax_s <= 0,  # (no ISD for a codeword already found)
+                )
+            return _cert_code_distance(
+                lambda: _matrix_cache_key(H, G, L, False), certify, label="quantum", dmin=dmin_s, dmax=dmax_s,
+                dstop=dstop, wmax=wmax, eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+                certified_dmin=cert_dmin,
+            )
+        res = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop,
+                              wmax=wmax, label="quantum", debug=debug, verbose=verbose)
+        dist, d_info = res["dist"], res["d_info"]
+        return (dist, d_info) if return_info else dist
+
     if _can_delegate_to_cert(
         cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC,
         start_list=start_list,
@@ -4672,16 +5262,7 @@ def compute_quantum_distance(
         dist, d_info = res["dist"], res["d_info"]
         return (dist, d_info) if return_info else dist
 
-    # Solver is native multithreaded dist_m4ri (the cache records are shared with the sectors of CSS codes)
-    res = _cached_code_distance(
-        H, G, L, False, "quantum", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
-        num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
-        smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC, need_cws=bool(do_cws or outC),
-        eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
-        chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0),
-        win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-        sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, ortho=ortho
-    )
+    res = run_native(timeout, eff_dmin, eff_dmax)
     dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
     if return_info:
         return (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -4770,6 +5351,7 @@ def compute_css_distance(
     cc_prune: Optional[int] = None,
     ortho: bool = True,
     engine: Optional[str] = None,
+    rw_opt: Optional[int] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -4857,6 +5439,13 @@ def compute_css_distance(
         seed: Random seed.
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
+        engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert for each sector; "auto" (since
+            version 0.17.0): the two-stage portfolio of compute_quantum_distance() for each sector (a distance-only
+            method=3 call): the binary first (Stage A, from the timeout as there), and qec_cert only for a sector
+            whose bracket is still open (Stage B); each sector has the whole timeout, as with the other engines.
+        rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
+            the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
+            see run_dist_m4ri()).  The result and the cache key do not depend on it.
 
     Returns:
         tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
@@ -4864,9 +5453,9 @@ def compute_css_distance(
 
     Raises:
         ValueError: if Hx or Hz is missing or empty (use compute_quantum_distance() for one sector, or
-            compute_classical_distance() for a classical code), for an invalid option value (e.g., start, or
-            cc_prune other than 0, 1, or 2), for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or
-            for do_cws / outC with solver="codedistance".
+            compute_classical_distance() for a classical code), for an invalid option value (e.g., start, cc_prune
+            other than 0, 1, or 2, or rw_opt outside -1..63), for method=2 with timeout <= 0 but without wmax, dmax, or
+            dstop, or for do_cws / outC with solver="codedistance".
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
         RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for
@@ -4893,6 +5482,7 @@ def compute_css_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max  # an upper bound on d = min(dX, dZ), not on either sector
     _check_kwargs(compute_css_distance, kwargs)
+    _check_rw_opt(rw_opt)
     cert_mode = _resolve_cert_engine(solver, engine)
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
     _warn_experimental_ksub(ksub, method, solver)
@@ -4957,7 +5547,43 @@ def compute_css_distance(
             dual = ("Hx" if s == "X" else "Hz") if G_s is not None else ("Lz" if s == "X" else "Lx")
             print(f"[dist_m4ri] CSS sector d{s}: H={'Hz' if s == 'X' else 'Hx'} with "
                   f"{'G' if G_s is not None else 'L'}={dual}")
-        if _can_delegate_to_cert(
+
+        def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int, s: str = s, H_s: Any = H_s,
+                       G_s: Any = G_s, L_s: Any = L_s, finC_s: Optional[str] = finC_s) -> Dict[str, Any]:
+            return _cached_code_distance(
+                H_s, G_s, L_s, False, f"CSS {s}-sector", dist_m4ri=dist_m4ri, method=method, threads=threads,
+                timeout=t_budget, num_steps=num_steps, d_exp=d_exp, dmin=dmin_s, dmax=dmax_s, dstop=sector_stop,
+                wmin=wmin, wmax=wmax, smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC_s,
+                outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
+                seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
+                kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+                cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
+                pairs=pairs, cc_prune=cc_prune, ortho=ortho, rw_opt=rw_opt
+            )
+
+        if cert_mode == "auto" and _auto_cert_eligible(
+            method=method, do_cws=do_cws, outC=outC, finC=finC_s, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
+        ):
+            def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float, s: str = s, H_s: Any = H_s,
+                         G_s: Any = G_s, L_s: Any = L_s) -> Dict[str, Any]:
+                def certify(w_lo: int, w_hi: int) -> Any:
+                    _, qec_io, qec_pipeline = _get_qec_cert()
+                    return qec_pipeline.certify(
+                        qec_io.DistanceProblem(
+                            _cert_to_csr(H_s, qec_io), _cert_to_csr(L_s, qec_io), _cert_to_csr(G_s, qec_io)
+                        ),
+                        wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                        seed=seed if seed != 0 else 1, time_limit=t_lim, mode="auto", use_ub=dmax_s <= 0,
+                    )
+                return _cert_code_distance(
+                    lambda: _matrix_cache_key(H_s, G_s, L_s, False), certify, label=f"CSS {s}-sector", dmin=dmin_s,
+                    dmax=dmax_s, dstop=sector_stop, wmax=wmax, eff_cache_file=eff_cache_file, debug=debug,
+                    verbose=verbose, certified_dmin=cert_dmin,
+                )
+            # (a sector: the user's dmax is a bound on min(dX, dZ), passed as the stop target, not as an upper bound)
+            res[s] = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=0, dstop=sector_stop,
+                                     wmax=wmax, label=f"CSS {s}-sector", debug=debug, verbose=verbose)
+        elif _can_delegate_to_cert(
             cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC_s, smax=smax,
             dW=dW, maxC=maxC, start_list=start_list,
         ):
@@ -4978,16 +5604,7 @@ def compute_css_distance(
                 eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
             )
         else:
-            res[s] = _cached_code_distance(
-                H_s, G_s, L_s, False, f"CSS {s}-sector", dist_m4ri=dist_m4ri, method=method, threads=threads,
-                timeout=timeout, num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=0, dstop=sector_stop, wmin=wmin,
-                wmax=wmax, smax=smax, start_list=start_list, dW=dW, maxC=maxC, finC=finC_s,
-                outC=_split_css_filename(outC, s) if outC else None, need_cws=need_cws, eff_cache_file=eff_cache_file,
-                seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
-                kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-                cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
-                pairs=pairs, cc_prune=cc_prune, ortho=ortho
-            )
+            res[s] = run_native(timeout, eff_dmin, 0)
         _last_css_stats[s] = dict(_last_run_stats)
 
     rx, rz = res["X"], res["Z"]
@@ -5313,6 +5930,7 @@ def compute_dem_distance(
     sort_rows: Optional[bool] = None,
     cc_prune: Optional[int] = None,
     engine: Optional[str] = None,
+    rw_opt: Optional[int] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -5445,6 +6063,16 @@ def compute_dem_distance(
         force_noise: If True, the noise of a Stim circuit is replaced by the uniform noise of strength p_noise (see
             strip_noise(); with p_noise=0, all noise is removed, e.g., to save the noiseless circuit with out_stim),
             e.g., to compare circuits with the same noise model (default: False).
+        engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert (certify_circuit() for a Stim
+            circuit, certify_dem() for a DEM); "auto" (since version 0.17.0, for a distance-only method=3 call with
+            pmin=0, without outD and out_reduced; otherwise the binary): with more than 25,000 raw error mechanisms
+            and a timeout of at least 3 s (or 0, no limit), qec_cert first, whose exact reductions of large DEMs run
+            before any search (the binary with the time left if qec_cert ends early with an open bracket); otherwise
+            the two-stage portfolio of compute_quantum_distance() (the binary first, then qec_cert if the bracket is
+            still open); the binary only, with the whole timeout, if qec_cert is not installed.
+        rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
+            the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
+            see run_dist_m4ri()).  The result and the cache key do not depend on it.
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -5453,8 +6081,8 @@ def compute_dem_distance(
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         ValueError: if neither dem nor circuit is given, for rounds without a Stim circuit (or rounds < 0), for
             p_noise outside [0, 0.5], for an invalid drop (e.g., a file which does not exist) or another invalid
-            option value (e.g., start, or cc_prune other than 0, 1, or 2), for method=2 with timeout <= 0 but
-            without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
+            option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63), for method=2 with
+            timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
         RuntimeError: if the binary exits with an error.
         ImportError: if stim is needed (e.g., for a Stim circuit) or solver="codedistance", but the package is not
@@ -5464,6 +6092,7 @@ def compute_dem_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_dem_distance, kwargs)
+    _check_rw_opt(rw_opt)
     cert_mode = _resolve_cert_engine(solver, engine)
     if start_scan:  # (the binary merges the equal columns of a DEM, which changes the order of the columns)
         _warn_ignored("start_scan=1 is not available for a DEM (ignored)")
@@ -5557,7 +6186,7 @@ def compute_dem_distance(
             def cws_out_fn(cws_in: List[List[int]]) -> List[List[int]]:
                 return _expand_equal_columns(cws_in, fdem_run, pmin=pmin, maxC=maxC, verbose=verbose)
         eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
-        if _can_delegate_to_cert(
+        if cert_mode != "auto" and _can_delegate_to_cert(
             cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax,
             dW=dW, maxC=maxC, start_list=start_list, outD=outD, out_reduced=out_reduced, pmin=pmin
         ):
@@ -5582,17 +6211,48 @@ def compute_dem_distance(
             )
             dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
             return (dist, d_info, cws) if do_cws else (dist, d_info)
-        res = _cached_code_distance(
-            None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=timeout,
-            num_steps=num_steps, d_exp=d_exp, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmin=wmin, wmax=wmax,
-            smax=smax if smax is not None else 0, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC,
-            need_cws=bool(do_cws or outC), eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose,
-            nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
-            kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
-            cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
-            merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop, outD=outd_file,
-            sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune
-        )
+
+        def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int) -> Dict[str, Any]:
+            return _cached_code_distance(
+                None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=t_budget,
+                num_steps=num_steps, d_exp=d_exp, dmin=dmin_s, dmax=dmax_s, dstop=dstop, wmin=wmin, wmax=wmax,
+                smax=smax if smax is not None else 0, start_list=start_list, dW=dW, maxC=maxC, finC=finC, outC=outC,
+                need_cws=bool(do_cws or outC), eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose,
+                nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
+                kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
+                cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
+                merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop,
+                outD=outd_file, sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, rw_opt=rw_opt
+            )
+
+        if cert_mode == "auto" and _auto_cert_eligible(
+            method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
+            outD=outD, out_reduced=out_reduced, pmin=pmin,
+        ):
+            def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
+                n_thr, r_seed = threads or (os.cpu_count() or 8), seed if seed != 0 else 1
+
+                def certify(w_lo: int, w_hi: int) -> Any:
+                    _, _, qec_pipeline = _get_qec_cert()
+                    kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode="auto",
+                              use_ub=dmax_s <= 0)  # (no ISD for a codeword already found)
+                    if circuit is not None:
+                        return qec_pipeline.certify_circuit(circuit, **kw)
+                    return qec_pipeline.certify_dem(fdem_run, **kw)
+                return _cert_code_distance(
+                    lambda: _dem_cache_key(dem, pmin), certify, label="DEM", dmin=dmin_s, dmax=dmax_s, dstop=dstop,
+                    wmax=wmax, eff_cache_file=eff_cache_file, debug=debug, verbose=verbose, certified_dmin=cert_dmin,
+                )
+            num_err = (_dem_num_raw_errors(dem, limit=_AUTO_DEM_FAST_PATH_ERRORS)
+                       if _timeout_at_least(timeout, _AUTO_DEM_FAST_PATH_MIN_TIMEOUT) else -1)
+            if num_err > _AUTO_DEM_FAST_PATH_ERRORS:  # (a large raw DEM: the exact reductions of qec_cert first)
+                res = _auto_cert_first(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=eff_dmax,
+                                       dstop=dstop, wmax=wmax, num_errors=num_err, debug=debug, verbose=verbose)
+            else:
+                res = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=eff_dmax,
+                                      dstop=dstop, wmax=wmax, label="DEM", debug=debug, verbose=verbose)
+        else:
+            res = run_native(timeout, eff_dmin, eff_dmax)
         ran = not res["cached"]
         drop_stats = _last_run_stats if ran else {}
         if outd_file is not None and res["cached"]:  # a run only to find the detectors dropped (bounds coincide)
@@ -5929,6 +6589,7 @@ def compute_model_lower_bound(
     cc_prune: Optional[int] = None,
     return_info: bool = False,
     dem: Optional[Any] = None,
+    rw_opt: Optional[int] = None,
     **kwargs
 ) -> Any:
     """
@@ -5969,6 +6630,8 @@ def compute_model_lower_bound(
         sort_rows / cc_prune: The row order and the CC search of the binary (see run_dist_m4ri(); None, the default:
             the binary's defaults, i.e., the rows of the model sorted by weight, and the branch and bound), for each
             run.  The bound and the cache keys do not depend on them.
+        rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary, for each run (None,
+            the default: the binary's -1, automatic; see run_dist_m4ri()).  The bound does not depend on it.
         dstop: Stop target (see compute_dem_distance()): the runs end once CC has certified dmin >= dstop.
         wmax: Maximum weight of the CC rounds on the model (0: until the bounds meet or the timeout).
         minority: If True, the groups without a final data measurement (e.g., the chains of the minority-basis
@@ -5995,6 +6658,7 @@ def compute_model_lower_bound(
     """
     global _distance_cache
     _check_kwargs(compute_model_lower_bound, kwargs, aliases=())
+    _check_rw_opt(rw_opt)
     src = dem if dem is not None else circuit
     if src is None:
         raise ValueError("compute_model_lower_bound: a Stim circuit (.stim) or DEM (.dem) is required")
@@ -6064,7 +6728,7 @@ def compute_model_lower_bound(
             wmin=wmin, wmax=wmax, smax=0, start_list=None, dW=-1, maxC=0, finC=None, outC=None, need_cws=False,
             eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
             chunk_size=0, ksub=0, kwin=0, win_mode=0, min_hits=None, cov_cws=100, refresh=None, trust_start=False,
-            pairs=pairs, sort_rows=sort_rows, cc_prune=cc_prune)
+            pairs=pairs, sort_rows=sort_rows, cc_prune=cc_prune, rw_opt=rw_opt)
         return list(res["d_info"])
 
     if full["trivial"]:
@@ -6164,6 +6828,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "out_reduced": None,
         "sort_rows": None,
         "cc_prune": None,
+        "rw_opt": None,
         "ortho": True,
         "noscan": 0,
         "irred": None,
@@ -6330,6 +6995,13 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             else:
                 args["rounds"] = 2
                 i += 1
+            continue
+
+        if arg in ("--rw-opt", "-rw-opt", "--rw_opt", "-rw_opt", "--rwopt", "-rwopt"):  # (the value may be -1)
+            if i + 1 >= len(argv) or "=" in argv[i + 1]:
+                raise ValueError(f"'{arg}' needs a value: -1 (automatic), 0 (off), or a bitmask 1 to 63")
+            args["rw_opt"] = _parse_rw_opt(argv[i + 1], f"{arg} {argv[i + 1]}")
+            i += 2
             continue
 
         if arg in ("--out-dem", "-out-dem", "--out_dem", "-out_dem", "out_dem"):
@@ -6518,6 +7190,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 if val not in ("0", "1", "2"):
                     raise ValueError(f"invalid '{arg}': cc_prune should be 0, 1, or 2")
                 args["cc_prune"] = int(val)
+            elif key_lower in ("rw_opt", "rw-opt", "rwopt"):
+                args["rw_opt"] = _parse_rw_opt(val, arg)
             elif key_lower == "ortho":
                 if val not in ("0", "1"):
                     raise ValueError(f"invalid '{arg}': ortho should be 0 or 1")
@@ -6673,7 +7347,7 @@ Allowed parameters:
   win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, start_scan,
   cbeg, cend, finC, outC, maxC, expand, dW, irred, seed, debug, solver, engine,
   cache, --no-cache, --verbose, --silent, --cws, --trust-start, sort_rows,
-  cc_prune, ortho
+  cc_prune, ortho, rw_opt
 
 Help options:
   -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -7021,6 +7695,26 @@ Multithreading & throttling:
                         7-26 times faster, and lighter codewords of codes with a large distance.
                         Not with ksub.  With --verbose (or debug&1), the binary prints the pairs
                         checked per step and the codewords found by pairs and by single columns.
+  rw_opt=N              Expert option (since version 0.17.0; also --rw-opt N): the stages of the RW
+                        search of the dist_m4ri binary.  Default: -1 = automatic, the stages which
+                        apply to the input (1 + 16 for quantum codes, also 8 for wide DEMs and 32
+                        when collecting codewords; 2 and 4 only if listed; none for classical
+                        codes); 0: all off (the RW of version 0.16.1, e.g., for comparisons); a
+                        bitmask from 1 to 63 (decimal or 0x...): only the stages listed, 1: the
+                        weight-3 relations T3 of the columns (found after merge and drop) with the
+                        contraction of the candidates of a RW step and the Stern filter of its
+                        pairs; 2: the shortening of the candidates by the rows of G (finG); 4:
+                        row-slab windows of a multi-round DEM; 8: the sparse-dual elimination (an
+                        m x m inverse instead of the m x n matrix); 16: the canonical classes of
+                        the minimum-weight codewords, which the min_hits stopping rule counts
+                        (Good-Turing and Chao2 estimates from the uniform RW steps), and the
+                        Harris-FKG score; 32: the codewords collected (outC, maxC) expanded by the
+                        T3 relations.  Only with full-matrix RW (ksub=0).  With rw_opt != 0, the
+                        automatic hybrid windows (kwin=0) are used only for a DEM (matrices:
+                        uniform permutations, unless kwin > 0 or win_hyb > 0).  The distance is
+                        valid with any rw_opt, and the cache key does not depend on it.  With
+                        --verbose (or debug&1), the binary prints the stages used, |T3|, the
+                        canonical classes, and the Harris-FKG score.
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = off; alias: max_hits).
                         Stops RW when the average number of hits <n> per codeword (by all RW steps,
                         with or without windows, and by CC or finC) reaches min_hits, both for the
@@ -7155,8 +7849,16 @@ Distance caching (Python CLI):
 General options:
   solver=NAME, engine=NAME
                         Distance calculation engine: 'dist_m4ri' (default), 'cert' ('qec_cert'),
-                        'auto' (delegates distance-only calls to qec_cert if installed), or
-                        'codedistance'.
+                        'auto', or 'codedistance'.  'auto' (since version 0.17.0): a two-stage
+                        portfolio for a distance-only method=3 run of a quantum code, a CSS sector,
+                        or a DEM (otherwise, e.g., for a classical code or with codewords, the
+                        dist_m4ri binary): the binary first (Stage A) for the whole timeout if it
+                        is at most 2 s, else for min(max(2, timeout/2), 30) s; then, if the bounds
+                        differ and more than 1 s is left, qec_cert with the remaining time (Stage
+                        B), from the bounds of the binary (wmin=dmin, wmax=dmax-1).  A DEM with more
+                        than 25,000 error mechanisms goes to qec_cert first (timeout >= 3 s or 0).
+                        qec_cert is imported only when it runs; without it, the binary runs with
+                        the whole timeout.  --verbose reports the stages.
   --verbose / -v        Enable verbose output with detailed explanations of bounds,
                         timings, steps, and cache status (implies the debug bits 1, 2,
                         65536, and 131072).  For a RW upper bound which is not certified,
@@ -7529,6 +8231,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 cc_prune=args["cc_prune"],
+                rw_opt=args["rw_opt"],
                 return_info=True
             )
             if args["verbose"]:
@@ -7590,6 +8293,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 cc_prune=args["cc_prune"],
+                rw_opt=args["rw_opt"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -7660,6 +8364,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 cc_prune=args["cc_prune"],
+                rw_opt=args["rw_opt"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -7749,6 +8454,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 cc_prune=args["cc_prune"],
+                rw_opt=args["rw_opt"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],
@@ -7807,6 +8513,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 pairs=args["pairs"],
                 sort_rows=args["sort_rows"],
                 cc_prune=args["cc_prune"],
+                rw_opt=args["rw_opt"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],

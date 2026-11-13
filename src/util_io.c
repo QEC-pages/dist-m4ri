@@ -82,6 +82,9 @@ params_t prm={
   .win_mode=0,
   .win_hyb=0, /* (auto: 256 for a DEM, 512 for matrices) */
   .pairs=-1, /* (auto) */
+  .rw_opt=-1, /* (auto) */
+  .rw_active=0,
+  .canon={.active=0, .full=0, .w=INT_MAX, .classes=0, .raw=0, .n_unif=0, .f1=0, .f2=0},
   .round_D=0,
   .round_L=0,
   .round_score=-1.0, /* (not estimated) */
@@ -151,6 +154,22 @@ static int parse_debug_value(const char * const str, const char * const arg){
   const long val = strtol(digits, &end, hex ? 16 : 10);
   if ((end == digits) || (*end != '\0') || errno || (val < 0) || (val > INT_MAX))
     ERROR("invalid '%s': expected a non-negative decimal or hexadecimal (0x...) integer", arg);
+  return (int) val;
+}
+
+/** @brief Parse the value `str` of the argument `arg` = `rw_opt=...`: -1 (automatic), or a bitmask of the RW stages
+ *  0..RW_OPT_ALL as a decimal or hexadecimal (0x...) integer */
+static int parse_rw_opt(const char * const str, const char * const arg){
+  if (strcmp(str, "-1") == 0)
+    return -1;
+  const int hex = (str[0] == '0') && ((str[1] == 'x') || (str[1] == 'X'));
+  const char * const digits = hex ? str + 2 : str;
+  char *end = NULL;
+  errno = 0;
+  const long val = strtol(digits, &end, hex ? 16 : 10);
+  if ((end == digits) || (*end != '\0') || errno || (val < 0) || (val > RW_OPT_ALL))
+    ERROR("invalid '%s': rw_opt should be -1 (automatic), 0 (none), or a bitmask of the RW stages from 1 to %d (0x%x)",
+          arg, RW_OPT_ALL, RW_OPT_ALL);
   return (int) val;
 }
 
@@ -263,7 +282,7 @@ static void print_input_summary(FILE *stream, const params_t * const p){
     fprintf(stream, "#   rows of H sorted by increasing weight for CC (sort_rows=1; sort_rows=0 keeps their order)\n");
   if (p->round_score >= 0.0)
     print_round_summary(stream, p);
-  if ((p->method & 1) && (p->kwin == 0) && (p->nvar >= 500))
+  if ((p->method & 1) && rw_hybrid_on(p, p->nvar))
     print_window_summary(stream, p);
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
@@ -1104,6 +1123,11 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, pairs=%d\n",argv[i],p->pairs);
     }
+    else if (0==strncmp(argv[i],"rw_opt=",7)){ /** `rw_opt`: the RW stages (-1: automatic, 0: none, or a bitmask) */
+      p->rw_opt = parse_rw_opt(argv[i] + 7, argv[i]);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, rw_opt=%d (0x%x)\n",argv[i],p->rw_opt,(unsigned int) p->rw_opt);
+    }
     else if (sscanf(argv[i],"min_hits=%d",&dbg)==1 || sscanf(argv[i],"max_hits=%d",&dbg)==1){
       p->min_hits=dbg;
       if (p->debug & DBG_ARGS)
@@ -1479,6 +1503,13 @@ void var_init(int argc, char **argv, params_t * const p){
   if ((p->pairs > 0) && (p->ksub > 0) && (p->method & 1))
     fprintf(stderr, "# WARNING: pairs=%d is ignored with ksub=%d (no RW pairs with the experimental ksub)\n", p->pairs,
             p->ksub);
+  if (p->rw_opt > 0) { /* explicit RW stages which cannot run */
+    if (!(p->method & 1))
+      fprintf(stderr, "# WARNING: rw_opt=%d is ignored with method=%d (no RW)\n", p->rw_opt, p->method);
+    else if (p->ksub > 0)
+      fprintf(stderr, "# WARNING: rw_opt=%d is ignored with ksub=%d (no RW stages with the experimental ksub)\n",
+              p->rw_opt, p->ksub);
+  }
   /* The experimental RW option ksub (with or without min_hits, also if it falls back to ksub=0 for m < nu) */
   if (p->ksub > 0 && (p->method & 1)) {
     fprintf(stderr,
@@ -2519,6 +2550,7 @@ static void dem_round_estimate(params_t * const p) {
   }
 }
 
+
 FILE * nzlist_w_new(const char fnam[], const char comment[]){
   FILE *f=fopen(fnam,"w");
   if(!f){
@@ -2905,9 +2937,23 @@ void print_rw_step_stats(FILE *stream, const params_t * const p) {
 
 int check_min_hits_convergence(const params_t * const p) {
   if (p->min_hits <= 0) return 0;
+  if (p->canon.active && !p->canon.full) return rw_canon_converged(p);
   cw_hit_stats_t st;
   codeword_hit_stats(p, &st);
   return (st.set_cws > 0) && (st.avg >= (double)p->min_hits);
+}
+
+int rw_canon_converged(const params_t * const p) {
+  const rw_canon_stats_t * const c = &p->canon;
+  if (p->min_hits <= 0 || c->classes <= 0 || c->n_unif <= 0) return 0;
+  const long long need = (3LL * p->min_hits > 15) ? 3LL * p->min_hits : 15;
+  if (c->n_unif < need) return 0;
+  const double n_u = (double)c->n_unif;
+  if (n_u / (double)c->classes < (double)p->min_hits) return 0; /* the step incidences per class */
+  const double eps_gt = fmin(0.02, 3.0 * exp(-(double)p->min_hits));
+  if ((double)c->f1 / n_u > eps_gt) return 0; /* the Good-Turing unseen probability mass */
+  const double c0 = (double)c->f1 * (double)(c->f1 - 1) / (2.0 * (double)(c->f2 + 1)); /* Chao2: unseen classes */
+  return c0 / ((double)c->classes + c0) <= 0.05;
 }
 
 /* Upper tail probability P(X >= x) of the chi-square distribution with `df` degrees of freedom (exact for df <= 2,
