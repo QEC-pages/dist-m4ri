@@ -199,14 +199,47 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   benchmarks in `scratch/triplet_rw/`, summary in `scratch/reports/triplet_rw_analysis.md`). Weight-3 degeneracies
   (column triplets with zero sum in $H$ and $L$) come from the CNOT hook triangles of the circuit (Prop. 1, Sec. 3.1),
   are found exactly with $\sum_i \binom{|G_i|}{2}$ hash probes (Lemma 1, Sec. 3.2), and span the whole degeneracy
-  space $\ker H \cap \ker L$ on 12 of 14 circuit DEMs (Sec. 3.3) and on every fully hooked extended CSS matrix or
-  code-sized model (Prop. 5, Sec. 8.2). Their effects on RW (ambushed pivot pairs, contraction, Stern buckets;
-  Secs. 4–5), the exact information-set law and the miss estimate (Secs. 6 and 8.5; Task 6), the canonical stopping
-  rule (Sec. 7), and the other inputs (extended matrices and models, static codes with known generators, $T = 1$ DEMs;
-  Sec. 8) lead to the roadmap of Sec. 9: Stages 1–5 and the dispatch rules D1–D5 (stage matrix in Sec. 8.6).
-- [ ] **Implementation in `dist_m4ri`** (RW, `method=1` and `method=3`; these Stages 1–5 are those of Sec. 9 of the
-  notes, not the Stage 1/2 of the Implementation Strategy at the top). Each stage keeps the output format and has an
-  expert switch to turn it off.
+  space $\ker H \cap \ker L$ on 12 of 14 circuit DEMs (Sec. 3.3). Their effects on RW (ambushed pivot pairs,
+  contraction, Stern buckets; Secs. 4–5), the exact information-set law and the miss estimate (Secs. 6 and 8.5; Task 6),
+  the canonical stopping rule (Sec. 7), and the answers for the three non-multi-round regimes (Sec. 8) lead to the
+  roadmap of Sec. 9 (Stages 1–5 and dispatch rules D1–D5; stage matrix in Sec. 8.6):
+  - **Q1 — Extended CSS matrices and code-sized models** (Sec. 8.2, Prop. 5, Table 9): CNOT-order prefix hooks split
+    every check of weight $w_g \ge 3$ into $w_g - 2$ triangles summing to $1_g$ ($\dim \mathcal{D}_{\rm ext} =
+    \dim \mathcal{D} + n_{\rm h}$, generically $n_{\rm h} = \sum_g (w_g - 3)$ and $|\mathcal{T}_3^{\rm ext}| \ge
+    \sum_g (w_g - 2)$), proving $\mathrm{GAP}_{\rm ext} = 0$ even when $\mathcal{T}_3 = \emptyset$ on the bare code;
+    the measured-basis model of `compute_model_lower_bound()` equals the hook-extended CSS matrix up to column order
+    ($m \times 5m$ on all six BB circuits). Stages 1, 2, and 5 work in full ($2.6\times$–$5.9\times$ hits/step for
+    `V4_cnt_uni`, up to $12.5\times$ for `V6_cnt_win` on DEM-ordered models) once Stage 1 runs on matrix inputs too;
+    Stages 3 and 4 (no time axis, $\le 12.7$ KiB in L1/L2) and `win=256` on data-then-hooks matrices stay off.
+  - **Q2 — Static degenerate CSS and 2BGA codes $(H_X, H_Z)$** (Sec. 8.3, Thm. 5, Prop. 6, Table 10): when $w_{\rm deg}
+    = 3$ (e.g., SHYPS gauge sector, $|\mathcal{T}_3| = 525$, $\mathrm{GAP} = 0$), Stages 1, 2, and 5 apply verbatim
+    ($245\times$–$366\times$ hits/s). On the 7 Bicycle Race `2bga_*` codes ($w = 5$–$9$), meet-in-the-middle ($w \le 6$)
+    plus ISD finds $w_{\rm deg} = w_{\max}$ ($\mathcal{T}_3 = \emptyset$); in general 2BGA codes (Lin–Pryadko 2024),
+    subgroup/coset combinations can give extra light generators $w < w_{\max}$ (weight-3 ones caught by Lemma 1,
+    $w \ge 4$ via low-weight search of $\mathrm{rowspan}(G)$ or extra `finG` rows). With explicit generators
+    $\mathcal{G}$ (`finG`), steepest-descent $\mathcal{G}$-shortening up to $d_{\max} + w_{\mathcal{G}} - 2$ lowers
+    $5.7\%$–$87\%$ of $p = 1$ candidates (supplying up to $92\%$–$100\%$ of weight-$d$ hits on `2bga_288_4` and
+    `2bga_292`), and omitting realized generators $C_P(x) \in \mathcal{G}$ from Stern Bucket 0 is loss-free ($0$ lost in
+    $24$ sectors; unlisted $w_x \ge 3$ trivial columns must not be filtered). Even-weight generators give $(w/2)
+    \leftrightarrow (w/2)$ sibling swaps ($\mathrm{canon}_{\mathcal{E}}$); odd-weight generators alone give none.
+  - **Q3 — Single-round ($T = 1$) circuit DEMs, reduced vs. unreduced** (Sec. 8.4, Lemma 2, Table 11): in a CSS memory
+    circuit with $T = 1$ cycle (`rounds=0` when cycle 1 precedes `REPEAT`), minority checks are measured once, so zero
+    minority detectors exist (`drop=auto` deletes $0$ detectors, full merged DEM $=$ CSS-reduced DEM, and each
+    `DEPOLARIZE2` yields $\le 3$ distinct nonzero columns; $n/m \le 9.4$, whereas two-sector reduction begins at
+    $T = 2$, and non-CSS `color_xyz` stays irreducible). Within-cycle CNOT triangles keep $\mathrm{GAP} = 0$, so
+    Stages 1, 2, and 5 stay on ($3.7\times$–$45\times$ `V4_cnt_uni`, up to $1075\times$ `V6_cnt_win`), Stages 3 and 4
+    stay off, and `win=256` still yields $6.5\times$–$33\times$ at $T = 1$ for $n \gtrsim 10^3$ from Stim's spatial
+    column order (vanishing under random column permutation).
+  - **Cross-regime $\Pr(J)$ concentration and termination** (Secs. 8.5–8.6, Cor. 2, Tables 12–13): $\kappa(H) =
+    \mathbb{E}_{\Pr}[\ln \Pr(J)] + \ln\binom{n}{r} = D_{\rm KL}(\Pr \| U_r) > 0$ for every binary matrix with
+    $2 \le \mathrm{rank}\,H \le n - 2$ (exclusion of dependent $r$-subsets plus basis non-uniformity), so
+    `rw_infoset_find_prob` is never exact and must stay a diagnostic. Canonical `cnt_u` Good–Turing / Chao1–Chao2
+    stopping halts $2\times$–$13\times$ earlier with $0$ missed logical classes when $M_{\rm eff} \gg 1$, and matches
+    vector-level behavior when $M_{\rm eff} = 1$.
+- [ ] **Implementation in `dist_m4ri`** (RW, `method=1` and `method=3`; stage-by-stage plan `M1`–`M6` in
+  `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`; these Stages 1–5 are those of Sec. 9 of the notes, not the Stage 1/2 of
+  the Implementation Strategy at the top). Minimal interface changes: smart automatic defaults (D1–D5) with one expert
+  C/Python bitmask switch (`rw_opt=-1` auto default, `0` legacy 0.16.1 off, bits `1..31` per-stage ablation).
   - [ ] Stage 1: exact $\mathcal{T}_3$ enumeration (Lemma 1: minimum-detector buckets and a Zobrist hash of the
     columns of $(H, L)$) on the matrix that RW searches, i.e., after merging and `drop=auto` (never on a raw full DEM,
     see the costs below), building the ordered-pair table $(u < v) \mapsto w$ and the CSR adjacency of the triplet
@@ -231,21 +264,91 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     circuits, and signatures) behind a heuristic gate (D4: the dense $m \times n$ matrix spills L2, and $n/m \ge 20$ or
     $m \ge 1400$): $1.16\times$–$2.66\times$ RW steps per second on `bidir`, `bb_72_full`, and `dgross_288`,
     $0.83\times$–$0.96\times$ below the gate (Sec. 5).
-  - [ ] Stage 5: key the codeword hash by the canonical form $\mathrm{canon}_{\mathcal{T}_3}(c)$ (by
+  - [ ] Stage 5: maintain a separate uncapped canonical-class table keyed by $\mathrm{canon}_{\mathcal{T}_3}(c)$ (by
     $\mathrm{canon}_{\mathcal{E}}(c)$ of Prop. 6 if $\mathcal{T}_3 = \emptyset$ and $G$ is given; raw vectors
-    otherwise, D5), count the hits of the uniform steps only (`cnt_u`), and stop by the Good–Turing / Chao1–Chao2 rule
-    of Sec. 7.3 instead of the vector-level `min_hits`; report `rw_infoset_find_prob` only as a diagnostic (Cor. 2,
-    Sec. 8.5), optionally with the zero-cost Harris–FKG score (Cor. 1). The Python wrapper parses the new statistics
-    (and its model check of the information-set estimate is updated); `min_hits` and `cov_cws` keep their meaning for
-    raw vectors.
+    otherwise, D5) so `p->codewords` continues to store raw irreducible supports for `outC` / `maxC` without
+    interference; count the step-incidences of the uniform steps only (`cnt_u`), and stop by the Good–Turing /
+    Chao1–Chao2 rule of Sec. 7.3 instead of the vector-level `min_hits`; report `rw_infoset_find_prob` only as a
+    diagnostic (Cor. 2, Sec. 8.5), optionally with the zero-cost Harris–FKG score (Cor. 1). The Python wrapper parses
+    the new statistics (and its model check of the information-set estimate is updated); `min_hits` and `cov_cws` keep
+    their meaning for raw vectors.
   - Windows (D3): keep the hybrid `win=256` steps for DEMs in circuit column order ($T \ge 2$; $T = 1$ with
     $n \gtrsim 10^3$, where the spatial order alone gives $6.5\times$–$33\times$ on mitten and SHYPS, Lemma 2 and
     Sec. 8.4); uniform steps only for extended matrices (data columns, then hooks) and static codes. MIS Drop is never
     used (Prop. 2).
-  - Tests: the same distances and codeword sets with each stage on and off (codes, models, $T = 1$ and multi-round
-    DEMs, `method=1` and `method=3`, one and many threads); hits per second and time to the distance in
-    `benchmark/BENCHMARK.md`; README, `--help`/`--morehelp`, `introduction.md`, and the Python docstrings.
-- [ ] **Placement: `dist_m4ri`, `qec_cert`, or both** (Nov 2026 analysis of the author's question; measurements in
+  - Tests: the same distances with each stage on and off, and verified codeword-output behavior with `outC` / `dW`
+    (codes, models, $T = 1$ and multi-round DEMs, `method=1` and `method=3`, one and many threads); hits per second and
+    time to the distance in `benchmark/BENCHMARK.md`; README, `--help`/`--morehelp`, `introduction.md`, and the Python
+    docstrings.
+- [ ] **Non-interfering codeword output (`outC` / `maxC`, weights $w \le d + \mathrm{dW}$) and $\mathcal{T}_3$-based
+  enumeration from recorded representatives**:
+  - Separate the two targets cleanly (`collecting = (outC != NULL || maxC > 0)`):
+    1. *Distance-bound mode* (`!collecting`): full Stage 2 contraction ($2 \to 1$ / $3 \to 0$), Stern Bucket-0 pruning
+       ($\mathrm{sig}(x) = 0, w_x \le 2$), and Stage 5 canonical stopping run at maximum speed with zero export work.
+    2. *Codeword-collection mode* (`collecting` with $\mathrm{dW} \ge 0$): Stage 1 and Stage 4 (Prop. 3) leave
+       candidates bit-for-bit unchanged; when $\mathrm{dW} \ge 1$ and a raw $p = 1$ circuit $C_P(y)$ already satisfies
+       $|C_P(y)| \le d_{\max} + \mathrm{dW}$, record the raw irreducible codeword *in addition* to its contracted
+       descendant so contraction never hides non-contraction-minimal irreducible codewords of weight $d + 1 \dots d +
+       \mathrm{dW}$; keep raw vectors in `p->codewords` while tracking convergence on `p->canon_table`.
+  - **Efficient post-RW DEM codeword enumeration from representatives and $\mathcal{T}_3$**: allow RW to run at full
+    distance-bound speed (with Stern Bucket-0 pruning and early canonical stopping) to collect class representatives in
+    $[d, d + \mathrm{dW}]$, then expand `p->codewords` in RAM before `nzlist_write()` (respecting `maxC` and `irred=1`):
+    1. *Equal-weight sibling BFS ($w \to w$)*: apply shared-hub $2 \leftrightarrow 2$ plaquette swaps $c \mapsto c
+       \triangle (T_1 \triangle T_2)$ (Prop. 4, using Stage 1's `pair_hash` and $G_3$ CSR adjacency) to enumerate full
+       plaquette equivalence components at weight $w$ in milliseconds (e.g., 1 representative $\to$ all 128 weight-3
+       codewords on `surf_d3` in $< 0.1$ ms, or $4734+$ weight-5 siblings on `surf_d5`).
+    2. *Upward triplet-split BFS ($w \to w + 1 \le d + \mathrm{dW}$)*: for each $z \in c$ and each triplet $T =
+       \{u, v, z\} \in \mathcal{T}_3$ with $\{u, v\} \cap c = \emptyset$, form the weight-$(|c| + 1)$ codeword $c' =
+       (c \setminus \{z\}) \cup \{u, v\}$ (the inverse of $2 \to 1$ contraction, splitting e.g. a hook fault into two
+       data faults), verify irreducibility via `csr_cols_rank(H, c') == |c'| - 1` when `irred=1`, and continue BFS up
+       to $d + \mathrm{dW}$ (recovers all $1 \to 2$ triplet expansions omitted by Stern Bucket-0 pruning).
+    3. *Caveat and scope*: $\mathcal{T}_3$-BFS enumerates the entire $\mathcal{T}_3$-connected equivalence neighborhood
+       of the recorded representatives up to $d + \mathrm{dW}$; logical cosets (or weight-bounded components) not yet
+       seeded by RW still require RW steps (or CC in `method=3`) to hit at least one representative. Optionally also
+       support exporting compact canonical representatives (`outC` option or companion `.nz`) for downstream decoders
+       (`vecdec`).
+- [ ] **Efficient generation of low-weight full-DEM codewords from a simplified-DEM or $T = 1$ (folded-circuit)
+  sample** (up to $d + \mathrm{dW}$, for `outC` / `vecdec`):
+  - **1. Multi-round simplified (`drop=auto`) DEM $\to$ full multi-round DEM**: currently `drop=auto` maps each kept
+    column to its single *clean* twin ($H_{\rm drop} e = 0$), so `outC` omits (i) same-weight correlated $Y$-twin lifts
+    whose minority syndromes cancel and (ii) heavier mixed-sector splits ($Z \to Y + X$). Retain the pre-drop merged
+    full DEM and fiber map $\mathrm{Fiber}(u)$ ($|\mathrm{Fiber}(u)| \le 4$ per `DEPOLARIZE2` $Z$-part) when `outC` is
+    requested, and expand each simplified codeword $c = \{u_1, \dots, u_w\}$ in two fast steps:
+    1. *Zero-slack fiber cancellation ($w \to w$)*: split $c$ into connected components on the minority-detector overlap
+       graph of $\bigcup_{u \in c} \mathrm{Fiber}(u)$ (isolated positions take their unique clean preimage; small
+       clusters solve $\bigoplus_{u \in C} H_{\rm drop} f_u = 0$, $f_u \in \mathrm{Fiber}(u)$, by tiny GF(2) /
+       meet-in-the-middle search in microseconds).
+    2. *Positive-slack $\mathcal{T}_3(\text{full})$ splits ($w \to w + 1 \le d + \mathrm{dW}$)*: every pure-minority
+       completion of a $Y$-twin is a full-DEM triangle $\mathrm{col}(e_Z) \oplus \mathrm{col}(e_X e_Z) \oplus
+       \mathrm{col}(e_X) = 0 \in \mathcal{T}_3(\text{full})$; run local $2 \leftrightarrow 2$ + $1 \to 2$
+       $\mathcal{T}_3$-BFS on the full columns touching $c$'s neighborhood (with `irred=1` rank check and `maxC`).
+  - **2. $T = 1$ DEM sample $\to$ full $T$-round DEM for folded (mirror-switched) circuits** (arXiv:2604.09797):
+    1. Partition each $T = 1$ codeword into pre-cycle data faults, intra-cycle gate/ancilla faults, and post-cycle /
+       readout faults; for each round $t \in \{1, \dots, T\}$, embed intra-cycle mechanisms into round $t$ using forward
+       addressing for odd $t$ and mirror-reversed addressing for even $t$ (matching boundary data faults to inter-round
+       mechanisms on $(D^{(t-1)}, D^{(t)}, D^{(t+1)})$ by detector/observable signature, verified on $(H_{\rm simp},
+       L_{\rm simp})$).
+    2. Run in-RAM $\mathcal{T}_3$-BFS ($2 \leftrightarrow 2$ inter-round time-like plaquettes + $1 \to 2$ splits up to
+       $d + \mathrm{dW}$) on the $T$-round simplified DEM to generate multi-round deformations, then lift to the full
+       $T$-round DEM via step 1 above.
+- [ ] **Simplify `d_ext` construction via the $T = 1$ DEM and its 2-to-1 detector collapse**:
+  - *Exact relation ($d_{\rm ext}$ vs. $T = 1$ DEM)*: the extended CSS matrix (`tmp/distance.py`) does **not** coincide
+    directly with the $T = 1$ DEM (`rounds=0`): the $T = 1$ DEM has **two** detector rows per measured check ($m_{T=1} =
+    2 m_{\rm meas}$: initial check $D_h^{(1)}$ and check-plus-readout $D_h^{(2)}$) plus readout errors, preserving
+    intra-cycle hook timing (`bb_72`: $T = 1$ DEM is $72 \times 432$ with $d_{T=1} = 6$, whereas the extended matrix is
+    $36 \times 180$ with $d_{\rm ext} = 5$; Secs. 8.2 vs. 8.4 of `doc/rw_triplet_degeneracies.tex`).
+  - *Replace `tmp/distance.py` hook extraction by `rounds=0` chain folding*: summing $D_h^{(1)} \oplus D_h^{(2)}$ for
+    each check $h$ in the $T = 1$ DEM (`compute_model_lower_bound(circuit, rounds=0)`, `minority=False`) drops readout
+    errors and yields the **exact** $m_{\rm meas} \times n_{\rm ext}$ extended CSS matrix whenever all cycles share the
+    same (or mirror-reversed) CNOT order and post-CNOT ancilla noise (Sec. 8.2)—bypassing `extract_matrices_and_hooks()`
+    and `modify_matrices()` completely and fixing their ancilla-classification failures on `hef` and `2bga_102`.
+  - *When to skip the extended matrix and use the $T = 1$ DEM directly*: for **folded circuits**, $d(T = 1) =
+    d_{\rm circ}$ is exact, keeps intra-cycle hook timing, and is still tiny ($2 m_{\rm meas} \times n_{T=1}$, with
+    `drop=auto` trivial by Lemma 2), so skip $d_{\rm ext}$ and run `compute_dem_distance(circuit, rounds=0)` directly
+    (note: for general non-folded periodic circuits, boundary pinning at $T = 1$ can make $d(T = 1) > d(T \ge 2)$, so
+    `compute_model_lower_bound(..., rounds=0)` remains the unconditional lower bound while $d(T = 1)$ requires folded or
+    $\mathcal{P}_1$-sandwich verification).
+- [x] **Placement: `dist_m4ri`, `qec_cert`, or both** (Nov 2026 analysis of the author's question; measurements in
   `scratch/todo_arch/startup_bench/summary.md`):
   - `dist_m4ri`: all five stages. They change the RW steps, the candidate stream, the codeword hash, and the hit
     statistics, which exist only here: codeword lists (`outC`, `maxC`, `dW`, e.g., for vecdec), `method=1`, `finC`,
@@ -277,6 +380,30 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     triplet) and for the minimum-weight codewords, but not for the heavier codewords collected with `dW > 0`. Keep one
     specification of Lemma 1 for the two code bases (a small C routine in each; no library dependency between them),
     and change `engine="auto"` (item at the end of section 4).
+- [ ] **Multiprocessor scaling benchmark (`p = 1 .. 128` threads)** (`M5` of
+  `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, updating `benchmark/BENCHMARK.md` Section 4):
+  - Sweep `threads = 1, 2, 4, 8, 16, 32, 64, 96, 128` (default throttling vs. `nothrottle=1`, NUMA/socket-aware,
+    medians of $\ge 5$ runs for short cases) comparing `0.16.1` (`rw_opt=0`) against the Stage 1–5 pipeline (`rw_opt=-1`
+    and per-stage ablations) across all four input regimes:
+    1. small and medium CSS / 2BGA codes (`bb_72`, `2bga_102`, `gross_144`, `double_gross_288`) and extended/model
+       matrices, checking that thread-local canonicalization and intra-step hit coalescing eliminate `cw_mutex`
+       contention despite $3\times$–$20\times$ higher hit rates;
+    2. medium full and $T = 1$ DEMs (`bb_72`, `mitten_150`, `2bga_102`), measuring `steps/s`, `hits/s`, and `method=1,
+       2, 3` wall times;
+    3. memory-bandwidth-limited deep/wide DEMs (`double_gross_288`, `shyps_225`, `bb_360`, `bb_756`), testing how
+       in-L2 Stage 3 row-slab windows (`< 128` KiB working set) and Stage 4 sparse-dual RREF ($m \times m$ without
+       `mHT` transpose, relaxing the 15 MB/thread dense throttle) lift the 16–32-thread DRAM bandwidth ceiling.
+- [ ] **Two-stage certification benchmark (`dist_m4ri` $\to$ `qec_cert` portfolio)** (`M5` of
+  `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, paired with **`engine="auto"` as a two-stage portfolio** in section 4):
+  - Systematic 4-way benchmark across Track A (static CSS, BB, Mitten, and 2BGA codes), Track B ($T = 1$ and
+    multi-round circuits/DEMs, including `gross`, `mitten_270`, `2bga_102/120`, `shyps_225`, `dgross_288`, `bb_360`),
+    and classical LDPC codes (`c204H`, `c1920H`): (1) standalone upgraded `dist_m4ri`, (2) standalone `qec_cert`
+    (`engine="cert"`), (3) `0.16.1` unconditional `engine="auto"`, and (4) two-stage `engine="auto"` (`dist_m4ri` first
+    for budget $\tau_1$, escalating open brackets `dmin < dmax` to `qec_cert` seeded with `wmin=dmin` and the verified
+    RW upper-bound witness `wmax=dmax-1`).
+  - Sweep Stage-1 budget $\tau_1 \in \{2, 5, 15, 30\}$ s and DEM raw-mechanism fast-path thresholds at $p = 16$ and
+    $p = 64 / 128$ threads (60 s total cap per instance), reporting exact certifications, bracket widths, startup
+    savings on small/classical inputs, and cumulative ECDF (instances certified vs. wall time).
 
 ---
 
