@@ -53,6 +53,7 @@
 \newcommand{\Tc}{\mathcal{T}_3}
 \newcommand{\LH}{\mathcal{L}_{\mathrm{J}}}
 \newcommand{\LFKG}{\mathcal{L}_{\mathrm{FKG}}}
+\newcommand{\Gc}{\mathcal{G}}
 \newcommand{\ttt}[1]{\texttt{#1}}
 
 \begin{document}
@@ -88,8 +89,17 @@ harmonic Jensen and tighter Harris--FKG lower bounds that capture $82\%$ of the 
 exhaustively enumerated surface-code sub-DEM. Third, we prove that pairs of shared-hub triplets form minimal
 weight-4 degeneracies inducing weight-preserving $2 \leftrightarrow 2$ plaquette swaps, and introduce a
 deterministic $\Tc$-canonicalization paired with Good--Turing and Chao1/Chao2 unseen-species estimators that
-avoids premature stopping across our bootstrap tests while reducing over-running on single-logical topological
-DEMs.
+avoids premature stopping on the circuit DEMs of our bootstrap tests while reducing over-running on single-logical
+topological DEMs. Fourth, we extend the analysis to three further inputs of \ttt{dist-m4ri}. In hook-extended CSS
+matrices and code-sized models, the CNOT-order hook chain of every check of weight $w$ splits it into $w - 2$ weight-3
+degeneracies, which provably span the entire degeneracy space even for BB, mitten, and 2BGA codes without weight-3
+stabilizers. For static degenerate CSS codes without weight-3 stabilizers, where the triplet stages are inert,
+contraction and the Stern filter generalize to the explicitly known generators, with an exact condition for loss-free
+filtering; in prototypes, generator shortening supplies most of the minimum-weight hits on several codes (e.g., $272$
+of $296$ on a $[[288, 4, 20]]$ 2BGA code). Single-cycle CSS DEMs need no reduction, and windows help there only
+through the spatial order of the columns. Finally, the information-set concentration is a Kullback--Leibler divergence
+that is positive for every binary matrix of rank $2 \le r \le n - 2$, and per-regime dispatch rules select the
+applicable stages.
 \end{abstract}
 
 \tableofcontents
@@ -176,6 +186,12 @@ mathematical tools from first principles in physical QEC terms. To keep every fo
     Proposition~\ref{prop:mis_drop}, which also rules out MIS Drop; Stage~\ref{stage:dual} (sparse-dual elimination)
     rests on Proposition~\ref{prop:sparse_dual}; and Stage~\ref{stage:conv} (calibrated stopping) rests on
     Theorem~\ref{thm:infoset_likelihood}, Corollary~\ref{cor:harmonic_hub}, and Proposition~\ref{prop:plaquette_swap}.
+    Beyond multi-round DEMs, Proposition~\ref{prop:hook_chain} and Lemma~\ref{lem:single_cycle} carry
+    Stages~\ref{stage:enum}, \ref{stage:contract}, and~\ref{stage:conv} over to extended CSS matrices, code-sized
+    models, and $T = 1$ DEMs; Theorem~\ref{thm:known_gen} and Proposition~\ref{prop:even_swaps} extend
+    Stages~\ref{stage:contract} and~\ref{stage:conv} to static CSS codes with known generators; and
+    Corollary~\ref{cor:kl_concentration} compares the information-set law across inputs and backs the per-regime
+    dispatch rules of Section~\ref{sec:roadmap}.
 \end{itemize}
 
 \paragraph{Outline.}
@@ -191,9 +207,15 @@ Section~\ref{sec:benchmarks} reports C/OpenMP benchmarks across $9$ circuit DEMs
 derives exact information-set likelihoods (Theorem~\ref{thm:infoset_likelihood} and
 Corollary~\ref{cor:harmonic_hub}) and resolves the Node-Marginal Paradox. Section~\ref{sec:convergence}
 establishes $2 \leftrightarrow 2$ plaquette exchanges (Proposition~\ref{prop:plaquette_swap}) and evaluates the
-calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 stopping gauge. Section~\ref{sec:roadmap} organizes practical
-integration guidelines for \ttt{dist-m4ri} into a five-stage pipeline and cites, for each stage, the formal results
-that justify it.
+calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 stopping gauge. Section~\ref{sec:regimes} extends the analysis
+to three further inputs: hook-extended CSS matrices and code-sized models, whose triangles provably span the
+degeneracy space (Proposition~\ref{prop:hook_chain}); static degenerate CSS codes with explicit generators, for which
+contraction, the Stern filter, and canonicalization generalize to known generators of any weight
+(Theorem~\ref{thm:known_gen} and Proposition~\ref{prop:even_swaps}); and single-round DEMs, whose CSS reduction is
+trivial (Lemma~\ref{lem:single_cycle}). It compares information-set concentration (Corollary~\ref{cor:kl_concentration})
+and the termination criteria across these regimes and tabulates which stages apply to which input.
+Section~\ref{sec:roadmap} organizes practical integration guidelines for \ttt{dist-m4ri} into a five-stage pipeline,
+cites for each stage the formal results that justify it, and adds per-regime dispatch rules.
 
 % ============================================================================
 \section{Pedagogical Background: From Quantum Circuits to Discrete Mathematics}\label{sec:background}
@@ -254,6 +276,12 @@ $Q = T_1 \triangle T_2,\; \bar{c}$ &
 $f_1, f_2,\; Q_1^{\mathrm{inc}}, Q_2^{\mathrm{inc}}$ &
   Abundance singletons/doubletons (Chao1) and step incidences (Chao2) &
   Secs.~\ref{subsec:good_turing}, \ref{subsec:gt_chao_gauge} \\
+$(H, L, G),\; \Gc,\; w_g,\; w_{\deg}$ &
+  CSS sector; known generators $\Gc \subseteq \Dc$; generator weight; least weight in $\Dc \setminus \{0\}$ &
+  Sec.~\ref{subsec:regimes_overview} \\
+$n_{\mathrm{h}},\; T,\; \kappa(H)$ &
+  Hook columns of an extended matrix; syndrome cycles; concentration $D_{\mathrm{KL}}(\Pr \,\|\, U_r)$ &
+  Secs.~\ref{subsec:ext_css}--\ref{subsec:pr_regimes} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -846,9 +874,10 @@ Does $\Tc$ merely supply local triangles, or does it span the entire circuit deg
     both unreduced two-sector form (\ttt{full}) and single-sector passive-detector-dropped form (\ttt{simp},
     produced by \ttt{dist-m4ri}'s \ttt{drop=auto} preprocessing, with \ttt{r6}/\ttt{r12}/\ttt{r18} denoting $6,
     12,$ or $18$ syndrome rounds);
-  \item non-abelian mitten codes~\cite{Bhardwaj2026Mitten} under \ttt{custom} and hardware-efficient (\ttt{hef})
+  \item non-abelian mitten codes~\cite{Bhardwaj2026Mitten} under \ttt{custom} and hook-error-free (\ttt{hef})
     CNOT schedules (\ttt{simp});
-  \item an unreduced $10$-round two-block group algebra circuit (\ttt{2bga\_102}~\cite{LinPryadko2024}), an
+  \item an unreduced $10$-round two-block group algebra circuit (\ttt{2bga\_102}~\cite{LinPryadko2024}, a code of the
+    Bicycle Race database~\cite{Lee2026BicycleRace} with the idle-free noise model of~\cite{Zhao2026UltraHighRate}), an
     unreduced $9$-round subsystem hypergraph product simplex circuit (\ttt{shyps\_225}~\cite{Malcolm2025SHYPS}),
     and an unreduced 2D torus qLDPC circuit compiled with native controlled-$Z$-plus-SWAP (\ttt{CZSWAP}) gates
     (\ttt{torus\_n60\_d14}).
@@ -1924,7 +1953,10 @@ $\LH(J)$) can be accumulated in $O(n - r)$ additions from a lookup table of $\ln
 any extra elimination work. Logging running means separately over uniform and window steps compares how concentrated
 the two sampling laws are, and since $\LFKG(J) \le \ln \Pr(J)$,
 any step with $\LFKG(J) > -\ln\binom{n}{r}$ certifies that its basis is more probable than under the uniform-subset
-model behind \ttt{rw\_infoset\_find\_prob}. Part~(c) shows where this bound is loosest: for $\nu$ triangles sharing a
+model behind \ttt{rw\_infoset\_find\_prob}. This sufficient condition is far from met in practice: the mean of
+$\LFKG(J) + \ln\binom{n}{r}$ is negative on every input measured in Section~\ref{subsec:pr_regimes}, so there
+$\LFKG$ serves as a correlate of $\ln \Pr(J)$ rather than as a certificate.
+Part~(c) shows where this bound is loosest: for $\nu$ triangles sharing a
 hub pivot, the exact joint factor scales as $(1/2)^\nu$ (up to a factor $\propto \nu^{-1/2}$) rather than
 $(1/3)^\nu$, so the logged score is conservative on hub-rich bases. Parts~(a) and~(c) also guard against a natural
 pitfall: together with the degree conservation identity~\eqref{eq:d3_sum_rule}, they explain the Node-Marginal
@@ -2216,31 +2248,970 @@ $0\%$ logical classes) whereas~\eqref{eq:stopping_rule} halts in $180/200$ resam
 $4{,}896$ (missing $52.1\%$ of clusters, $0\%$ logical classes).
 
 % ============================================================================
+\section{Beyond Multi-Round Circuit DEMs: Extended CSS Matrices, Static Degenerate Codes, and Single-Round
+  DEMs}\label{sec:regimes}
+% ============================================================================
+
+Sections~\ref{sec:anatomy}--\ref{sec:convergence} studied multi-round circuit DEMs. \ttt{dist-m4ri} is also applied
+to three other kinds of input: hook-extended CSS matrices (the extended CSS distance of
+\ttt{compute\_extended\_css\_distance} in \ttt{tmp/distance.py}) and the code-sized models of
+\ttt{compute\_model\_lower\_bound}; static, possibly degenerate CSS codes $(H_X, H_Z)$ with arbitrary row weights and
+possibly additional low-weight generators, as for two-block group-algebra (2BGA)
+codes~\cite{LinPryadko2024,Lee2026BicycleRace}; and single-round ($T = 1$) circuit DEMs, CSS-reduced or not. This
+section determines how much of the preceding analysis carries over to each input, which stages of the pipeline should
+run, and how the information-set law and the stopping criteria change.
+
+% ----------------------------------------------------------------------------
+\subsection{Four Input Regimes, CSS Sectors, and Known Generators}\label{subsec:regimes_overview}
+% ----------------------------------------------------------------------------
+
+\paragraph{What is regime-independent.}
+Only Proposition~\ref{prop:hook_triangulation} and the empirical tables use the circuit origin of $(H, L)$.
+Lemma~\ref{lem:min_det_bucket}, Theorems~\ref{thm:ambush}--\ref{thm:contraction_dominance},
+Propositions~\ref{prop:mis_drop}--\ref{prop:plaquette_swap}, and Corollary~\ref{cor:harmonic_hub} hold for every
+cleaned pair $(H, L)$, and Theorem~\ref{thm:infoset_likelihood} holds for every binary matrix $H$. For any input the
+questions are therefore quantitative: how large is $\Tc$ and what does it span, which heavier elements of $\Dc$ are
+known explicitly, what is the shape of the matrix ($m$, $n/m$, and whether there is a time axis), and how large are
+the sibling clouds of minimum-weight codewords. We distinguish four input regimes:
+\begin{enumerate}[label=(R\arabic*)]
+  \item multi-round circuit DEMs with $T \ge 2$ syndrome-extraction cycles
+    (Sections~\ref{sec:anatomy}--\ref{sec:convergence});
+  \item single-round ($T = 1$) circuit DEMs, full or CSS-reduced (Section~\ref{subsec:t1});
+  \item hook-extended CSS matrices and code-sized models (Section~\ref{subsec:ext_css});
+  \item static CSS codes with explicitly known generators, including subsystem gauge sectors and extra low-weight
+    generators (Section~\ref{subsec:static_css}).
+\end{enumerate}
+
+\paragraph{CSS sectors, known generators, and the degeneracy weight.}
+Let $H_X \in \Ftwo^{m_X \times n}$ and $H_Z \in \Ftwo^{m_Z \times n}$ with $H_X H_Z^\top = 0$ define a CSS code. Its
+\emph{$X$-error sector} is the triple $(H, L, G) = (H_Z, L_Z, H_X)$: an $X$-type error $c$ is undetected if $H_Z 1_c =
+0$, nontrivial if $L_Z 1_c \neq 0$ (the rows of $L_Z$ are $Z$-type logical operators), and trivial if $1_c \in
+\operatorname{rowspan}(H_X)$. The $Z$-error sector $(H_X, L_X, H_Z)$ is symmetric; \ttt{dist-m4ri} with
+\ttt{finH}~$= H_X$ and \ttt{finG}~$= H_Z$ computes its distance $d_Z$. In general we call $(H, L, G)$ a \emph{CSS
+sector} if $H G^\top = 0$, $L G^\top = 0$, and $\Dc = \ker H \cap \ker L = \operatorname{rowspan}(G)$, and we call it
+\emph{cleaned} if $[H; L]$ has neither zero nor repeated columns. The rows $g$ of $G$, identified with their
+supports, have weights $w_g = |g|$ with maximum $w_{\max}$. Sums of rows can be lighter than the rows, and we call
+$w_{\deg} \coloneqq \min\{|x| : x \in \Dc \setminus \{0\}\} \le \min_g w_g$ the \emph{degeneracy weight}. A zero
+column of $[H; L]$ is a weight-1 element of $\Dc$ and two equal columns give a weight-2 element, so a CSS sector is
+cleaned if and only if $w_{\deg} \ge 3$, and then $\Tc \neq \emptyset$ if and only if $w_{\deg} = 3$. A finite list
+$\Gc \subseteq \Dc \setminus \{0\}$ of \emph{known generators} (the rows of $G$, optionally augmented by $\Tc$ or by
+extra low-weight elements of $\Dc$) generalizes $\Tc$. Unlike a DEM run, a CSS run receives $G$ explicitly.
+
+% ----------------------------------------------------------------------------
+\subsection{CSS Extended Matrices and Code-Sized Models: Hook-Chain Triangulation}\label{subsec:ext_css}
+% ----------------------------------------------------------------------------
+
+The extended CSS distance accounts for hook errors~\cite{DennisKitaevLandahlPreskill2002,Fowler2012} in a
+code-capacity model. \ttt{extract\_matrices\_and\_hooks} reads the CNOT order of every ancilla in one
+syndrome-extraction cycle of a Stim circuit, and \ttt{modify\_matrices} appends one column per hook error to the check
+and logical matrices, skipping zero and repeated columns. For definiteness we treat the $X$-error sector $(H_Z, L_Z,
+H_X)$ with the hooks of the $X$-check ancillas (\ttt{x\_hooks}); the $Z$-error sector with \ttt{z\_hooks} is
+symmetric.
+
+\paragraph{Notation and setup for Proposition~\ref{prop:hook_chain}.}
+Let $(H, L, G)$ be a cleaned CSS sector with $H \in \Ftwo^{m \times n}$ and pairwise distinct rows $g$ of weights
+$w_g \ge 3$ (because $w_{\deg} \ge 3$). Suppose that every row $g$ is measured by its own ancilla, which addresses the
+data qubits of $g$ in the CNOT order $(q_{g,1}, \dots, q_{g,w_g})$ (the order of \ttt{round\_interactions} in
+\ttt{extract\_matrices\_and\_hooks}). For $0 \le s \le w_g$, let $P_{g,s} = \{q_{g,1}, \dots, q_{g,s}\}$ be the
+length-$s$ prefix of $g$ and $\chi_{g,s} \coloneqq (H 1_{P_{g,s}}, L 1_{P_{g,s}})$ its \emph{prefix column}. An
+ancilla fault of the type detected by $H$ ($X$ for the $X$-error sector) right after the $s$-th CNOT propagates onto
+the suffix $g \setminus P_{g,s}$, whose column is again $\chi_{g,s}$ because $1_g \in \Dc$; moreover, $\chi_{g,1}$
+and $\chi_{g,w_g-1}$ are the columns of the single data qubits $q_{g,1}$ and $q_{g,w_g}$, and $\chi_{g,w_g} = 0$. The
+\emph{hook-extended matrix} $(H_{\mathrm{ext}}, L_{\mathrm{ext}})$ of \ttt{modify\_matrices} appends, for every $g$
+and every $2 \le s \le w_g - 2$, the column $\chi_{g,s}$ unless it is zero or equal to a column already present. Let
+$n_{\mathrm{h}}$ be the number of appended \emph{hook columns}, $n_{\mathrm{ext}} = n + n_{\mathrm{h}}$,
+$\Dc_{\mathrm{ext}} = \ker H_{\mathrm{ext}} \cap \ker L_{\mathrm{ext}}$, and $\Tc^{\mathrm{ext}}$ the set of weight-3
+elements of $\Dc_{\mathrm{ext}}$. For $1 \le s \le w_g - 1$, let $\pi_{g,s} \in [n_{\mathrm{ext}}] \cup
+\{\varnothing\}$ be the unique column of $(H_{\mathrm{ext}}, L_{\mathrm{ext}})$ equal to $\chi_{g,s}$, or
+$\varnothing$ if $\chi_{g,s} = 0$ (thus $\pi_{g,1} = q_{g,1}$ and $\pi_{g,w_g-1} = q_{g,w_g}$). With $e_j \in
+\Ftwo^{n_{\mathrm{ext}}}$ the $j$-th unit vector and $e_\varnothing \coloneqq 0$, define the \emph{chain relations}
+\begin{equation}\label{eq:chain_rel}
+  \rho_{g,s} \coloneqq e_{\pi_{g,s}} \oplus e_{q_{g,s+1}} \oplus e_{\pi_{g,s+1}} \in \Ftwo^{n_{\mathrm{ext}}} \qquad
+  (1 \le s \le w_g - 2).
+\end{equation}
+Vectors of $\Ftwo^n$ (such as $1_g$ and $1_{P_{g,s}}$) are embedded into $\Ftwo^{n_{\mathrm{ext}}}$ by zero padding.
+The extension is \emph{generic} if no $\chi_{g,s}$ with $2 \le s \le w_g - 2$ is zero, equal to a data column, or
+equal to another such prefix column.
+
+\begin{proposition}[Hook-Chain Triangulation and Exact Span of Extended CSS Matrices]\label{prop:hook_chain}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item \emph{(Dimension count.)} $\rank H_{\mathrm{ext}} = \rank H$ and $\rank [H_{\mathrm{ext}}; L_{\mathrm{ext}}]
+    = \rank [H; L]$, so $\dim \Dc_{\mathrm{ext}} = \dim \Dc + n_{\mathrm{h}}$.
+  \item \emph{(Fan triangulation of every generator.)} Every chain relation $\rho_{g,s}$ lies in
+    $\Dc_{\mathrm{ext}}$ and is either $0$ or an element of $\Tc^{\mathrm{ext}}$, and the partial sums telescope:
+    \begin{equation}\label{eq:chain_telescope}
+      \bigoplus_{s'=1}^{s-1} \rho_{g,s'} = 1_{P_{g,s}} \oplus e_{\pi_{g,s}} \quad (2 \le s \le w_g - 1), \qquad
+      \bigoplus_{s=1}^{w_g-2} \rho_{g,s} = 1_g.
+    \end{equation}
+    Thus the $w_g - 2$ chain relations of $g$ triangulate the generator $g$ along its CNOT order.
+  \item \emph{(Exact span.)} $\operatorname{span}_{\Ftwo}(\Tc^{\mathrm{ext}}) = \Dc_{\mathrm{ext}}$, i.e., the extended
+    matrix has $\mathrm{GAP} = 0$, whatever $\Tc$ of the bare sector is (it is empty whenever $w_{\deg} \ge 4$).
+  \item \emph{(Generic counts.)} If the extension is generic, then $n_{\mathrm{h}} = \sum_g (w_g - 3)$, the
+    $\sum_g (w_g - 2)$ chain relations are pairwise distinct elements of $\Tc^{\mathrm{ext}}$, every data column $q$
+    lies in exactly one chain relation of each row $g \ni q$, and every hook column lies in exactly two chain
+    relations, both of its own row. In particular, $|\Tc^{\mathrm{ext}}| \ge \sum_g (w_g - 2)$, $d_3(q) \ge |\{g : q
+    \in g\}|$ for every data column $q$, and $n_{\mathrm{ext}} / m = \bigl(n + \sum_g (w_g - 3)\bigr) / m$.
+\end{enumerate}
+\end{proposition}
+
+\paragraph{Physical idea of the proof.}
+Draw the stabilizer $g$ as a polygon whose $w_g$ edges are its data qubits in CNOT order: vertices $v_0, \dots,
+v_{w_g-1}$ and edges $q_{g,s} = (v_{s-1}, v_s)$. An $X$-check ancilla that suffers an $X$ fault after its $s$-th CNOT
+copies the fault onto the data qubits it has not yet addressed; modulo the stabilizer $g$ itself, this is the prefix
+$P_{g,s}$, the boundary path from $v_0$ to $v_s$, which plays the role of the diagonal $(v_0, v_s)$. Consecutive
+diagonals differ by one edge---the qubit addressed by the CNOT between the two fault locations---so diagonal $s$, edge
+$q_{g,s+1}$, and diagonal $s + 1$ bound a triangle, the code-capacity image of the single-gate identity of
+Proposition~\ref{prop:hook_triangulation}(a) (equivalently, of Proposition~\ref{prop:hook_triangulation}(b2) with
+time collapsed). The $w_g - 3$ hooks are the diagonals of a fan triangulation of the polygon from $v_0$, whose $w_g -
+2$ triangles add up to $g$. Every stabilizer is a sum of triangles and every hook is a partial sum, so the triangles
+generate the whole extended degeneracy space, even for BB, mitten, or 2BGA codes whose stabilizer groups contain no
+weight-3 element at all.
+
+\begin{proof}
+For~(a), every appended column equals $[H; L] 1_P$ for a prefix $P$, so it lies in the column space of $[H; L]$, and
+its $H$-part lies in that of $H$; appending such columns changes neither rank, and $\dim \Dc_{\mathrm{ext}} =
+n_{\mathrm{ext}} - \rank[H; L] = \dim \Dc + n_{\mathrm{h}}$.
+
+For~(b), the column with index $\pi_{g,s}$ equals $\chi_{g,s}$ by construction, also for $s \in \{1, w_g - 1\}$ and
+for $\pi_{g,s} = \varnothing$. Since $P_{g,s+1} = P_{g,s} \sqcup \{q_{g,s+1}\}$, linearity gives $[H_{\mathrm{ext}};
+L_{\mathrm{ext}}]\, \rho_{g,s} = \chi_{g,s} \oplus (h_{q_{g,s+1}}, \ell_{q_{g,s+1}}) \oplus \chi_{g,s+1} = 0$, so
+$\rho_{g,s} \in \Dc_{\mathrm{ext}}$. The weight of $\rho_{g,s}$ is at most $3$. Because $(H, L)$ is cleaned and
+\ttt{modify\_matrices} never appends a zero or repeated column, $(H_{\mathrm{ext}}, L_{\mathrm{ext}})$ is cleaned, so
+$\Dc_{\mathrm{ext}}$ has no vector of weight $1$ or $2$, and $\rho_{g,s} \in \{0\} \cup \Tc^{\mathrm{ext}}$.
+Consecutive relations share the term $e_{\pi_{g,s'}}$, so $\bigoplus_{s'=1}^{s-1} \rho_{g,s'} = e_{\pi_{g,1}} \oplus
+e_{\pi_{g,s}} \oplus \bigoplus_{s'=2}^{s} e_{q_{g,s'}} = 1_{P_{g,s}} \oplus e_{\pi_{g,s}}$, using $\pi_{g,1} =
+q_{g,1}$. For $s = w_g - 1$, $\pi_{g,w_g-1} = q_{g,w_g}$ turns the right-hand side into $1_g$.
+
+For~(c), part~(b) gives $1_g \in \operatorname{span}(\Tc^{\mathrm{ext}})$ for every row $g$, hence $\Dc =
+\operatorname{rowspan}(G) \subseteq \operatorname{span}(\Tc^{\mathrm{ext}})$ (zero-padded; $\Dc =
+\operatorname{rowspan}(G)$ holds by the definition of a CSS sector, i.e., when $L$ has full logical rank). Every hook
+column $\eta$
+was appended for some pair $(g, s)$ with $\pi_{g,s} = \eta$, and~\eqref{eq:chain_telescope} gives $v_\eta \coloneqq
+1_{P_{g,s}} \oplus e_\eta \in \operatorname{span}(\Tc^{\mathrm{ext}})$. The $n_{\mathrm{h}}$ vectors $v_\eta$ restrict
+to distinct unit vectors on the hook coordinates, on which $\Dc$ vanishes; hence $\Dc$ and $\{v_\eta\}$ together span a
+subspace of $\Dc_{\mathrm{ext}}$ of dimension $\dim \Dc + n_{\mathrm{h}} = \dim \Dc_{\mathrm{ext}}$ by~(a), i.e., all of
+$\Dc_{\mathrm{ext}}$. As $\Tc^{\mathrm{ext}} \subseteq \Dc_{\mathrm{ext}}$, equality holds.
+
+For~(d), in a generic extension every pair $(g, s)$ with $2 \le s \le w_g - 2$ appends its own column, so
+$n_{\mathrm{h}} = \sum_g (w_g - 3)$ and the $\pi_{g,s}$ are distinct hook columns. Every $\rho_{g,s}$ then has three
+distinct nonzero entries ($\rho_{g,1} = e_{q_{g,1}} \oplus e_{q_{g,2}} \oplus e_{\pi_{g,2}}$, $\rho_{g,s} =
+e_{\pi_{g,s}} \oplus e_{q_{g,s+1}} \oplus e_{\pi_{g,s+1}}$ for $2 \le s \le w_g - 3$, $\rho_{g,w_g-2} =
+e_{\pi_{g,w_g-2}} \oplus e_{q_{g,w_g-1}} \oplus e_{q_{g,w_g}}$, and $\rho_{g,1} = 1_g$ if $w_g = 3$), so it lies in
+$\Tc^{\mathrm{ext}}$. For $w_g \ge 4$, each relation of $g$ contains a hook column of $g$ and no other hook column,
+and two relations of $g$ differ in their data columns, so relations of distinct rows, or of the same row, are
+distinct; relations of rows with $w_g = 3$ are the distinct rows themselves. The incidences can be read off: $q_{g,1},
+q_{g,2} \in \rho_{g,1}$, $q_{g,s+1} \in \rho_{g,s}$ for $2 \le s \le w_g - 3$, $q_{g,w_g-1}, q_{g,w_g} \in
+\rho_{g,w_g-2}$, and the hook column $\pi_{g,s}$ lies in $\rho_{g,s-1}$ and $\rho_{g,s}$ only. The remaining claims
+follow.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+Hook errors, i.e., ancilla faults that spread onto several data qubits, are the classical obstruction to fault
+tolerance of syndrome-extraction circuits~\cite{DennisKitaevLandahlPreskill2002,Fowler2012}, and effective-distance
+analyses add them as extra error mechanisms to the code-capacity model~\cite{ManesClaes2025,
+BravyiCrossGambettaMaslovRallYoder2024}; \ttt{tmp/distance.py} implements exactly this extension. The relations
+$\rho_{g,s}$ are single-gate propagation identities of the circuit gauge group~\cite{BaconFlammiaHarrowShi2017,
+Pryadko2020MLD}, and part~(b) is Proposition~\ref{prop:hook_triangulation}(b2) after time is collapsed; that a
+$w$-gon has fan triangulations with $w - 3$ diagonals and $w - 2$ triangles is elementary. We are not aware of an
+earlier statement of the exact span~(c) or of the generic counts~(d) for hook-extended matrices; they are new here.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Proposition~\ref{prop:hook_chain} places extended CSS matrices and code-sized models (regime R3) on the same footing
+as circuit DEMs. By~(c) and~(d), $\Tc^{\mathrm{ext}}$ is abundant (at least $w_g - 2$ triangles per generator, e.g.,
+$4$ per weight-6 BB check and $7$ per weight-9 2BGA or mitten check) and spans $\Dc_{\mathrm{ext}}$ exactly, so
+Stages~\ref{stage:enum}, \ref{stage:contract}, and~\ref{stage:conv} have their full effect:
+Theorems~\ref{thm:ambush} and~\ref{thm:contraction_dominance} apply verbatim, the filter of
+Theorem~\ref{thm:contraction_dominance}(b) is loss-free, and consecutive triangles $\rho_{g,s-1}, \rho_{g,s}$ of a
+chain share the hook column $\pi_{g,s}$, which is the hub configuration of the $2 \leftrightarrow 2$ swaps of
+Proposition~\ref{prop:plaquette_swap}. Because these matrices reach the binary as matrices (\ttt{finH}, \ttt{finL})
+rather than as DEMs, Stage~\ref{stage:enum} must be triggered for matrix inputs as well; its probe count
+(Lemma~\ref{lem:min_det_bucket}) is negligible, and it simply returns $\Tc = \emptyset$ on matrices without triangles.
+Conversely, Stages~\ref{stage:slab} and~\ref{stage:dual} have nothing to exploit, and \ttt{win=256} windows only what
+the column order provides: there is no time axis, $m$ is the number of code checks, and by~(d) $n_{\mathrm{ext}}/m =
+5$ for BB codes ($m_X = m_Z = n/2$, $w = 6$) and $8$ for weight-9 2BGA codes ($n = 2m$), so the dense matrix occupies
+from $810$ bytes (\ttt{bb\_72}, $36 \times 180$) to $12.7$ KiB (\ttt{dgross\_288}, $144 \times 720$) and stays
+cache-resident. MIS Drop remains excluded by Proposition~\ref{prop:mis_drop}.
+
+\paragraph{Relation to the code-sized model.}
+\ttt{compute\_model\_lower\_bound} sums the detectors of each chain of a memory circuit; the chain of a check of the
+measured basis telescopes to the parity of the final data measurements on its support, so the row of the model is
+that check, and the column of a fault is the syndrome of its net data error (with equal columns merged and
+measurement errors dropped). For an $X$-basis memory, the measured checks are the $X$-checks and the net data errors
+are $Z$-type: single data errors and the prefix hooks of the $Z$-check ancillas (a $Z$ fault on a $Z$-check ancilla
+after $s$ CNOTs spreads onto the remaining controls; a correlated $Z_q Z_a$ fault after a CNOT gives the prefix one
+step shorter). Hence, when every check keeps a fixed CNOT order in every cycle and the noise contains the post-CNOT
+ancilla faults (as \ttt{si1000}, uniform, and idle-free noise do), the measured-basis model is the extended matrix of
+the $Z$-error sector $(H_X, L_X, H_Z)$ up to column order; time-reversed cycles add nothing, because a reversed
+prefix is a forward suffix, equal to the forward prefix modulo $g$. The model sizes recorded in the \ttt{dist-m4ri}
+notes for six BB circuits, $36 \times 180$ (\ttt{bb\_72}), $45 \times 225$ (\ttt{bb\_90}), $54 \times 270$
+(\ttt{bb\_108}), $72 \times 360$ (gross), $144 \times 720$ (double gross), and $180 \times 900$ (\ttt{bb\_360}), all
+equal $m \times (n + 3m) = m \times 5m$, the generic count of Proposition~\ref{prop:hook_chain}(d) for weight-6
+checks. Proposition~\ref{prop:hook_chain} therefore applies to the code-sized models verbatim.
+
+\paragraph{Extraction failures and ``hook-free'' schedules.}
+If the ancillas of one type are not recognized, $n_{\mathrm{h}} = 0$ and the extended matrix reduces to the bare
+sector of Section~\ref{subsec:static_css}: for the \ttt{quits} hook-error-free (\ttt{hef}) mitten circuits,
+\ttt{extract\_matrices\_and\_hooks} finds no $X$-check ancillas, so no hooks are added, which is why the recorded
+extended distances of \ttt{mitten\_90} and \ttt{mitten\_270} \ttt{hef} exceed their circuit distances (6 and 10 versus
+4 and 7). This is an artifact of the extraction, not a property of the schedule. A hook-free schedule, such as those
+published with~\cite{Bhardwaj2026Mitten}, is designed so that hook errors do not reduce the effective distance; it
+does not remove the hook faults, so the hook columns and their triangles remain. Even so, the \ttt{yarn\_mitten\_150}
+hook-free circuit has circuit distance $8$, two below its code distance $10$, and one of its lightest logical errors
+consists of four hook errors and four data errors. Before relying on Proposition~\ref{prop:hook_chain}(c), the
+pipeline should therefore verify that every row of $G$ has a hook chain (equivalently, $n_{\mathrm{h}} = \sum_g (w_g -
+3)$ up to deduplication).
+
+\paragraph{Measurements.}
+Table~\ref{tab:ext_css} confirms Proposition~\ref{prop:hook_chain} on the extended matrices of the memory sector
+(\ttt{scratch/triplet\_rw/exp5\_regimes.py}, Part~1). For the three BB circuits the extension is generic, and the
+counts of~(d) hold with equality: $n_{\mathrm{h}} = \sum_g (w_g - 3)$, $|\Tc^{\mathrm{ext}}| = \sum_g (w_g - 2)$, every
+data column lies in exactly one chain triangle per check and every hook column in exactly two, while the bare code
+has $\Tc = \emptyset$ and $\mathrm{GAP} = \rank G$. The weight-9 mitten matrices add $60$ triangles across chains
+(\ttt{custom}), and the hook-free \ttt{yarn} schedule is non-generic ($15$ of its $360$ prefix columns coincide with
+existing columns) yet keeps all $420$ chain triangles; $\mathrm{GAP} = 0$ in every fully hooked case. The two
+extraction failures (\ttt{hef}: no $X$-check ancillas; \ttt{2bga\_102}: no $Z$-check ancillas) leave $\mathrm{GAP} =
+\rank G$, whereas the code-sized models of the same circuits are fully hooked ($51 \times 408 = 102 + 51 \cdot 6$ and
+$|\Tc| = 357 = 51 \cdot 7$ for \ttt{2bga\_102}) and have $\mathrm{GAP} = 0$; wherever both exist, the model and the
+extended matrix have the same $n$, $|\Tc|$, rank, and $\mathrm{GAP}$. On these matrices (all instances with enough
+hits; \ttt{dgross\_288} gave only $1$--$2$ uniform hits in $40{,}000$ steps, against $10$--$28$ with
+\ttt{V4\_cnt\_uni}), \ttt{V4\_cnt\_uni} raises the weight-$d$ hits per step by $2.6\times$--$5.9\times$ over
+\ttt{V0\_unif}, \ttt{V2\_push} gives $0.8\times$--$1.9\times$, \ttt{V1\_drop} $0$--$0.22\times$ (it loses codewords:
+$74$ of $285$ distinct weight-$d$ vectors on gross), and \ttt{V0\_win256} $0.34\times$--$1.04\times$ on extended
+matrices, whose columns are data qubits followed by hooks. Among the models, only the mitten model, whose columns
+inherit the DEM order, gains from windows ($2.5\times$, and $12.5\times$ for \ttt{V6\_cnt\_win}). The dense matrices
+occupy at most $12.7$ KiB. The concentration $\kappa$ (Section~\ref{subsec:pr_regimes}) grows from the bare code to
+the extended matrix by $0$ (\ttt{bb\_72}: $3.14 \to 3.12$ nats) to $3.8$ nats (\ttt{dgross\_288}: $6.48 \to 10.31$),
+and models and extended matrices agree within $0.11$ nats.
+
+\begin{table}[htbp]
+\centering
+\caption{Hook-extended matrices (``ext'') and code-sized models (``model'') of the memory sector: generator weight
+$w$, size, appended hook columns $n_{\mathrm{h}}$ with the generic count $\sum_g (w_g - 3)$, triangles with the chain
+count $\sum_g (w_g - 2)$, $\mathrm{GAP}$ of the bare code and of the extended matrix, and the lightest weight found
+by \ttt{RW} (code distance in parentheses). \ttt{hef} and \ttt{2bga\_102} extended matrices: no hooks extracted
+(``---'').}\label{tab:ext_css}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+Instance & $w$ & $m \times n_{\mathrm{ext}}$ & $n_{\mathrm{h}}$ ($\sum (w_g - 3)$) & $|\Tc^{\mathrm{ext}}|$ ($\sum
+  (w_g - 2)$) & $\mathrm{GAP}$ code $\to$ ext & $d$ found \\
+\midrule
+\ttt{bb\_72} ext \& model & 6 & $36 \times 180$ & 108 (108) & 144 (144) & $30 \to 0$ & 5 (6) \\
+\ttt{gross\_144} ext \& model & 6 & $72 \times 360$ & 216 (216) & 288 (288) & $66 \to 0$ & 8 (12) \\
+\ttt{dgross\_288} ext \& model & 6 & $144 \times 720$ & 432 (432) & 576 (576) & $138 \to 0$ & 12 (18) \\
+\ttt{mitten\_150} \ttt{custom} ext \& model & 9 & $60 \times 510$ & 360 (360) & 480 (420) & $60 \to 0$ & 6 (8) \\
+\ttt{yarn\_mitten\_150} hook-free ext & 9 & $60 \times 495$ & 345 (360) & 420 (420) & $60 \to 0$ & 8 (10) \\
+\ttt{mitten\_150} \ttt{hef} model & 9 & $60 \times 510$ & 360 (360) & 450 (420) & $60 \to 0$ (ext: ---) & 5 (8) \\
+\ttt{2bga\_102} model & 9 & $51 \times 408$ & 306 (306) & 357 (357) & $41 \to 0$ (ext: ---) & 8 (10) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ----------------------------------------------------------------------------
+\subsection{Static Degenerate CSS Codes with Explicit Generators}\label{subsec:static_css}
+% ----------------------------------------------------------------------------
+
+In a static CSS sector $(H, L, G)$, $\Tc$ consists of the weight-3 elements of $\Dc = \operatorname{rowspan}(G)$, and
+two subregimes arise.
+\begin{enumerate}[label=(\alph*)]
+  \item If $w_{\deg} \ge 4$, then $\Tc = \emptyset$. This is the generic case for BB codes (weight-6 checks), mitten
+    codes (weight 9), and the 2BGA codes of the Bicycle Race database (check weights $5$ to
+    $9$)~\cite{Lee2026BicycleRace}, unless sums of checks are lighter. Lemma~\ref{lem:min_det_bucket} then finds no
+    triplet, $\Tc$-contraction never fires, the filter of Theorem~\ref{thm:contraction_dominance}(b) removes nothing,
+    and $\mathrm{canon}_{\Tc}$ is the identity: Stages~\ref{stage:enum}, \ref{stage:contract}, and~\ref{stage:conv}
+    reduce, at negligible cost, to standard \ttt{RW} with raw-vector keying.
+  \item If $w_{\deg} = 3$, as for the weight-3 gauge operators of subsystem codes such as SHYPS
+    codes~\cite{Malcolm2025SHYPS} (whose bare-distance sector has the gauge group as $\Dc$), then $\Tc \neq \emptyset$
+    and Sections~\ref{sec:anatomy}--\ref{sec:convergence} apply verbatim, with the span of $\Tc$ an empirical question
+    as for DEMs. If $w_{\deg} = 4$, then $\Tc = \emptyset$, but the weight-4 elements of $\Dc$ support $3 \to 1$
+    shortening and $2 \leftrightarrow 2$ swaps.
+\end{enumerate}
+In both subregimes, $G$ is known explicitly. Theorem~\ref{thm:known_gen} and Proposition~\ref{prop:even_swaps} show
+which parts of the triplet machinery carry over when $\Tc$ is replaced by a list $\Gc$ of known generators of any
+weight.
+
+\paragraph{Notation and setup for Theorem~\ref{thm:known_gen}.}
+Let $(H, L)$ be a cleaned pair (for instance, the matrices of a cleaned CSS sector) with degeneracy space $\Dc$,
+distance $d$, and current \ttt{RW} upper bound $d_{\max} \ge d$, and let $\Gc \subseteq \Dc \setminus \{0\}$ be a list
+of known generators, identified with their supports, with weights $w_g = |g|$ and $w_{\Gc} \coloneqq \max_{g \in \Gc}
+w_g$. For $C \subseteq [n]$ and $g \in \Gc$, the \emph{move} $C \mapsto C \triangle g$ preserves $H 1_C$ and $L 1_C$
+and changes the weight by $w_g - 2|C \cap g|$; it is a \emph{shortening move of gain} $\Delta = 2|C \cap g| - w_g \ge
+1$ if $|C \cap g| > w_g/2$. Equivalently, it replaces the $|C \cap g|$ shared positions by the $w_g - |C \cap g|$
+others: $2 \to 1$ for $w_g = 3$, $3 \to 1$ for $w_g = 4$, $3 \to 2$ for $w_g = 5$, and $4 \to 2$ for $w_g = 6$ at the
+smallest shortening overlap. \emph{Steepest-descent shortening} over $\Gc$ repeatedly applies a shortening move of
+maximal gain (ties broken lexicographically) until none exists. As in Section~\ref{subsec:isd_bg}, $P$ is a pivot
+basis with $J = [n] \setminus P$, $C_P(a) = \{a\} \cup S_a(P)$, $\mathrm{sig}(a) = L 1_{C_P(a)}$, $w_a = |S_a(P)|$,
+$\mathrm{wt}_1(y) = |C_P(y)|$, and $C_2(x, y) = C_P(x) \triangle C_P(y)$ with $\mathrm{wt}_2(x, y) = |C_2(x, y)|$. A
+column $x \in J$ with $C_P(x) \in \Gc$ is a \emph{realized generator}.
+
+\begin{theorem}[Known-Generator Ambushes, Steepest-Descent Shortening, and the Exact Stern Filter
+  Condition]\label{thm:known_gen}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item \emph{(Every trivial fundamental circuit is an ambush.)} For every nontrivial codeword $c$ and every $b \in c
+    \cap J$, with $K \coloneqq (c \cap J) \setminus \{b\}$,
+    \begin{equation}\label{eq:general_ambush}
+      1_{C_P(b)} = 1_c \oplus \bigoplus_{a \in K} 1_{C_P(a)}.
+    \end{equation}
+    At least one $a \in c \cap J$ has $\mathrm{sig}(a) \neq 0$; if $\mathrm{sig}(a) = 0$ for all $a \in K$, then
+    $\mathrm{sig}(b) = L 1_c$ and $|C_P(b)| \le |c| + \sum_{a \in K} (w_a - 1)$. If $g \in \Gc$ and $k \in c \cap g$
+    satisfy $g \setminus \{k\} \subseteq P$, then $k \in J$ and $C_P(k) = g$ is a realized generator. If every $a \in
+    K$ is a realized generator, $g_a \coloneqq C_P(a)$ (so $w_{g_a} = w_a + 1$), and the sets $c \setminus K$ and $g_a
+    \setminus \{a\}$ ($a \in K$) are pairwise disjoint, then $|C_P(b)| = |c| + \sum_{a \in K} (w_{g_a} - 2)$, and the
+    $|K|$ moves $C \mapsto C \triangle g_a$, shortening moves of gains $w_{g_a} - 2$, return $c$.
+  \item \emph{(A Stern pair with a trivial column is a move.)} If $x \in J$ has $\mathrm{sig}(x) = 0$ and $y \in J
+    \setminus \{x\}$ has $\mathrm{sig}(y) \neq 0$, then $C_P(x) \in \Dc$ has weight $w_x + 1 \ge w_{\deg}$, and
+    $C_2(x, y) = C_P(y) \triangle C_P(x)$ is the move of $C_P(y)$ by $C_P(x)$:
+    \begin{equation}\label{eq:pair_move}
+      \mathrm{wt}_2(x, y) = \mathrm{wt}_1(y) + (w_x + 1) - 2\,|S_x(P) \cap S_y(P)|.
+    \end{equation}
+    Every circuit $C$ of $\mathcal{M}(H)$ with $L 1_C \neq 0$, in particular every such $C_P(y)$, satisfies $|C \cap g|
+    \le w_g - 1$ for all $g \in \Dc \setminus \{0\}$, so one move lowers its weight by at most $w_g - 2$.
+  \item \emph{(Exact condition for a loss-free Stern filter.)} Suppose that every $p = 1$ candidate $C_P(y)$ with
+    $\mathrm{sig}(y) \neq 0$ and $\mathrm{wt}_1(y) \le d_{\max} + w_{\Gc} - 2$ undergoes steepest-descent shortening
+    over $\Gc$. Then omitting every realized generator from the Stern $p = 2$ buckets loses no weight-$d$ hit: whenever
+    a pair $(x, y)$ with $x$ a realized generator yields a codeword of weight $d$, the step records a weight-$d$
+    codeword of the same logical class without that pair. If $\Gc \supseteq \Tc$, every $x$ with $\mathrm{sig}(x) = 0$
+    and $w_x \le 2$ is a realized generator (Theorem~\ref{thm:contraction_dominance}(b)). A column with
+    $\mathrm{sig}(x) = 0$ and $w_x = 3$ is a realized generator if and only if the weight-4 element $C_P(x)$ of $\Dc$
+    belongs to $\Gc$; this holds for all such columns when $\Gc$ contains every weight-4 element of $\Dc$, but not in
+    general when $\Gc$ consists of $\Tc$ and the rows of $G$, and for the remaining columns the guarantee does not
+    apply.
+\end{enumerate}
+\end{theorem}
+
+\paragraph{Physical idea of the proof.}
+Part~(a) is the general form of Theorem~\ref{thm:ambush}: a fault $a$ of the logical chain $c$ that lands outside the
+pivot frame but whose fundamental circuit is a stabilizer ($\mathrm{sig}(a) = 0$) is wasted as an information-set
+position, because the frame can reproduce its syndrome by that stabilizer, and \ttt{RW} then sees $c$ only dressed by
+the stabilizer. In circuit DEMs the dressing is usually a triangle; in a static code it is a stabilizer of weight at
+least $w_{\deg}$, typically a check $g$ of which all qubits but one are pivots. Part~(b) says that a Stern pair whose
+first member is such a trivial column only adds a known stabilizer to the $p = 1$ candidate of its second member.
+That is work the $p = 1$ post-processing performs deterministically, provided it knows the stabilizer, and
+part~(c) makes this precise: the filter is safe exactly for the stabilizers in the shortening list. The complete
+enumeration of Lemma~\ref{lem:min_det_bucket} supplies all weight-3 stabilizers, but weight-4 trivial circuits are
+known only if they are listed.
+
+\begin{proof}
+For~(a), the fundamental circuits form a basis of $\ker H$ with $1_c = \bigoplus_{a \in c \cap J} 1_{C_P(a)}$
+(Section~\ref{subsec:isd_bg}); isolating $a = b$ gives~\eqref{eq:general_ambush}. Applying $L$ gives $\bigoplus_{a
+\in c \cap J} \mathrm{sig}(a) = L 1_c \neq 0$, so some $a \in c \cap J$ has $\mathrm{sig}(a) \neq 0$, and
+$\mathrm{sig}(b) = L 1_c$ if $\mathrm{sig}$ vanishes on $K$. Each $C_P(a)$ meets $J$ only in $a$, so the right-hand
+side of~\eqref{eq:general_ambush} is supported on $\{b\} \cup (c \cap P) \cup \bigcup_{a \in K} S_a(P)$, of size at
+most $1 + |c \cap P| + \sum_{a \in K} w_a = |c| + \sum_{a \in K} (w_a - 1)$. If $g \in \Gc \subseteq \ker H$ and
+$g \setminus \{k\} \subseteq P$, then $h_k = \bigoplus_{u \in g \setminus \{k\}} h_u$; $k \in P$ would make $1_g$ a
+nonzero dependency inside $P$, so $k \in J$, and uniqueness of~\eqref{eq:Sa_def} gives $S_k(P) = g \setminus \{k\}$,
+i.e., $C_P(k) = g$. If all $a \in K$ are realized generators with the stated disjointness, then $C_P(b) = (c \setminus
+K) \sqcup \bigsqcup_{a \in K} (g_a \setminus \{a\})$ by~\eqref{eq:general_ambush}, of weight $|c| - |K| + \sum_{a \in
+K} (w_{g_a} - 1)$. Each $a \in K$ lies in $J \setminus \{b\}$, hence neither in $c \setminus K$ nor in any $g_{a'}
+\setminus \{a'\} \subseteq P$; so the move by $g_a$ meets the current set in exactly $g_a \setminus \{a\}$, replaces
+these $w_{g_a} - 1 > w_{g_a}/2$ positions by $a$ (gain $w_{g_a} - 2 \ge 1$, as $w_{g_a} \ge w_{\deg} \ge 3$), and after
+all $|K|$ moves the result is $c$.
+
+For~(b), $H 1_{C_P(x)} = 0$ and $L 1_{C_P(x)} = \mathrm{sig}(x) = 0$ give $C_P(x) \in \Dc \setminus \{0\}$, of weight
+$w_x + 1 \ge w_{\deg}$. Since $C_P(x) \cap J = \{x\}$ and $C_P(y) \cap J = \{y\}$ with $x \neq y$, we have $C_P(x)
+\cap C_P(y) = S_x(P) \cap S_y(P)$, which gives~\eqref{eq:pair_move}. If a circuit $C$ with $L 1_C \neq 0$ contained
+some $g \in \Dc \setminus \{0\}$, then $g$, being dependent ($H 1_g = 0$), would equal $C$ by minimality of $C$, and
+$L 1_C = L 1_g = 0$ would follow, a contradiction. Hence $|C \cap g| \le w_g - 1$, and the gain $2|C \cap g| - w_g$
+is at most $w_g - 2$. Fundamental circuits are circuits (Definition~\ref{def:matroid}(b)).
+
+For~(c), let $x$ be a realized generator, $g \coloneqq C_P(x) \in \Gc$, and suppose that the pair $(x, y)$ yields a
+codeword of weight $d$; Stern pairs are formed only if $\mathrm{sig}(x) \oplus \mathrm{sig}(y) \neq 0$, so
+$\mathrm{sig}(y) \neq 0$, and the pair codeword lies in the logical class $\mathrm{sig}(y)$. By~(b), $C_2(x, y) =
+C_P(y) \triangle g$, so $\mathrm{wt}_1(y) = d + \Delta$ with $\Delta \coloneqq 2|C_P(y) \cap g| - w_g \le w_g - 2 \le
+w_{\Gc} - 2$. If $\Delta \le 0$, then $\mathrm{wt}_1(y) \le d$, and since $C_P(y)$ is a nontrivial codeword,
+$\mathrm{wt}_1(y) = d$: the $p = 1$ scan records $C_P(y)$ itself. If $\Delta \ge 1$, then $\mathrm{wt}_1(y) \le d +
+w_{\Gc} - 2 \le d_{\max} + w_{\Gc} - 2$, so $C_P(y)$ is shortened, and since $g$ offers a move of gain $\Delta$, the
+first steepest-descent move has some gain $\Delta^* \ge \Delta$. It produces a codeword of the class $\mathrm{sig}(y)$
+and weight $d + \Delta - \Delta^* \le d$, hence of weight exactly $d$ by minimality of $d$. Either way the step
+records a weight-$d$ codeword of the class $\mathrm{sig}(y)$ without the pair $(x, y)$. If $\Gc \supseteq \Tc$, a
+column with $\mathrm{sig}(x) = 0$ and $w_x \le 2$ has $w_x = 2$ (Theorem~\ref{thm:contraction_dominance}(b)), so
+$C_P(x)$ is a weight-3 element of $\Dc$, i.e., an element of $\Tc \subseteq \Gc$. If $w_x = 3$, then $C_P(x)$ is a
+weight-4 element of $\Dc$, and $x$ is a realized generator exactly when this element lies in $\Gc$.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+Equation~\eqref{eq:general_ambush} is the expansion of a codeword in the rows of the systematic generator matrix of
+the information set $J$~\cite{Prange1962,MacWilliamsSloane1977}, \cite[Cor.~1.2.6]{Oxley2011}; specialized to
+triplets, it gives Theorem~\ref{thm:ambush}(b) and Theorem~\ref{thm:contraction_dominance}(a). Lowering the weight of
+a logical operator by stabilizer moves is the local step of Markov-chain treatments of logical
+classes~\cite{WoottonLoss2012,HutterWoottonLoss2014}, and quantum ISD discards candidates with trivial logical
+action~\cite{PryadkoShabashovKozin2022QDistRnd}. The identification of a Stern pair with a trivial column as a
+stabilizer move, the steepest-descent guarantee with the cap $d_{\max} + w_{\Gc} - 2$, and the exact membership
+condition for a loss-free filter (with its failure for unlisted weight-4 circuits) are new here; for $\Gc = \Tc$ they
+reduce to Theorem~\ref{thm:contraction_dominance}.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Theorem~\ref{thm:known_gen} is the generalization of Stage~\ref{stage:contract} to static codes (regime R4). In a
+CSS run $G$ is given (\ttt{finG}), so \ttt{dist-m4ri} can build at no enumeration cost a hash table of the rows of $G$
+(the realized-generator test is a single lookup of the Zobrist hash of $C_P(x)$) and the column-to-row incidence
+lists used for shortening (a candidate $C$ costs $\sum_{u \in C} |\{g \ni u\}|$ overlap increments, i.e., $3|C|$ for
+BB codes). The weight cap must be raised from $d_{\max} + 1$ to $d_{\max} + w_{\Gc} - 2$ (e.g., $d_{\max} + 4$ for
+weight-6 checks and $d_{\max} + 7$ for weight-9 checks). When $w_{\deg} \ge 4$, every column with $\mathrm{sig}(x) =
+0$ has $w_x \ge 3$, so the triplet filter of Stage~\ref{stage:contract} is vacuous, and only realized generators may be
+filtered; one of them lands in Stern's Bucket~0 with probability $\binom{r - w_g + 1}{l} / \binom{r}{l}$, the
+generalization of~\eqref{eq:bucket0_prob}. Part~(c) also forbids a tempting shortcut: extending the filter of
+Stage~\ref{stage:contract} to all columns with $\mathrm{sig}(x) = 0$ and $w_x = 3$ is loss-free only with a complete
+list of weight-4 elements of $\Dc$. Whether shortening by $\Gc$ pays for itself on static codes is an empirical
+question; the data are discussed after Proposition~\ref{prop:even_swaps}.
+
+\paragraph{Notation and setup for Proposition~\ref{prop:even_swaps}.}
+Retain the setting of Theorem~\ref{thm:known_gen}, and let $c$ be a minimum-weight nontrivial codeword ($|c| = d$).
+A \emph{sibling} of $c$ is a codeword $c' \neq c$ with $|c'| = d$ and $1_c \oplus 1_{c'} \in \Dc$. Let $\mathcal{E}
+\subseteq \Dc \setminus \{0\}$ be a list of even-weight elements, for example the even-weight rows of $G$, the
+shared-hub plaquettes $T_1 \triangle T_2$ of Proposition~\ref{prop:plaquette_swap}, or sums $g \oplus g'$ of two
+odd-weight rows (of even weight $w_g + w_{g'} - 2|g \cap g'|$). The canonicalizer $\mathrm{canon}_{\mathcal{E}}(c)$
+repeatedly replaces $c$ by the lexicographically smallest $c \triangle e$ with $e \in \mathcal{E}$ and $|c \cap e| =
+|e|/2$, as long as it is lexicographically smaller than the current $c$; for $\mathcal{E}$ the set of all shared-hub
+plaquettes it is $\mathrm{canon}_{\Tc}$ of Section~\ref{subsec:gt_chao_gauge}.
+
+\begin{proposition}[Half-Overlap Exchanges, Sibling Clouds, and Class-Preserving Canonicalization]
+  \label{prop:even_swaps}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item Every $e \in \Dc \setminus \{0\}$ satisfies $|c \cap e| \le |e|/2$. Equality requires $|e|$ to be even, and
+    then $c \triangle e$ is a sibling of $c$ in the same logical class. In particular, a minimum-weight codeword admits
+    no shortening move, and no single odd-weight element of $\Dc$ maps it to a sibling.
+  \item If $e_1, \dots, e_s \in \Dc \setminus \{0\}$ have pairwise disjoint supports and $|c \cap e_i| = |e_i|/2$ for
+    all $i$, then the $2^s$ vectors $c \triangle \bigl(\bigsqcup_{i \in I} e_i\bigr)$, $I \subseteq [s]$, are pairwise
+    distinct minimum-weight codewords of the logical class $L 1_c$.
+  \item $\mathrm{canon}_{\mathcal{E}}$ terminates and maps every minimum-weight codeword to a minimum-weight codeword of
+    the same logical class; hence keying a coverage table by $\mathrm{canon}_{\mathcal{E}}(c)$ never merges two logical
+    classes.
+\end{enumerate}
+\end{proposition}
+
+\paragraph{Physical idea of the proof.}
+In a topological code, a shortest logical string that runs along two edges of a weight-4 plaquette can be pushed
+across the plaquette onto its other two edges at no cost, and independent plaquettes along the string multiply the
+number of equally short strings. The same half-overlap rerouting works for every even-weight stabilizer, e.g., $3
+\leftrightarrow 3$ across a weight-6 BB check. An odd-weight stabilizer cannot be crossed halfway; only an even-weight
+combination, such as a pair of odd checks, can.
+
+\begin{proof}
+For~(a), if $|c \cap e| > |e|/2$, then $c \triangle e$ satisfies $H 1_{c \triangle e} = 0$ and $L 1_{c \triangle e} = L
+1_c \neq 0$ and has weight $d + |e| - 2|c \cap e| < d$, contradicting the minimality of $d$. Equality $|c \cap e| =
+|e|/2$ requires $|e|$ even and gives $|c \triangle e| = d$ in the class $L 1_c$; an odd $|e|$ changes the weight by
+the odd number $|e| - 2|c \cap e| \neq 0$. For~(b), the $e_i$ are disjoint, so $|c \cap \bigsqcup_{i \in I} e_i| =
+\sum_{i \in I} |e_i|/2$ and $c \triangle \bigsqcup_{i \in I} e_i$ has weight $d$ and class $L 1_c$; two index sets $I
+\neq I'$ give vectors differing by $\bigsqcup_{i \in I \triangle I'} e_i \neq 0$. For~(c), every step strictly
+decreases $c$ in the lexicographic order of the finite set of weight-$d$ supports, so the procedure terminates, and
+every step adds an element of $\Dc$ with $|c \cap e| = |e|/2$, which preserves the weight and the logical class.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+The weight identity $|c \triangle e| = |c| + |e| - 2|c \cap e|$ is elementary, and plaquette moves of shortest
+logical strings are the zero-energy moves of Markov-chain decoders~\cite{WoottonLoss2012,HutterWoottonLoss2014};
+Proposition~\ref{prop:plaquette_swap}(b) is the special case $e = T_1 \triangle T_2$. The count~(b) and the use of the
+parity of the generator weights as a predictor of sibling clouds, and hence of the bias of vector-level stopping rules,
+are new here, though elementary.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Proposition~\ref{prop:even_swaps} extends Stage~\ref{stage:conv} to regime R4. When $\Tc = \emptyset$,
+$\mathrm{canon}_{\Tc}$ is the identity, and the canonical key must come from $\mathcal{E}$: for codes with even-weight
+checks (weight-6 BB checks give $3 \leftrightarrow 3$ swaps, weight-4 plaquettes $2 \leftrightarrow 2$ swaps), the rows
+of $G$ themselves; for codes whose checks all have odd weight (the weight-5, 7, and 9 2BGA codes and the weight-9
+mitten codes), only even sums of two checks, which are heavier and less often overlapped halfway, or extra light
+even elements of $\Dc$ when they exist. Part~(b) predicts the
+consequence for stopping: sibling clouds grow exponentially with the number of disjoint half-overlapped even
+stabilizers, so the raw-vector table of \ttt{codeword\_hit\_stats} is distorted most on DEMs and extended matrices
+(abundant shared-hub plaquettes) and on even-weight static codes, and least on odd-weight static codes, where a raw
+vector is close to a class representative. Part~(c) guarantees that every such key is safe for the coverage table of
+Stage~\ref{stage:conv}.
+
+\paragraph{Measurements on static codes.}
+Table~\ref{tab:static_css} summarizes Part~2 of \ttt{exp5\_regimes.py} (the $X$-error sector; the $Z$-error sector
+agrees within noise). An exact meet-in-the-middle count of the elements of $\Dc$ of weight at most $6$, complemented by
+an information-set search for weights up to $w_{\max}$, finds \emph{no} element lighter than the checks in any of the
+seven 2BGA codes, in \ttt{bb\_72}, gross, or mitten: $w_{\deg} = w_{\max}$, and the only elements of weight
+$w_{\max}$ found are the rows themselves. Combinations of checks therefore create no extra light elements in these
+codes. Among all our static sectors, the only extra light elements are the $300$ weight-3 elements of the SHYPS gauge
+sector besides its $225$ gauge rows ($\mathrm{GAP} = 0$); the merged surface code has no weight-4 elements besides its
+$8$ rows. With $\Tc = \emptyset$, every \ttt{RW} variant is within noise of \ttt{V0\_unif} ($0.7\times$--$1.3\times$),
+\ttt{V2\_dual} is slower ($0.36\times$--$0.73\times$, except $1.4\times$ on the small surface code), and \ttt{win=256}
+is neutral for $n \le 256$ and erratic beyond ($0.37\times$--$1.56\times$ in hits per step and
+$0.37\times$--$1.03\times$ in distinct codewords); on SHYPS, $\Tc$-contraction gives $245\times$--$366\times$ in
+\ttt{hits/s}. The prototypes of
+Theorem~\ref{thm:known_gen} behave as predicted. Realized generators make up $46\%$--$99\%$ of the columns with
+$\mathrm{sig}(x) = 0$ ($26\%$ on SHYPS, where the non-row weight-3 elements supply about half of the rest), close to
+the rate predicted by a uniform information set, and every weight-$d$ Bucket-0 hit with a realized generator is
+reproduced by $p = 1$ candidates and steepest-descent shortening ($0$ lost in all $24$ sectors, e.g., $379/379$ on
+\ttt{bb\_72} and $718/718$ on gross). Shortening lowers $5.7\%$--$87\%$ of the $p = 1$ candidates of weight at most $d
++ w_{\max} - 2$, by moves such as $3 \to 2$ ($w = 5$), $4 \to 2$ ($w = 6$), and $5 \to 4$ to $8 \to 1$ ($w = 9$), and
+supplies a large share of the weight-$d$ hits on most codes: $272$ of $296$ on \ttt{2bga\_288\_4} ($d = 20$), $43$ of
+$48$ on \ttt{2bga\_252}, $6{,}387$ of $10{,}085$ on gross, $5{,}692$ of $16{,}957$ on \ttt{bb\_72}, but only $240$ of
+$4{,}534$ on mitten and $1$ of $23$ on \ttt{2bga\_120}. As Proposition~\ref{prop:even_swaps} predicts, no weight-$d$
+codeword of an odd-weight code (or of SHYPS) has a half-overlapped generator, whereas the even-weight codes have
+$0.67$--$2.75$ per codeword (\ttt{bb\_72}, with $0$, is the exception).
+
+\paragraph{Extra low-weight generators.}
+The seven Bicycle Race codes happen to have $w_{\deg} = w_{\max}$, but general 2BGA codes~\cite{LinPryadko2024}, like
+other group-algebra codes, can contain elements of $\Dc$ lighter than their checks: sums of checks whose supports
+largely cancel, for instance sums over a subgroup or its cosets. Such elements fit the framework without change.
+Theorem~\ref{thm:known_gen} holds for every list $\Gc \subseteq \Dc \setminus \{0\}$, so they can be appended to
+$\Gc$, and being lighter than the checks they do not raise the cap $d_{\max} + w_{\Gc} - 2$; even-weight ones also
+enter the list $\mathcal{E}$ of Proposition~\ref{prop:even_swaps}. Weight-3 elements are found automatically by
+Lemma~\ref{lem:min_det_bucket}, which moves the sector to regime R4 with $w_{\deg} = 3$ and switches the triplet
+stages on. Heavier ones are found only by an explicit low-weight search of $\operatorname{rowspan}(G)$, such as the
+meet-in-the-middle count and information-set search behind Table~\ref{tab:static_css}, or when they are supplied as
+extra rows of \ttt{finG}.
+
+\begin{table}[htbp]
+\centering
+\caption{Static CSS sectors ($X$ errors): length $n$, rank of $H$, $k$, check weight $w$ (all rows), degeneracy weight
+$w_{\deg}$ (exact up to weight $6$ by a meet-in-the-middle count, and from an information-set search above) and
+$|\Tc|$; per \ttt{RW} step, the columns with $\mathrm{sig}(x) = 0$ and the share of realized generators among them;
+the share of $p = 1$ candidates lowered by steepest-descent $\Gc$-shortening and the weight-$d$ hits it supplies;
+half-overlapped generators per weight-$d$ codeword; and the concentration $\kappa$ (nats). Surface: rotated $d = 5$
+code after merging its $4$ weight-2 boundary stabilizers; SHYPS: gauge sector of the $[[225, 16, 8]]$
+code.}\label{tab:static_css}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{3.0pt}
+\begin{tabular}{@{}lrrrrrrrrrr@{}}
+\toprule
+Code & $n$ & $\rank H$ & $k$ & $w$ & $w_{\deg}$ & $|\Tc|$ & sig $= 0$ / step (realized) & lowered & rescued / hits &
+  $\langle\#\,\tfrac{w}{2}\rangle$ \& $\kappa$ \\
+\midrule
+\ttt{2bga\_102} & 102 & 41 & 20 & 9 & 9 & 0 & 0.13 (97\%) & 29\% & 521 / 2209 & 0; 1.77 \\
+\ttt{2bga\_120} & 120 & 48 & 24 & 9 & 9 & 0 & 0.15 (99\%) & 25\% & 1 / 23 & 0; 1.82 \\
+\ttt{2bga\_252} & 252 & 118 & 16 & 7 & 7 & 0 & 5.96 (83\%) & 75\% & 43 / 48 & 0; 3.32 \\
+\ttt{2bga\_288\_4} & 288 & 142 & 4 & 5 & 5 & 0 & 50.5 (46\%) & 87\% & 272 / 296 & 0; 12.38 \\
+\ttt{2bga\_288\_8} & 288 & 140 & 8 & 6 & 6 & 0 & 19.1 (66\%) & 57\% & 43 / 55 & 2.51; 6.06 \\
+\ttt{2bga\_292} & 292 & 135 & 22 & 8 & 8 & 0 & 3.19 (90\%) & 42\% & 3 / 3 & 0.67; 2.38 \\
+\ttt{2bga\_294} & 294 & 135 & 24 & 9 & 9 & 0 & 1.50 (92\%) & 64\% & 7 / 9 & 0; 2.01 \\
+\ttt{bb\_72} & 72 & 30 & 12 & 6 & 6 & 0 & 1.41 (90\%) & 25\% & 5692 / 16957 & 0; 3.11 \\
+\ttt{gross\_144} & 144 & 66 & 12 & 6 & 6 & 0 & 5.88 (78\%) & 48\% & 6387 / 10085 & 1.98; 4.21 \\
+\ttt{mitten\_150} & 150 & 60 & 30 & 9 & 9 & 0 & 0.17 (93\%) & 5.7\% & 240 / 4534 & 0; 2.31 \\
+surface $d = 5$ & 21 & 12 & 1 & 2, 4 & 4 & 0 & 4.75 (67\%) & 22\% & 3587 / 16130 & 2.75; 2.27 \\
+SHYPS gauge & 225 & 44 & 16 & 3 & 3 & 525 & 81.2 (26\%) & 38\% & 114 / 150 & 0; 8.24 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ----------------------------------------------------------------------------
+\subsection{Single-Round (\texorpdfstring{$T = 1$}{T = 1}) Circuit DEMs, Reduced and Unreduced}\label{subsec:t1}
+% ----------------------------------------------------------------------------
+
+Single-cycle DEMs are of interest because their distance can be the target itself: for syndrome-extraction circuits
+with alternating time-reversed rounds, fault-tolerance properties can be examined on a short periodic
+unit~\cite{ShawTerhal2026Morphing}, and the \ttt{dist-m4ri} notes plan to compute the circuit distances of such folded
+circuits from $T = 1$ DEMs. A $T = 1$ DEM differs from the DEMs of Sections~\ref{sec:anatomy}--\ref{sec:convergence}
+in two ways: the CSS reduction becomes trivial (Lemma~\ref{lem:single_cycle}), and the time axis collapses.
+
+\paragraph{Notation and setup for Lemma~\ref{lem:single_cycle}.}
+Consider a CSS memory circuit in the $X$ basis (the $Z$ basis is symmetric): the data qubits are prepared in
+$|+\rangle$ and finally measured in the $X$ basis; every check is measured by an ancilla that is prepared and measured
+in the $X$ or $Z$ basis; the only multi-qubit gates are CNOTs; and there are no other single-qubit Clifford gates
+(none on data qubits, and Hadamard gates on ancillas only right after preparation or right before measurement, where
+they are absorbed into the preparation and measurement bases). In this frame, every Pauli fault $e$ at a circuit
+location factorizes, up to phase, as $e = e_X e_Z$ into its $X$- and $Z$-parts. Let $T$ be the number of
+syndrome-extraction cycles, i.e., the number of times each check is measured (in this subsection $T$ without subscript
+is this number; triplets are written $T_1, T_2 \in \Tc$). In circuits whose first cycle precedes a single
+\ttt{REPEAT} block, as in the \ttt{bb\_72}, \ttt{dgross\_288}, mitten, SHYPS, and surface-code circuits used here, the
+option \ttt{rounds=}$N$ of \ttt{dist-m4ri} sets $T = N + 1$, so $T = 1$ is \ttt{rounds=0}. We assume the standard
+memory detectors: each detector is the parity of two consecutive measurements of one check, of the first measurement
+of an $X$-check (deterministic after the $|+\rangle$ preparation), or of the last measurement of an $X$-check together
+with the final data readout on its support, and the observables are products of final data readouts. (Single-cycle
+parities of $Z$-check outcomes along linear dependencies among the $Z$-checks, such as the $6$ metachecks of BB codes,
+are deterministic too; standard memory circuits do not declare them, and we exclude them.) With $m_{\mathrm{meas}}$
+$X$-checks, a $T = 1$ DEM thus has exactly $m = 2 m_{\mathrm{meas}}$ detectors. The full DEM $(H, L)$ has one column
+per fault mechanism; the CSS-reduced DEM deletes the $Z$-type (minority-basis) detectors (\ttt{drop=auto}); both are
+cleaned as in Section~\ref{subsec:dems}. For a fault $f$, or a Pauli operator applied at a circuit location,
+$\mathrm{col}(f) = (h_f, \ell_f)$ denotes its DEM column.
+
+\begin{lemma}[Single-Cycle Collapse of the CSS Reduction]\label{lem:single_cycle}
+Under the notation and setup above, let $T = 1$. Then:
+\begin{enumerate}[label=(\alph*)]
+  \item No detector and no observable contains the outcome of a $Z$-basis measurement; in particular, the DEM has no
+    minority-basis detector.
+  \item The column of every fault depends only on its $Z$-part: $\mathrm{col}(e) = \mathrm{col}(e_Z)$.
+  \item After zero columns are removed and equal columns are merged, the full DEM coincides with the CSS-reduced DEM
+    (from which \ttt{drop=auto} deletes no detector) and with the DEM of the noise model projected onto $Z$-parts. The
+    $15$ Pauli mechanisms of a two-qubit depolarizing channel on a CNOT with control $c$ and target $t$ yield at most
+    $3$ distinct nonzero columns, $\mathrm{col}(Z_c)$, $\mathrm{col}(Z_t)$, and $\mathrm{col}(Z_c Z_t)$, which form a
+    weight-3 degeneracy whenever they are nonzero and pairwise distinct.
+\end{enumerate}
+\end{lemma}
+
+\paragraph{Physical idea of the proof.}
+With a single cycle, every minority check is measured only once. Its outcome is a fresh coin flip that no other
+measurement can be compared with, so the circuit has no minority detector, and the bit-flip parts of faults are
+invisible: every fault is seen only through its phase-flip part. The CSS reduction, which for $T \ge 2$ deletes the
+minority detectors and merges twin columns, is therefore performed by the circuit itself at $T = 1$, and the
+fifteen-fold Pauli multiplicity of a two-qubit channel collapses to the three phase-flip patterns of the CNOT, which
+form the triangle of Proposition~\ref{prop:hook_triangulation}(a).
+
+\begin{proof}
+For~(a), with $T = 1$ a $Z$-check is measured once, so it has no pair of consecutive measurements; the first-measurement
+and last-measurement detectors involve $X$-checks only, because only $X$-check values are deterministic after the
+$|+\rangle$ preparation and only they can be reconstructed from the final $X$-basis readout; and the observables are
+products of $X$-basis readouts. Hence only $X$-basis outcomes ($X$-check ancillas and final data readouts) enter
+detectors and observables.
+
+For~(b), conjugation by a CNOT maps $X_c \mapsto X_c X_t$, $X_t \mapsto X_t$, $Z_c \mapsto Z_c$, and $Z_t \mapsto Z_c
+Z_t$, so $X$-parts propagate to $X$-parts and $Z$-parts to $Z$-parts, and preparations and measurements are in the
+$X$ or $Z$ basis. Hence the $Z$-part of the propagated fault at any later time is the propagation of $e_Z$ alone. An
+$X$-basis outcome is flipped if and only if the propagated $Z$-part acts on the measured qubit at that time (a
+readout error of an $X$-basis measurement is a $Z$ error just before it, and one of a $Z$-basis measurement is an $X$
+error, invisible by~(a)). Since by~(a) every detector and observable is a parity of $X$-basis outcomes,
+$\mathrm{col}(e) = \mathrm{col}(e_Z)$.
+
+For~(c), part~(b) shows that faults with equal $Z$-parts have equal columns and that faults with $e_Z = I$ have
+$\mathrm{col}(e) = (0, 0)$. The distinct nonzero columns of the full DEM are therefore the distinct nonzero
+$\mathrm{col}(e_Z)$, which are the columns of the DEM of the $Z$-projected noise. By~(a) there is no $Z$-type
+detector, so \ttt{drop=auto} deletes none, and the CSS-reduced DEM equals the full DEM. The $Z$-parts of the $15$
+nonidentity Paulis on $(c, t)$ lie in $\{I, Z_c, Z_t, Z_c Z_t\}$; mechanisms with $Z$-part $I$ have zero columns, and
+the others give the three listed columns, which satisfy $\mathrm{col}(Z_c) \oplus \mathrm{col}(Z_t) \oplus
+\mathrm{col}(Z_c Z_t) = (0, 0)$ by linearity of the DEM map (as in the proof of
+Proposition~\ref{prop:hook_triangulation}(a)), hence form an element of $\Tc$ when they are nonzero and pairwise
+distinct.
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+The independent propagation of $X$- and $Z$-parts through CSS circuits and the definition of detectors as
+deterministic parities of measurement outcomes are standard~\cite{Gottesman1997,Gidney2021Stim,DelfossePaetznick2023},
+and the exact reduction \ttt{drop=auto} is part of \ttt{dist-m4ri}~\cite{PryadkoZeng2026DistM4RI}.
+Lemma~\ref{lem:single_cycle} is an elementary consequence, which we state to settle the question of reduced versus
+unreduced DEMs at $T = 1$; we have not seen it stated in this form.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+For CSS circuits, Lemma~\ref{lem:single_cycle} removes the distinction between reduced and unreduced $T = 1$ DEMs:
+there is a single DEM, and its column count is set by at most three phase-flip columns per CNOT, plus single-qubit
+and readout faults, rather than by the $15$-Pauli cliques that make unreduced multi-round DEMs wide ($n/m = 37.5$ for
+\ttt{bb\_72\_full} at $T = 6$). Two-sector structure, and with it the reduction, appears only from $T = 2$ on; non-CSS
+circuits such as the $XYZ$ color code are irreducible (\ttt{drop=auto} deletes no detector) and stay wide at every
+$T$ ($n/m = 15.6$--$24.5$). Part~(c) also shows that every CNOT still contributes the triangle of
+Proposition~\ref{prop:hook_triangulation}(a) at $T = 1$, so Stages~\ref{stage:enum}, \ref{stage:contract},
+and~\ref{stage:conv} keep their inputs.
+
+\paragraph{Consequences for the pipeline at $T = 1$.}
+The local relations of Proposition~\ref{prop:hook_triangulation} live within one cycle: part~(a) at every CNOT,
+part~(b2) along every ancilla of the opposite type, and the time-like plaquettes of part~(b1) between data faults
+before the cycle (preparation errors) and after it (errors before the final readout). $\Tc$ thus stays dense, and
+Stages~\ref{stage:enum}, \ref{stage:contract}, and~\ref{stage:conv} apply as for multi-round DEMs. The time axis,
+however, is gone. The DEM has $m = 2 m_{\mathrm{meas}}$ detectors ($72$ for \ttt{bb\_72}), far below the $m \ge 600$
+gate of Stage~\ref{stage:slab}, and a slab with $m_{\mathrm{sub}} \ge m$ is no restriction at all; $m \times n$ is
+small enough to stay in cache, so the gate of Stage~\ref{stage:dual} is not met either. A \ttt{win=256} window places a
+block of consecutive DEM columns first. At $T = 1$ it cannot exploit temporal locality, but Stim lists the error
+mechanisms in circuit order, and within one cycle neighboring columns still belong to neighboring gates, qubits, and
+checks. Whether this spatial order carries locality is an empirical question, answered below.
+
+\paragraph{Measurements at $T = 1$.}
+Table~\ref{tab:t1} summarizes Part~3 of \ttt{exp5\_regimes.py}. In every CSS circuit ($T = 1$ is \ttt{rounds=0}),
+the binary's \ttt{drop=auto} deletes no detector and the full and reduced DEMs coincide, as
+Lemma~\ref{lem:single_cycle} predicts; at $T = 2$ the reduction deletes the minority detectors and shrinks $n$ by
+$2.8\times$--$6.1\times$ (except \ttt{shyps\_225}, which has no minority detectors at either depth). Per
+\ttt{DEPOLARIZE2} location, the merged $T = 1$ DEMs of the three circuits checked (\ttt{surf\_d5}, \ttt{bb\_72}, and
+mitten) have at most $3$ distinct nonzero columns (histograms $\{1, 3\}$), versus up to $15$ at $T = 2$ and in the
+non-CSS color code. $\mathrm{GAP} = 0$ and every column lies in a triangle in all $19$ DEMs examined. $\Tc$-contraction
+keeps its effect at $T = 1$ (\ttt{V4\_cnt\_uni} $3.7\times$--$45\times$ over \ttt{V0\_unif} in \ttt{hits/s}),
+\ttt{V1\_drop} stays harmful ($0$--$0.75\times$ in \ttt{hits/s}), and \ttt{V2\_dual} stays below \ttt{V2\_push} except
+on the three smallest DEMs (\ttt{surf\_d3}, \ttt{surf\_d5}, and the color code). Windows behave as the column order
+dictates: in hits per step at equal steps, they are neutral for $n \le 256$ (identical law) and on \ttt{bb\_72}
+($1.07\times$, $n = 432$), but help on the larger DEMs (mitten $6.5\times$, \ttt{shyps\_225} $33\times$, and
+\ttt{dgross\_288}, where only window steps found weight-18 codewords), and \ttt{V6\_cnt\_win} is the best variant there
+($23\times$ on mitten and $1{,}075\times$ on \ttt{shyps\_225} over \ttt{V0\_unif} in \ttt{hits/s}). The same DEMs with
+randomly permuted columns lose the gain (mitten $6.52\times \to 0.69\times$, SHYPS $32.95\times \to 1.37\times$,
+\ttt{dgross\_288} $47 \to 0$ hits): the $T = 1$ window gain comes from the spatial order of the columns within the
+cycle, not from multi-round temporal structure.
+
+\begin{table}[htbp]
+\centering
+\caption{Single-cycle DEMs ($T = 1$) and their two-cycle counterparts ($T = 2$, full and CSS-reduced): detectors
+$m$, merged columns $n$, $n/m$, $\dim(\Dc)$, $|\Tc|$ (all with $\mathrm{GAP} = 0$), detectors deleted by
+\ttt{drop=auto} to obtain the reduced DEM (``---'': full DEM), dense footprint $m n / 8$, the hits-per-step ratio of
+\ttt{win=256} to uniform steps, and the concentration $\kappa$ followed by the window log-likelihood
+$\kappa_{\mathrm{win}}$ of Section~\ref{subsec:pr_regimes} (nats; one value where window and uniform laws coincide,
+$n \le 256$). Color: $XYZ$ color code with one internal detector layer plus the final one (its shortest valid depth,
+two cycles, used as the $T = 1$ analogue; ``---'' under $T$).}\label{tab:t1}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}llrrrrrrrrl@{}}
+\toprule
+DEM & $T$ & $m$ & $n$ & $n/m$ & $\dim(\Dc)$ & $|\Tc|$ & dropped & KiB & win/unif & $\kappa \to \kappa_{\mathrm{win}}$ \\
+\midrule
+\ttt{surf\_d5} & 1 & 24 & 77 & 3.21 & 52 & 64 & 0 & 0.2 & 1.00 & 7.59 \\
+\ttt{surf\_d5} & 2 full & 48 & 439 & 9.15 & 390 & 1359 & --- & 2.6 & 1.10 & $15.5 \to 16.5$ \\
+\ttt{surf\_d5} & 2 red. & 36 & 133 & 3.69 & 96 & 128 & 12 & 0.6 & 0.99 & 12.0 \\
+\ttt{bb\_72} & 1 & 72 & 432 & 6.00 & 354 & 396 & 0 & 3.8 & 1.07 & $7.47 \to 9.45$ \\
+\ttt{bb\_72} & 2 full & 144 & 4320 & 30.0 & 4170 & 15696 & --- & 75.9 & 20.7 & $8.07 \to 14.0$ \\
+\ttt{bb\_72} & 2 red. & 108 & 792 & 7.33 & 678 & 792 & 36 & 10.4 & 1.43 & $10.7 \to 15.0$ \\
+\ttt{mitten\_150} & 1 & 120 & 1110 & 9.25 & 960 & 960 & 0 & 16.3 & 6.52 & $4.66 \to 8.95$ \\
+\ttt{mitten\_150} & 2 full & 240 & 12610 & 52.5 & 12340 & 46845 & --- & 369 & $0 \to 2$ hits & $5.35 \to 10.5$ \\
+\ttt{mitten\_150} & 2 red. & 180 & 2070 & 11.5 & 1860 & 1920 & 60 & 45.5 & 7.24 & $6.45 \to 11.2$ \\
+\ttt{shyps\_225} & 1 & 120 & 1125 & 9.38 & 1005 & 3300 & 0 & 16.5 & 32.95 & $10.8 \to 16.4$ \\
+\ttt{dgross\_288} & 1 & 288 & 1728 & 6.00 & 1434 & 1584 & 0 & 60.8 & $0 \to 47$ hits & $22.1 \to 39.1$ \\
+\ttt{dgross\_288} & 2 full & 576 & 17280 & 30.0 & 16698 & 62784 & --- & 1215 & no hits & $14.9 \to 25.2$ \\
+\ttt{dgross\_288} & 2 red. & 432 & 3168 & 7.33 & 2730 & 3168 & 144 & 167 & no hits & $26.0 \to 47.0$ \\
+color $XYZ$ & --- & 18 & 280 & 15.6 & 261 & 1493 & 0 & 0.6 & 0.89 & $3.31 \to 3.38$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ----------------------------------------------------------------------------
+\subsection{Information-Set Likelihoods and Termination Criteria Across Regimes}\label{subsec:pr_regimes}
+% ----------------------------------------------------------------------------
+
+Theorem~\ref{thm:infoset_likelihood} and Corollary~\ref{cor:harmonic_hub} depend on $\mathcal{M}(H)$ only, so they hold
+verbatim in all four regimes. What changes is how far the \ttt{RW} law $\Pr(J)$ is from the uniform-subset model of
+\ttt{rw\_infoset\_find\_prob}. Corollary~\ref{cor:kl_concentration} gives the concentration measured in
+Section~\ref{subsec:paradox} a precise meaning that can be compared across regimes.
+
+\paragraph{Notation and setup for Corollary~\ref{cor:kl_concentration}.}
+Let $H \in \Ftwo^{m \times n}$ have rank $r$, let $\mathfrak{B}$ be the set of bases of $\mathcal{M}(H)$, and let
+$\Pr$ be the \ttt{RW} basis law of Theorem~\ref{thm:infoset_likelihood} (identifying each basis $P$ with its
+information set $J$). Let $U_r$ be the uniform law on all $\binom{n}{r}$ $r$-subsets of $[n]$ (the model behind
+\ttt{rw\_infoset\_find\_prob}, which treats the information set as a uniform $(n - r)$-subset), and let
+$U_{\mathfrak{B}}$ be the uniform law on $\mathfrak{B}$. For laws $\mu, \nu$ on a finite set with $\mu(x) > 0
+\Rightarrow \nu(x) > 0$, $D_{\mathrm{KL}}(\mu \,\|\, \nu) = \sum_x \mu(x) \ln(\mu(x) / \nu(x)) \ge 0$ is the
+Kullback--Leibler divergence. The \emph{concentration} of the \ttt{RW} law is $\kappa(H) \coloneqq \E_{J \sim
+\Pr}[\ln \Pr(J)] + \ln\binom{n}{r}$, the quantity estimated in Section~\ref{subsec:paradox} ($\kappa = 17.11$ nats on
+\ttt{bb\_72\_simp}). Window steps draw $J$ from a different law $\Pr_{\mathrm{win}}$; for them we report the
+\emph{window log-likelihood} $\kappa_{\mathrm{win}}(H) \coloneqq \E_{J \sim \Pr_{\mathrm{win}}}[\ln \Pr(J)] +
+\ln\binom{n}{r}$, the uniform-step log-likelihood of window-drawn bases, which equals
+$D_{\mathrm{KL}}(\Pr_{\mathrm{win}} \,\|\, U_r) - D_{\mathrm{KL}}(\Pr_{\mathrm{win}} \,\|\, \Pr)$ and is not itself a
+divergence ($770.81 - 748.58 = 22.2$
+nats on \ttt{bb\_72\_simp}, Section~\ref{subsec:paradox}).
+
+\begin{corollary}[Kullback--Leibler Decomposition of Information-Set Concentration]\label{cor:kl_concentration}
+Under the notation and setup above:
+\begin{enumerate}[label=(\alph*)]
+  \item $\kappa(H) = D_{\mathrm{KL}}(\Pr \,\|\, U_r) = \ln\bigl(\binom{n}{r} / |\mathfrak{B}|\bigr) +
+    D_{\mathrm{KL}}(\Pr \,\|\, U_{\mathfrak{B}})$, the sum of a nonnegative \emph{exclusion} term (the rank-deficient
+    $r$-subsets, which $U_r$ counts and \ttt{RW} never outputs) and a nonnegative \emph{non-uniformity} term among
+    bases.
+  \item $\kappa(H) \ge \E_{J \sim \Pr}[\LFKG(J)] + \ln\binom{n}{r} \ge \E_{J \sim \Pr}[\LH(J)] + \ln\binom{n}{r}$.
+  \item If $2 \le r \le n - 2$, then $|\mathfrak{B}| < \binom{n}{r}$ and $\kappa(H) > 0$: for no binary matrix in this
+    range, whether a circuit DEM, an extended or static CSS matrix, or a $T = 1$ DEM, is the uniform-subset model the
+    \ttt{RW} law.
+\end{enumerate}
+\end{corollary}
+
+\paragraph{Physical idea of the proof.}
+$\kappa$ counts the nats of surprise that the uniform-subset model assigns, on average, to the frames that \ttt{RW}
+actually draws. \ttt{RW} never draws a rank-deficient $r$-subset (a frame that cannot gauge-fix every syndrome), and it
+draws the valid frames at rates set by the arrival race of Theorem~\ref{thm:infoset_likelihood}. The first effect is
+pure counting (exclusion) and the second is dynamical (non-uniformity). Short circuits of $\mathcal{M}(H)$, such as
+weight-3 degeneracies or light stabilizers, create many rank-deficient $r$-subsets and thus drive the exclusion term,
+while the realized short circuits of a basis raise its probability (Corollary~\ref{cor:harmonic_hub}(b)). A binary
+matrix of rank $2 \le r \le n - 2$ always has some dependent $r$-subset, so in this range the two laws never agree
+(outside it they can: for $H = [I_{n-1} \mid 1]$, every $(n - 1)$-subset is a basis and $\kappa = 0$).
+
+\begin{proof}
+For~(a), $\Pr$ is supported on $\mathfrak{B}$, so $D_{\mathrm{KL}}(\Pr \,\|\, U_r) = \sum_J \Pr(J) \ln\bigl(\Pr(J)
+\binom{n}{r}\bigr) = \kappa(H)$ and $D_{\mathrm{KL}}(\Pr \,\|\, U_{\mathfrak{B}}) = \E[\ln \Pr(J)] + \ln
+|\mathfrak{B}|$; subtracting gives the decomposition, in which $|\mathfrak{B}| \le \binom{n}{r}$ and Gibbs' inequality
+make both terms nonnegative. Part~(b) follows by taking the $\Pr$-expectation of the pointwise
+bounds~\eqref{eq:fkg_jensen_bounds}. For~(c), it suffices to exhibit a dependent $r$-subset. If $H$ has a zero column,
+or two equal columns, any $r$-subset containing it, or them ($r \ge 2$), is dependent. Otherwise, fix a basis $P$ and
+two distinct columns $a, b \notin P$ ($n - r \ge 2$). If $|S_a(P)| = |S_b(P)| = r$, then $h_a = \bigoplus_{p \in P} h_p
+= h_b$, which is excluded; so one of them, say $a$, has $|S_a(P)| \le r - 1$, and the fundamental circuit $C_P(a)$ is
+a dependent set of size at most $r$, contained in a dependent $r$-subset. Hence $|\mathfrak{B}| < \binom{n}{r}$, the
+exclusion term is positive, and $\kappa(H) > 0$ by~(a).
+\end{proof}
+
+\paragraph{Prior work and attribution.}
+The identity $\E_\mu[\ln \mu] + \ln N = D_{\mathrm{KL}}(\mu \,\|\, \mathrm{Unif}_N)$ and its nonnegativity (Gibbs'
+inequality) are standard in information theory, and~(c) is a weak form of the fact that binary matroids have no
+$U_{2,4}$ minor, so that no uniform matroid $U_{r,n}$ with $2 \le r \le n - 2$ is binary (Tutte's excluded-minor
+characterization; see~\cite{Oxley2011}); we give a direct proof. Reading the concentration of ISD bases as a KL
+divergence with an exclusion and a non-uniformity part, and the resulting statement that the uniform-subset model is
+never exact for binary matrices with $2 \le r \le n - 2$, are new here.
+
+\paragraph{Relevance and role in the proposed pipeline.}
+Corollary~\ref{cor:kl_concentration} makes the $\kappa$ column of Table~\ref{tab:regime_termination} comparable across
+regimes and settles the status of \ttt{rw\_infoset\_find\_prob}: by~(c), its uniform-subset law is wrong for every
+input with $2 \le r \le n - 2$, which covers every DEM, extended matrix, model, and CSS sector considered here (only
+trivial inputs such as a classical repetition code, with $r = n - 1$, escape), so its output must be reported as a
+model-based diagnostic and never used as a stopping rule, consistent with Stage~\ref{stage:conv}.
+On the exhaustively enumerated
+$6 \times 18$ sub-DEM of Section~\ref{subsec:paradox}, the exact law has $\kappa = 1.550$ nats, of which $\ln(18{,}564
+/ 4{,}043) = 1.524$ nats ($98\%$) is exclusion and only $0.026$ nats non-uniformity among the $4{,}043$ bases.
+Part~(b) is true but vacuous in practice: $\E[\LFKG(J)] + \ln\binom{n}{r}$ is negative in every instance we measured
+(from $-2$ to $-8 \times 10^4$ nats; $1.55 - 7.49 < 0$ on the sub-DEM). The logged score $\LFKG(J)$ is therefore a
+correlate of $\ln \Pr(J)$ (Pearson $r = 0.91$, Table~\ref{tab:infoset_corr}), not a certificate, and its running mean
+must be taken over uniform steps only. In all four regimes, the exclusion term grows with the density of short
+circuits of $\mathcal{M}(H)$: triangles and $H$-triangles in regimes R1--R3, and in regime R4 stabilizers and logical
+operators of weight at least $\min(w_{\deg}, d) \ge 4$ when $\Tc = \emptyset$.
+
+\paragraph{Termination criteria across regimes.}
+\ttt{dist-m4ri} combines three stopping signals, and each rests on an assumption that the regimes violate to different
+degrees.
+\begin{enumerate}[label=(\roman*)]
+  \item \emph{Analytical estimate} (\ttt{rw\_infoset\_find\_prob}): one isolated codeword, information sets drawn from
+    $U_r$, and no contraction. It is wrong by Corollary~\ref{cor:kl_concentration}(c) in every regime; it ignores the
+    sibling cloud of the class (a factor up to $M_{\mathrm{eff}}$, large wherever plaquette or half-overlap moves
+    abound, Proposition~\ref{prop:even_swaps}(b)), the ambush repairs of Stage~\ref{stage:contract} (which add success
+    channels in regimes R1--R3 and, with $\Gc$-shortening, in R4), and windows (which are not counted).
+  \item \emph{Raw-vector hit table} (\ttt{cov\_cws=100}, $\langle n \rangle \ge \ttt{min\_hits}$): every stored
+    vector is treated as a species. It over-runs on single-class DEMs and stops early on many-class DEMs
+    (Section~\ref{subsec:stopping_failures}). By Proposition~\ref{prop:even_swaps}(b), the same distortion is expected
+    on extended matrices and even-weight static codes, and the least distortion on odd-weight static codes without
+    light even elements of $\Dc$.
+  \item \emph{Canonical uniform-step Good--Turing / Chao1--Chao2 rule}~\eqref{eq:stopping_rule}: it needs a
+    class-preserving key (Proposition~\ref{prop:plaquette_swap}, or Proposition~\ref{prop:even_swaps}(c) with a list
+    $\mathcal{E}$ in regime R4) and i.i.d.\ sampling occasions (uniform steps, Theorem~\ref{thm:infoset_likelihood});
+    both are available in all four regimes, with $\mathrm{canon}_{\Tc}$ in R1--R3 and in R4 with $w_{\deg} = 3$, and
+    $\mathrm{canon}_{\mathcal{E}}$ (even rows of $G$, even sums of two rows, or extra light even elements of $\Dc$) in
+    R4 with $w_{\deg} \ge 4$.
+\end{enumerate}
+
+\paragraph{Measurements across regimes.}
+Table~\ref{tab:regime_termination} compares the four regimes on common instances (Part~4 of \ttt{exp5\_regimes.py};
+$p = 1$ \ttt{RW} with uniform steps, alternated with non-wrapping \ttt{win=256} steps for $n \ge 500$, i.e., on
+\ttt{bb\_72\_simp} and the mitten model only; $200$ bootstrap resamples of the step sequence). Five observations follow.
+\begin{enumerate}[label=(\arabic*)]
+  \item \emph{Concentration tracks realized short circuits.} $\kappa$ is $1.7$--$4.2$ nats on static codes with
+    $w_{\deg} \ge 4$, except $6.1$ on \ttt{2bga\_288\_8} and $12.4$ on \ttt{2bga\_288\_4}, whose $13$ and $23$ realized
+    generators per basis are the most among the static codes with $w_{\deg} \ge 4$ (Table~\ref{tab:static_css}). It is
+    $8.3$ on the SHYPS gauge sector, $1.7$--$10.4$ on extended matrices and models, $2.0$--$22.1$ at $T = 1$,
+    $3.6$--$26.0$ at $T = 2$, and $17.6$ on the $T = 6$ \ttt{bb\_72\_simp} DEM. On DEMs, window bases have a higher
+    uniform-step log-likelihood, $\kappa_{\mathrm{win}} - \kappa = 0$--$21$ nats (none for $n \le 256$); on static
+    codes the difference stays within $\pm 0.4$ nats.
+  \item \emph{Per vector, the uniform-subset estimate is good without repairs.} The observed per-vector rate is
+    $0.57$--$1.24$ times the naive $P_1$ on the DEMs, extended matrices, and models, which use no repair here, and
+    $1.15$--$1.32$ times on the static codes, where it includes the shortening rescues. The large errors of
+    \ttt{rw\_infoset\_find\_prob} come from sibling multiplicity, since the class rate is $M_{\mathrm{eff}}$ times the
+    vector rate ($M_{\mathrm{eff}} = 16$--$111$ on the surface and color instances), and from repair channels
+    ($8.2\times$ on SHYPS with $\Tc$-contraction).
+  \item \emph{Canonical keys pay off where siblings abound.} With $M_{\mathrm{eff}} \gg 1$, the canonical rule stops
+    $5\times$--$13\times$ earlier than the vector rule (\ttt{surf\_d5} at $T = 1$: $50$ versus $293$ steps; color: $39$
+    versus $524$; static surface: $4$ versus $20$; surface extended matrix: $16$ versus $83$), with no missed cluster or
+    class. On the \ttt{bb\_72} extended matrix and model ($M_{\mathrm{eff}} = 3.5$) it stops about twice as early and
+    misses $1.3\%$--$2.0\%$ of the clusters but no logical class.
+  \item \emph{Without siblings, both rules see the same species.} On static \ttt{bb\_72}, \ttt{2bga\_102}, and the
+    SHYPS gauge sector, $M_{\mathrm{eff}} = 1$ and every weight-$d$ vector is its own logical class, so
+    canonicalization is the identity. Both rules stop at comparable steps with $1.2\%$--$5.5\%$ of the classes still
+    unseen, and some class is missing in $157$--$200$ of the $200$ resamples. This is inherent to unseen-species
+    estimators, which bound the unseen probability \emph{mass} rather than the number of unseen classes. It does not
+    affect the distance, because the missed classes have weight $d$.
+  \item \emph{Many-class DEMs do not stop early.} On \ttt{bb\_72} at $T = 6$ and $T = 1$ and on the mitten model,
+    neither rule stops within the budget ($8{,}000$--$16{,}000$ steps). The early stop of the vector rule on
+    \ttt{bb\_72\_simp} in Section~\ref{subsec:stopping_failures} used a wrapping window, which concentrates the hits
+    (variance-to-mean ratio of per-vector hits $8.27$, versus $0.76$ with the non-wrapping window used here).
+\end{enumerate}
+
+\begin{table}[htbp]
+\centering
+\caption{Information-set concentration and termination gauges across regimes (Part~4 of \ttt{exp5\_regimes.py}):
+$\kappa$, followed by $\kappa_{\mathrm{win}}$ where window steps differ from uniform ones (nats); $N_{\mathrm{sh}}$, the
+mean number of $a \in J$ with $1 \le |S_a(P)| \le w - 1$ ($w = 3$ except for static codes, where $w = w_{\max}$);
+$M_{\mathrm{eff}}$, distinct weight-$d$ vectors per swap cluster; the naive single-codeword $P_1$ of
+\ttt{rw\_infoset\_find\_prob} versus the observed per-vector rate (static codes: with $\Gc$-shortening; SHYPS: with
+$\Tc$-contraction); and, for the vector rule (\ttt{cov\_cws}$= 100$) and the canonical uniform-step Good--Turing /
+Chao1 rule, the mean stopping step / clusters missed / resamples (of $200$) missing a logical class. All values are
+Monte Carlo estimates from samples independent of those of Tables~\ref{tab:ext_css}--\ref{tab:t1} and
+Section~\ref{subsec:paradox} (e.g., $\kappa = 17.6$ here versus $17.11$ there, and $3.08$ versus $3.11$ for static
+\ttt{bb\_72}); the standard error of $\kappa$ is about $\mathrm{sd}/\sqrt{120} \approx 0.02$--$0.4$
+nats.}\label{tab:regime_termination}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{2.6pt}
+\begin{tabular}{@{}llrrrrrll@{}}
+\toprule
+Regime & Instance & $n / r / d$ & $\kappa$ & $N_{\mathrm{sh}}$ & $M_{\mathrm{eff}}$ & $P_1$ naive / obs. & Vector rule &
+  Canonical rule \\
+\midrule
+R1 ($T = 6$) & \ttt{bb\_72\_simp} & 2232 / 246 / 6 & 17.6 / 21.7 & 73.6 & 1.43 & 8.4e-5 / 7.9e-5 & no stop (16k) &
+  no stop (16k) \\
+R2 ($T = 1$) & \ttt{bb\_72} & 432 / 66 / 6 & 7.66 / 9.58 & 23.2 & 1.33 & 3.8e-4 / 3.2e-4 & no stop (8k) &
+  no stop (8k) \\
+R2 ($T = 1$) & \ttt{surf\_d5} & 77 / 24 / 5 & 7.57 & 13.2 & 111 & 2.9e-2 / 1.6e-2 & 293 / 0\% / 0 & 50 / 0\% / 0 \\
+R2 & color $XYZ$ & 280 / 18 / 3 & 3.27 / 3.40 & 15.9 & 44 & 1.1e-2 / 9.5e-3 & 524 / 0\% / 0 & 39 / 0\% / 0 \\
+R3 & \ttt{bb\_72} ext & 180 / 30 / 5 & 3.01 & 10.2 & 3.50 & 2.8e-3 / 2.4e-3 & 1697 / 0.1\% / 0 & 874 / 1.3\% / 0 \\
+R3 & \ttt{bb\_72} model & 180 / 30 / 5 & 3.09 & 10.3 & 3.50 & 2.8e-3 / 2.4e-3 & 1667 / 0\% / 0 & 748 / 2.0\% / 0 \\
+R3 & mitten model & 510 / 60 / 6 & 2.59 / 3.39 & 18.3 & 1.95 & 1.0e-4 / 1.3e-4 & no stop (8k) & no stop (8k) \\
+R3 & \ttt{surf\_d5} ext & 29 / 12 / 5 & 2.89 & 5.9 & 16 & 7.1e-2 / 6.0e-2 & 83 / 0\% / 0 & 16 / 0\% / 0 \\
+R4, $w_{\deg} \ge 4$ & \ttt{bb\_72} & 72 / 30 / 6 & 3.08 & 3.9 & 1.00 & 3.8e-2 / 5.0e-2 & 98 / 2.0\% / 161 &
+  99 / 2.0\% / 157 \\
+R4, $w_{\deg} \ge 4$ & \ttt{2bga\_102} & 102 / 41 / 10 & 1.74 & 0.1 & 1.00 & 1.0e-3 / 1.2e-3 & 3312 / 2.7\% / 200 &
+  4118 / 1.2\% / 199 \\
+R4, $w_{\deg} \ge 4$ & surface $d = 5$ & 21 / 12 / 5 & 2.24 & 3.2 & 16 & 2.2e-1 / 2.5e-1 & 20 / 0\% / 0 &
+  4 / 0\% / 0 \\
+R4, $w_{\deg} = 3$ & SHYPS gauge & 225 / 44 / 8 & 8.30 & 50.1 & 1.00 & 4.8e-5 / 4.0e-4 & 9941 / 5.5\% / 200 &
+  12265 / 3.0\% / 200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ----------------------------------------------------------------------------
+\subsection{Which Stages Apply to Which Input}\label{subsec:stage_matrix}
+% ----------------------------------------------------------------------------
+
+Table~\ref{tab:stage_matrix} summarizes, stage by stage, which parts of the pipeline of Section~\ref{sec:roadmap}
+apply in each regime, and the results that justify each entry.
+
+\begin{table}[htbp]
+\centering
+\caption{Applicability of the pipeline stages by input regime (R1: multi-round DEMs; R2: $T = 1$ DEMs; R3: extended
+CSS matrices and code-sized models; R4: static CSS codes, split by the degeneracy weight $w_{\deg}$). ``On'': run by
+default; ``gate'': run only if the stated test passes; ``off'': skip.}\label{tab:stage_matrix}
+\smallskip
+\scriptsize
+\setlength{\tabcolsep}{3.0pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.19\textwidth}
+  >{\raggedright\arraybackslash}p{0.14\textwidth}>{\raggedright\arraybackslash}p{0.14\textwidth}
+  >{\raggedright\arraybackslash}p{0.14\textwidth}>{\raggedright\arraybackslash}p{0.13\textwidth}
+  >{\raggedright\arraybackslash}p{0.17\textwidth}@{}}
+\toprule
+Stage & R1 ($T \ge 2$) & R2 ($T = 1$) & R3 (extended) & R4, $w_{\deg} = 3$ & R4, $w_{\deg} \ge 4$ \\
+\midrule
+1: $\Tc$ enumeration & on & on & on (matrix input) & on & on (returns $\emptyset$) \\
+2: contraction + filter & on & on & on & on & vacuous; $\Gc$-shortening (Thm.~\ref{thm:known_gen}) \\
+3: row-slab windows & gate ($m \ge 600$) & off ($m = 2 m_{\mathrm{meas}}$) & off (no time axis) & off & off \\
+4: sparse-dual RREF & gate (L2 spill, $n/m \ge 20$) & off (cache) & off (cache, $n/m \le 9$) & off & off \\
+5: canonical stopping & on ($\mathrm{canon}_{\Tc}$) & on ($\mathrm{canon}_{\Tc}$) & on ($\mathrm{canon}_{\Tc}$) &
+  on ($\mathrm{canon}_{\Tc}$) & $\mathrm{canon}_{\mathcal{E}}$ (Prop.~\ref{prop:even_swaps}) \\
+\ttt{win=256} windows & on (hybrid) & on for $n \gtrsim 10^3$ (circuit column order) & off (ext.); DEM-ordered models
+  only & off & off \\
+MIS Drop & off & off & off & off & off \\
+Justification & Props.~\ref{prop:hook_triangulation}, \ref{prop:sparse_dual}, Thms.~\ref{thm:mis_push},
+  \ref{thm:contraction_dominance} & Lem.~\ref{lem:single_cycle}, Prop.~\ref{prop:hook_triangulation} &
+  Prop.~\ref{prop:hook_chain} & Sec.~\ref{subsec:static_css}(b) & Thm.~\ref{thm:known_gen},
+  Prop.~\ref{prop:even_swaps} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
 \section{Summary and Practical Implementation Roadmap for
   \texorpdfstring{\ttt{dist-m4ri}}{dist-m4ri}}\label{sec:roadmap}
 % ============================================================================
 
 Our theoretical and empirical results suggest five backward-compatible upgrades for \ttt{dist-m4ri}, which we refer
 to as Stages~1--5 of the proposed pipeline. Each stage below cites the formal statements that justify it; the
-\emph{Relevance and role in the proposed pipeline} paragraph following each statement discusses its role in detail.
+\emph{Relevance and role in the proposed pipeline} paragraph following each statement discusses its role in detail,
+and the dispatch rules after the list select the stages for each input regime of Section~\ref{sec:regimes}.
 \begin{enumerate}[label=\textbf{Stage~\arabic*.}, ref=\arabic*, wide=0pt]
   \item\label{stage:enum} \textbf{Automatic startup $\Tc$ enumeration:} Run Lemma~\ref{lem:min_det_bucket}'s
-    minimum-detector Zobrist hash scan whenever a DEM is loaded (\ttt{fdem=}; $\le 18.4\text{ ms}$ and $\approx
-    3.9\text{ MB}$ RAM [$3.75\text{ MiB}$] including the $3.0\text{ MiB}$ pair hash table and $0.75\text{ MiB}$ CSR
-    adjacency at $n = 26{,}208, |\Tc| = 28{,}512$). \emph{Justification:} Proposition~\ref{prop:hook_triangulation}
-    predicts triangles at noisy CNOT gates, so $\Tc$ is generic in circuit DEMs and spans $\Dc$ on $12$ of $14$
-    tested DEMs (Table~\ref{tab:t3_span}); Lemma~\ref{lem:min_det_bucket} enumerates it exactly and without
-    duplicates, feeding the pair table and $G_3$ adjacency used by Stages~\ref{stage:contract}, \ref{stage:slab},
-    and~\ref{stage:conv}.
+    minimum-detector Zobrist hash scan on every input, i.e., whenever a DEM is loaded (\ttt{fdem=}) or a matrix pair
+    is read (\ttt{finH=}, \ttt{finL=}, as for extended CSS matrices and code-sized models); $\le 18.4\text{ ms}$ and
+    $\approx 3.9\text{ MB}$ RAM [$3.75\text{ MiB}$] including the $3.0\text{ MiB}$ pair hash table and $0.75\text{
+    MiB}$ CSR adjacency at $n = 26{,}208, |\Tc| = 28{,}512$. \emph{Justification:}
+    Proposition~\ref{prop:hook_triangulation} predicts triangles at noisy CNOT gates, so $\Tc$ is generic in circuit
+    DEMs and spans $\Dc$ on $12$ of $14$ tested DEMs (Table~\ref{tab:t3_span}); Proposition~\ref{prop:hook_chain}
+    proves that it spans the degeneracy space of every fully hooked extended CSS matrix, and
+    Lemma~\ref{lem:single_cycle} that every CNOT keeps its triangle at $T = 1$; Lemma~\ref{lem:min_det_bucket}
+    enumerates $\Tc$ exactly and without duplicates, feeding the pair table and $G_3$ adjacency used by
+    Stages~\ref{stage:contract}, \ref{stage:slab}, and~\ref{stage:conv}.
   \item\label{stage:contract} \textbf{Post-elimination greedy $2 \to 1$ / $3 \to 0$ contraction + Stern $w_x \le 2$
     Bucket-0 pruning:} Hoist 64-bit reduced-logical syndrome evaluation (\ttt{srows}) ahead of the $p = 1$ scan so
     $\mathrm{sig}(y) \neq 0$ is tested in $O(1)$ before unpacking support bits; run \ttt{greedy\_shorten\_cw} on $p
     = 1$ candidates with $|C_P(y)| \le d_{\max} + 8$ and omit all $\mathrm{sig}(x) = 0, w_x \le 2$ columns from
     Stern $p = 2$ buckets (Theorem~\ref{thm:contraction_dominance}), yielding a $2.8\times$--$20.2\times$ wall-clock
-    \ttt{hits/s} speedup over windowed \ttt{RW}. \emph{Justification:} Theorem~\ref{thm:ambush} identifies the
-    pivot-pair ambushes that the contraction repairs (Theorem~\ref{thm:contraction_dominance}(a)), and
+    \ttt{hits/s} speedup over windowed \ttt{RW}. In CSS runs, where the generators $G$ are given, the same step can
+    use the list $\Gc$ of Theorem~\ref{thm:known_gen}: steepest-descent shortening up to $d_{\max} + w_{\Gc} - 2$, and
+    filtering of realized generators only. \emph{Justification:} Theorem~\ref{thm:ambush} identifies the pivot-pair
+    ambushes that the contraction repairs (Theorem~\ref{thm:contraction_dominance}(a)), and
     Theorem~\ref{thm:mis_push}(b) quantifies the Bucket-0 condensate that the filter removes without loss of
-    weight-$d$ hits (Theorem~\ref{thm:contraction_dominance}(b), valid only with contraction enabled).
+    weight-$d$ hits (Theorem~\ref{thm:contraction_dominance}(b), valid only with contraction enabled);
+    Theorem~\ref{thm:known_gen} extends both statements to known generators of any weight and shows that the filter
+    must not be extended to columns with $w_x = 3$ unless their fundamental circuits are listed.
   \item\label{stage:slab} \textbf{Row-slab restricted sub-DEM windows ($m \ge 600$):} While our benchmark prototype
     activates slab restriction whenever $m > m_{\mathrm{sub}} = 320$ (yielding $0.33\times$--$2.13\times$ over
     \ttt{win=256} at $m \in [420, 561]$ and missing boundary codewords under uniform $r_0$ on \ttt{dgross\_288}),
@@ -2262,13 +3233,50 @@ to as Stages~1--5 of the proposed pipeline. Each stage below cites the formal st
     $\mathrm{sig}$, and $\mathrm{bkey}$, so the dispatch is invisible to all other stages and leaves $\Pr(J)$
     unchanged.
   \item\label{stage:conv} \textbf{Calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 convergence reporting:} Key
-    the uncapped codeword hash table by $\bar{c} = \mathrm{canon}_{\Tc}(c)$, accumulate stopping counts from
+    the uncapped codeword hash table by $\bar{c} = \mathrm{canon}_{\Tc}(c)$ (by $\mathrm{canon}_{\mathcal{E}}(c)$ of
+    Proposition~\ref{prop:even_swaps} when $\Tc = \emptyset$ and $G$ is given), accumulate stopping counts from
     uniform-step incidences (\ttt{cnt\_u}), gate \ttt{min\_hits} convergence on~\eqref{eq:stopping_rule}, and
-    optionally log the zero-cost Harris--FKG Score $\LFKG(J)$~\eqref{eq:LFKG_def} as an information-set concentration
-    diagnostic. \emph{Justification:} Proposition~\ref{prop:plaquette_swap} makes $\mathrm{canon}_{\Tc}$
-    class-preserving; Theorem~\ref{thm:infoset_likelihood} shows that only uniform steps are i.i.d.\ draws from one
-    fixed law, far from the uniform-subset model behind \ttt{rw\_infoset\_find\_prob}; and
+    optionally log the zero-cost Harris--FKG Score $\LFKG(J)$~\eqref{eq:LFKG_def} over uniform steps as a correlate
+    of $\ln \Pr(J)$. \emph{Justification:} Propositions~\ref{prop:plaquette_swap} and~\ref{prop:even_swaps} make the
+    keys class-preserving; Theorem~\ref{thm:infoset_likelihood} shows that only uniform steps are i.i.d.\ draws from
+    one fixed law, and Corollary~\ref{cor:kl_concentration} that this law differs from the uniform-subset model behind
+    \ttt{rw\_infoset\_find\_prob} for every binary matrix of rank $2 \le r \le n - 2$; and
     Corollary~\ref{cor:harmonic_hub} supplies the zero-cost diagnostic and rules out static $d_3$-based predictors.
+\end{enumerate}
+
+\paragraph{Per-regime dispatch rules.}
+Section~\ref{sec:regimes} shows that the stages are not equally useful on all inputs. The following rules use only
+quantities that are known after the input is loaded and Stage~\ref{stage:enum} has run (Table~\ref{tab:stage_matrix}).
+\begin{enumerate}[label=\textbf{D\arabic*.}, ref=D\arabic*, wide=0pt]
+  \item\label{disp:enum} \textbf{Always enumerate; keep what is nonempty.} Run Stage~\ref{stage:enum} on every input.
+    If $\Tc = \emptyset$ (regime R4 with $w_{\deg} \ge 4$), skip the pair table, the contraction, and the
+    $\mathrm{canon}_{\Tc}$ key; the scan itself costs only the probe count of Lemma~\ref{lem:min_det_bucket}.
+  \item\label{disp:gen} \textbf{Use the generators when they are given.} If $G$ is supplied (\ttt{finG=}), build the
+    hash of its rows and the column-to-row incidence lists, optionally append extra light elements of $\Dc$ found by a
+    low-weight search of $\operatorname{rowspan}(G)$ (Section~\ref{subsec:static_css}), and apply
+    Theorem~\ref{thm:known_gen} (steepest-descent shortening with the cap $d_{\max} + w_{\Gc} - 2$, filtering of
+    realized generators only) and the key $\mathrm{canon}_{\mathcal{E}}$ of Proposition~\ref{prop:even_swaps}. In the
+    prototypes, shortening supplies most of the weight-$d$ hits on several static codes ($272$ of $296$ on
+    \ttt{2bga\_288\_4}) but few on others ($240$ of $4{,}534$ on mitten; Table~\ref{tab:static_css}), at a cost of
+    $\sum_{u \in C} |\{g \ni u\}|$ overlap increments per candidate; make it the default for CSS runs once a C
+    implementation confirms the wall-clock gain. Never filter columns with $\mathrm{sig}(x) = 0$ and $w_x \ge 3$ whose
+    fundamental circuits are not in $\Gc$.
+  \item\label{disp:windows} \textbf{Windows only where the column order is local.} Keep the hybrid \ttt{win=256} steps
+    for DEMs whose columns are in circuit order: for $T \ge 2$ (where they exploit temporal locality) and for $T = 1$
+    DEMs with $n \gtrsim 10^3$ (where Stim's within-cycle order still gives $6.5\times$--$33\times$ on mitten and
+    SHYPS, Section~\ref{subsec:t1}); they are harmless for $n \le 256$, where a window step has the uniform law. For
+    extended matrices (data columns, then hooks) and static codes use uniform steps only; code-sized models that
+    inherit the DEM column order may keep them.
+  \item\label{disp:slab_dual} \textbf{Slabs and the sparse dual only for deep, wide DEMs.} Gate
+    Stage~\ref{stage:slab} on a DEM with $m \ge 600$ and $T \ge 2$, and Stage~\ref{stage:dual} on an L2 spill of the
+    dense $m \times n$ matrix together with $n/m \ge 20$ or $m \ge 1{,}400$. Both gates fail for $T = 1$ DEMs,
+    extended matrices, and static codes of the sizes considered here (Lemma~\ref{lem:single_cycle},
+    Proposition~\ref{prop:hook_chain}(d)).
+  \item\label{disp:stop} \textbf{One stopping rule, regime-specific keys.} Key the coverage table by
+    $\mathrm{canon}_{\Tc}$ when $\Tc \neq \emptyset$, by $\mathrm{canon}_{\mathcal{E}}$ when $\Tc = \emptyset$ and $G$
+    is given, and by raw vectors otherwise; accumulate counts from uniform steps only; and report
+    \ttt{rw\_infoset\_find\_prob} as a model-based diagnostic, never as a stopping rule
+    (Corollary~\ref{cor:kl_concentration}(c)).
 \end{enumerate}
 
 \appendix
