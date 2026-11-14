@@ -236,17 +236,27 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     `rw_infoset_find_prob` is never exact and must stay a diagnostic. Canonical `cnt_u` Good–Turing / Chao1–Chao2
     stopping halts $2\times$–$13\times$ earlier with $0$ missed logical classes when $M_{\rm eff} \gg 1$, and matches
     vector-level behavior when $M_{\rm eff} = 1$.
-- [ ] **Implementation in `dist_m4ri`** (RW, `method=1` and `method=3`; stage-by-stage plan `M1`–`M6` in
-  `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`; these Stages 1–5 are those of Sec. 9 of the notes, not the Stage 1/2 of
-  the Implementation Strategy at the top). Minimal interface changes: smart automatic defaults (D1–D5) with one expert
-  C/Python bitmask switch (`rw_opt=-1` auto default, `0` legacy 0.16.1 off, bits `1..31` per-stage ablation).
-  - [ ] Stage 1: exact $\mathcal{T}_3$ enumeration (Lemma 1: minimum-detector buckets and a Zobrist hash of the
-    columns of $(H, L)$) on the matrix that RW searches, i.e., after merging and `drop=auto` (never on a raw full DEM,
-    see the costs below), building the ordered-pair table $(u < v) \mapsto w$ and the CSR adjacency of the triplet
-    graph $G_3$; a pure-logical column gives $d = 1$ at once. Built lazily on the first RW step (not for `method=2`,
-    nor for very short screening runs); D1: if $\mathcal{T}_3 = \emptyset$ (static codes with checks of weight
-    $\ge 4$), nothing is kept.
-  - [ ] Stage 2: test $\mathrm{sig}(y) \ne 0$ with the 64-bit reduced-logical syndromes before the support of a $p = 1$
+- [x] **Implementation in `dist_m4ri`** (0.17.0; RW, `method=1` and `method=3`; stage-by-stage plan `M1`–`M6` in
+  `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, logs in `scratch/m1_m4/{c_work,py_work}/SUMMARY.md`, benchmark in
+  `scratch/bench_0.17/REPORT.md` and Section 11 of `benchmark/BENCHMARK.md`; these Stages 1–5 are those of Sec. 9 of
+  the notes, not the Stage 1/2 of the Implementation Strategy at the top). Minimal interface changes: smart automatic
+  defaults (D1–D5) with one expert C/Python bitmask switch (`rw_opt=-1` auto default, `0` legacy 0.16.1 off, bits
+  `1..63` per-stage ablation: `0x01` T3 + contraction + filter, `0x02` G-shortening, `0x04` row slabs, `0x08` sparse
+  dual, `0x10` canonical classes and stopping, `0x20` `outC` expansion; new `src/rw_triplet.{h,c}`). The automatic
+  mode is `0x11` (+ `0x08` on wide DEMs, + `0x20` when collecting); classical codes get no stage. Idle-machine ablation
+  (16 threads, 22 inputs of the four regimes): 1.13–7.45x the minimum-weight hits per second on 13 of 15 DEMs and
+  models with `0x01`, inert on static codes; `bb_360` to the weight 24 in 2.9 s instead of 10.1 s, double-gross DEM to
+  18 in 0.54 s instead of 1.15 s; `rw_opt=0` within 4% of the 0.16.1 binary.
+  - [x] Stage 1 (bit `0x01`, automatic for quantum inputs with `steps > 2`; 0.04–8.8 ms after merge and drop, e.g.,
+    47520 triplets of `bb_360` in 8.75 ms): exact $\mathcal{T}_3$ enumeration (Lemma 1: minimum-detector buckets and a
+    Zobrist hash of the columns of $(H, L)$) on the matrix that RW searches, i.e., after merging and `drop=auto` (never
+    on a raw full DEM, see the costs below), building the ordered-pair table $(u < v) \mapsto w$ and the CSR adjacency
+    of the triplet graph $G_3$; a pure-logical column gives $d = 1$ at once. Built lazily on the first RW step (not for
+    `method=2`, nor for very short screening runs); D1: if $\mathcal{T}_3 = \emptyset$ (static codes with checks of
+    weight $\ge 4$), nothing is kept.
+  - [x] Stage 2 (bit `0x01`; with `finG` bit `0x02`, explicit only: on top of the automatic mask, `0x13` against
+    `0x11` gives 0.84–1.00x hits/s on four static codes and 1.37x on `2bga_288_4`, so Rule D2 keeps it off): test
+    $\mathrm{sig}(y) \ne 0$ with the 64-bit reduced-logical syndromes before the support of a $p = 1$
     candidate is formed; greedy $2 \to 1$ / $3 \to 0$ contraction of the $p = 1$ candidates of weight at most
     $d_{\max} + 8$; and skip the columns with $\mathrm{sig}(x) = 0$, $w_x \le 2$ in the buckets of `rw_pairs_step()`
     (Stern Bucket-0 filter, loss-free only together with the contraction: Thms. 1–3, Secs. 4.1–4.3). Prototypes:
@@ -255,16 +265,23 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     generators only (Thm. 5, Sec. 8.3; e.g., 272 of the 296 weight-$d$ hits of `2bga_288_4` came from shortening);
     default for CSS runs only after a C implementation shows a wall-clock gain. Never filter columns with
     $\mathrm{sig}(x) = 0$, $w_x \ge 3$ whose circuits are not listed.
-  - [ ] Stage 3: row-slab windows (a contiguous range of $m_{\rm sub} \le 320$ detectors of a DEM in time order, the
-    columns inside it, MIS push-back order, Stage 2) for DEMs with $m \ge 600$ and $T \ge 2$ (D4), with positive weight
-    on the two boundary slabs: $49\times$–$493\times$ the window hits per second on `shyps_225` and `bidir`,
-    $0.33\times$–$2.13\times$ for $m$ from 420 to 561, and no hits on `dgross_288` with uniform slab starts (Sec. 4.4,
-    Sec. 5). This is the item **RW window steps restricted to the window** of section 4.
-  - [ ] Stage 4: sparse-dual $m \times m$ inverse RREF with lazy reduced columns (Prop. 3, Sec. 4.4: the same pivots,
+  - [x] Stage 3 (bit `0x04`, explicit only: the slabs never reach the weight 18 of the double-gross DEM in 25 s and slow
+    the gross DEM to d 3.4x; but on the $T = 1$ double-gross DEM they found the weight 16 in 0.2–0.7 s, where the other
+    masks found 17–18 in 12 s): row-slab windows (a contiguous range of $m_{\rm sub} \le 320$ detectors of a DEM in time
+    order, the columns inside it, MIS push-back order, Stage 2) for DEMs with $m \ge 600$ and $T \ge 2$ (D4), with
+    positive weight on the two boundary slabs: $49\times$–$493\times$ the window hits per second on `shyps_225` and
+    `bidir`, $0.33\times$–$2.13\times$ for $m$ from 420 to 561, and no hits on `dgross_288` with uniform slab starts
+    (Sec. 4.4, Sec. 5). This is the item **RW window steps restricted to the window** of section 4.
+  - [x] Stage 4 (bit `0x08`, automatic behind the gate below; bit-identical to the dense elimination; gated inputs:
+    1.51x steps/s on the double-gross DEM, 2.65x on `bb_360`; forced elsewhere 0.40–0.75x): sparse-dual $m \times m$
+    inverse RREF with lazy reduced columns (Prop. 3, Sec. 4.4: the same pivots,
     circuits, and signatures) behind a heuristic gate (D4: the dense $m \times n$ matrix spills L2, and $n/m \ge 20$ or
     $m \ge 1400$): $1.16\times$–$2.66\times$ RW steps per second on `bidir`, `bb_72_full`, and `dgross_288`,
     $0.83\times$–$0.96\times$ below the gate (Sec. 5).
-  - [ ] Stage 5: maintain a separate uncapped canonical-class table keyed by $\mathrm{canon}_{\mathcal{T}_3}(c)$ (by
+  - [x] Stage 5 (bit `0x10`, automatic for quantum inputs with `min_hits > 0` and `kwin <= 0`; lines `# RW canonical`
+    and `# RW FKG score` with `debug&1`, parsed by `dist_m4ri.py`; with `min_hits=5` it stops 2.3–9x sooner on the
+    degenerate models and surface/color DEMs, and 1.3–7x later where many classes exist): maintain a separate uncapped
+    canonical-class table keyed by $\mathrm{canon}_{\mathcal{T}_3}(c)$ (by
     $\mathrm{canon}_{\mathcal{E}}(c)$ of Prop. 6 if $\mathcal{T}_3 = \emptyset$ and $G$ is given; raw vectors
     otherwise, D5) so `p->codewords` continues to store raw irreducible supports for `outC` / `maxC` without
     interference; count the step-incidences of the uniform steps only (`cnt_u`), and stop by the Good–Turing /
@@ -280,8 +297,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     (codes, models, $T = 1$ and multi-round DEMs, `method=1` and `method=3`, one and many threads); hits per second and
     time to the distance in `benchmark/BENCHMARK.md`; README, `--help`/`--morehelp`, `introduction.md`, and the Python
     docstrings.
-- [ ] **Non-interfering codeword output (`outC` / `maxC`, weights $w \le d + \mathrm{dW}$) and $\mathcal{T}_3$-based
-  enumeration from recorded representatives**:
+- [x] **Non-interfering codeword output (`outC` / `maxC`, weights $w \le d + \mathrm{dW}$) and $\mathcal{T}_3$-based
+  enumeration from recorded representatives** (0.17.0: the Stern Bucket-0 filter only with bit `0x20` when collecting,
+  the raw candidate kept besides its contracted form when collecting with `dW >= 1`, and the $\mathcal{T}_3$ BFS of bit
+  `0x20`, automatic with `outC`/`maxC`; RW exports the complete CC sets, e.g., `surf_rot_d5` 8172/8172 in 10 steps, and
+  in the benchmark `mitten_150` at $T = 1$ 100/100 codewords of weight 7 in 4000 steps against 74 with `rw_opt=0`;
+  still open: the optional export of compact canonical representatives):
   - Separate the two targets cleanly (`collecting = (outC != NULL || maxC > 0)`):
     1. *Distance-bound mode* (`!collecting`): full Stage 2 contraction ($2 \to 1$ / $3 \to 0$), Stern Bucket-0 pruning
        ($\mathrm{sig}(x) = 0, w_x \le 2$), and Stage 5 canonical stopping run at maximum speed with zero export work.
@@ -380,7 +401,17 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     triplet) and for the minimum-weight codewords, but not for the heavier codewords collected with `dW > 0`. Keep one
     specification of Lemma 1 for the two code bases (a small C routine in each; no library dependency between them),
     and change `engine="auto"` (item at the end of section 4).
-- [ ] **Multiprocessor scaling benchmark (`p = 1 .. 128` threads)** (`M5` of
+- [x] **Multiprocessor scaling benchmark (`p = 1 .. 128` threads)** (done 2026-11-13 on the idle server:
+  `scratch/bench_0.17/` with `REPORT.md`, `benchmark/BENCHMARK.md` Sections 4 and 11.2, figures `scaling_*.png` with the
+  0.17.0 curve and `scaling_rw_017.png`). Results: double-gross DEM RW 34x at 64 threads (0.15.2: 11x), 0.63 s instead
+  of 2.36 s; `bb_72` full DEM with hits recorded 63x at 128 threads against 34x for `rw_opt=0` (1.9x the hits per
+  second: the per-step coalescing removes the `cw_mutex` bottleneck); `bb_72` model 1.36x the best hit rate of 0.16.1;
+  `bb_360` 3.8x the steps per second with `nothrottle=1`; the default throttle of these short runs is set by the steps
+  throttle ($\lceil \texttt{steps}/10 \rceil$), and on the 236-GiB server the memory throttle allows the cap of 32 RW
+  threads to both modes (the Stage 4 footprint matters on smaller machines: 16 GiB, 10 against 32 threads for
+  `bb_756`). Open: `-1` on the `2bga_102` DEM at 64–128 threads (0.62–0.92x the steps per second of `rw_opt=0`, not
+  from `0x10`); the CC of the double-gross DEM 0.05–0.07 s slower than with the 0.16.1 binary; the first RW steps of
+  `bb_756` 1.45x longer with `-1`. Plan (`M5` of
   `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, updating `benchmark/BENCHMARK.md` Section 4):
   - Sweep `threads = 1, 2, 4, 8, 16, 32, 64, 96, 128` (default throttling vs. `nothrottle=1`, NUMA/socket-aware,
     medians of $\ge 5$ runs for short cases) comparing `0.16.1` (`rw_opt=0`) against the Stage 1–5 pipeline (`rw_opt=-1`
@@ -393,7 +424,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     3. memory-bandwidth-limited deep/wide DEMs (`double_gross_288`, `shyps_225`, `bb_360`, `bb_756`), testing how
        in-L2 Stage 3 row-slab windows (`< 128` KiB working set) and Stage 4 sparse-dual RREF ($m \times m$ without
        `mHT` transpose, relaxing the 15 MB/thread dense throttle) lift the 16–32-thread DRAM bandwidth ceiling.
-- [ ] **Two-stage certification benchmark (`dist_m4ri` $\to$ `qec_cert` portfolio)** (`M5` of
+- [x] **Two-stage certification benchmark (`dist_m4ri` $\to$ `qec_cert` portfolio)** (done 2026-11-13: 35 instances,
+  `timeout=45`, 64 threads, fresh processes, `scratch/bench_0.17/REPORT.md`, `benchmark/BENCHMARK.md` Section 11.3,
+  `figures/portfolio_ecdf.png`). Certified exact: native 26, `qec_cert` 32, the delegation of 0.16.1 32, the two-stage
+  `"auto"` 31; median time on the 20 easy instances 0.087 s for `"auto"` against 0.443 s for 0.16.1 (`import qec_cert`:
+  0.215 s); the default $\tau_1 = 22.5$ s costs time where `qec_cert` is the faster certifier (`bb_360` 20.1 s against
+  2.45 s), and $\tau_1 = 2$ s is the best or equal on all 8 instances of the sweep (31 exact in 266 s against 294 s).
+  Follow-ups: see the item **`engine="auto"` as a two-stage portfolio** in section 4. Plan (`M5` of
   `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, paired with **`engine="auto"` as a two-stage portfolio** in section 4):
   - Systematic 4-way benchmark across Track A (static CSS, BB, Mitten, and 2BGA codes), Track B ($T = 1$ and
     multi-round circuits/DEMs, including `gross`, `mitten_270`, `2bga_102/120`, `shyps_225`, `dgross_288`, `bb_360`),
@@ -1220,7 +1257,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     kernel of `qec_cert` (`../qec-cert/doc/soundness_search.md`): the early-exit covering bound $B_4$, the two-stage
     parity-dual LP bound with reduced-cost fixing, and meet-in-the-middle completion tables of depth 2–3; and the
     $\mathcal{T}_3$ pruning of Task 7 (placement note).
-- [ ] **`engine="auto"` as a two-stage portfolio** (Nov 2026, placement note of Task 7): now `"auto"` hands every
+- [x] **`engine="auto"` as a two-stage portfolio** (0.17.0, `_auto_two_stage()` and `_auto_cert_first()` in
+  `dist_m4ri.py`, `scratch/m1_m4/py_work/SUMMARY.md`; benchmark in Section 11.3 of `benchmark/BENCHMARK.md`: 31 of 35
+  certified, native start-up on easy instances). Follow-ups from the benchmark (open): a smaller default Stage-A budget
+  (e.g., $\tau_1 = \min(\max(2, \texttt{timeout}/10), 30)$ s, i.e., `_AUTO_STAGE1_FRAC = 0.1`: $\tau_1 = 2$ s was the
+  best or equal on all 8 instances of the sweep), and a short upper-bound stage of `qec_cert` in Stage B when the
+  bracket is wide (`use_ub=False` lost the weight 16 of the $T = 1$ double-gross DEM, $[13, 18]$ against $[14, 16]$
+  for `qec_cert` alone). Before 0.17.0, `"auto"` handed every
   distance-only `method=3` call (also classical codes) to `qec_cert` whenever it is importable, although `qec_cert`
   costs 0.64 s to import and 1.6–2.0 s per fresh CLI call even on small instances (`qec-cert-search`: 0.14–0.16 s),
   against 0.01–0.1 s for `dist_m4ri`. The policy of `qec_cert` itself is the reverse

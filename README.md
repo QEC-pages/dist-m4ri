@@ -176,6 +176,42 @@ Relevant parameters:
   with the pairs (Section 8.4 of the benchmark). With `debug&1`, the binary prints the pairs checked per step and the
   codewords recorded from the pairs and from the single columns (`# RW pairs (p=2, ...)`). Not with the experimental
   `ksub`.
+- `rw_opt=[int]`: The RW stages with the weight-3 degeneracies (since 0.17.0; the analysis is in
+  `doc/rw_triplet_degeneracies.tex`). Default: `-1` (automatic: the stages below which apply to the input); `0`: none
+  (the RW search of 0.16.1); otherwise the sum of the stages to use (1 to 63, also as `0x..`):
+  - `1`: the triplets $\mathcal{T}_3$ of columns with zero syndromes of $H$ and $L$ (e.g., the CNOT hook triangles of
+    a circuit) are enumerated exactly after merging and `drop=auto` (0.4 ms for the 2376 triplets of the `bb_72` DEM);
+    the single-column candidates are contracted ($2 \to 1$ and $3 \to 0$ columns, up to the weight $d_{\max} + 8$),
+    their $L$ syndromes are computed before their supports are formed, and the pairs skip the columns with a zero $L$
+    syndrome and at most 3 columns (loss-free together with the contraction; when collecting codewords with `outC` or
+    `maxC`, only with `32`); a zero column of $H$ with a non-zero column of $L$ gives $d = 1$ at once (automatic:
+    quantum codes, `steps > 2`; nothing is kept if there are no triplets, e.g., for codes with checks of weight
+    $\ge 4$);
+  - `2`: with `finG`, the candidates are also shortened by the rows of $G$ (steepest descent, up to the weight
+    $d_{\max} + w_G - 2$), and the pairs skip the columns whose circuits are rows of $G$ (explicit only);
+  - `4`: row-slab windows of a DEM in time order: every other step, the columns inside a range of $\min(320, m/2)$
+    detectors (explicit only);
+  - `8`: sparse-dual elimination with an $m \times m$ inverse instead of the $m \times n$ matrix (the same information
+    sets and candidates; automatic for $m \times n$ above 512 KiB with $n \ge 20 m$ or $m \ge 1400$, up to 64 rows of
+    $L$); the smaller memory per RW thread also raises the number of RW threads that the throttle allows;
+  - `16`: canonical classes: the minimum-weight codewords found in the uniform RW steps are counted by their canonical
+    form (the $2 \leftrightarrow 2$ exchanges across two triplets with a common column, or the half-overlap exchanges
+    with the even rows of $G$), each at most once per step, and `min_hits` stops RW by a Good–Turing / Chao2 rule
+    (automatic: quantum codes, `min_hits > 0`, not with `kwin > 0`); with `1`, `2`, or `16`, the codewords of a RW step
+    are recorded at its end (lighter ones at once), each at most once;
+  - `32`: with `outC` or `maxC`, the codewords found are completed before the export by the $\mathcal{T}_3$ exchanges
+    ($2 \leftrightarrow 2$) and splits ($1 \to 2$), up to the weight $w_{\min} + \text{dW}$ (automatic when collecting).
+
+  With `rw_opt != 0`, matrices (`finH`) use uniform random permutations in every RW step unless `kwin > 0` or
+  `win_hyb > 0` (the hybrid windows are for DEMs). With `debug&1`, the binary prints the stages used and their
+  statistics (`# RW triplets: T3=..., rw_opt=0x..`, `# RW canonical (w=...): classes=..., p_GT=..., C0_Chao2=...`, and
+  `# RW FKG score: ...`). Measured on the dedicated 64-core server with 16 threads (Section 11 of the
+  [benchmark](benchmark/BENCHMARK.md)): the automatic mode records 1.1–8.0 times more minimum-weight hits per second
+  on 13 of 15 circuit DEMs, single-round DEMs, and code-sized models (0.75–0.9 times on the two smallest DEMs,
+  `surf_d5` and `color_xyz_d5`), and 1.04–1.96 times on static codes; it reaches the weight 24 of the `bb_360` DEM 3.5
+  times and the weight 18 of the double-gross DEM 2.1 times sooner; the canonical rule stops 2.3–9 times sooner on the
+  code-sized models and up to 7 times later where many classes exist (`shyps_225` at $T = 1$). `rw_opt=0` runs within
+  5% of the 0.16.1 binary. Not with the experimental `ksub`; `dist_m4ri_old` ignores `rw_opt`.
 - `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
   without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
   full-matrix RW; automatically falls back to `ksub=0`, with a warning if `debug&1`, when $m < \nu = \dim\ker(H)$,
@@ -764,7 +800,7 @@ needs `finH`), while `fin` after them is an error. The Python CLI (`python3 dist
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.16.1): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.17.0): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -824,6 +860,7 @@ Extra parameters (see --morehelp for details):
   win_mode=[0|1] (0)     Window mode: 0=Tanner BFS, 1=index proximity
   win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)
   pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
+  rw_opt=[int] (-1)      RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63
   cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
   refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]
@@ -1161,6 +1198,12 @@ interoperability without manual threading overhead.
   exit code `1`. As in the binary, the option groups (also `stim` and `cache` in the Python CLI) give all their entries
   (e.g., `-h window`), and a parameter of a group also the other entries of its group. The binary has the same help
   options.
+- RW stages (since 0.17.0): `rw_opt` (the last keyword parameter of `run_dist_m4ri()`, the `compute_*()` functions,
+  and `compute_model_lower_bound()`; CLI `rw_opt=N`, `--rw-opt N`, decimal or `0x..`) is passed to the binary (`None`:
+  the binary default `-1`, automatic; `ValueError` outside `-1..63`); it is not part of the cache key, and
+  `solver='codedistance'` ignores it with a warning. The statistics of the stages are parsed from `stderr` into
+  `_last_run_stats` (`rw_triplets`, `rw_canon`, `rw_fkg`) and reported by `explain_bounds()` and `--verbose` (the
+  information-set estimate is labelled as the baseline, and the canonical class coverage as empirical).
 - Solver / engine selection (`solver=` or `engine=` in the `compute_*_distance()` functions and the CLI, where `engine`
   takes precedence if both are given):
   - `'dist_m4ri'` (default; also `engine='native'` or `'off'`): uses the native multithreaded `dist_m4ri` binary.
@@ -1168,6 +1211,24 @@ interoperability without manual threading overhead.
     (`qec_cert.pipeline.certify`, `certify_dem`, or `certify_circuit`). To make `qec_cert` importable, install the
     `qec-cert` package in the active Python environment (e.g., `pip install -e /path/to/qec-cert` after building its
     native library with `make`) or add its repository root to `PYTHONPATH`.
+  - `'auto'` (since 0.17.0): a two-stage portfolio for distance-only `method=3` requests. Classical codes always run
+    the native binary (without importing `qec_cert`). A DEM or Stim circuit with more than 25,000 raw error mechanisms
+    (and a timeout of at least 3 s, or none) goes to `qec_cert` first, whose exact reductions of large DEMs come before
+    any search; the binary runs with the time left if the bracket stays open. Otherwise (quantum codes, sectors of CSS
+    codes, smaller DEMs), Stage A runs the native binary for $\tau_1$ = the timeout if it is at most 2 s, else
+    $\min(\max(2, \text{timeout}/2), 30)$ s, and its result is returned at once, without importing `qec_cert`, if it
+    is exact (or `dmin >= dstop > 0`, CC reached `wmax`, `timeout=0`, or at most 1 s is left); Stage B then runs
+    `qec_cert` with the remaining time, seeded with `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (without its
+    randomized upper-bound stage when the binary has found a codeword), where the lower bound `dmin_A` certified by CC
+    discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; if `qec_cert` ends early with an open bracket,
+    the binary continues with the time left, and if `qec_cert` is not installed, the binary runs with the whole
+    timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
+    `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
+    Benchmark (35 codes, circuits, and classical codes, `timeout=45`, 64 threads, Section 11.3 of the
+    [benchmark](benchmark/BENCHMARK.md)): `'auto'` certifies 31 instances against 26 for the binary alone and 32 for
+    `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against 0.443 s for the
+    delegation of 0.16.1, which imports `qec_cert` in every call); where `qec_cert` certifies much faster than the CC
+    of the binary, a shorter Stage A than the default (e.g., 2 s, via `_AUTO_STAGE1_MAX`) saves time.
   - Hand-off scope: the hand-off covers distance-only requests. Codeword output (`do_cws=True` or `outC`), `finC`,
     `smax > 0`, `dW >= 0`, `maxC > 0`, `start`, `outD`, `out_reduced`, `pmin > 0`, and `method=1` or `2` stay on the
     native `dist_m4ri` binary with `'auto'` (which also falls back to the native binary if `qec_cert` is not
@@ -1252,7 +1313,7 @@ cd src
 # Compile both multithreaded dist_m4ri and single-threaded dist_m4ri_old
 make all
 
-# Run full C test suite (115 tests)
+# Run full C test suite (122 tests)
 make test
 ```
 
@@ -1268,9 +1329,9 @@ The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes 
 (bivariate bicycle codes including the gross and double-gross codes, Mitten codes including those of arXiv:2607.28795
 with circuits of their published hook-free schedules, SHYPS codes, and 2D-local torus BB circuits),
 their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on a
-128-thread server: the scaling with the number of threads (0.15.2 and earlier versions), and a comparison of the
-versions 0.14.6, 0.14.5, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. For example, on the full DEMs of the circuits, 0.14.0 finds
-a codeword of the minimum weight in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it
+128-thread server: the scaling with the number of threads (0.17.0, 0.15.2, and earlier versions), and a comparison of
+the versions 0.14.6, 0.14.5, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. For example, on the full DEMs of the circuits, 0.14.0
+finds a codeword of the minimum weight in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it
 certifies the circuit-level distance 9 of the `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1:
 2.1 h for the DEM with the minority-basis detectors stripped, whose distance is only a lower bound). Its Section 7
 measures the RW window size and the thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its
@@ -1281,7 +1342,9 @@ circuit in 1.5-2.7 s instead of 10-19 s and the weight 23 of the `bb_360` circui
 it finds lighter codewords of codes with a large distance. Its Sections 9 and 10 measure the branch-and-bound CC
 search of 0.15.0 (4-35 times faster for the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of
 `bb_360` certified, up to $d = 24$, and those up to $d = 18$ confirmed with the walk of the earlier versions) and the
-lower cost per node of 0.15.2.
+lower cost per node of 0.15.2. Its Section 11 measures the RW stages of 0.17.0 (`rw_opt`: a stage ablation on 22
+inputs, the thread scaling, e.g., RW on the double-gross DEM 34 times faster on 64 threads than on one, instead of 11
+times) and the two-stage `engine="auto"` with `qec_cert` on 35 instances.
 
 ![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/fulldem_time.png)
 

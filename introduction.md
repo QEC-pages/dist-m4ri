@@ -1,6 +1,6 @@
 Authors: Leonid P. Pryadko & Weilei Zeng
 
-Date: 2026-10-28
+Date: 2026-11-14
 
 ## Overview
 
@@ -17,7 +17,9 @@ and their combination:
 
 The package contains the multithreaded program `dist_m4ri`, the legacy single-threaded program `dist_m4ri_old`, and
 the Python wrapper `dist_m4ri.py` (NumPy and SciPy matrices, Stim circuits and DEMs, a persistent cache of the
-results, and an optional `qec_cert` certification engine via `solver="cert"` or `"auto"` / `engine=`). This page
+results, and an optional `qec_cert` certification engine via `solver="cert"` or `"auto"` / `engine=`; since version
+0.17.0, `"auto"` runs the binary first and hands only the open brackets to `qec_cert`, seeded with the bounds found,
+and large circuit DEMs go to `qec_cert` first). This page
 summarizes how the program works; `README.md` describes all parameters (also `dist_m4ri --help` and
 `dist_m4ri --morehelp`; `dist_m4ri --help maxC` shows the help of one parameter, with the related ones).
 
@@ -70,6 +72,21 @@ faster.
 With `ksub > 0` (**experimental, should not be used**; a warning is printed), each step reduces the span of `ksub`
 rows of a fixed basis of `ker(H)` (cache-resident elimination): a few codewords are then found much more often than
 others, so that the hit-count criterion `min_hits` may end RW early.
+
+Since version 0.17.0, RW also uses the weight-3 degeneracies of the matrix, the triplets `T3` of columns with zero
+syndromes of `H` and `L` (e.g., the CNOT hook triangles of a circuit; `doc/rw_triplet_degeneracies.tex`), selected by
+the expert option `rw_opt` (default `-1`: automatic; `0`: the RW of version 0.16.1; or a sum of stages). The triplets
+are enumerated exactly after merging and `drop=auto` (milliseconds); every single-column candidate is contracted
+(2 -> 1 and 3 -> 0 columns) before it is recorded, and the pairs skip the columns whose short circuits the contraction
+already covers (stage 1). With `min_hits`, the minimum-weight codewords of the uniform steps are counted by canonical
+classes (exchanges across two triplets with a common column), and RW stops by a Good-Turing / Chao2 rule (stage 16):
+much sooner when the classes are large (degenerate DEMs and code-sized models), later when there are many classes. On
+wide DEMs, the elimination works with an `m x m` inverse (sparse dual, stage 8: the same information sets, less memory
+per thread, so that more RW threads are allowed); with `outC` or `maxC`, the exported codewords are completed by the
+triplet exchanges (stage 32). Shortening by the rows of `G` (stage 2) and row-slab windows (stage 4) are explicit
+only. On the benchmark of version 0.17.0 (Section 11 of `benchmark/BENCHMARK.md`), the automatic mode records 1.1 to 8
+times more minimum-weight hits per second on circuit DEMs and code-sized models, and reaches the lightest known
+codewords of the `bb_360` and double-gross DEMs 2 to 3.5 times sooner.
 
 RW ends after `steps` steps (default: 100000), at the `timeout`, as soon as a codeword of weight at most `wmin` is
 found, or when the hit-count criterion `min_hits` is met (see Convergence below).
