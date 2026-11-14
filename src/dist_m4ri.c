@@ -1856,15 +1856,23 @@ static void rw_rec_record(distfork_ctx_t * const ctx, rw_thr_t * const th, const
  * and dW >= 1, so that the codewords of weight up to d + dW are kept); and its shortened form, if lighter than the
  * current limit (`pair`: rw_pairs_limit(), otherwise rw_cw_limit()).  With irred=1, a reducible shortened form is
  * replaced by an irreducible part (a lighter codeword).  The single candidates are circuits, hence irreducible.  Only
- * the candidates up to the weight dmax + rw_ext (+ dW with outC or maxC) are shortened (none before an upper bound is
- * known: the candidates of the first steps can have hundreds of columns). */
+ * the candidates up to the weight min(dmax + rw_ext (+ dW with outC or maxC), RW_SHORTEN_WMAX) are shortened (none
+ * before an upper bound is known, nor while dmax is still large: early candidates on wide DEMs can have hundreds of
+ * columns, where greedy pair scans would take O(cnt^3) work). */
+#define RW_SHORTEN_WMAX 64
+static inline int rw_lim_ext(const int limit, const int ext) {
+  if (ext <= 0 || limit > RW_SHORTEN_WMAX) return limit;
+  return minint(limit + ext, RW_SHORTEN_WMAX + 1);
+}
+
 static void rw_candidate(distfork_ctx_t * const ctx, rw_thr_t * const th, rci_t * const ee, const int cnt,
                          const int limit, const bool pair, const int tid, long long * const hits) {
   params_t * const p = ctx->p;
   int cs = cnt;
   int * const sh = th->buf;
   const int dm = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
-  const int scap = dm + ((ctx->collecting && p->dW > 0) ? p->dW : 0) + (pair ? ctx->rw_ext2 : ctx->rw_ext);
+  const int scap = minint(RW_SHORTEN_WMAX,
+                          dm + ((ctx->collecting && p->dW > 0) ? p->dW : 0) + (pair ? ctx->rw_ext2 : ctx->rw_ext));
   if (ctx->rw_shorten && dm > 0 && cnt <= scap) {
     memcpy(sh, ee, (size_t)cnt * sizeof(int));
     for (int it = 0; it < 8; it++) {
@@ -2200,6 +2208,9 @@ static int rw_dual_entries(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_t
     for (int j = 0; j < nk; j++) d->hb[(size_t)r * nk + j] = d->MT[(size_t)r * aw + kword[j]] & kmask[j];
   word bw[RW_PAIRS_MAX_BITS];
   for (int col = 0; col < nvar; col++) {
+    if ((col & 255) == 255 && (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+                               atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)))
+      return 0;
     if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
     const int k0 = ctx->dcp[col], k1 = ctx->dcp[col + 1];
     uint64_t sig = lmask[col];
@@ -2388,7 +2399,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
           atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) break;
       lim = rw_pairs_limit(ctx); /* (the upper bound may have decreased) */
       if (lim < 3) break;
-      int lx = lim - 3 + ext2; /* the largest weight of the sum of the two columns */
+      int lx = rw_lim_ext(lim, ext2) - 3; /* the largest weight of the sum of the two columns */
       int g0 = b0;      /* [b0, g0): the columns with zero L syndromes; [g0, b1): the others */
       while (g0 < b1 && !((srt[g0] >> sh_grp) & 1)) g0++;
       int lo = g0;
@@ -2400,7 +2411,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
               atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) goto done;
           lim = rw_pairs_limit(ctx);
           if (lim < 3) goto done;
-          lx = lim - 3 + ext2;
+          lx = rw_lim_ext(lim, ext2) - 3;
         }
         const int wx = (int)((srt[x] >> ib) & wmask);
         const rw_pair_t * const ex = ent + (srt[x] & imask);
@@ -2446,7 +2457,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
             }
             lim = rw_pairs_limit(ctx);
             if (lim < 3) goto done;
-            lx = lim - 3 + ext2;
+            lx = rw_lim_ext(lim, ext2) - 3;
           }
         }
         nvis += y - y0;
@@ -2568,7 +2579,7 @@ static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pair
   for (int idx = 0; idx < ns; idx++) {
     if ((th->spmask[idx >> 6] >> (idx & 63)) & 1) continue;
     const int limit = rw_cw_limit(ctx);
-    const int lim_ext = limit + ext;
+    const int lim_ext = rw_lim_ext(limit, ext);
     const word * const row = th->T + (size_t)idx * (size_t)rw;
     int wt = 1;
     for (int iw = 0; iw < rw - 1 && wt < lim_ext; iw++) wt += __builtin_popcountll(row[iw]);
@@ -2631,13 +2642,16 @@ static int rw_dual_step(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_thr_
   const int ext = ctx->rw_shorten ? ctx->rw_ext : 0;
   d->npool = 0;
   for (int col = 0; col < nvar; col++) {
+    if ((col & 255) == 255 && (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
+                               atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)))
+      return -1;
     if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
     uint64_t sig = lmask[col];
     for (int k = ctx->dcp[col]; k < ctx->dcp[col + 1]; k++) sig ^= d->hl[ctx->dci[k]];
     if (!sig) continue;
     const word * const v = dual_form(ctx, d, col, sig);
     const int limit = rw_cw_limit(ctx);
-    const int lim_ext = limit + ext;
+    const int lim_ext = rw_lim_ext(limit, ext);
     int wt = 1;
     for (size_t iw = 0; iw + 1 < aw; iw++) wt += __builtin_popcountll(v[iw]);
     if (rank > 0) wt += __builtin_popcountll(v[aw - 1] & last_mask);
@@ -2831,7 +2845,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
         if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
         if (use_sig && !rw_srows_sig(pws, col)) continue; /* a zero L syndrome: not a codeword */
         const int limit = rw_cw_limit(ctx);
-        const int lim_ext = limit + ext;
+        const int lim_ext = rw_lim_ext(limit, ext);
         const word * const rawrow = mzd_row(mHT, col);
         int wt = 1;
         for (int iw = 0; iw < active_width - 1 && wt < lim_ext; iw++) wt += __builtin_popcountll(rawrow[iw]);

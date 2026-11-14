@@ -258,11 +258,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     `0x11` gives 0.84–1.00x hits/s on four static codes and 1.37x on `2bga_288_4`, so Rule D2 keeps it off): test
     $\mathrm{sig}(y) \ne 0$ with the 64-bit reduced-logical syndromes before the support of a $p = 1$
     candidate is formed; greedy $2 \to 1$ / $3 \to 0$ contraction of the $p = 1$ candidates of weight at most
-    $d_{\max} + 8$; and skip the columns with $\mathrm{sig}(x) = 0$, $w_x \le 2$ in the buckets of `rw_pairs_step()`
+    $\min(d_{\max} + 8, 64)$ (0.17.1 caps shortening at `RW_SHORTEN_WMAX = 64` so heavy initial candidates do not incur
+    $O(w^3)$ scans); and skip the columns with $\mathrm{sig}(x) = 0$, $w_x \le 2$ in the buckets of `rw_pairs_step()`
     (Stern Bucket-0 filter, loss-free only together with the contraction: Thms. 1–3, Secs. 4.1–4.3). Prototypes:
     $2.8\times$–$20.2\times$ the minimum-weight hits per second of windowed RW (Sec. 5). With `finG` (D2):
-    steepest-descent shortening by the rows of $G$ up to weight $d_{\max} + w_G - 2$ and filtering of realized
-    generators only (Thm. 5, Sec. 8.3; e.g., 272 of the 296 weight-$d$ hits of `2bga_288_4` came from shortening);
+    steepest-descent shortening by the rows of $G$ up to weight $\min(d_{\max} + w_G - 2, 64)$ and filtering of
+    realized generators only (Thm. 5, Sec. 8.3; e.g., 272 of the 296 weight-$d$ hits of `2bga_288_4` came from
+    shortening);
     default for CSS runs only after a C implementation shows a wall-clock gain. Never filter columns with
     $\mathrm{sig}(x) = 0$, $w_x \ge 3$ whose circuits are not listed.
   - [x] Stage 3 (bit `0x04`, explicit only: the slabs never reach the weight 18 of the double-gross DEM in 25 s and slow
@@ -410,8 +412,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   throttle ($\lceil \texttt{steps}/10 \rceil$), and on the 236-GiB server the memory throttle allows the cap of 32 RW
   threads to both modes (the Stage 4 footprint matters on smaller machines: 16 GiB, 10 against 32 threads for
   `bb_756`). Open: `-1` on the `2bga_102` DEM at 64–128 threads (0.62–0.92x the steps per second of `rw_opt=0`, not
-  from `0x10`); the CC of the double-gross DEM 0.05–0.07 s slower than with the 0.16.1 binary; the first RW steps of
-  `bb_756` 1.45x longer with `-1`. Plan (`M5` of
+  from `0x10`); the CC of the double-gross DEM 0.05–0.07 s slower than with the 0.16.1 binary (note: the `bb_756`
+  first-step slowdown with `-1` from $O(w^3)$ contraction on heavy initial candidates was resolved in 0.17.1 via
+  `RW_SHORTEN_WMAX = 64`). Plan (`M5` of
   `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, updating `benchmark/BENCHMARK.md` Section 4):
   - Sweep `threads = 1, 2, 4, 8, 16, 32, 64, 96, 128` (default throttling vs. `nothrottle=1`, NUMA/socket-aware,
     medians of $\ge 5$ runs for short cases) comparing `0.16.1` (`rw_opt=0`) against the Stage 1–5 pipeline (`rw_opt=-1`
@@ -1259,11 +1262,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     $\mathcal{T}_3$ pruning of Task 7 (placement note).
 - [x] **`engine="auto"` as a two-stage portfolio** (0.17.0, `_auto_two_stage()` and `_auto_cert_first()` in
   `dist_m4ri.py`, `scratch/m1_m4/py_work/SUMMARY.md`; benchmark in Section 11.3 of `benchmark/BENCHMARK.md`: 31 of 35
-  certified, native start-up on easy instances). Follow-ups from the benchmark (open): a smaller default Stage-A budget
-  (e.g., $\tau_1 = \min(\max(2, \texttt{timeout}/10), 30)$ s, i.e., `_AUTO_STAGE1_FRAC = 0.1`: $\tau_1 = 2$ s was the
-  best or equal on all 8 instances of the sweep), and a short upper-bound stage of `qec_cert` in Stage B when the
-  bracket is wide (`use_ub=False` lost the weight 16 of the $T = 1$ double-gross DEM, $[13, 18]$ against $[14, 16]$
-  for `qec_cert` alone). Before 0.17.0, `"auto"` handed every
+  certified, native start-up on easy instances). Follow-ups from the benchmark (done in 0.17.1): a smaller default
+  Stage-A budget ($\tau_1 = \min(\max(2, \texttt{timeout}/10), 10)$ s, `_AUTO_STAGE1_FRAC = 0.1`,
+  `_AUTO_STAGE1_MAX = 10.0`: $\tau_1 = 2$ s was the best or equal on all 8 instances of the sweep), and keeping the
+  upper-bound stage of `qec_cert` in Stage B when the bracket is wide (`dmax_A - max(1, dmin_A) >= 3`: `use_ub=False`
+  had lost the weight 16 of the $T = 1$ double-gross DEM, $[13, 18]$ against $[14, 16]$ for `qec_cert` alone). Before
+  0.17.0, `"auto"` handed every
   distance-only `method=3` call (also classical codes) to `qec_cert` whenever it is importable, although `qec_cert`
   costs 0.64 s to import and 1.6–2.0 s per fresh CLI call even on small instances (`qec-cert-search`: 0.14–0.16 s),
   against 0.01–0.1 s for `dist_m4ri`. The policy of `qec_cert` itself is the reverse

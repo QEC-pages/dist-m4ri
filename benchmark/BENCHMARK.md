@@ -1463,7 +1463,9 @@ the parameters of 0.15.2.
   (`bb_360`: 34–39 against 12–14 steps/s with 8 threads). In long runs (`steps=100000`), both modes get the cap of 32
   RW threads on this server: the memory budget, a quarter of the RAM, covers about 148 dense threads of 428 MB
   (`bb_756`, `rw_opt=0`) or 650 sparse-dual threads of 97 MB; the smaller footprint of Stage 4 raises the RW threads
-  only on smaller machines (16 GiB: 10 against 32).
+  only on smaller machines (16 GiB: 10 against 32). Since 0.17.1, candidate shortening is also gated at weight 64
+  (`RW_SHORTEN_WMAX = 64`), avoiding $O(w^3)$ greedy contraction on heavy initial candidates (weight $500..6600$) in the
+  first uniform RW step on `bb_756`.
 - **CC.** The CC of the double-gross DEM (`method=2 wmax=5`, Section 4) takes 0.85 s on one thread and 0.19–0.20 s on
   16–64 threads, against 0.78 s and 0.15 s with the 0.16.1 binary (medians of 3; the difference is in the search, not
   in reading the input): an open point.
@@ -1498,6 +1500,7 @@ which handed every distance-only call to `qec_cert` (the `engine="cert"` run tim
   $\tau_1 \in \{2, 5, 15, 22.5\}$ s on 8 such instances, at 16 and 64 threads, $\tau_1 = 2$ s is the best or equal on
   all of them (e.g., the `2bga_102` circuit 3.3 s instead of 19.5–23.8 s), and over all 35 instances it saves 28 s
   with the same 31 exact: a shorter default (e.g., $\tau_1 = \min(\max(2, \texttt{timeout}/10), 30)$ s) would be
-  better.
+  better (adopted in 0.17.1 as $\tau_1 = \min(\max(2, \texttt{timeout}/10), 10)$ s).
 - On the $T = 1$ double-gross DEM, `qec_cert` alone gives $[14, 16]$, the two-stage `auto` $[13, 18]$: with a codeword
-  from Stage A (weight 18), Stage B skips the upper-bound stage of `qec_cert` (`use_ub=False`), which finds the 16.
+  from Stage A (weight 18), Stage B skips the upper-bound stage of `qec_cert` (`use_ub=False`), which finds the 16
+  (fixed in 0.17.1 by keeping `use_ub=True` whenever $d_{\max, A} - \max(1, d_{\min, A}) \ge 3$).

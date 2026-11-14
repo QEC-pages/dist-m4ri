@@ -706,7 +706,7 @@ def test_cli_version(capsys):
     ret = dist_m4ri.main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "0.17.0" in captured.out
+    assert "0.17.1" in captured.out
     # also the version of the binary
     assert re.search(r"^dist_m4ri version \S+ \(binary '.*dist_m4ri'\)$", captured.out, re.M)
 
@@ -717,7 +717,7 @@ def test_cli_binary_compatibility_silent(capsys):
     captured = capsys.readouterr()
     # When binary is found and up to date, stderr should be silent (no warnings)
     assert "Warning:" not in captured.err
-    assert "0.17.0" in captured.out
+    assert "0.17.1" in captured.out
 
 
 def test_binary_compatibility_warning(tmp_path):
@@ -736,7 +736,7 @@ def test_binary_compatibility_warning(tmp_path):
     older_warn = dist_m4ri.check_binary_compatibility(str(fake_bin))
     assert older_warn is not None
     assert "version 0.5.0" in older_warn
-    assert "expected >= 0.17.0" in older_warn
+    assert "expected >= 0.17.1" in older_warn
 
 
 def test_cache_versioning(tmp_path):
@@ -3197,10 +3197,13 @@ def test_parse_rw_pipeline_stats_and_explain():
 
 
 def test_auto_stage_a_budget_and_dem_errors(monkeypatch, tmp_path):
-    # tau_1 = timeout if timeout <= 2 s (0: no limit), else min(max(2, timeout / 2), 30) s; None: the binary's 60 s
-    for t, tau in ((0, 0.0), (1.0, 1.0), (2.0, 2.0), (2.5, 2.0), (3.0, 2.0), (10.0, 5.0), (20, 10.0), (60.0, 30.0),
-                   (100, 30.0), (None, 30.0)):
-        assert dist_m4ri._auto_stage_a_budget(t) == tau, t
+    # tau_1 = timeout if timeout <= 2 s (0: no limit), else min(max(2, timeout / 10), 10) s; None: the binary's 60 s
+    for t, tau in ((0, 0.0), (1.0, 1.0), (2.0, 2.0), (2.5, 2.0), (10.0, 2.0), (20, 2.0), (30.0, 3.0), (45.0, 4.5),
+                   (60.0, 6.0), (100, 10.0), (200, 10.0), (None, 6.0)):
+        assert dist_m4ri._auto_stage_a_budget(t) == pytest.approx(tau), t
+    assert dist_m4ri._auto_stage_b_use_ub(1, 0) and not dist_m4ri._auto_stage_b_use_ub(3, 5)
+    assert dist_m4ri._auto_stage_b_use_ub(3, 6) and not dist_m4ri._auto_stage_b_use_ub(0, 3)
+    assert dist_m4ri._auto_stage_b_use_ub(0, 4)
     # (the module constants, e.g., for benchmarks of other budgets)
     monkeypatch.setattr(dist_m4ri, "_AUTO_STAGE1_FRAC", 0.25)
     monkeypatch.setattr(dist_m4ri, "_AUTO_STAGE1_MAX", 15.0)
@@ -3244,16 +3247,16 @@ def test_auto_classical_bypass(monkeypatch):
 
 
 def test_auto_stage_a_exact_without_qec_cert(monkeypatch, tmp_path):
-    # Stage A (the binary, tau_1 = 5 s for timeout=10) certifies the distance: returned without importing qec_cert
+    # Stage A (the binary, tau_1 = 3 s for timeout=30) certifies the distance: returned without importing qec_cert
     _no_qec_cert_import(monkeypatch)
     dist_m4ri.clear_distance_cache()
     dist_m4ri.disable_distance_cache()
     try:
-        d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=10, threads=2,
+        d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=30, threads=2,
                                                      return_info=True)
         assert d == 5 and info == [5, 5, 0]
         auto = dist_m4ri._last_run_stats["engine_auto"]
-        assert auto["stage"] == "A" and auto["tau_1"] == 5.0 and auto["reason"] == "exact after Stage A"
+        assert auto["stage"] == "A" and auto["tau_1"] == 3.0 and auto["reason"] == "exact after Stage A"
         d_css, dx, dz = dist_m4ri.compute_css_distance(S5_H, S5_H, Lx=S5_L, Lz=S5_L, engine="auto", timeout=10,
                                                        threads=2)
         assert d_css == 5 and dx == dz == [5, 5, 0]
@@ -3293,10 +3296,10 @@ def test_auto_stage_b_seeding_and_discharge(monkeypatch, tmp_path, use_cache):
         d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2,
                                                      return_info=True, cache_file=cache_file)
         assert (d, info) == (5, [5, 5, 0])
-        assert len(fake.cmds) == 1 and fake.arg(0, "timeout") == "10.0" and fake.arg(0, "method") == "3"
+        assert len(fake.cmds) == 1 and fake.arg(0, "timeout") == "2.0" and fake.arg(0, "method") == "3"
         assert len(calls) == 1 and calls[0][1]["wmin"] == 3 and calls[0][1]["wmax"] == 4
         assert 15.0 < calls[0][1]["time_limit"] <= 20.0 and calls[0][1]["mode"] == "auto"
-        assert calls[0][1]["use_ub"] is False  # (the codeword of weight 5 is known: no ISD in qec_cert)
+        assert calls[0][1]["use_ub"] is False  # (narrow bracket [3, 5]: no ISD in qec_cert)
         auto = dist_m4ri._last_run_stats["engine_auto"]
         assert auto["stage"] == "B" and auto["stage_a"] == [3, 5, 100] and auto["stage_b"] == [5, 5]
         cached = dist_m4ri.get_cached_distance(H=S5_H, L=S5_L, cache_file=cache_file)
@@ -3304,7 +3307,7 @@ def test_auto_stage_b_seeding_and_discharge(monkeypatch, tmp_path, use_cache):
             assert (cached["dmin"], cached["dmax"], cached["rw_steps"]) == (5, 5, 100)
         else:
             assert cached is None
-        # an open bracket after Stage B: the RW steps of Stage A are kept (also without the cache)
+        # a wide bracket [3, 6] (gap 3 >= 3): Stage B keeps use_ub=True so qec_cert's ISD can tighten the upper bound
         fake.outputs, fake.cmds[:] = ["3 6 100"], []
         if use_cache:
             dist_m4ri.clear_distance_cache(cache_file, clear_file=True)
@@ -3313,7 +3316,7 @@ def test_auto_stage_b_seeding_and_discharge(monkeypatch, tmp_path, use_cache):
         monkeypatch.setattr(dist_m4ri, "_auto_native_tail", _no_native_tail)  # (no third stage)
         d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2,
                                                      return_info=True, cache_file=cache_file, dstop=0)
-        assert calls[0][1]["wmax"] == 5
+        assert calls[0][1]["wmax"] == 5 and calls[0][1]["use_ub"] is True
         # qec_cert proves no codeword of weight 3..5: exact 6 (the codeword of weight 6 found by Stage A)
         assert (d, info) == (6, [6, 6, 0])
     finally:
@@ -3495,7 +3498,7 @@ def test_auto_css_sectors(monkeypatch):
         assert len(calls) == 1 and (calls[0][1]["wmin"], calls[0][1]["wmax"]) == (3, 5)
         assert dist_m4ri._last_css_stats["Z"]["engine_auto"]["stage"] == "A"
         assert dist_m4ri._last_css_stats["X"]["engine_auto"]["stage"] == "B"
-        assert [fake.arg(k, "timeout") for k in range(2)] == ["10.0", "10.0"]
+        assert [fake.arg(k, "timeout") for k in range(2)] == ["2.0", "2.0"]
     finally:
         dist_m4ri.enable_distance_cache()
 

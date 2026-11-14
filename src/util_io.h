@@ -590,7 +590,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.17.0"
+#define DIST_M4RI_VERSION "0.17.1"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -975,13 +975,13 @@ void print_short_help(const char *prog);
   "                     the stages to use (1 to 63, also as 0x..):\n" \
   "                     1: enumerate T3 (after merge and drop) and contract the\n" \
   "                        single-column candidates (2 -> 1, 3 -> 0 columns, up to\n" \
-  "                        the weight dmax+8); skip the columns with a zero L\n" \
-  "                        syndrome and at most 3 columns in the pairs (when\n" \
+  "                        the weight min(dmax+8, 64)); skip the columns with a zero\n" \
+  "                        L syndrome and at most 3 columns in the pairs (when\n" \
   "                        collecting codewords with outC or maxC, only with 32);\n" \
   "                        a zero column of H with a nonzero column of L gives\n" \
   "                        d=1 at once (automatic: quantum codes, steps > 2);\n" \
   "                     2: with finG, also shorten the candidates by the rows of\n" \
-  "                        G (steepest descent, up to the weight dmax+w_G-2) and\n" \
+  "                        G (steepest descent, up to min(dmax+w_G-2, 64)) and\n" \
   "                        skip the columns whose circuits are rows of G in the\n" \
   "                        pairs (not when collecting; automatic: off);\n" \
   "                     4: row-slab windows of a DEM in time order (kwin=0):\n" \

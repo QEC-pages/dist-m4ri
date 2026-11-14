@@ -33,7 +33,7 @@ _codedistance_mod = None
 _stim_mod = None
 _qec_cert_mod = None
 
-__version__ = "0.17.0"
+__version__ = "0.17.1"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -1872,16 +1872,17 @@ def _cert_code_distance(
 #   _AUTO_DEM_FAST_PATH_MIN_TIMEOUT s (or none): qec_cert first, whose exact reductions of large DEMs (the spacetime
 #   P1 sandwich, twin retraction, ...) come before any search (see _auto_cert_first()).
 # - Otherwise (quantum codes, the sectors of CSS codes, and smaller DEMs): Stage A, the binary (method=3) for
-#   tau_1 = timeout if timeout <= 2 s, else min(max(2, timeout / 2), 30) s; then, if the bracket is still open and
+#   tau_1 = timeout if timeout <= 2 s, else min(max(2, timeout / 10), 10) s; then, if the bracket is still open and
 #   more than _AUTO_STAGE_B_MIN_TIME s are left, Stage B, qec_cert with the remaining time, seeded with the bounds of
 #   Stage A.  qec_cert (about 0.6 s to import) is imported only for Stage B.
 # ---------------------------------------------------------------------------------------------------------------
 _AUTO_DEM_FAST_PATH_ERRORS = 25000  # raw DEM error mechanisms above which engine='auto' runs qec_cert first
 _AUTO_DEM_FAST_PATH_MIN_TIMEOUT = 3.0  # ... only with a timeout of at least this many seconds (or no timeout)
 _AUTO_STAGE_B_MIN_TIME = 1.0  # Stage B (qec_cert) only with more than this many seconds left after Stage A
+_AUTO_STAGE_B_UB_GAP = 3  # Stage B keeps qec_cert's upper-bound stage when dmax_s - max(1, dmin_s) >= this gap
 _AUTO_STAGE1_MIN = 2.0  # Stage A: the whole timeout up to this many seconds, otherwise at least this many seconds
-_AUTO_STAGE1_FRAC = 0.5  # ... and this fraction of the timeout
-_AUTO_STAGE1_MAX = 30.0  # ... but at most this many seconds
+_AUTO_STAGE1_FRAC = 0.1  # ... and this fraction of the timeout (since version 0.17.1; 0.5 in 0.17.0)
+_AUTO_STAGE1_MAX = 10.0  # ... but at most this many seconds (since version 0.17.1; 30.0 in 0.17.0)
 
 
 def _auto_timeout(timeout: Optional[float]) -> float:
@@ -1901,13 +1902,22 @@ def _auto_stage_a_budget(timeout: Optional[float]) -> float:
     """
     engine='auto': the time budget tau_1 of Stage A (the dist_m4ri binary, method=3) of the two-stage portfolio: the
     whole timeout if it is at most _AUTO_STAGE1_MIN = 2 s (also 0: no limit), otherwise
-    min(max(_AUTO_STAGE1_MIN, _AUTO_STAGE1_FRAC * timeout), _AUTO_STAGE1_MAX) = min(max(2, timeout / 2), 30) s (the
+    min(max(_AUTO_STAGE1_MIN, _AUTO_STAGE1_FRAC * timeout), _AUTO_STAGE1_MAX) = min(max(2, timeout / 10), 10) s (the
     module constants, e.g., for benchmarks of other budgets).
     """
     t = _auto_timeout(timeout)
     if t <= _AUTO_STAGE1_MIN:
         return t
     return min(max(_AUTO_STAGE1_MIN, _AUTO_STAGE1_FRAC * t), _AUTO_STAGE1_MAX)
+
+
+def _auto_stage_b_use_ub(dmin_s: int, dmax_s: int) -> bool:
+    """
+    engine='auto' Stage B: whether qec_cert runs its upper-bound stage: when no codeword is known (dmax_s <= 0), or
+    when dmax_s - max(1, dmin_s) >= _AUTO_STAGE_B_UB_GAP (since version 0.17.1: qec_cert's slab-ISD can tighten a
+    wide RW bracket).
+    """
+    return dmax_s <= 0 or (dmax_s - max(1, dmin_s) >= _AUTO_STAGE_B_UB_GAP)
 
 
 def _dem_num_raw_errors(dem: Any, limit: int = 0) -> int:
@@ -2064,12 +2074,13 @@ def _auto_two_stage(
     wmax > 0, if at most _AUTO_STAGE_B_MIN_TIME s of the timeout are left, or with timeout=0 (no limit: the binary
     runs until the bounds meet).  Otherwise, Stage B runs qec_cert (see _cert_code_distance()) with the remaining
     time, from the bounds of Stage A: wmin = max(1, dmin_A) and wmax = dmax_A - 1 (dmax_A: the weight of a codeword
-    found and verified by the binary), passed explicitly, so that this also holds with the cache disabled; with
-    dmax_A > 0, qec_cert skips its randomized upper-bound stage (use_ub=False: the codeword is known).  The
-    assumption lb_assumed_wmin <= dmin_A of qec_cert is discharged by the lower bound dmin_A certified by the CC of
-    Stage A (certified_dmin, see _cert_wmin_discharged()); a lower bound of qec_cert which is conditional for any
-    other reason is not used.  If qec_cert ends early with an open bracket, the binary runs with the time left.  The
-    result is never weaker than that of Stage A.
+    found and verified by the binary), passed explicitly, so that this also holds with the cache disabled; when a
+    narrow bracket is already known (0 < dmax_A - max(1, dmin_A) < _AUTO_STAGE_B_UB_GAP, see _auto_stage_b_use_ub()),
+    qec_cert skips its randomized upper-bound stage (use_ub=False).  The assumption lb_assumed_wmin <= dmin_A of
+    qec_cert is discharged by the lower bound dmin_A certified by the CC of Stage A (certified_dmin, see
+    _cert_wmin_discharged()); a lower bound of qec_cert which is conditional for any other reason is not used.  If
+    qec_cert ends early with an open bracket, the binary runs with the time left.  The result is never weaker than that
+    of Stage A.
 
     If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None); if its import
     or qec_cert fails, a warning is written to stderr, and the binary continues with the time left.  The stages are
@@ -5130,7 +5141,7 @@ def compute_quantum_distance(
             extraction; a lower bound of qec_cert is cached only if it is unconditional, and an upper bound only with
             a verified witness).  "auto" (since version 0.17.0, a two-stage portfolio for a distance-only method=3
             call; otherwise the binary, see _auto_two_stage()): Stage A, the binary for tau_1 = timeout if timeout
-            <= 2 s, else min(max(2, timeout / 2), 30) s; if its bracket is still open and more than 1 s is left,
+            <= 2 s, else min(max(2, timeout / 10), 10) s; if its bracket is still open and more than 1 s is left,
             Stage B, qec_cert with the remaining time, from the bounds of Stage A (wmin = dmin_A, wmax = dmax_A - 1);
             the binary only, with the whole timeout, if qec_cert is not installed.  A cached exact result is used
             without a run (and without importing qec_cert).  The details are in _last_run_stats["engine_auto"].
@@ -5227,7 +5238,7 @@ def compute_quantum_distance(
                         _cert_to_csr(H, qec_io), _cert_to_csr(L, qec_io), _cert_to_csr(G, qec_io)
                     ),
                     wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8), seed=seed if seed != 0 else 1,
-                    time_limit=t_lim, mode="auto", use_ub=dmax_s <= 0,  # (no ISD for a codeword already found)
+                    time_limit=t_lim, mode="auto", use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s),
                 )
             return _cert_code_distance(
                 lambda: _matrix_cache_key(H, G, L, False), certify, label="quantum", dmin=dmin_s, dmax=dmax_s,
@@ -5573,7 +5584,8 @@ def compute_css_distance(
                             _cert_to_csr(H_s, qec_io), _cert_to_csr(L_s, qec_io), _cert_to_csr(G_s, qec_io)
                         ),
                         wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
-                        seed=seed if seed != 0 else 1, time_limit=t_lim, mode="auto", use_ub=dmax_s <= 0,
+                        seed=seed if seed != 0 else 1, time_limit=t_lim, mode="auto",
+                        use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s),
                     )
                 return _cert_code_distance(
                     lambda: _matrix_cache_key(H_s, G_s, L_s, False), certify, label=f"CSS {s}-sector", dmin=dmin_s,
@@ -6235,7 +6247,7 @@ def compute_dem_distance(
                 def certify(w_lo: int, w_hi: int) -> Any:
                     _, _, qec_pipeline = _get_qec_cert()
                     kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode="auto",
-                              use_ub=dmax_s <= 0)  # (no ISD for a codeword already found)
+                              use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s))
                     if circuit is not None:
                         return qec_pipeline.certify_circuit(circuit, **kw)
                     return qec_pipeline.certify_dem(fdem_run, **kw)
@@ -7853,7 +7865,7 @@ General options:
                         portfolio for a distance-only method=3 run of a quantum code, a CSS sector,
                         or a DEM (otherwise, e.g., for a classical code or with codewords, the
                         dist_m4ri binary): the binary first (Stage A) for the whole timeout if it
-                        is at most 2 s, else for min(max(2, timeout/2), 30) s; then, if the bounds
+                        is at most 2 s, else for min(max(2, timeout/10), 10) s; then, if the bounds
                         differ and more than 1 s is left, qec_cert with the remaining time (Stage
                         B), from the bounds of the binary (wmin=dmin, wmax=dmax-1).  A DEM with more
                         than 25,000 error mechanisms goes to qec_cert first (timeout >= 3 s or 0).

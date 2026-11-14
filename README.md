@@ -181,14 +181,14 @@ Relevant parameters:
   (the RW search of 0.16.1); otherwise the sum of the stages to use (1 to 63, also as `0x..`):
   - `1`: the triplets $\mathcal{T}_3$ of columns with zero syndromes of $H$ and $L$ (e.g., the CNOT hook triangles of
     a circuit) are enumerated exactly after merging and `drop=auto` (0.4 ms for the 2376 triplets of the `bb_72` DEM);
-    the single-column candidates are contracted ($2 \to 1$ and $3 \to 0$ columns, up to the weight $d_{\max} + 8$),
-    their $L$ syndromes are computed before their supports are formed, and the pairs skip the columns with a zero $L$
-    syndrome and at most 3 columns (loss-free together with the contraction; when collecting codewords with `outC` or
-    `maxC`, only with `32`); a zero column of $H$ with a non-zero column of $L$ gives $d = 1$ at once (automatic:
-    quantum codes, `steps > 2`; nothing is kept if there are no triplets, e.g., for codes with checks of weight
-    $\ge 4$);
+    the single-column candidates are contracted ($2 \to 1$ and $3 \to 0$ columns, up to the weight
+    $\min(d_{\max} + 8, 64)$), their $L$ syndromes are computed before their supports are formed, and the pairs skip the
+    columns with a zero $L$ syndrome and at most 3 columns (loss-free together with the contraction; when collecting
+    codewords with `outC` or `maxC`, only with `32`); a zero column of $H$ with a non-zero column of $L$ gives $d = 1$
+    at once (automatic: quantum codes, `steps > 2`; nothing is kept if there are no triplets, e.g., for codes with
+    checks of weight $\ge 4$);
   - `2`: with `finG`, the candidates are also shortened by the rows of $G$ (steepest descent, up to the weight
-    $d_{\max} + w_G - 2$), and the pairs skip the columns whose circuits are rows of $G$ (explicit only);
+    $\min(d_{\max} + w_G - 2, 64)$), and the pairs skip the columns whose circuits are rows of $G$ (explicit only);
   - `4`: row-slab windows of a DEM in time order: every other step, the columns inside a range of $\min(320, m/2)$
     detectors (explicit only);
   - `8`: sparse-dual elimination with an $m \times m$ inverse instead of the $m \times n$ matrix (the same information
@@ -800,7 +800,7 @@ needs `finH`), while `fin` after them is an error. The Python CLI (`python3 dist
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.17.0): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.17.1): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -1216,19 +1216,20 @@ interoperability without manual threading overhead.
     (and a timeout of at least 3 s, or none) goes to `qec_cert` first, whose exact reductions of large DEMs come before
     any search; the binary runs with the time left if the bracket stays open. Otherwise (quantum codes, sectors of CSS
     codes, smaller DEMs), Stage A runs the native binary for $\tau_1$ = the timeout if it is at most 2 s, else
-    $\min(\max(2, \text{timeout}/2), 30)$ s, and its result is returned at once, without importing `qec_cert`, if it
-    is exact (or `dmin >= dstop > 0`, CC reached `wmax`, `timeout=0`, or at most 1 s is left); Stage B then runs
-    `qec_cert` with the remaining time, seeded with `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (without its
-    randomized upper-bound stage when the binary has found a codeword), where the lower bound `dmin_A` certified by CC
-    discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; if `qec_cert` ends early with an open bracket,
-    the binary continues with the time left, and if `qec_cert` is not installed, the binary runs with the whole
-    timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
+    $\min(\max(2, \text{timeout}/10), 10)$ s (since 0.17.1; $\min(\max(2, \text{timeout}/2), 30)$ s in 0.17.0), and its
+    result is returned at once, without importing `qec_cert`, if it is exact (or `dmin >= dstop > 0`, CC reached `wmax`,
+    `timeout=0`, or at most 1 s is left); Stage B then runs `qec_cert` with the remaining time, seeded with
+    `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (skipping its randomized upper-bound stage only when a narrow
+    bracket $0 < d_{\max, A} - \max(1, d_{\min, A}) < 3$ is already known, since 0.17.1), where the lower bound
+    `dmin_A` certified by CC discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; if `qec_cert` ends early
+    with an open bracket, the binary continues with the time left, and if `qec_cert` is not installed, the binary runs
+    with the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
     `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
     Benchmark (35 codes, circuits, and classical codes, `timeout=45`, 64 threads, Section 11.3 of the
-    [benchmark](benchmark/BENCHMARK.md)): `'auto'` certifies 31 instances against 26 for the binary alone and 32 for
-    `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against 0.443 s for the
-    delegation of 0.16.1, which imports `qec_cert` in every call); where `qec_cert` certifies much faster than the CC
-    of the binary, a shorter Stage A than the default (e.g., 2 s, via `_AUTO_STAGE1_MAX`) saves time.
+    [benchmark](benchmark/BENCHMARK.md)): in 0.17.0, `'auto'` certified 31 instances against 26 for the binary alone and
+    32 for `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against 0.443 s
+    for the delegation of 0.16.1, which imports `qec_cert` in every call); the shorter Stage-A budget and wide-bracket
+    `use_ub` gate of 0.17.1 follow directly from that benchmark.
   - Hand-off scope: the hand-off covers distance-only requests. Codeword output (`do_cws=True` or `outC`), `finC`,
     `smax > 0`, `dW >= 0`, `maxC > 0`, `start`, `outD`, `out_reduced`, `pmin > 0`, and `method=1` or `2` stay on the
     native `dist_m4ri` binary with `'auto'` (which also falls back to the native binary if `qec_cert` is not
