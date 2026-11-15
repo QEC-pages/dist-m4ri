@@ -11,15 +11,16 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 > are not always correct; the file names are kept unchanged. The distances computed with `dist_m4ri` are listed in the
 > tables below: an exact value is certified (by CC), and $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the
 > timeout. The values of the Mitten codes and circuits and of the full DEMs of the $X$-basis BB circuits are from the
-> overnight benchmark of `dist_m4ri` 0.14.0 (128 threads, Section 5), and the brackets of the double-gross and `bb_360`
-> circuits from the follow-up runs of 0.14.1 (Section 6); the values marked "(s)" are from shorter runs of earlier
-> versions on the stripped DEMs, and they are provisional. The values of the codes and circuits added on 2026-10-20 (the
-> `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise BB circuits) and the re-runs of
-> the uniform-noise gross circuit and of the torus circuits (Section 2.6) are from short runs of 0.14.7. The distances
-> of the larger codes of Section 1 (the `yarn_*` codes with $d \ge 16$, `bb_360`, and `bb_756`) are from the
-> branch-and-bound CC search of 0.15.0 (Section 9; those up to $d = 18$ confirmed with the walk of the earlier
-> versions, Section 10.1). The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were only checked in
-> short RW runs of 0.15.2: the distances in their prefixes are the exact values of their source database.
+> overnight benchmark of `dist_m4ri` 0.14.0 (128 threads, Section 5), the bracket of the `bb_360` circuit is from the
+> follow-up runs of 0.14.1 (Section 6), and that of the double-gross circuit ($[13, 16]$, tightening $[12, 18]$ of
+> Section 6) is from `qec_cert` via `dist_m4ri.py` in 0.17.0 (Section 11.3); the values marked "(s)" are from shorter
+> runs of earlier versions on the stripped DEMs, and they are provisional. The values of the codes and circuits added
+> on 2026-10-20 (the `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise BB circuits)
+> and the re-runs of the uniform-noise gross circuit and of the torus circuits (Section 2.6) are from short runs of
+> 0.14.7. The distances of the larger codes of Section 1 (the `yarn_*` codes with $d \ge 16$, `bb_360`, and `bb_756`)
+> are from the branch-and-bound CC search of 0.15.0 (Section 9; those up to $d = 18$ confirmed with the walk of the
+> earlier versions, Section 10.1). The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were only
+> checked in short RW runs of 0.15.2: the distances in their prefixes are the exact values of their source database.
 
 ## Directory Structure
 
@@ -355,8 +356,10 @@ logical error, i.e., the distance of the full DEM (all detectors).
 - Values without a mark: the full DEM, computed by `dist_m4ri` 0.14.0 in the overnight benchmark (Section 5;
   `method=3`, 128 threads), which drops the minority-basis detectors exactly (Section 3). An exact value is certified
   by CC: in under 6 s, except 179 s for `gross` and 182 s for `mitten_270 custom`.
-- The brackets of `double_gross` and `bb_360` are from Section 6: the lower bounds are certified with a code-sized model
-  of the circuit (Section 6.3), and the upper bounds are codewords of the full DEM found by RW (Sections 6.1, 6.2).
+- The bracket $[13, 16]$ of `double_gross` (`si1000`, $X$ basis) is from `qec_cert` via `dist_m4ri.py` (Section 11.3,
+  with a verified weight-16 witness; Section 6 gives $[12, 18]$ from a code-sized model and RW). The bracket $[12, 23]$
+  of `bb_360` is from Section 6: the lower bound is certified with a code-sized model of the circuit (Section 6.3), and
+  the upper bound 23 is a codeword of the full DEM found by RW (Section 6.1).
 - The uniform-noise `gross` circuit and the torus circuits were re-run on their full DEMs with the current noise on
   2026-10-15, and the `yarn_mitten_150` circuits, the $Z$-basis `bb_72` uniform-noise circuit, and `shyps_225` on
   2026-10-20 (`method=3` of 0.14.7, default threads): all values certified by CC, in 0.4–168 s, and in 114 s ($X$)
@@ -378,7 +381,7 @@ logical error, i.e., the distance of the full DEM (all detectors).
 | `bb_90_8_10_si1000_r10` | 8 | – |
 | `bb_108_8_10_si1000_r10` | 8 | – |
 | `gross_144_12_12_si1000_r12` | 10 | – |
-| `double_gross_288_12_18_si1000_r18` | [12, 18] | – |
+| `double_gross_288_12_18_si1000_r18` | [13, 16] | – |
 | `bb_360_12_24_si1000_r24` | [12, 23] | – |
 | `bb_756_16_34_si1000_r34` | – | – |
 | `bb_72_12_6_uniform_r6` | 6 (s) | 6 |
@@ -519,13 +522,14 @@ DEMs have 18–19%, and no detector is dropped.
 ## 4. Scaling with the Number of Threads (`benchmark/figures/`)
 
 Wall time and speedup $T(1)/T(p)$ of `dist_m4ri` for $p = 1, \dots, 128$ threads on a two-socket AMD EPYC 7B13 server
-(2 x 32 cores, 128 logical CPUs with SMT, 236 GB of memory), with `nothrottle=1`, `threads=p`, and `taskset` to the
+(2 x 32 cores, 128 logical CPUs with SMT, 236 GiB of memory), with `nothrottle=1`, `threads=p`, and `taskset` to the
 logical CPUs $0..p-1$ (socket 0 first, then socket 1, then the SMT siblings for $p > 64$; the gray line marks $p = 64$,
 one thread per physical core). Each run does a fixed amount of work: `method=1` a fixed number of RW `steps` with
 `min_hits=0`, `method=2` all CC rounds up to `wmax`, and `method=3` both (or, with the default parameters, the search
 for the exact distance). Versions: 0.17.0 (2026-11-13, `scratch/bench_0.17/`, on the idle server; the RW stages of
-Section 11 in their automatic mode: with `min_hits=0`, `rw_opt=-1` resolves to `0x01` here, plus the sparse dual
-`0x08` on the double-gross DEM), 0.15.2 (2026-10-28, `scratch/bench_0.15.2_scaling/`), and those of Section 5: 0.14.0,
+Section 11 in their automatic mode: in `method=1`, with `min_hits=0`, `rw_opt=-1` resolves to `0x01` here, plus the
+sparse dual `0x08` on the double-gross DEM; in `method=3`, with `min_hits=5`, also `0x10`), 0.15.2 (2026-10-28,
+`scratch/bench_0.15.2_scaling/`), and those of Section 5: 0.14.0,
 0.12.2, 0.9.0 (pull request #26), and the legacy single-threaded `dist_m4ri_old` (one thread; built from the 0.14.0
 sources, so that it shares the input stage, e.g., the merging of equal columns and the dropping of detectors of a DEM).
 The runs of 0.9.0 were limited to 600 s per case and method (both older versions: 400 s on the full DEM), from many
@@ -556,7 +560,7 @@ at 128 threads (55 s on one thread; 0.9.0: 127 s). CC up to $w = 15$ takes 10 s 
 to $w = 15$ takes 3.1 s on one thread, 3.2x less than 0.14.0 (the branch and bound, Section 9), and 0.072 s on 128
 threads; RW 79 s on one thread (the pairs); `method=3` (500000 steps) 43 s on one thread, as 0.14.0, and 0.63 s on 128
 threads. 0.17.0: CC up to $w = 15$ in 0.83 s on one thread (3.8x less than 0.15.2: the even-weight rounds of 0.16.1)
-and 0.035–0.042 s on 64–128 threads; RW 82 s on one thread (3% more per step) and 1.18 s on 128; `method=3` 42 s on
+and 0.035–0.047 s on 64–128 threads; RW 82 s on one thread (3% more per step) and 1.18 s on 128; `method=3` 42 s on
 one thread and 0.59 s on 128 threads.
 
 ![Scaling for the double-gross circuit DEM](figures/scaling_dgross_dem.png)
@@ -574,7 +578,8 @@ the dense $m \times n$ matrix and its transpose) lifts the memory-bandwidth ceil
 scales almost linearly to 32 threads (25x), with 0.63 s at 64 threads, 3.7 times less than 0.15.2 (2.36 s; speedup 34
 against 11); the SMT siblings still make it slower (0.72–0.82 s at $p = 96, 128$). `method=3` takes 12.9 s on one
 thread and 0.75 s on 64 (0.15.2: 15.4 s and 1.17 s). CC up to $w = 5$: 0.91 s on one thread and 0.22–0.33 s from
-16 threads on (0.06–0.14 s more than 0.15.2; see Section 11.2).
+16 threads on in these single runs (3-run medians at 1, 16, and 64 threads: 0.85 s and 0.19–0.20 s, about 0.05 s above
+0.15.2/0.16.1; see Section 11.2).
 
 ![Scaling for the full DEM of the bb_72 circuit](figures/scaling_bb_dem_full.png)
 
@@ -588,7 +593,7 @@ reduced problem is so small that more threads hardly help CC (0.08–0.11 s); th
 on 128), the exact distance 0.34 s on one thread and 0.12 s on 128. 0.17.0: RW 11.2 s on one thread (1.25 times longer
 per step: the contraction of the candidates with the 2376 triplets of this DEM, which records 1.5 times more
 minimum-weight hits per second, Section 11.1) and 0.28 s on 128 threads; CC as before (0.12 s, 0.09 s on 128); the
-exact distance 0.40 s on one thread and 0.11–0.13 s on 64–128.
+exact distance 0.40 s on one thread and 0.105–0.13 s on 64–128.
 
 ---
 
@@ -627,7 +632,7 @@ Section 4.
 - The double-gross circuit: CC certified $d_{\min} = 11$ (all rounds up to $w = 10$) and RW found a codeword of weight
   19; the run ended at 2.8 h, since the CC round $w = 11$ was predicted not to finish in the time left. The earlier
   brackets were $[4, 24]$ for the stripped DEM and $[4, 53]$ for the full one. Section 6 improves the bracket to
-  $[12, 18]$.
+  $[12, 18]$ (and `qec_cert` in Section 11.3 to $[13, 16]$).
 
 ### 5.2 Full DEMs: time to a codeword of the minimum weight
 
@@ -708,7 +713,7 @@ faster in CC, and 12–100 times faster on the full DEM.
 - For `bb_360`, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.6); Section 6.1 found
   one of weight 23.
 - For `bb_756`, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the
-  reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, `nothrottle=1` would run
+  reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GiB server, `nothrottle=1` would run
   128 threads (about 55 GB). With 32–64 RW threads, RW runs 6.7–7.4 times more steps per second (Section 6.1); 0.14.3
   runs 32 RW threads by default (Section 7.1).
 
@@ -822,11 +827,12 @@ data qubits and the hook errors), with 3–6 nonzeros each. The verification hel
 | `bb_360_12_24_si1000_r24_X` | 180 x 900 | $\ge 12$ | $w \le 11$: 966 s | [12, 23] |
 
 - The CC runs on the double-gross and `bb_360` models used 32 threads, and 96 for the round $w = 12$ of double gross.
-- For these schedules, the model is 1–2 below the circuit distance: its lightest codewords do not lift to codewords of
-  the DEM of the same weight. It is still a certified bound, and CC on the model reaches weights which CC on the DEM
-  cannot: CC on the DEM of the double-gross circuit took 2.8 h on 128 threads to certify 11 (Section 5.1).
+- For the four certified circuits above, the model is 1–2 below the circuit distance: its lightest codewords do not
+  lift to codewords of the DEM of the same weight. It is still a certified bound, and CC on the model reaches weights
+  which CC on the DEM cannot: CC on the DEM of the double-gross circuit took 2.8 h on 128 threads to certify 11
+  (Section 5.1).
 - With the gaps of the smaller circuits, the true distances of the double-gross and `bb_360` circuits may be well below
-  the upper bounds 18 and 23.
+  the RW upper bounds 18 and 23 (for double gross, `qec_cert` later gives $[13, 16]$, Section 11.3).
 
 ---
 
@@ -1001,9 +1007,9 @@ its message "RW found new upper bound", since the start of the run (reading and 
 | `bb_360` | 24 | 102, 93 | 22, 58 | 8.6, 13 |
 | `bb_360` | 23 | not in 240 s (10.3k steps each) | 118/4.8k, 60/2.2k | 119/5.1k, 56/2.2k |
 
-- Double gross: the weight 18 (the lightest known) 6–7 times sooner with the same seed (RW alone: 0.5–1.7 s instead of
-  8.6–18 s), in 15–25 times fewer steps, each 1.3–1.6 times longer (0.16–0.20 s per step and thread against
-  0.12–0.13 s).
+- Double gross: the weight 18 (the lightest known to RW; `qec_cert` later found weight 16, Section 11.3) 6–7 times
+  sooner with the same seed (RW alone: 0.5–1.7 s instead of 8.6–18 s), in 15–25 times fewer steps, each 1.3–1.6 times
+  longer (0.16–0.20 s per step and thread against 0.12–0.13 s).
 - `bb_360`: the weight 23 (the lightest known, Section 6.1) in 60 and 118 s, while 0.14.3 found 24 (after 93 and 102 s)
   and nothing lighter in 240 s; a step takes 4–14% longer (0.78–0.85 s per step and thread against 0.74–0.75 s).
 - In 300 s of 0.14.5 (one seed each), nothing lighter was found: double gross with `wmin=17` (94k steps; 18 after
@@ -1365,22 +1371,27 @@ rarely prune on DEMs and cost more than they save).
 
 ## 11. RW Triplet Pipeline, Thread Scaling, and the Two-Stage Portfolio of 0.17.0 (2026-11-13)
 
-`dist_m4ri` 0.17.0 (commit `0e771c2`, the RW stages `rw_opt` of `doc/rw_triplet_degeneracies.tex`, Sec. 9, and the
-two-stage `engine="auto"` of `dist_m4ri.py`) on the server of Section 4, idle and dedicated to the benchmark. The raw
-data, scripts, and the full report are in `scratch/bench_0.17/` (`REPORT.md`; not in the repository); the scaling runs
-of the cases of Section 4 are described there.
+`dist_m4ri` 0.17.0 (build `0e771c2`, tagged `46525b0`: version strings only; the RW stages `rw_opt` of
+`doc/rw_triplet_degeneracies.tex`, Sec. 9, and the two-stage `engine="auto"` of `dist_m4ri.py`) on the server of
+Section 4, idle and dedicated to the benchmark. The raw data, scripts, and the full report are in `scratch/bench_0.17/`
+(`REPORT.md`; not in the repository); the scaling runs of the cases of Section 4 are described there.
 
 ### 11.1 Stage ablation (16 threads)
 
-Each input with every mask on 16 physical cores of one socket (two inputs at once, one per socket). Hits: the
-minimum-weight hits per second of RW time at a fixed number of steps (`min_hits=10^9`, so that the hits are counted),
-relative to `rw_opt=0` (the RW of 0.16.1); time to $d$: median RW time to a codeword of weight $d$ (`wmin=d`,
-`min_hits=0`; 5 seeds, 3 for the double-gross DEM, 2 for `bb_360`); default rule: RW steps until the stop with
-`min_hits=5` (vector rule for `0`, canonical rule for `-1`; same upper bounds). R1: multi-round circuit DEMs; R2:
-single-round ($T = 1$, `rounds=0`) DEMs; R3: code-sized models (`compute_model_lower_bound(..., out_model=...)`); R4:
-static CSS codes (`finH=Hx finG=Hz`). $n$ after merging and `drop=auto`; "auto" is the mask chosen by `-1`.
+Each input with every mask on 16 physical cores of one socket (two inputs at once, one per socket; default throttling
+on, so the fixed-step runs of double gross, 120 steps, and `bb_360`, 60 steps, use 12 and 6 RW threads by
+$\lceil\texttt{steps}/10\rceil$, and the `outC` runs of the `bb_72` model and `bb_72_12_6` use 4 threads, equally
+across masks). Hits: minimum-weight hits per second of RW time at a fixed number of steps (`min_hits=10^9`), relative
+to `rw_opt=0` (the RW of 0.16.1), counted on the up to `cov_cws = 100` minimum-weight codewords stored in the hash
+without `outC`/`maxC` (the first 100 found, reached in 91 of the 128 runs, e.g., `surf_d5` has 620 and the `bb_72`
+model 252; `cov_cws=0` rates not re-measured); to $w$: median RW time to a codeword of weight at most $w$ ($w = d$, or
+the target weight in parentheses; `wmin=w`, `min_hits=0`; 5 seeds, 3 for the double-gross DEM, 2 for `bb_360` where the
+median is the mean); default rule: RW steps until the stop with `min_hits=5` (vector rule for `0`, canonical rule for
+`-1`; same upper bounds). R1: multi-round circuit DEMs; R2: single-round ($T = 1$, `rounds=0`) DEMs; R3: code-sized
+models (`compute_model_lower_bound(..., out_model=...)`); R4: static CSS codes (`finH=Hx finG=Hz`). $n$ after merging
+and `drop=auto`; "auto" is the mask chosen by `-1`.
 
-| Input | | $n$ | $\|\mathcal{T}_3\|$ | auto | hits/s: `0x01`, `-1` | to $d$ (s): `0`, `-1` | default rule: `0`, `-1` |
+| Input | | $n$ | $\|\mathcal{T}_3\|$ | auto | hits/s: `0x01`, `-1` | to $w$ (s): `0`, `-1` | default rule: `0`, `-1` |
 | :--- | :-: | ---: | ---: | :-: | :-: | :-: | :-: |
 | `surf_d5` (stim, 5 rounds) | R1 | 301 | 320 | `0x11` | 2.68x, 0.89x | 0.001, 0.001 | 81, 22 |
 | `color_xyz_d5` | R1 | 1104 | 5032 | `0x11` | 0.94x, 0.75x | 0.001, 0.001 | 90, 33 |
@@ -1389,12 +1400,12 @@ static CSS codes (`finH=Hx finG=Hz`). $n$ after merging and `drop=auto`; "auto" 
 | `mitten_150` custom (stripped) | R1 | 5910 | 5760 | `0x11` | 1.46x, 1.50x | 0.010, 0.010 | 38591, 77031 |
 | `2bga_102` $X$ | R1 | 8262 | 8160 | `0x11` | 1.16x, 1.10x | 0.015, 0.015 | – |
 | `shyps_225` | R1 | 8325 | 25500 | `0x11` | 4.20x, 3.44x | 0.018, 0.015 | – |
-| double gross (stripped), $d \le 18$ | R1 | 26208 | 28512 | `0x19` | weight 20 → 18 | 1.15, 0.54 | – |
-| `bb_360` full DEM, $d \le 23$ (24) | R1 | 43560 | 47520 | `0x19` | weight 27 → 26 | 10.1, 2.9 | – |
+| double gross (stripped), $d \le 16$ (18) | R1 | 26208 | 28512 | `0x19` | weight 20 → 18 | 1.15, 0.54 | – |
+| `bb_360` full DEM, $d \le 23$ (24) | R1 | 43560 | 47520 | `0x19` | 5.0x ($w=27$), 27 → 26 | 10.1, 2.9 | – |
 | `bb_72`, $T = 1$ | R2 | 432 | 396 | `0x11` | 1.20x, 1.11x | 0.001, 0.001 | 1006, 499 |
 | `mitten_150`, $T = 1$ | R2 | 1110 | 960 | `0x11` | 1.67x, 1.66x | 0.002, 0.003 | 8392, 10648 |
 | `shyps_225`, $T = 1$ | R2 | 1125 | 3300 | `0x11` | 6.70x, 6.44x | 0.002, 0.002 | 7751, 55277 |
-| double gross, $T = 1$ (18) | R2 | 1728 | 1584 | `0x11` | 1.13x, 1.10x | 0.009, 0.006 | – |
+| double gross, $T = 1$, $d \le 16$ (18) | R2 | 1728 | 1584 | `0x11` | 1.13x, 1.10x | 0.009, 0.006 | – |
 | `bb_72` model ($36 \times 180$) | R3 | 180 | 144 | `0x11` | 1.56x, 1.28x | 0.001, 0.001 | 176, 71 |
 | gross model ($72 \times 360$) | R3 | 360 | 288 | `0x11` | 2.26x, 2.22x | 0.001, 0.001 | 7989, 899 |
 | double-gross model ($144 \times 720$, 12) | R3 | 720 | 576 | `0x11` | 7.45x, 8.01x | 0.158, 0.021 | – |
@@ -1405,36 +1416,73 @@ static CSS codes (`finH=Hx finG=Hz`). $n$ after merging and `drop=auto`; "auto" 
 | `2bga_288_4_20_C24xS3` | R4 | 288 | 0 | `0x11` | 1.04x, 1.04x | 0.001, 0.001 | – |
 | `mitten_150_30_8_C5xS3` | R4 | 150 | 0 | `0x11` | 1.01x, 1.44x | 0.001, 0.001 | 122, 141 |
 
-- **Bit `0x01`** (automatic): 1.13–7.45x the hits per second on 13 of the 15 DEMs and models (at 0.61–0.99x the
-  steps per second); in 120 steps, the double-gross DEM reaches the weight 18 instead of 20. Inert on the static codes
-  ($\mathcal{T}_3 = \emptyset$, Rule D1). The enumeration takes 0.04–8.8 ms (`bb_360`: 47520 triplets in 8.75 ms).
-- **Bit `0x10`** (automatic, a stopping rule): with `min_hits=5`, the canonical rule stops 2.3–9 times sooner on the
-  degenerate inputs (surface, color, and the models) with the same bounds, and 1.3–7 times later where many logical
-  classes exist (`shyps_225` at $T = 1$: 783 distinct codewords of weight 8 in 547 classes, where the vector rule of
-  `0x01` alone stops after 968 steps). At fixed steps it costs 0–21% on the DEMs (0.36x on `surf_d5`, about 0.8M
-  canonicalized hits per second), and gains 1.43–1.86x on four static codes.
-- **Bit `0x02`** (explicit only, Rule D2 confirmed): on top of the automatic mask, `0x13` against `0x11` gives
-  0.84–1.00x the hits per second on `2bga_102`, `bb_72`, `gross_144`, and `mitten_150`, and 1.37x on `2bga_288_4`.
-- **Bit `0x04`** (explicit only, confirmed): the row slabs never reach the weight 18 of the double-gross DEM in 25 s
-  (stuck at 25), and slow the gross DEM to $d$ 3.4 times. One exception: on the $T = 1$ double-gross DEM, they found
-  codewords of weight **16** in 0.23 s and 0.65 s, where `0`, `0x01`, and `-1` found 17–18 in 12 s (two seeds each), a
-  new upper bound for this DEM (CC: at least 11).
-- **Bit `0x08`** (automatic gate confirmed): on the two gated DEMs, 1.51x (double gross) and 2.65x (`bb_360`) the steps
-  per second of `rw_opt=0`, and the lightest known weights 2.1 times (18) and 3.5 times (24) sooner; forced on the
-  other inputs, 0.40–0.75x the steps per second.
+- **Bit `0x01`** (automatic): 1.13–7.45x the stored-codeword hits per second on 14 of the 15 comparable DEMs and
+  models (only `color_xyz_d5` is at 0.94x; `-1` gives 1.10–8.01x on 13 of 15), at 0.61–0.99x the steps per second
+  (`surf_d5`: 1.67x, from per-step hit coalescing); in 120 steps, the double-gross DEM reaches weight 18 instead of
+  20. By Rule D3, any non-zero `rw_opt` turns off the hybrid index windows on non-DEM `finH` inputs with $n \ge 500$
+  (also when no stage applies, e.g., classical codes), so the `dgross_288` ($n = 720$) and `mitten_150` ($n = 510$)
+  models ran 50% window steps under `rw_opt=0` and 100% uniform steps under every other mask. Inert on the static codes
+  ($\mathcal{T}_3 = \emptyset$, Rule D1). The enumeration takes 0.04–8.8 ms in these runs where
+  $\mathcal{T}_3 \neq \emptyset$ (`bb_360`: 47,520 triplets in 8.75 ms; up to 10.0 ms across all runs, and
+  0.01–0.06 ms on the static codes). Candidate contraction is capped at weight
+  $\min(d_{\max} + \mathrm{ext} (+ \mathrm{dW}), 64)$ ($\mathrm{ext} = 8$ for single-column candidates with `0x01`, $1$
+  for pairs; Section 11.2), and the binary now keeps the Stern pair filter active only while
+  $d_{\max} + \mathrm{ext} (+ \mathrm{dW}) \le 64$, when contraction is uncapped and the filter is loss-free (rates
+  while $d_{\max} > 56$ not re-measured).
+- **Bit `0x10`** (automatic, a stopping rule): with `min_hits=5`, against `rw_opt=0` (table), `-1` stops 2.5–8.9 times
+  sooner on the 5 degenerate inputs (surface, color, and the 3 models; 2.3–9.0x for explicit `0x11` vs `0`, and
+  1.5–3.2x for `0x11` vs `0x01` alone) with the same bounds, and 1.3–7.1 times later where many logical classes
+  exist (2.0x sooner on `bb_72` at $T = 1$; against `0x01` alone, 2.0–3.6x later on `mitten_150` and `bb_72` full, and
+  57x later on `shyps_225` at $T = 1$: 55,304 vs 968 steps, 783 distinct codewords of weight 8 in 547 classes). Only
+  minimum-weight codewords found in uniform RW steps count toward the canonical classes (window- and slab-step hits are
+  informational): while no uniform step has found one (as on deep circuit DEMs where only window steps reach the
+  minimum weight, Section 7.3), the `min_hits` stop is inactive and RW runs until `steps` or `timeout` (reported
+  explicitly by the binary). At fixed steps, `0x11` vs `0x01` costs 0–20% in steps/s on the DEMs and models except
+  `surf_d5` (0.36x steps/s, canonicalizing 1.11M recorded weight-5 codewords/s; 0.80M stored-codeword hits in 4 s), and
+  gains 1.43–1.86x on four static codes (canonical tables hold up to $2^{24}$ entries for $w \le 64$).
+- **Bit `0x02`** (explicit only, Rule D2 confirmed): on top of the automatic mask (follow-up runs in
+  `results_ablation.jsonl`), `0x13` against `0x11` gives 0.84–1.00x the hits per second on `2bga_102`, `bb_72`,
+  `gross_144`, and `mitten_150`, and 1.37x on `2bga_288_4` ($\mathcal{T}_3 = \emptyset$). When combined with `0x01`
+  (`0x03`), the binary now runs steepest descent over the rows of $G$ before $\mathcal{T}_3$ contraction (and keeps the
+  generator pair filter only while $d_{\max} + \mathrm{ext} (+ \mathrm{dW}) \le 64$), as required for that filter to
+  remain loss-free when $\mathcal{T}_3 \neq \emptyset$ (`rw_opt=3` on `finG` inputs with $\mathcal{T}_3 \neq \emptyset$
+  not re-measured).
+- **Bit `0x04`** (explicit only, confirmed): on multi-round DEMs, the row slabs (`0x05`) never reach weight 18 on the
+  double-gross DEM in 25 s (stuck at 25), and slow the gross DEM to $d = 10$ by 4.4 times against `0x01` (0.176 vs
+  0.040 s; 3.4x against `rw_opt=0`, 0.052 s). On the single-round ($T = 1$) double-gross DEM (follow-up runs in
+  `results_ablation.jsonl`), slabs reach weight **16** in 0.23 s and 0.65 s where `0`, `0x01`, and `-1` find 17–18 in
+  12 s (two seeds each; matching the `qec_cert` bracket $[14, 16]$ of Section 11.3, where CC alone reached 11). Slab
+  steps often find the same few codewords repeatedly (e.g., 4 distinct codewords across 942 slab hits on `mitten_150`
+  at $T = 1$, against 99 across 17,443 index-window hits), which inflates $\langle n \rangle$ of `min_hits` without
+  `0x10`.
+- **Bit `0x08`** (automatic gate confirmed): on the two gated DEMs, `0x19` runs at 1.55x (double gross) and 2.60x
+  (`bb_360`) the steps per second of `0x11` (1.51x and 2.65x vs `rw_opt=0`); forced on the 15 ungated DEMs and models,
+  0.60–0.98x vs `0x11` (0.40–0.75x vs `rw_opt=0`), and 0.49–1.15x vs `0x11` on the 5 static codes (0.50–1.87x vs
+  `0`). With `min_hits=0` (`-1` resolves to `0x09`), `-1` reaches the target weights 18 on double gross (lightest
+  known: 16, verified by `qec_cert` in Section 11.3) and 24 on `bb_360` (lightest known: 23) 2.1x and 3.5x sooner in
+  the median/mean than `rw_opt=0` (double gross, 3 seeds: 0.25, 0.54, 1.58 s vs 1.14, 1.15, 3.91 s, while a separate
+  3-seed series of explicit `0x09`, the same active mask, gave 0.19, 0.31, 0.70 s; `bb_360`, 2 seeds: 1.24, 4.58 s vs
+  5.76, 14.5 s).
 - **Bit `0x20`** (automatic with `outC`/`maxC`): in 4000 steps, every mask exports the complete sets (CC) of
   minimum-weight codewords of `surf_d5` (620), `color_xyz_d5` (65), `bb_72` at $T = 1$ (324), the `bb_72` model
-  (252), and `bb_72_12_6` (84); for `mitten_150` at $T = 1$, `0` exports 74 of the 100, `0x11` 90, and `0x31` all 100.
-- `rw_opt=0` runs at 0.96–0.97x the steps and hits per second of the 0.16.1 binary (three inputs).
+  (252), and `bb_72_12_6` (84); for `mitten_150` at $T = 1$, `0` exports 74 of the 100, `0x01` 90, and `0x21` all 100
+  (`min_hits=0` turns off `0x10`).
+- `rw_opt=0` runs within 5% of the 0.16.1 binary on the three checked inputs (0.96–0.97x the steps and
+  0.96–0.98x the hits per second).
 
 ### 11.2 Thread scaling of the RW stages
 
 ![RW scaling of 0.17.0](figures/scaling_rw_017.png)
 
 `rw_opt=0` (the RW of 0.16.1) against `rw_opt=-1` on `taskset -c 0..p-1`, rates per second of RW time. Top two rows:
-hit-heavy RW (`min_hits=10^9`, so that every hit is recorded; `nothrottle=1`); bottom row: deep and wide DEMs
-(`min_hits=0`), default throttle and `nothrottle=1`. The cases of Section 4 (figures there) were re-run with exactly
-the parameters of 0.15.2.
+hit-heavy RW (`min_hits=10^9`, hits on the up to `cov_cws = 100` stored minimum-weight codewords, Section 11.1;
+`nothrottle=1`; `2bga_102` stops at the 30 s timeout at $p = 1, 2$). Bottom row: first three panels, `steps/s` on deep
+and wide DEMs (`min_hits=0`), default throttle and `nothrottle=1` (on `bb_756`, all six default-throttle points stop at
+the 25 s timeout after 3 of 24 steps on 3 RW threads, `min_w` 673 and 578, so the coinciding $\approx 0.12$ steps/s
+curves, `rw_opt=0` drawn beneath `-1`, equal $3 / 25\text{ s}$; `nothrottle=1` `rw_opt=0` at $p = 16$, 20 of 24 steps,
+and `bb_360` `rw_opt=0` at $p = 1$, 51–52 of 80, also stop at 25 s); fourth panel, RW threads used under the default
+throttle (`rw_opt=0` coincides with `-1` and lies beneath it: 128 on `shyps_225`, 8 on `bb_360`, 3 on `bb_756`). The
+cases of Section 4 (figures there) were re-run with the parameters of 0.15.2.
 
 | Input | rw_opt | steps/s: $p = 1$ | 16 | 64 | 128 | hits/s: $p = 1$ | 16 | 64 | 128 |
 | :--- | :-: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -1449,26 +1497,41 @@ the parameters of 0.15.2.
 
 - **Hit coalescing.** Where hits are frequent, the per-step recording of the stages removes the contention on the
   codeword table of 0.16.1: `bb_72` full DEM 63x at 128 threads against 34x (1.9x the hits per second), `mitten_150`
-  at $T = 1$ 1.42x the hits per second at 128 threads; on the tiny `bb_72` model, 0.16.1 peaks at 8–16 threads, while
-  `-1`, at 5.3 times the cost per step on one thread (the canonical form of each of its about 11 hits per step),
-  reaches 1.36 times the best hit rate of 0.16.1 at 16 threads and keeps 1.5x at 64–128. On the `2bga_102` DEM (1.1–1.3
-  times more hits per step), `-1` runs at 0.62–0.92x the steps per second of `rw_opt=0` at 64–128 threads, with a large
-  run-to-run variance (an open point; a first series of this case was disturbed and re-run).
-- **Wide DEMs.** Double gross (Section 4): 34x at 64 threads instead of 11x. `bb_360` (`0x09`): 2.3x the steps per
-  second on one thread, and 120–132 steps/s at 32–128 threads with `nothrottle=1` against 33–35 (3.8x). `bb_756`
-  ($13230 \times 129276$, 24 steps, `nothrottle=1`): 1.9–2.3x at 16 and 128 threads (0.93x at 64), weight 55 against
-  59. `shyps_225`: about 40x at 64 threads for both modes.
+  at $T = 1$ 1.42x the hits per second at 128 threads; on the tiny `bb_72` model, `rw_opt=0` peaks at 8 threads
+  (455k hits/s; 376k at 16), while `-1`, at 5.3 times the cost per step on one thread (the canonical form of each of
+  its about 11 recorded codewords per step), reaches 1.12 times that peak at 16 threads (511k, 1.36x the 16-thread
+  rate) and keeps 1.32–1.69x at 64–128 (1.32x at 64, 1.50x at 128). On the `2bga_102` DEM (1.1–1.3 times more hits
+  per step), `-1` runs at 0.62–0.88x the steps per second of `rw_opt=0` at 64–128 threads in the tabulated rerun and
+  64-thread check (0.62x, 0.63x, 0.80x at 64, 96, 128 in the rerun, 0.88x in the 64-thread check; 0.93x at 16
+  threads), against 0.42–0.43x in the first series (where `rw_opt=0` reached 12.5–13.6k steps/s vs 9.5–12.1k
+  in the rerun started right after Phase 3, and both series had 3.1–3.7 ms $\mathcal{T}_3$ times at $p \ge 64$;
+  idle-server scaling not re-measured).
+- **Wide DEMs.** Double gross (Section 4): 34x at 64 threads instead of 11x. `bb_360` (`0x09`, 80 steps): 2.3x the
+  steps per second on one thread, and 120 and 132 steps/s at 32 and 128 threads (63 at 64, where the 80 guided steps
+  run in two waves of $64 + 16$; at most 2.5 steps per thread for $p \ge 32$) with `nothrottle=1`, against 16, 35, and
+  33 for `rw_opt=0` (7.6x, 1.8x, and 4.1x at equal thread counts; 0.21–0.42 vs 0.93–1.67 s/step per thread).
+  `bb_756` ($13230 \times 129276$, 24 steps, `nothrottle=1`): 2.3x at 16 threads (1.87 vs 0.80 steps/s, where
+  `rw_opt=0` stopped at the 25 s timeout after 20 steps), while at 64 and 128 threads only 24 threads run one step
+  each (11.6 and 9.8 s vs 10.9 and 18.9 s, 5.7–6.0 vs 9.1–14.5 s/step per thread), so the 0.93x (64) and 1.9x (128)
+  step-rate ratios reflect single-step latency rather than sustained throughput (weight 52–56 against 59–60;
+  multi-step scaling with $\texttt{steps} \gg p$ not re-measured). `shyps_225`: about 40x at 64 threads for both modes.
 - **Throttle.** With the default throttle, the RW threads of these short runs are set by the steps throttle
   ($\lceil \texttt{steps}/10 \rceil$: 8 for `bb_360` with 80 steps, 3 for `bb_756` with 24), equally for both modes
-  (`bb_360`: 34–39 against 12–14 steps/s with 8 threads). In long runs (`steps=100000`), both modes get the cap of 32
-  RW threads on this server: the memory budget, a quarter of the RAM, covers about 148 dense threads of 428 MB
+  (`bb_360`: 34–39 against 12–14 steps/s with 8 threads). In long runs (`steps=100000`), both modes get the cap of
+  32 RW threads on this server: the memory budget, a quarter of the RAM, covers about 148 dense threads of 428 MB
   (`bb_756`, `rw_opt=0`) or 650 sparse-dual threads of 97 MB; the smaller footprint of Stage 4 raises the RW threads
-  only on smaller machines (16 GiB: 10 against 32). Since 0.17.1, candidate shortening is also gated at weight 64
-  (`RW_SHORTEN_WMAX = 64`), avoiding $O(w^3)$ greedy contraction on heavy initial candidates (weight $500..6600$) in the
-  first uniform RW step on `bb_756`.
+  only on smaller machines (16 GiB: 32 instead of 10). In the 0.17.0 check on `bb_756` (`steps=100000`, `timeout=20`,
+  32 RW threads at $p = 64, 128$), `rw_opt=0` stopped at 21.8 s (19.3 s/step per thread, 32 steps), whereas `rw_opt=-1`
+  (`0x09`) ran to 42.8 s ($p = 64$) and 37.4 s ($p = 128$) (28.4 and 27.4 s/step per thread), because sparse-dual steps
+  did not poll the stop flag and contracted heavy initial candidates (hundreds or thousands of columns). Since 0.17.1,
+  sparse-dual steps poll the stop flag every 16 columns (in both the elimination/entries pass and the pair scan) and
+  candidate shortening is capped at $\min(d_{\max} + \mathrm{ext} (+ \mathrm{dW}), 64)$ once $d_{\max} > 0$ (in the
+  current binary, the Stern filters are active only while $d_{\max} + \mathrm{ext} (+ \mathrm{dW}) \le 64$, and the
+  Stage-1 $\mathcal{T}_3$ build is counted in `timeout`); the `bb_756` stopping time and step rate have not been
+  re-measured.
 - **CC.** The CC of the double-gross DEM (`method=2 wmax=5`, Section 4) takes 0.85 s on one thread and 0.19–0.20 s on
-  16–64 threads, against 0.78 s and 0.15 s with the 0.16.1 binary (medians of 3; the difference is in the search, not
-  in reading the input): an open point.
+  16–64 threads, against 0.78 s and 0.15 s with the 0.16.1 binary (medians of 3; single runs in Section 4: 0.91 s and
+  0.22–0.23 s; the difference is in the search, not in reading the input): an open point.
 
 ### 11.3 Two-stage certification portfolio with `qec_cert`
 
@@ -1490,17 +1553,24 @@ which handed every distance-only call to `qec_cert` (the `engine="cert"` run tim
 
 - **Start-up.** On the 20 instances that the binary certifies in under 2 s, the two-stage `auto` is as fast as the
   binary (median 0.087 s against 0.443 s for the delegation of 0.16.1): 18 of them end without importing `qec_cert`
-  (16 in Stage A, the 2 classical codes natively); `import qec_cert` costs 0.215 s.
-- **Large DEMs** (more than 25,000 raw error mechanisms) go to `qec_cert` first: the 6 such circuits are certified
-  except the double-gross circuit ($[13, 16]$ for every configuration), as by `qec_cert` alone; the binary alone leaves
-  `gross` ($[9, 10]$), `mitten_270` custom ($[8, 9]$), and `yarn_mitten_150` ($[7, 8]$) open in 45 s.
+  (16 in Stage A, the 2 classical codes natively); `import qec_cert` costs 0.215 s (median of 7 warm processes,
+  0.21–0.22 s; about 0.6 s cold).
+- **Large DEMs** (more than 25,000 raw error mechanisms) go to `qec_cert` first: 6 of the 7 such circuits are certified,
+  as by `qec_cert` alone, and the double-gross circuit reaches $[13, 16]$ (with `qec_cert`; the binary alone gets
+  $[8, 18]$). On three of the six (`bb_90`, `mitten_150` custom, `mitten_270` hef) the binary alone is faster
+  (1.05–3.07 s vs 1.70–3.81 s), while in 45 s it leaves `gross` ($[9, 10]$), `mitten_270` custom ($[8, 9]$),
+  `yarn_mitten_150` ($[7, 8]$), and double gross ($[8, 18]$) open.
 - **Stage-A budget.** Where `qec_cert` certifies much faster than CC, the default $\tau_1 = 22.5$ s costs time:
   `bb_360` 20.1 s against 2.45 s (`auto_0161`), `2bga_102` circuit 19.5 against 1.35, `2bga_252` 14.1 against 1.27,
   `shyps_225` 11.9 against 1.09; `2bga_292` stays open ($[22, 23]$; `qec_cert` alone: 23 in 42 s). In a sweep of
-  $\tau_1 \in \{2, 5, 15, 22.5\}$ s on 8 such instances, at 16 and 64 threads, $\tau_1 = 2$ s is the best or equal on
-  all of them (e.g., the `2bga_102` circuit 3.3 s instead of 19.5–23.8 s), and over all 35 instances it saves 28 s
-  with the same 31 exact: a shorter default (e.g., $\tau_1 = \min(\max(2, \texttt{timeout}/10), 30)$ s) would be
-  better (adopted in 0.17.1 as $\tau_1 = \min(\max(2, \texttt{timeout}/10), 10)$ s).
+  $\tau_1 \in \{2, 5, 15, 22.5\}$ s on 8 such instances, at 16 and 64 threads, $\tau_1 = 2$ s is the fastest on all 5
+  that enter Stage B and within run-to-run noise on the 3 that end in Stage A or at the timeout (e.g., the `2bga_102`
+  circuit 3.3 s instead of 19.5–23.8 s). Over all 35 instances — run in a separate follow-up session where 15 of the
+  18 non-importing easy instances ran concurrently with long 64-thread `bb_360` or `2bga_292` jobs on the other
+  socket, shifting all 18 up by 4–86% and their 20-instance median from 0.087 s to 0.123 s (`surf_d7`: 0.92 s in the
+  sweep vs 1.69 s in the follow-up) — it saves 28 s with the same 31 exact: a shorter default (e.g.,
+  $\tau_1 = \min(\max(2, \texttt{timeout}/10), 30)$ s) would be better (adopted in 0.17.1 as
+  $\tau_1 = \min(\max(2, \texttt{timeout}/10), 10)$ s; not re-measured on the portfolio).
 - On the $T = 1$ double-gross DEM, `qec_cert` alone gives $[14, 16]$, the two-stage `auto` $[13, 18]$: with a codeword
   from Stage A (weight 18), Stage B skips the upper-bound stage of `qec_cert` (`use_ub=False`), which finds the 16
-  (fixed in 0.17.1 by keeping `use_ub=True` whenever $d_{\max, A} - \max(1, d_{\min, A}) \ge 3$).
+  (fixed in 0.17.1 by keeping `use_ub=True` whenever $d_{\max, A} - \max(1, d_{\min, A}) \ge 3$; not re-measured).

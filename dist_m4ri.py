@@ -17,6 +17,7 @@ no Python-level threading or subprocess-per-core logic is necessary.
 import os
 import sys
 import json
+import math
 import time
 import random
 import shutil
@@ -33,7 +34,7 @@ _codedistance_mod = None
 _stim_mod = None
 _qec_cert_mod = None
 
-__version__ = "0.17.1"
+__version__ = "0.17.2"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -84,7 +85,7 @@ def _get_codedistance():
             import codedistance
             _codedistance_mod = codedistance
         except ImportError:
-            raise ImportError("codedistance library is requested but not installed.")
+            raise ImportError("codedistance library is requested but not installed.") from None
     return _codedistance_mod
 
 
@@ -96,44 +97,129 @@ def _get_stim():
             import stim
             _stim_mod = stim
         except ImportError:
-            raise ImportError("stim library is requested but not installed.")
+            raise ImportError("stim library is requested but not installed.") from None
     return _stim_mod
 
 
+# qec_cert (engine='cert' and 'auto'): since version 0.17.2, a single probe per process imports it and loads its native
+# library libqeccert.so (which qec_cert itself loads only inside a certification), see _probe_qec_cert().
+_qec_cert_status: Optional[str] = None  # None: not probed yet; "": usable; otherwise why not (one line)
+_qec_cert_missing = False  # the probe found no qec_cert package at all (not installed)
+_qec_cert_warned = False  # engine='auto' has written its warning on a qec_cert which is not usable
+_QEC_CERT_REMEDY = ("build qec-cert (make) and pip install -e it, or set QEC_CERT_LIB to its libqeccert.so and "
+                    "PYTHONPATH to its repository")
+
+
+def _probe_qec_cert() -> str:
+    """
+    Imports qec_cert (its modules io and pipeline) and loads its native library libqeccert.so with qec_cert._lib.load()
+    (since version 0.17.2), once per process: the result is memoized.
+
+    Returns:
+        "" if qec_cert is usable (then _get_qec_cert() returns its modules), otherwise the reason on one line, with
+        the remedy.
+    """
+    global _qec_cert_mod, _qec_cert_status, _qec_cert_missing
+    if _qec_cert_mod is not None:
+        return ""
+    if _qec_cert_status is not None:
+        return _qec_cert_status
+    try:
+        import qec_cert
+        from qec_cert import io as _qec_io, pipeline as _qec_pipeline
+    except Exception as e:  # (ImportError, or an error inside its import)
+        _qec_cert_missing = isinstance(e, ModuleNotFoundError) and e.name == "qec_cert"
+        why = "is not installed" if _qec_cert_missing else f"cannot be imported ({type(e).__name__}: {e})"
+        _qec_cert_status = f"qec_cert {why}: {_QEC_CERT_REMEDY}"
+        return _qec_cert_status
+    try:
+        from qec_cert import _lib as _qec_lib
+    except ImportError:  # (a version without the loader: the library is loaded by its first certification)
+        _qec_lib = None
+    try:
+        if _qec_lib is not None:
+            _qec_lib.load()
+    except Exception as e:  # (qec_cert._lib.LibraryNotFound, an OSError, or a library which cannot be used)
+        _qec_cert_status = (f"qec_cert cannot load its library libqeccert.so ({type(e).__name__}: {e}): "
+                            f"{_QEC_CERT_REMEDY}")
+        return _qec_cert_status
+    _qec_cert_mod = (qec_cert, _qec_io, _qec_pipeline)
+    _qec_cert_status = ""
+    return ""
+
+
 def _get_qec_cert():
-    """Lazily imports qec_cert (io, pipeline) only when requested."""
-    global _qec_cert_mod
-    if _qec_cert_mod is None:
-        try:
-            import qec_cert
-            from qec_cert import io as _qec_io, pipeline as _qec_pipeline
-            _qec_cert_mod = (qec_cert, _qec_io, _qec_pipeline)
-        except ImportError:
-            raise ImportError("qec_cert library is requested (engine='cert') but not installed.")
+    """
+    The modules (qec_cert, qec_cert.io, qec_cert.pipeline), imported (with the library libqeccert.so loaded) by the
+    first call, see _probe_qec_cert().
+
+    Raises:
+        ImportError: if qec_cert is not usable (the message says why, and how to install it).
+    """
+    reason = _probe_qec_cert()
+    if reason:
+        raise ImportError(reason) from None
     return _qec_cert_mod
 
 
 def _has_qec_cert() -> bool:
-    """Checks whether qec_cert is importable without raising ImportError."""
-    try:
-        _get_qec_cert()
-        return True
-    except ImportError:
+    """Whether qec_cert is usable (imported, with its library loaded, see _probe_qec_cert())."""
+    return _probe_qec_cert() == ""
+
+
+def _qec_cert_lib_found(spec: Any) -> bool:
+    """
+    Whether the library libqeccert.so of the qec_cert package found by importlib.util.find_spec (spec) is where
+    qec_cert looks for it (qec_cert/_lib.py: the file QEC_CERT_LIB, otherwise libqeccert.so next to the package or in
+    build/ of its repository), without importing qec_cert.
+    """
+    env = os.environ.get("QEC_CERT_LIB")
+    if env:
+        return os.path.isfile(env)
+    origin = getattr(spec, "origin", None)
+    if not origin or not os.path.isfile(origin):
         return False
+    pkg = Path(origin).resolve().parent
+    return (pkg / "libqeccert.so").is_file() or (pkg.parent / "build" / "libqeccert.so").is_file()
 
 
 def _qec_cert_available() -> bool:
     """
-    Whether qec_cert can be found, without importing it (importlib.util.find_spec): engine='auto' imports qec_cert
-    (about 0.6 s) only when its Stage B runs, see _auto_two_stage().
+    engine='auto': whether qec_cert is usable, without importing it if this can be avoided (the import takes about
+    0.6 s, and Stage A of engine='auto' often answers alone, see _auto_two_stage()): the memoized result of
+    _probe_qec_cert() once it has run; otherwise False if qec_cert cannot be found (importlib.util.find_spec), True if
+    its library libqeccert.so is found where qec_cert looks for it (see _qec_cert_lib_found()), and otherwise the
+    result of the probe, which then runs at once.
     """
     if _qec_cert_mod is not None:
         return True
+    if _qec_cert_status is not None:
+        return _qec_cert_status == ""
     try:
         import importlib.util
-        return importlib.util.find_spec("qec_cert") is not None
+        spec = importlib.util.find_spec("qec_cert")
     except Exception:  # (ValueError for a module without __spec__, ...)
         return False
+    if spec is None:
+        return False
+    if _qec_cert_lib_found(spec):
+        return True
+    return _probe_qec_cert() == ""
+
+
+def _auto_qec_cert_unusable_reason() -> str:
+    """
+    engine='auto' without a usable qec_cert: the reason recorded in _last_run_stats["engine_auto"].  If qec_cert is
+    installed but not usable (see _probe_qec_cert()), a warning is written to stderr, once per process.
+    """
+    global _qec_cert_warned
+    if not _qec_cert_status or _qec_cert_missing:
+        return "qec_cert is not installed: dist_m4ri with the whole timeout"
+    if not _qec_cert_warned:
+        _qec_cert_warned = True
+        sys.stderr.write(f"# Warning: engine='auto': {_qec_cert_status}; dist_m4ri runs alone, with the whole "
+                         f"timeout (written once)\n")
+    return "qec_cert is not usable: dist_m4ri with the whole timeout"
 
 
 def __getattr__(name: str) -> Any:
@@ -159,6 +245,7 @@ _distance_cache: Dict[str, Any] = {}
 _use_distance_cache: bool = True
 _distance_cache_file: Optional[str] = None
 _newer_cache_files: Set[str] = set()  # cache files written by a newer version: ignored and never overwritten
+_CACHE_PMIN_FIX_VERSION = "0.17.2"  # the 'dem:...:pmin=' records of older cache files are dropped on loading
 _last_run_stats: Dict[str, Any] = {}
 _last_css_stats: Dict[str, Dict[str, Any]] = {"X": {}, "Z": {}}
 
@@ -184,7 +271,10 @@ def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str
     """
     Loads distance cache from a JSON file into memory.
     Inspects cache version silently; a cache file written by a newer version is ignored with a warning, and it is
-    never overwritten by save_distance_cache().
+    never overwritten by save_distance_cache().  The records of DEMs with a probability cutoff pmin > 0 (keys
+    'dem:...:pmin=...') of a file written before version 0.17.2 (or without a version) are not loaded, so that they
+    are computed again: engine='cert' ignored pmin before version 0.17.2 (its result for the full DEM was cached under
+    the key of the DEM with the cutoff).
     """
     global _distance_cache, _distance_cache_file
     target_file = str(Path(filepath).resolve()) if filepath is not None else _distance_cache_file
@@ -202,6 +292,9 @@ def load_distance_cache(filepath: Optional[Union[str, Path]] = None) -> Dict[str
                         f"(current {__version__}); ignoring incompatible cache (the file is not overwritten).\n"
                     )
                     return _distance_cache
+                if cache_ver is None or _parse_version(str(cache_ver)) < _parse_version(_CACHE_PMIN_FIX_VERSION):
+                    for k in [k for k in data if k.startswith("dem:") and ":pmin=" in k]:
+                        del data[k]  # (possibly the result of engine='cert' for the full DEM)
                 # Sanitize any legacy CSS cache entries where dmax was set from dmin when dmax_X == dmax_Z == 0
                 for k, v in data.items():
                     if isinstance(v, dict) and k.startswith("css:"):
@@ -277,11 +370,14 @@ def get_distance_cache() -> Dict[str, Any]:
 def format_bounds_list(dmin: int, dmax: int, num_rw: int) -> List[int]:
     """
     Returns [dmin, dmax, num_rw] according to:
-    - [d, d, 0] if known exactly
+    - [d, d, 0] if known exactly; also [1, 1, 0] for dmax == 1 (every nonzero codeword has weight >= 1: a codeword of
+      weight 1 gives d = 1; since version 0.17.2, [0, 1, num_rw] before)
     - [dmin, 0, 0] if there is no upper bound (dmax == 0)
     - [0, dmax, num_rw] if there is no lower bound (dmin <= 1)
     - [dmin, dmax, num_rw] otherwise
     """
+    if dmax == 1:
+        return [1, 1, 0]
     eff_dmin = dmin if dmin > 1 else 0
     eff_dmax = dmax if dmax > 0 else 0
     eff_rw = num_rw if num_rw > 0 else 0
@@ -354,9 +450,10 @@ def rw_infoset_estimate(
     Among the weights max(dmin, 1) <= w < d (not excluded by CC), the weight hardest to find (the smallest P(w),
     see rw_infoset_find_prob()) is used: a single codeword of this weight is missed in `steps` RW steps with uniform
     random permutations with probability (1 - P)^steps.  The number of RW steps for the target miss probability is
-    given in total, with the fraction steps / steps_total of uniform steps as in the run (localized windows, used in
-    about half of the steps for n >= 500, are not counted).  Same as print_rw_infoset_estimate() in the binary.  Like
-    rw_infoset_find_prob(), this is the isolated-codeword uniform-subset baseline, a diagnostic and not a bound.
+    given in total, with the fraction steps / steps_total of uniform steps as in the run (the window steps are not
+    counted: kwin > 0, the hybrid index windows of every other step for n >= 500, and the row slabs of rw_opt 4).
+    Same as print_rw_infoset_estimate() in the binary.  Like rw_infoset_find_prob(), this is the isolated-codeword
+    uniform-subset baseline, a diagnostic and not a bound.
 
     Args:
         n: Block length (number of columns of H).
@@ -427,7 +524,11 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
       minimum weight found, {"w": the weight, "classes": the classes C_obs, "raw_cws": the distinct codewords,
       "M_eff": raw_cws / classes, "unif_inc": the class incidences N_unif of the uniform RW steps (a class counts once
       per step), "f1", "f2": the classes seen in exactly one and two uniform steps, "p_GT": the Good-Turing unseen
-      mass f1 / N_unif, "C0_Chao2": the Chao2 estimate of the classes not seen};
+      mass f1 / N_unif, "C0_Chao2": the Chao2 estimate of the classes not seen; M_eff, p_GT, and C0_Chao2 are None
+      if the binary prints n/a: no codeword of the weight w in a uniform step, since version 0.17.2}, with the notes
+      "canon_full" (True: more than 2^24 classes, the rule of <n> decides), "min_hits_inactive" (the note of the binary
+      when no uniform step found a codeword of the minimum weight: the min_hits stop could not fire), and
+      "canon_decides" (True if the binary says that the canonical classes, not <n>, are the min_hits statistic);
     - "rw_fkg" (from '# RW FKG score: ...'): the running means of the Harris-FKG score L_FKG(J) of the information
       sets, {"mean_unif", "steps_unif": over the uniform RW steps, "mean_win", "steps_win": over the window steps,
       "neg_lnC": the value printed as -lnC (the uniform-subset model, -ln C(n, r))}.
@@ -438,7 +539,10 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
         return stats
     hit_warning: Optional[List[str]] = None
     skip_estimate = False
-    num = r"([-+]?(?:\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?|[iI][nN][fF]|[nN][aA][nN]))"  # (%g, %f)
+    num = r"([-+]?(?:\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?|[iI][nN][fF]|[nN][aA][nN])|n/a)"  # (%g, %f)
+
+    def fnum(x: str) -> Optional[float]:  # (n/a: no data)
+        return None if x == "n/a" else float(x)
     for line in stderr.splitlines():
         line_s = line.strip()
         if line_s.startswith("#   information-set estimate"):  # printed by the binary after a hit warning
@@ -503,7 +607,7 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
             m_t = re.search(rf"T3=(-?\d+) \({num} ms\), G_rows=(-?\d+), rw_opt=0x([0-9a-fA-F]+)", line_s)
             if m_t:
                 g = m_t.groups()
-                stats["rw_triplets"] = {"T3": int(g[0]), "ms": float(g[1]), "G_rows": int(g[2]),
+                stats["rw_triplets"] = {"T3": int(g[0]), "ms": fnum(g[1]) or 0.0, "G_rows": int(g[2]),
                                         "rw_opt": int(g[3], 16)}
             continue
         if line_s.startswith("# RW canonical (w="):  # rw_opt bit 16: the canonical classes of the minimum weight
@@ -512,16 +616,22 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
             if m_c:
                 g = m_c.groups()
                 stats["rw_canon"] = {
-                    "w": int(g[0]), "classes": int(g[1]), "raw_cws": int(g[2]), "M_eff": float(g[3]),
-                    "unif_inc": int(g[4]), "f1": int(g[5]), "f2": int(g[6]), "p_GT": float(g[7]),
-                    "C0_Chao2": float(g[8])}
+                    "w": int(g[0]), "classes": int(g[1]), "raw_cws": int(g[2]), "M_eff": fnum(g[3]),
+                    "unif_inc": int(g[4]), "f1": int(g[5]), "f2": int(g[6]), "p_GT": fnum(g[7]),
+                    "C0_Chao2": fnum(g[8])}
+            continue
+        if line_s.startswith("# Note: more than") and "canonical classes" in line_s:  # (rw_opt 16: tables full)
+            stats["canon_full"] = True
+            continue
+        if line_s.startswith("# Note: the min_hits stop was inactive"):  # (rw_opt 16: no uniform-step data)
+            stats["min_hits_inactive"] = line_s[len("# Note: "):]
             continue
         if line_s.startswith("# RW FKG score:"):  # the running means of the Harris-FKG score of the information sets
             m_f = re.search(rf"mean_unif={num} \(steps=(-?\d+)\), mean_win={num} \(steps=(-?\d+)\), -lnC={num}", line_s)
             if m_f:
                 g = m_f.groups()
-                stats["rw_fkg"] = {"mean_unif": float(g[0]), "steps_unif": int(g[1]), "mean_win": float(g[2]),
-                                   "steps_win": int(g[3]), "neg_lnC": float(g[4])}
+                stats["rw_fkg"] = {"mean_unif": fnum(g[0]), "steps_unif": int(g[1]), "mean_win": fnum(g[2]),
+                                   "steps_win": int(g[3]), "neg_lnC": fnum(g[4])}
             continue
         if line_s.startswith("#   rounds of the DEM:"):  # the input summary (debug & 1, a DEM)
             m_r = re.search(r"D=(\d+) detectors and L=(\d+) columns per round \(estimated: score ([0-9.]+)\)", line_s)
@@ -563,6 +673,8 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
             m_set = re.search(
                 r"<n>=([0-9.]+) over (\d+) cws of w=(\d+)\.\.(\d+) \(min_hits=(\d+), cov_cws=(-?\d+)\)", line_s
             )
+            if "not used: the canonical classes decide" in line_s:  # (since version 0.17.2 of the binary)
+                stats["canon_decides"] = True
             if m_set:
                 stats["avg_hits"] = float(m_set.group(1))
                 stats["set_cws"] = int(m_set.group(2))
@@ -592,6 +704,76 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
     if cc_rounds and all(r["nodes"] is not None for r in cc_rounds):
         stats["cc_nodes"] = sum(r["nodes"] for r in cc_rounds)
     return stats
+
+
+def _canon_rule_decides(stats: Dict[str, Any]) -> bool:
+    """
+    Whether the min_hits stop of the binary run (stats, see _parse_stderr_stats()) used the canonical classes of
+    rw_opt 16 (the Good-Turing / Chao2 rule on the uniform RW steps) instead of the average hits <n>: if the binary says
+    so (since version 0.17.2), or if it printed the canonical classes with min_hits > 0 (and its tables were not full).
+    """
+    if stats.get("canon_decides"):
+        return True
+    return bool(stats.get("rw_canon")) and stats.get("min_hits", 0) > 0 and not stats.get("canon_full")
+
+
+def _canon_rule_text(stats: Dict[str, Any]) -> str:
+    """
+    The canonical stopping rule of min_hits (rw_opt 16) for explain_bounds(), evaluated on the classes of the run: N
+    step incidences of the C classes in the uniform RW steps, f1 and f2 classes seen in one and two of them; RW stops
+    once N >= max(15, 3 min_hits), N / C >= min_hits, f1 / N <= min(0.02, 3 exp(-min_hits)), and the Chao2 fraction
+    C0 / (C + C0) <= 0.05 with C0 = f1 (f1 - 1) / (2 (f2 + 1)) ('' if this rule did not decide).
+    """
+    import math
+    if not _canon_rule_decides(stats):
+        return ""
+    if stats.get("min_hits_inactive"):
+        return f"Stopping rule (canonical classes, rw_opt 16): {stats['min_hits_inactive']}."
+    canon, mh = stats.get("rw_canon") or {}, stats.get("min_hits", 0)
+    n_u, cls, f1, f2 = canon.get("unif_inc", 0), canon.get("classes", 0), canon.get("f1", 0), canon.get("f2", 0)
+    if mh <= 0 or n_u <= 0 or cls <= 0:
+        return ("Stopping rule (canonical classes, rw_opt 16): inactive, no codeword of the minimum weight was found "
+                "in a uniform RW step.")
+    need, eps = max(15, 3 * mh), min(0.02, 3.0 * math.exp(-mh))
+    c0 = f1 * (f1 - 1) / (2.0 * (f2 + 1))
+    tests = [(n_u >= need, f"N = {n_u} >= max(15, 3 min_hits) = {need}"),
+             (n_u / cls >= mh, f"N/C = {n_u / cls:.2f} >= min_hits = {mh}"),
+             (f1 / n_u <= eps, f"Good-Turing f1/N = {f1 / n_u:.3g} <= min(0.02, 3 exp(-min_hits)) = {eps:.3g}"),
+             (c0 / (cls + c0) <= 0.05, f"Chao2 C0/(C+C0) = {c0 / (cls + c0):.3g} <= 0.05")]
+    held = ", ".join(f"{t} ({'yes' if ok else 'no'})" for ok, t in tests)
+    verdict = "all hold: RW stopped by this rule" if all(ok for ok, _ in tests) else "not all hold"
+    return (f"Stopping rule (canonical classes of weight {canon.get('w')} in the uniform RW steps, rw_opt 16; C = "
+            f"{cls}, f1 = {f1}, f2 = {f2}): {held}; {verdict}.")
+
+
+def _lower_bound_text(dmin: int, stats: Optional[Dict[str, Any]], method: Optional[int] = None) -> str:
+    """
+    For explain_bounds(): a lower bound dmin > 1 and its source as far as the statistics stats of the call show it
+    (since version 0.17.2; before, every lower bound was attributed to CC): qec_cert (engine='cert'), a stage of
+    engine='auto', the CC search of a run of the binary (also without statistics with method=2), or a cache record.
+    """
+    st = stats or {}
+    none_below = f"no non-trivial codeword of weight w <= {dmin - 1}"
+    cert = st.get("engine_cert")
+    if cert is not None:
+        if cert.get("cached"):
+            return f"{none_below} (a cache record; engine='cert')"
+        if (cert.get("lb", 0) or 0) >= dmin:
+            return f"{none_below}, certified by qec_cert (engine='cert')"
+        return f"{none_below} (a cache record or dmin=; qec_cert itself certified less)"
+    auto = st.get("engine_auto")
+    if auto:
+        for key, what in (("stage_c", "the CC search of the binary after qec_cert (engine='auto')"),
+                          ("stage_b", "qec_cert (Stage B of engine='auto')"),
+                          ("stage_a", "the CC search of the binary (Stage A of engine='auto')")):
+            b = auto.get(key)
+            if b is not None and (b[0] or 0) >= dmin:
+                cached = key == "stage_a" and auto.get("stage_a_cached")
+                return f"{none_below}, certified by {what}" + (", from the cache" if cached else "")
+    if "hit_warnings" in st or "rw_n" in st or (not st and method == 2):  # (a run of the binary: its CC search)
+        return (f"All cluster weights w <= {dmin - 1} were exhaustively analyzed by CC without finding any non-trivial "
+                f"codewords (from a certified lower bound of the cache or dmin=, if given)")
+    return f"{none_below} (a certified lower bound of the cache, of an earlier run, or dmin=)"
 
 
 def explain_bounds(
@@ -624,8 +806,7 @@ def explain_bounds(
     if dmin > 0 and dmin == dmax:
         lines.append(f"  {prefix}Lower bound (dmin = {dmin}): Exact distance certified (dmin == dmax == {dmin}).")
     elif dmin > 1:
-        lines.append(f"  {prefix}Lower bound (dmin = {dmin}): All cluster weights w <= {dmin - 1} "
-                     f"were exhaustively analyzed by CC without finding any non-trivial codewords.")
+        lines.append(f"  {prefix}Lower bound (dmin = {dmin}): {_lower_bound_text(dmin, stats, method)}.")
     else:
         lines.append(f"  {prefix}Lower bound (dmin = {dmin}): No non-trivial lower bound certified (dmin <= 1).")
 
@@ -663,12 +844,20 @@ def explain_bounds(
             if stats.get("min_hits", 0) > 0 and "avg_hits" in stats:
                 import math
                 conv_str = "CONVERGED" if stats.get("rw_converged") else "not converged"
-                lines.append(
-                    f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}, "
-                    f"cov_cws = {stats['cov_cws']}): <n> = {stats['avg_hits']:.2f} average hits per codeword "
-                    f"({stats['set_cws']} codewords of weight {stats['set_w_lo']}..{stats['set_w_hi']}), "
-                    f"P_fail ~ exp(-<n>) = {math.exp(-stats['avg_hits']):.2g} ({conv_str})."
-                )
+                if _canon_rule_decides(stats):  # (rw_opt 16: the canonical classes are the stopping statistic)
+                    lines.append(
+                        f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}): decided by the canonical classes "
+                        f"of rw_opt 16 in the uniform RW steps ({conv_str}; see the stopping rule below); the average "
+                        f"<n> = {stats['avg_hits']:.2f} hits per codeword ({stats['set_cws']} codewords of weight "
+                        f"{stats['set_w_lo']}..{stats['set_w_hi']}, cov_cws = {stats['cov_cws']}) is not used for the "
+                        f"stop.")
+                else:
+                    lines.append(
+                        f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}, "
+                        f"cov_cws = {stats['cov_cws']}): <n> = {stats['avg_hits']:.2f} average hits per codeword "
+                        f"({stats['set_cws']} codewords of weight {stats['set_w_lo']}..{stats['set_w_hi']}), "
+                        f"P_fail ~ exp(-<n>) = {math.exp(-stats['avg_hits']):.2g} ({conv_str})."
+                    )
             for ew in stats.get("extra_weights", []):
                 lines.append(
                     f"  {prefix}Codewords (w = {ew['w']}): {ew['cws']} codewords, "
@@ -708,7 +897,7 @@ def explain_bounds(
         rw_threads = stats.get("rw_threads", 0)
         step_wall = stats.get("rw_step_time", 0.0) / rw_threads if rw_threads > 0 else 0.0
         avg = stats.get("avg_hits", 0.0)
-        if stats.get("min_hits", 0) > 0 and avg > 0.0:
+        if stats.get("min_hits", 0) > 0 and avg > 0.0 and not _canon_rule_decides(stats):  # (the rule of <n>)
             p_hit = math.exp(-avg)
             if p_hit > 0.01:
                 need = math.ceil(num_rw * math.log(100.0) / avg)  # the average number of hits grows with the steps
@@ -741,36 +930,48 @@ def explain_bounds(
                     n_all = stats.get("rw_steps", n_unif)
                     p1 = rw_infoset_find_prob(n_cols, rank, dmax, pairs_l)
                     st = stats.get("rw_step_types", {}).get(dmax)
-                    if st is not None and st["cws"] > 0:  # the hits of the uniform steps only
-                        n_ref, obs, note = n_unif, st["uniform_hits"] / st["cws"], " in the uniform steps"
+                    if st is not None and st["uniform_cws"] > 0:  # the hits of the uniform steps only
+                        n_ref, obs = n_unif, st["uniform_hits"] / st["uniform_cws"]
+                        note = " over the codewords found in the uniform steps"
                     else:
                         n_ref, obs = n_all, stats["hits_avg"]
                         note = "" if n_unif == n_all else ", including the steps with localized windows"
-                    exp_hits = n_ref * p1
+                    # (the average over the codewords found, each at least once: the zero-truncated Poisson mean
+                    # mu / (1 - exp(-mu)) of the mu = n p hits of a codeword, as the hit test of the binary uses)
+                    mu = n_ref * p1
+                    exp_hits = mu / -math.expm1(-mu) if mu > 0.0 else 1.0
                     verdict = ("the uniform model is conservative here" if obs >= exp_hits else
                                "codewords are found less often than in the uniform model, the information-set "
                                "estimate may be optimistic")
                     lines.append(
-                        f"  {prefix}Model check: expected hits per codeword of weight {dmax} in {n_ref} uniform RW "
-                        f"steps: {exp_hits:.3g}, observed average {obs:.2f}{note} ({verdict})."
+                        f"  {prefix}Model check: expected hits per codeword of weight {dmax} found in {n_ref} uniform "
+                        f"RW steps (zero-truncated Poisson, mean {mu:.3g} hits): {exp_hits:.3g}, observed average "
+                        f"{obs:.2f}{note} ({verdict})."
                     )
         elif stats.get("rw_n", 0) > 0:
             lines.append(f"  {prefix}Information-set estimate: not available (ksub > 0 or kwin > 0: no uniform "
                          f"random information sets).")
         canon = stats.get("rw_canon")
-        if canon and canon.get("classes", 0) > 0:  # the RW pipeline of the binary (rw_opt bit 16): measured coverage
+        if canon and canon.get("classes", 0) > 0 and canon.get("unif_inc", 0) > 0:  # (rw_opt bit 16): coverage
+            m_eff = f"{canon['M_eff']:.2f}" if canon.get("M_eff") is not None else "n/a"
+            p_gt = f"{canon['p_GT']:.3g}" if canon.get("p_GT") is not None else "n/a"
+            c0 = f"{canon['C0_Chao2']:.1f}" if canon.get("C0_Chao2") is not None else "n/a"
             lines.append(
                 f"  {prefix}Canonical class coverage (w = {canon['w']}; codewords equal up to the weight-3 relations "
                 f"T3 of the columns or the rows of G form a class): {canon['classes']} classes of {canon['raw_cws']} "
-                f"distinct codewords (M_eff = {canon['M_eff']:.2f} codewords per class); {canon['unif_inc']} class "
+                f"distinct codewords (M_eff = {m_eff} codewords per class); {canon['unif_inc']} class "
                 f"incidences in the uniform RW steps, f1 = {canon['f1']} classes seen in one step, f2 = {canon['f2']} "
-                f"in two: Good-Turing unseen mass p_GT = {canon['p_GT']:.3g}, Chao2 estimate of the classes not seen "
-                f"C0 = {canon['C0_Chao2']:.1f} (empirical, not a bound)."
+                f"in two: Good-Turing unseen mass p_GT = {p_gt}, Chao2 estimate of the classes not seen "
+                f"C0 = {c0} (empirical, not a bound)."
             )
+        rule = _canon_rule_text(stats)
+        if rule:
+            lines.append(f"  {prefix}{rule}")
         fkg = stats.get("rw_fkg")
-        if fkg and (fkg.get("steps_unif", 0) > 0 or fkg.get("steps_win", 0) > 0):
-            win_str = (f", {fkg['mean_win']:.2f} over {fkg['steps_win']} window steps" if fkg.get("steps_win", 0) > 0
-                       else "")
+        if fkg and (fkg.get("steps_unif", 0) > 0 or fkg.get("steps_win", 0) > 0) and fkg.get("mean_unif") is not None \
+                and fkg.get("neg_lnC") is not None:
+            win_str = (f", {fkg['mean_win']:.2f} over {fkg['steps_win']} window steps"
+                       if fkg.get("steps_win", 0) > 0 and fkg.get("mean_win") is not None else "")
             lines.append(
                 f"  {prefix}Harris-FKG concentration score of the information sets J (a lower bound on ln Pr(J), "
                 f"used as a correlate, not a certificate): mean {fkg['mean_unif']:.2f} nats over {fkg['steps_unif']} "
@@ -861,8 +1062,11 @@ def get_cached_distance(
     elif dem is not None or circuit is not None:
         # the key of compute_dem_distance(): a Stim circuit is processed and converted in the same way
         _warn_disabled_simple_full(simple, full)
-        dem_obj, _, _ = _dem_from_input(dem, circuit, basis=basis, rounds=rounds, p_noise=p_noise,
-                                        force_noise=force_noise)
+        try:
+            dem_obj, _, _ = _dem_from_input(dem, circuit, basis=basis, rounds=rounds, p_noise=p_noise,
+                                            force_noise=force_noise)
+        except FileNotFoundError:  # (no such DEM or circuit file: nothing cached)
+            return None
         entry = _distance_cache.get(_dem_cache_key(dem_obj, pmin) + sfx)
         if entry:
             entry = dict(entry)
@@ -878,7 +1082,13 @@ disable_css_distance_cache = disable_distance_cache
 
 
 def get_sparse_array_state(A) -> str:
-    """Returns a deterministic string representation for JSON-compatible cache keys."""
+    """
+    Returns a deterministic string representation for JSON-compatible cache keys: for a file, its path and the hash of
+    its content; for a NumPy array (shape, dtype, data), a scipy sparse matrix (its CSR form), or an object with
+    tobytes(), the hash of the data; otherwise (e.g., a list of rows, or a stim.DetectorErrorModel), the hash of str(A),
+    unless str() summarizes it with '...' (e.g., a list of NumPy rows with more than 1000 entries each): then that of
+    numpy.asarray(A) (since version 0.17.2).
+    """
     if A is None:
         return "none"
     if isinstance(A, (str, Path)):
@@ -902,7 +1112,17 @@ def get_sparse_array_state(A) -> str:
     if hasattr(A, 'tobytes'):
         h = hashlib.sha256(A.tobytes()).hexdigest()
         return f"bytes:{h}"
-    h = hashlib.sha256(str(A).encode('utf-8')).hexdigest()
+    text = str(A)
+    if "..." in text:  # (since version 0.17.2) e.g., a list of NumPy rows with more than 1000 entries, which str()
+        # summarizes: the key of the array (different matrices had the same key before)
+        try:
+            import numpy as np
+            arr = np.asarray(A)
+        except Exception:
+            arr = None
+        if arr is not None and arr.ndim >= 1 and arr.dtype != object:
+            return get_sparse_array_state(arr)
+    h = hashlib.sha256(text.encode('utf-8')).hexdigest()  # (the full text: the key of the earlier versions)
     return f"str_sha256:{h}"
 
 
@@ -1337,6 +1557,21 @@ def _warn_codedistance_ignored(values: Dict[str, Any]) -> None:
         _warn_ignored(f"{', '.join(k + '=' for k in names)}: not used with solver='codedistance'; ignored")
 
 
+def _warn_cert_ignored(cert_mode: str, finC: Any = None, smax: Optional[int] = None, dW: int = -1,
+                       maxC: int = 0) -> None:
+    """
+    With engine='cert' (cert_mode, see _resolve_cert_engine()): a warning (see _warn_ignored()) on the options of the
+    dist_m4ri binary which qec_cert does not use, since version 0.17.2: finC, smax > 0, dW >= 0, and maxC > 0 (the
+    codeword output is an error, and outD, out_reduced, and the start list have their own warnings).
+    """
+    if cert_mode != "cert":
+        return
+    names = [k for k, on in (("finC", bool(finC)), ("smax", smax is not None and smax > 0), ("dW", dW >= 0),
+                             ("maxC", maxC > 0)) if on]
+    if names:
+        _warn_ignored(f"{', '.join(k + '=' for k in names)}: not used with engine='cert'; ignored")
+
+
 def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) -> None:
     """
     Issues a warning to stderr for each of the expert options noscan, cbeg, and cend that is set.
@@ -1471,10 +1706,13 @@ def _prepare_start_option(
     cbeg: Any = None,
     cend: Any = None,
     solver: str = "dist_m4ri",
-    start_scan: bool = False
+    start_scan: bool = False,
+    engine_cert: bool = False
 ) -> Optional[List[int]]:
     """
-    Validates the expert CC options of a compute_*_distance() call and issues the warnings to stderr.
+    Validates the expert CC options of a compute_*_distance() call and issues the warnings to stderr (engine_cert:
+    engine='cert', which runs no CC: the start list is ignored with a warning, since version 0.17.2, instead of the
+    warning on the validity of the CC lower bound).
 
     Returns:
         The normalized start list (with the flag `scan` for start_scan, see _StartList), or None if unset (or not
@@ -1488,8 +1726,9 @@ def _prepare_start_option(
         if start_scan:
             _warn_ignored("start_scan=1 has no effect without a start list")
         return None
-    if solver == "codedistance":
-        _warn_ignored(f"start={_format_start_list(start_list)} is ignored with solver='codedistance'")
+    if solver == "codedistance" or engine_cert:
+        name = "engine='cert'" if engine_cert else "solver='codedistance'"
+        _warn_ignored(f"start={_format_start_list(start_list)} is ignored with {name}")
         return None
     start_list = _scan_start_list(start_list, start_scan)
     msg = _start_warning_text(start_list)
@@ -1564,7 +1803,7 @@ def _resolve_cert_engine(solver: str = "dist_m4ri", engine: Optional[str] = None
             return "cert"
         if e == "codedistance":
             return "off"
-        raise ValueError(f"invalid engine={engine!r}: expected 'dist_m4ri', 'auto', or 'cert'")
+        raise ValueError(f"invalid engine={engine!r}: expected 'dist_m4ri', 'auto', 'cert', or 'codedistance'")
     s = str(solver or "dist_m4ri").strip().lower()
     if s in ("dist_m4ri", "codedistance"):
         return "off"
@@ -1623,9 +1862,11 @@ def _can_delegate_to_cert(
     """
     Whether a distance calculation should be delegated to `qec_cert`.
     In 'auto' mode, delegates only when safe (see _auto_cert_eligible(): no codeword enumeration, finC, smax, start
-    list, outD, out_reduced, pmin > 0, single-sided method 1/2, or classical code) and `qec_cert` is importable; the
+    list, outD, out_reduced, pmin > 0, single-sided method 1/2, or classical code) and `qec_cert` is usable; the
     compute_*() functions run the two-stage portfolio of engine='auto' (_auto_two_stage()) instead, which imports
-    qec_cert only when its Stage B runs.  In 'cert' mode, always (classical codes too).
+    qec_cert only when its Stage B runs.  In 'cert' mode, always (classical codes too; ImportError if qec_cert is not
+    usable, see _get_qec_cert(); with pmin > 0, compute_dem_distance() certifies the DEM without the errors of
+    probability < pmin, see _dem_pmin_cut()).
     """
     if mode == "off":
         return False
@@ -1798,17 +2039,26 @@ def _cert_code_distance(
     debug: int = 0,
     verbose: bool = False,
     certified_dmin: int = 0,
+    keep_stats: bool = False,
 ) -> Dict[str, Any]:
     """
     Runs a qec_cert certification callback with dist_m4ri cache lookup and safe cache write-back.
 
-    The callback gets wmin = max(1, dmin) and wmax = dmax - 1 (or wmax, dstop - 1), with dmin and dmax tightened by
-    the cache record.  A lower bound of qec_cert which is conditional only on its assumption lb_assumed_wmin (wmin > 1)
-    is accepted if lb_assumed_wmin <= the certified lower bound: the dmin of the cache record, or certified_dmin (the
-    dmin certified by the CC of the dist_m4ri binary in Stage A of engine='auto', also with the cache disabled; 0:
-    none), see _cert_wmin_discharged().  A caller's dmin is a hint only (it is not certified here).
+    The callback gets wmin = max(1, d_cert), where d_cert is the certified lower bound: the dmin of the cache record,
+    or certified_dmin (the dmin certified by the CC of the dist_m4ri binary in Stage A of engine='auto', also with the
+    cache disabled; 0: none); and wmax = dmax - 1 (or wmax, dstop - 1), with dmax tightened by the cache record, or 40
+    without any of them (qec_cert then searches no larger weight, but its stages which do not depend on wmax, e.g.,
+    the graphlike or rank-DP bounds, may still certify a larger distance).  A lower bound of qec_cert which is
+    conditional only on its assumption lb_assumed_wmin <= d_cert is accepted, see _cert_wmin_discharged().  A
+    caller's dmin is not certified here (since version 0.17.2): it is not passed as wmin (the lower bound of qec_cert
+    would then be conditional on it), it only tightens the returned bounds (as the dmin of the binary, a known lower
+    bound), and it is never cached.  The statistics _last_run_stats are replaced by {"engine_cert": {...}} (the bounds
+    of qec_cert "lb", "ub", "wmin", "wmax", its run time "time", and "cached"; no run of the binary), unless keep_stats
+    (engine='auto').
     """
-    global _distance_cache
+    global _distance_cache, _last_run_stats
+    if not keep_stats:
+        _last_run_stats = {}
     code_key: Optional[str] = None
     entry: Optional[Dict[str, Any]] = None
     eff_dmin, eff_dmax = dmin, dmax
@@ -1822,21 +2072,28 @@ def _cert_code_distance(
                 c_dmin = entry.get("dmin", 0) or 0
                 found = ("exact distance" if c_dmin == entry.get("dmax") else f"dmin={c_dmin} >= dstop={dstop}")
                 print(f"[dist_m4ri] Cache hit for {label} distance ({found} known)!")
+            if not keep_stats:
+                _last_run_stats["engine_cert"] = {"cached": True}
             return {
                 "dist": entry["dist"], "dmin": entry["dmin"], "dmax": entry["dmax"],
                 "rw_steps": entry.get("rw_steps", 0), "d_info": list(entry["d_info"]),
                 "cws": list(entry.get("cws", [])), "cached": True,
             }
         eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, entry)
-    w_lo = max(1, eff_dmin)
+    p_dmin = (entry.get("dmin", 0) or 0) if entry else 0
+    w_lo = max(1, p_dmin, certified_dmin)  # (not the caller's dmin: see above)
     w_hi = wmax if wmax > 0 else 40
     if eff_dmax > 0:
         w_hi = min(w_hi, max(1, eff_dmax - 1)) if wmax > 0 else max(1, eff_dmax - 1)
     if dstop > 0:
         w_hi = min(w_hi, max(1, dstop - 1)) if (wmax > 0 or eff_dmax > 0) else max(1, dstop - 1)
+    t_cert = time.monotonic()
     cert = run_cert_fn(w_lo, max(w_lo, w_hi))
-    p_dmin = (entry.get("dmin", 0) or 0) if entry else 0
+    t_cert = time.monotonic() - t_cert
     c_lb, c_ub = _cert_extract_bounds(cert, max(p_dmin, certified_dmin))
+    if not keep_stats:
+        _last_run_stats["engine_cert"] = {"cached": False, "lb": c_lb, "ub": c_ub, "wmin": w_lo,
+                                          "wmax": max(w_lo, w_hi), "time": t_cert}
     p_dmax = (entry.get("dmax", 0) or 0) if entry else 0
     p_rw = (entry.get("rw_steps", 0) or 0) if entry else 0
     p_cws = list(entry.get("cws", [])) if entry else []
@@ -1855,8 +2112,8 @@ def _cert_code_distance(
     dmin_res = max(eff_dmin, cache_dmin)
     pos_ub = [x for x in (eff_dmax, cache_dmax) if x > 0]
     dmax_res = min(pos_ub) if pos_ub else 0
-    if dmax_res > 0 and dmin_res > dmax_res:
-        dmin_res = dmax_res
+    if dmax_res > 0 and dmin_res > dmax_res:  # (a caller's dmin above an upper bound: only the certified one counts)
+        dmin_res = min(cache_dmin, dmax_res)
     dist = _dist_from_bounds(dmin_res, dmax_res)
     return {
         "dist": dist, "dmin": dmin_res, "dmax": dmax_res, "rw_steps": p_rw,
@@ -1886,10 +2143,21 @@ _AUTO_STAGE1_MAX = 10.0  # ... but at most this many seconds (since version 0.17
 
 
 def _auto_timeout(timeout: Optional[float]) -> float:
-    """The timeout of a run of the binary in seconds: 0 for no limit, 60 (its default) for None or a negative value."""
-    if timeout is None or timeout < 0:
+    """
+    The timeout of a call in seconds, for every engine (the binary, qec_cert, and engine='auto'; since version 0.17.2
+    also for engine='cert' and method=2): 0 for no limit (also for an infinite timeout, as in the binary), 60 (the
+    default of the binary) for None or a negative value.
+
+    Raises:
+        ValueError: for a NaN timeout (the binary rejects it as well).
+    """
+    if timeout is None:
         return 60.0
-    return float(timeout)
+    if math.isnan(timeout):
+        raise ValueError(f"invalid timeout={timeout}: expected a number of seconds (0: no limit)")
+    if timeout < 0:
+        return 60.0
+    return 0.0 if math.isinf(timeout) else float(timeout)
 
 
 def _timeout_at_least(timeout: Optional[float], seconds: float) -> bool:
@@ -1903,12 +2171,13 @@ def _auto_stage_a_budget(timeout: Optional[float]) -> float:
     engine='auto': the time budget tau_1 of Stage A (the dist_m4ri binary, method=3) of the two-stage portfolio: the
     whole timeout if it is at most _AUTO_STAGE1_MIN = 2 s (also 0: no limit), otherwise
     min(max(_AUTO_STAGE1_MIN, _AUTO_STAGE1_FRAC * timeout), _AUTO_STAGE1_MAX) = min(max(2, timeout / 10), 10) s (the
-    module constants, e.g., for benchmarks of other budgets).
+    module constants, e.g., for benchmarks of other budgets), rounded to 1 ns (e.g., 2.3 s, not 2.3000000000000003 s, in
+    the command line of the binary).
     """
     t = _auto_timeout(timeout)
     if t <= _AUTO_STAGE1_MIN:
         return t
-    return min(max(_AUTO_STAGE1_MIN, _AUTO_STAGE1_FRAC * t), _AUTO_STAGE1_MAX)
+    return min(max(_AUTO_STAGE1_MIN, round(_AUTO_STAGE1_FRAC * t, 9)), _AUTO_STAGE1_MAX)
 
 
 def _auto_stage_b_use_ub(dmin_s: int, dmax_s: int) -> bool:
@@ -1936,17 +2205,17 @@ def _dem_num_raw_errors(dem: Any, limit: int = 0) -> int:
     def count(lines: Any) -> int:
         total, mult = 0, [1]
         for line in lines:
-            s = line.split("#", 1)[0].strip()
-            if s.startswith("error"):
+            name, _, rest = _dem_instruction_parts(line)  # (also with a tag, error[t](p) ...)
+            if name == "error":
                 total += mult[-1]
                 if 0 < limit < total:
                     break
-            elif s.startswith("repeat"):
+            elif name == "repeat":
                 try:
-                    mult.append(mult[-1] * max(0, int(s.split()[1])))
+                    mult.append(mult[-1] * max(0, int(rest.split()[0])))
                 except (IndexError, ValueError):
                     return -1
-            elif s.startswith("}") and len(mult) > 1:
+            elif name == "}" and len(mult) > 1:
                 mult.pop()
         return total
 
@@ -1979,14 +2248,21 @@ def _format_auto_info(info: Dict[str, Any]) -> str:
                      f"{info.get('stage_b_time', 0.0):.3g} s")
     c = info.get("stage_c")
     if c is not None:
-        parts.append(f"dist_m4ri with the remaining {info.get('stage_c_timeout', 0.0):.3g} s: [{c[0]}, {c[1]}]")
+        tc = info.get("stage_c_timeout", 0.0) or 0.0
+        tc_str = f"the remaining {tc:.3g} s" if tc > 0 else "no time limit"
+        parts.append(f"dist_m4ri with {tc_str}: [{c[0]}, {c[1]}]")
     if info.get("reason"):
         parts.append(str(info["reason"]))
     return "; ".join(parts)
 
 
-def _auto_done_reason(res: Dict[str, Any], stage: str, dstop: int, wmax: int, t_all: float, rem: float) -> str:
-    """engine='auto': why no further stage runs after `stage` with the result res ('' if one should run)."""
+def _auto_done_reason(res: Dict[str, Any], stage: str, dstop: int, wmax: int, t_all: float, rem: float,
+                      binary: bool = True) -> str:
+    """
+    engine='auto': why no further stage runs after `stage` with the result res ('' if one should run).  Without a time
+    limit (t_all <= 0), a run of the binary (binary=True) ends only with the result, while qec_cert (binary=False) may
+    end early with an open bracket: then the binary runs (since version 0.17.2).
+    """
     r_dmin, r_dmax = res["dmin"], res["dmax"]
     if r_dmin > 0 and r_dmin == r_dmax:
         return f"exact after {stage}"
@@ -1995,10 +2271,21 @@ def _auto_done_reason(res: Dict[str, Any], stage: str, dstop: int, wmax: int, t_
     if wmax > 0 and r_dmin > wmax:
         return f"CC reached wmax={wmax} in {stage}"
     if t_all <= 0:
-        return f"no time limit: {stage} ran until the end"
+        return f"no time limit: {stage} ran until the end" if binary else ""
     if rem <= _AUTO_STAGE_B_MIN_TIME:
         return f"{max(rem, 0.0):.3g} s left after {stage}"
     return ""
+
+
+def _cert_time_left(t_lim: float, t_call: float) -> float:
+    """
+    engine='auto': the time limit of qec_cert in seconds, t_lim counted from the time t_call (time.monotonic()) of the
+    call of its callback, i.e., the time left after the cache lookup and the import of qec_cert (since version 0.17.2);
+    0.0 (no limit) for t_lim <= 0, and never less than 0.1 s otherwise (0.0 would mean no limit in qec_cert).
+    """
+    if t_lim <= 0.0:
+        return 0.0
+    return max(t_lim - (time.monotonic() - t_call), 0.1)
 
 
 def _auto_seed_bounds(dmin: int, dmax: int, res: Dict[str, Any]) -> Tuple[int, int]:
@@ -2034,17 +2321,20 @@ def _auto_native_tail(
 ) -> Dict[str, Any]:
     """
     engine='auto': the dist_m4ri binary with the time left (more than _AUTO_STAGE_B_MIN_TIME s, see
-    _auto_done_reason()), seeded with the bounds of res (certified, as those of the binary); res if no time is left.
+    _auto_done_reason(); without a time limit, t_all <= 0: also without one), seeded with the bounds of res (certified,
+    as those of the binary); res if no time is left.
     """
     global _last_run_stats
-    rem = t_all - (time.monotonic() - t0)
-    if rem <= _AUTO_STAGE_B_MIN_TIME:
-        _last_run_stats["engine_auto"] = info
-        return res
+    rem = 0.0  # (no time limit)
+    if t_all > 0:
+        rem = t_all - (time.monotonic() - t0)
+        if rem <= _AUTO_STAGE_B_MIN_TIME:
+            _last_run_stats["engine_auto"] = info
+            return res
     s_dmin, s_dmax = _auto_seed_bounds(dmin, dmax, res)
     if say:
-        print(f"[dist_m4ri] engine='auto': dist_m4ri with the remaining {rem:.3g} s from the bounds [{s_dmin}, "
-              f"{s_dmax}]")
+        t_str = f"the remaining {rem:.3g} s" if rem > 0 else "no time limit"
+        print(f"[dist_m4ri] engine='auto': dist_m4ri with {t_str} from the bounds [{s_dmin}, {s_dmax}]")
     res_c = _auto_add_rw(run_native(rem, s_dmin, s_dmax), prev_rw)
     info.update(stage_c=[res_c["dmin"], res_c["dmax"]], stage_c_timeout=rem)
     _last_run_stats["engine_auto"] = info
@@ -2082,9 +2372,11 @@ def _auto_two_stage(
     qec_cert ends early with an open bracket, the binary runs with the time left.  The result is never weaker than that
     of Stage A.
 
-    If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None); if its import
-    or qec_cert fails, a warning is written to stderr, and the binary continues with the time left.  The stages are
-    recorded in _last_run_stats["engine_auto"] (see explain_bounds()).
+    If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None); the same if it is
+    installed but not usable (e.g., its library libqeccert.so is missing, see _qec_cert_available()), with a warning
+    to stderr once per process.  If its import fails only at Stage B, or qec_cert fails, a warning is written to
+    stderr, and the binary continues with the time left.  The stages are recorded in _last_run_stats["engine_auto"]
+    (see explain_bounds()).
 
     Args:
         run_native: (timeout, dmin, dmax) -> the result of _cached_code_distance() for the binary.
@@ -2102,9 +2394,9 @@ def _auto_two_stage(
     say = verbose or bool(debug & PY_DBG_COMMANDS)
     t_all = _auto_timeout(timeout)
     if not _qec_cert_available():
+        reason = _auto_qec_cert_unusable_reason()
         res = run_native(timeout, dmin, dmax)
-        _last_run_stats["engine_auto"] = {"stage": "native", "stage_a": None, "stage_b": None,
-                                          "reason": "qec_cert is not installed: dist_m4ri with the whole timeout"}
+        _last_run_stats["engine_auto"] = {"stage": "native", "stage_a": None, "stage_b": None, "reason": reason}
         return res
     tau_1 = _auto_stage_a_budget(timeout)
     if say:
@@ -2136,9 +2428,13 @@ def _auto_two_stage(
         info["stage_b_time_limit"] = t_lim
         res_b = run_cert(s_dmin, s_dmax, res_a["dmin"], t_lim)
     except Exception as e:  # (ImportError of a broken installation, or an error in qec_cert)
-        sys.stderr.write(f"# Warning: engine='auto': qec_cert failed ({type(e).__name__}: {e}); using the dist_m4ri "
-                         f"bounds [{res_a['dmin']}, {res_a['dmax']}]\n")
-        info["reason"] = "qec_cert failed"
+        if isinstance(e, ImportError):  # (found, but not usable, see _probe_qec_cert(): a warning once per process)
+            _auto_qec_cert_unusable_reason()
+            info["reason"] = "qec_cert is not usable"
+        else:
+            sys.stderr.write(f"# Warning: engine='auto': qec_cert failed ({type(e).__name__}: {e}); using the "
+                             f"dist_m4ri bounds [{res_a['dmin']}, {res_a['dmax']}]\n")
+            info["reason"] = "qec_cert failed"
         return _auto_native_tail(run_native, res_a, info, t0=t0, t_all=t_all, dmin=dmin, dmax=dmax, prev_rw=a_rw,
                                  say=say)
     t_b = time.monotonic() - t_b0
@@ -2172,10 +2468,12 @@ def _auto_cert_first(
 ) -> Dict[str, Any]:
     """
     engine='auto' for a DEM with more than _AUTO_DEM_FAST_PATH_ERRORS raw error mechanisms and a timeout of at least
-    _AUTO_DEM_FAST_PATH_MIN_TIMEOUT s (or none): qec_cert first, with the whole timeout, as with engine='cert' (a
-    cache record with the exact distance answers without importing qec_cert).  If qec_cert is not installed, the
+    _AUTO_DEM_FAST_PATH_MIN_TIMEOUT s (or none): qec_cert first, with the whole timeout (counted from its import, see
+    _cert_time_left()), as with engine='cert' (a cache record with the exact distance answers without importing it).
+    If qec_cert is not installed (or not usable, with a warning once per process, see _qec_cert_available()), the
     binary runs with the whole timeout; if qec_cert fails (a warning) or ends early with an open bracket, the binary
-    runs with the time left (see _auto_two_stage() for the arguments).
+    runs with the time left (with timeout=0 also without a limit; since version 0.17.2), see _auto_two_stage() for the
+    arguments.
     """
     global _last_run_stats
     say = verbose or bool(debug & PY_DBG_COMMANDS)
@@ -2183,27 +2481,31 @@ def _auto_cert_first(
     info: Dict[str, Any] = {"path": "qec_cert first", "num_errors": num_errors, "stage": "B", "timeout": t_all,
                             "stage_a": None, "stage_b": None, "reason": ""}
     if not _qec_cert_available():
+        info.update(stage="native", reason=_auto_qec_cert_unusable_reason())
         res = run_native(timeout, dmin, dmax)
-        info.update(stage="native", reason="qec_cert is not installed: dist_m4ri with the whole timeout")
         _last_run_stats["engine_auto"] = info
         return res
     if say:
         print(f"[dist_m4ri] engine='auto': {num_errors} raw DEM error mechanisms (more than "
               f"{_AUTO_DEM_FAST_PATH_ERRORS}): qec_cert first")
     t0 = time.monotonic()
-    try:
+    try:  # (run_cert() imports qec_cert only if no cache record answers, and counts its time limit from then on)
         info["stage_b_time_limit"] = t_all
         res = run_cert(dmin, dmax, 0, t_all)
     except Exception as e:
-        sys.stderr.write(f"# Warning: engine='auto': qec_cert failed ({type(e).__name__}: {e}); using dist_m4ri\n")
-        info.update(stage="native", reason="qec_cert failed")
+        if isinstance(e, ImportError):  # (found, but not usable, see _probe_qec_cert(): a warning once per process)
+            _auto_qec_cert_unusable_reason()
+            info.update(stage="native", reason="qec_cert is not usable")
+        else:
+            sys.stderr.write(f"# Warning: engine='auto': qec_cert failed ({type(e).__name__}: {e}); using dist_m4ri\n")
+            info.update(stage="native", reason="qec_cert failed")
         rem = t_all - (time.monotonic() - t0)
         res = run_native(max(rem, _AUTO_STAGE_B_MIN_TIME) if t_all > 0 else 0.0, dmin, dmax)
         _last_run_stats["engine_auto"] = info
         return res
     _last_run_stats = {}  # (no run of the binary)
     info.update(stage_b=[res["dmin"], res["dmax"]], stage_b_time=time.monotonic() - t0)
-    reason = _auto_done_reason(res, "qec_cert", dstop, wmax, t_all, t_all - (time.monotonic() - t0))
+    reason = _auto_done_reason(res, "qec_cert", dstop, wmax, t_all, t_all - (time.monotonic() - t0), binary=False)
     if reason:
         info["reason"] = reason
         _last_run_stats["engine_auto"] = info
@@ -2406,14 +2708,16 @@ def run_dist_m4ri(
     RW windows:
         kwin / win_mode: A window of kwin columns in every RW step (win_mode=0: a Tanner graph ball, 1: an index
             window).  kwin=0 (default): the automatic hybrid for n >= 500, an index window of win_hyb columns in every
-            other step and uniform random permutations in the others.  kwin=-1 (any negative value): no windows,
-            uniform random permutations in every step.
+            other step and uniform random permutations in the others; with rw_opt != 0 (also the default rw_opt=None,
+            i.e., -1), only for a DEM or with win_hyb > 0 (matrices: uniform random permutations in every step, see
+            rw_opt).  kwin=-1 (any negative value): no windows, uniform random permutations in every step.
         win_hyb: Window size of the hybrid RW steps, passed as win_hyb=N if nonzero; 0 (default): 256 columns for a
             DEM, 512 for matrices (at most 3n/4).  The windows of 192-256 columns find the minimum-weight codewords of
             circuit DEMs 2-10 times faster than 512, and windows of one round of columns are much slower.  With
             debug & 1 (or verbose=True), the binary prints the rounds of a DEM (estimated from the time translation of
-            its errors: D detectors and L columns per round, also in _last_run_stats["rounds"]) and the codewords found
-            by the uniform and by the window steps (see _parse_stderr_stats()).
+            its errors: D detectors and L columns per round, also in _last_run_stats["rounds"]; for information only,
+            the search does not use them) and the codewords found by the uniform and by the window steps (see
+            _parse_stderr_stats()).
 
     RW pairs:
         pairs: The RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern), passed as pairs=N if not -1: a
@@ -2430,27 +2734,42 @@ def run_dist_m4ri(
     RW pipeline:
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary, passed as rw_opt=N if
             not None (None, the default: the binary's default -1).  -1: automatic, the stages which apply to the input
-            (the rules D1-D5 of doc/rw_triplet_degeneracies.tex: 1 + 16 for quantum codes, also 8 for wide DEMs and
-            32 when collecting codewords; 2 and 4 only if listed; none for classical codes); 0: all stages off (the RW
-            of version 0.16.1, e.g., for regression and ablation runs); a bitmask 1..63: only the stages listed: 1,
-            the weight-3 relations T3 of the columns (found after merge and drop) with the contraction of the
-            candidates of a RW step and the Stern filter of its pairs; 2, the shortening of the candidates by the rows
-            of G (finG); 4, row-slab windows of a multi-round DEM; 8, the sparse-dual elimination (an m x m inverse
-            instead of the m x n matrix); 16, the canonical classes of the minimum-weight codewords, which the
-            min_hits stopping rule counts (Good-Turing and Chao2 on the uniform RW steps), and the Harris-FKG score;
-            32, the codewords collected (outC, maxC) expanded by the T3 relations.  Only with full-matrix RW (ksub=0).
-            With rw_opt != 0, the automatic hybrid windows (kwin=0) are used only for a DEM (matrices: uniform
+            (the rules D1-D5 of doc/rw_triplet_degeneracies.tex), for quantum inputs (codes, CSS sectors, and DEMs): 1;
+            16 with min_hits > 0 and kwin <= 0; 8 with at most 64 rows of L if the dense m x n matrix exceeds 512 KiB
+            and n >= 20 m or m >= 1400; 32 when collecting codewords (outC, maxC); 2 and 4 only if listed; none for
+            classical codes, nor for runs of at most 2 steps.  0: all stages off (the RW of version 0.16.1, e.g., for
+            regression and ablation runs).  A bitmask 1..63: only the stages listed whose input is there: 1, the
+            weight-3 relations T3 of the columns (found after merge and drop) with the contraction of the candidates of
+            a RW step (the single-column candidates up to the weight min(dmax + 8, 64), the pairs up to
+            min(dmax + 1, 64), + dW when collecting) and the Stern filter of its pairs (only while dmax + 8 <= 64, and
+            when collecting codewords only with 32); 2, the shortening of the candidates by the rows of G (finG; before
+            the contraction of 1); 4, row-slab windows of a multi-round DEM (kwin=0, not with sort_rows=1); 8, the
+            sparse-dual elimination (an m x m inverse instead of the m x n matrix; at most 64 rows of L); 16, the
+            canonical classes of the minimum-weight codewords found by the uniform RW steps, which the min_hits stopping
+            rule then counts (Good-Turing and Chao2, see min_hits; only with min_hits > 0, not with kwin > 0; tables of
+            up to 2^24 classes, about 640 MiB); 32, the codewords collected (outC, maxC) expanded by the T3 relations.
+            Only with full-matrix RW (ksub=0) and steps > 0.  With rw_opt != 0 (also if no stage applies, e.g., for a
+            classical code), the automatic hybrid windows (kwin=0) are used only for a DEM (matrices: uniform
             permutations, unless kwin > 0 or win_hyb > 0).  The distance found is valid with any rw_opt, and the cache
             key does not depend on it.  With debug & 1 (or verbose=True), the binary prints the stages used, |T3|, the
-            canonical classes, and the Harris-FKG score (in _last_run_stats, see _parse_stderr_stats()).
+            canonical classes, and the Harris-FKG score of the dense full-matrix steps with pairs (with any stage, not
+            with 8, not on the slab steps; all in _last_run_stats, see _parse_stderr_stats()).
 
     RW stopping criterion:
         min_hits: Passed as min_hits=N if not None and >= 0 (None, the default, or a negative value: the binary's
             default 5): RW ends once the average number of hits <n> per codeword reaches N, both for the codewords
             of the minimum weight found and for a representative set of cov_cws lowest-weight codewords (the hits of
-            all RW steps, with or without windows, and those of CC and finC count).  0: off; then, unless the
-            codewords are collected (outC or maxC), RW records only the codewords lighter than the upper bound, so
-            that the repeated hits are not counted.
+            all RW steps, with or without windows, and those of CC and finC count).  With the canonical classes of
+            rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0 and N > 0), RW ends instead once the
+            classes of the minimum weight found by the uniform RW steps (C classes, Q1 and Q2 of them found in exactly
+            one and two steps, M step incidences in all) give M >= max(15, 3 N), M / C >= N, the Good-Turing unseen
+            mass Q1 / M <= min(0.02, 3 exp(-N)), and the Chao2 unseen fraction C0 / (C + C0) <= 0.05, where
+            C0 = Q1 (Q1 - 1) / (2 (Q2 + 1)) (with more than 2^24 classes, the rule of <n>).  Only the uniform steps
+            count: while none of them has found a codeword of the minimum weight (e.g., on deep circuit DEMs, where
+            the window steps find them), this stop is inactive and RW runs until the steps or the timeout end (the
+            binary says so, and explain_bounds() names the rule which decided).  0: off; then, unless the codewords
+            are collected (outC or maxC), RW records only the codewords lighter than the upper bound, so that the
+            repeated hits are not counted.
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits, passed as cov_cws=N if not
             100 (the default, as in the binary; 0: only the minimum weight).
 
@@ -2489,7 +2808,10 @@ def run_dist_m4ri(
     Debug output:
         debug: Debug bitmap; the bits in BIN_DBG_MASK are passed to the binary (its diagnostic output on stderr
             is printed), and PY_DBG_COMMANDS echoes the command line and the run time.  verbose=True implies
-            the bits VERBOSE_DEBUG.
+            the bits VERBOSE_DEBUG.  With debug=0 (and verbose=False), the warnings and notes which the binary writes
+            with any debug value (e.g., on inputs which are ignored, invalid codewords in finC, or the confinement
+            profile of smax > 0) are forwarded to stderr (since version 0.17.2; except those which the wrapper writes
+            itself, see _binary_stderr_forwarded()).
 
     Cancellation:
         stop_event: Optional threading.Event; once it is set, the binary is terminated and RuntimeError is raised
@@ -2497,6 +2819,15 @@ def run_dist_m4ri(
 
     Returns:
         tuple (dmin, dmax, rw_steps)
+
+    Raises:
+        ValueError: for an invalid option value (e.g., method other than 1, 2, or 3, cc_prune, rw_opt), for
+            method=2 without wmax, dmax, dstop, or a time limit (timeout=0; an infinite timeout is no limit as well),
+            for a NaN timeout, or for a MatrixMarket file finH, finG, or finL without columns (n = 0, since version
+            0.17.2).
+        FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
+        RuntimeError: if the binary exits with an error (the first line of the message has its error message, the
+            others its stderr), or if stop_event is set.
     """
     global _last_run_stats
     exec_path = find_dist_m4ri_binary(dist_m4ri_path)
@@ -2522,13 +2853,16 @@ def run_dist_m4ri(
         raise ValueError(f"invalid cc_prune={cc_prune!r}: cc_prune should be 0, 1, or 2")
     _check_rw_opt(rw_opt)
 
-    if method == 2 and wmax <= 0:
-        if dmax > 0:
-            wmax = dmax
-        elif timeout <= 0.0 and dstop <= 0:
-            raise ValueError(
-                "either parameter wmax>0, dmax>0, dstop>0, or timeout>0 should be specified for CC method=2."
-            )
+    if method not in (1, 2, 3) or isinstance(method, bool):
+        raise ValueError(f"invalid method={method!r}: method should be 1 (RW), 2 (CC), or 3 (both)")
+    _auto_timeout(timeout)  # (ValueError for a NaN timeout)
+    if method == 2 and wmax <= 0 and dmax <= 0 and dstop <= 0 and _auto_timeout(timeout) <= 0.0:
+        # (with dmax > 0, the binary ends the CC rounds at the latest once the bounds coincide, and with dW > 0 it
+        # continues to weight dmax + dW for the codewords: wmax is not set to dmax, which would stop at dmax)
+        raise ValueError("either parameter wmax>0, dmax>0, dstop>0, or timeout>0 should be specified for CC method=2.")
+    for name, path in (("finH", finH), ("finG", finG), ("finL", finL)):
+        if path and not fdem and _matrix_num_cols(path) == 0:  # (the binary stops with an M4RI error)
+            raise ValueError(f"invalid {name}={path}: a matrix without columns (n = 0)")
 
     eff_debug = (debug | VERBOSE_DEBUG) if verbose else debug
     bin_debug = eff_debug & BIN_DBG_MASK  # the higher bits are used by the Python wrapper only
@@ -2550,7 +2884,7 @@ def run_dist_m4ri(
     elif dest > 0: cmd.append(f"dest={dest}")
     if steps is not None and steps >= 0: cmd.append(f"steps={steps}")
     if threads is not None and threads > 0: cmd.append(f"threads={threads}")
-    if timeout is not None and timeout >= 0: cmd.append(f"timeout={timeout}")
+    if timeout is not None and timeout >= 0: cmd.append(f"timeout={0 if math.isinf(timeout) else timeout}")
     if smax is not None: cmd.append(f"smax={smax}")
     if start_list: cmd.append("start=" + ",".join(str(c) for c in start_list))
     if start_list and start_scan: cmd.append("start_scan=1")
@@ -2610,13 +2944,58 @@ def run_dist_m4ri(
         print(f"[dist_m4ri] Finished in {time.time() - t_start:.3f} s (exit code {proc.returncode})")
 
     if proc.returncode != 0:
-        raise RuntimeError(f"dist_m4ri failed with exit code {proc.returncode}:\n{stderr}")
+        err_text = _strip_ansi(stderr or "")
+        msg = _binary_error_line(err_text)
+        raise RuntimeError(f"dist_m4ri failed with exit code {proc.returncode}{': ' + msg if msg else ''}\n{err_text}")
 
     _last_run_stats = _parse_stderr_stats(stderr)
     if (verbose or bin_debug > 0) and stderr:
         print(stderr.rstrip())
+    elif stderr:  # (debug=0: the warnings and notes of the binary, see _binary_stderr_forwarded())
+        fwd = _binary_stderr_forwarded(stderr)
+        if fwd:
+            sys.stderr.write(fwd)
 
     return parse_dist_m4ri_output(stdout)
+
+
+# The warnings of the binary which the wrapper writes itself (see _start_warning_text(), _ksub_warning_text(), and
+# _warn_ortho()), and its notes on drop=FILE (reported by compute_dem_distance()): not forwarded at debug=0
+_BIN_STDERR_OWN = ("# WARNING: start=", "# WARNING: ksub=", "# WARNING: ortho=0", "# Note: drop=")
+
+
+def _binary_stderr_forwarded(stderr: str) -> str:
+    """
+    The lines of the stderr of a run of the binary with debug=0 which run_dist_m4ri() forwards to sys.stderr (since
+    version 0.17.2; the binary writes them with any debug value): its warnings on the validity of the inputs and of
+    the result, its notes, and the confinement profile of smax > 0, except the warnings which the wrapper writes itself
+    (start, ksub, ortho=0, with their continuation lines '#   ...') and the notes on drop=FILE (in _last_run_stats,
+    see _parse_stderr_stats(); compute_dem_distance() reports them in its own words).
+    """
+    out: List[str] = []
+    skip = False
+    for line in stderr.splitlines():
+        if skip and line.startswith("#   "):
+            continue
+        skip = line.startswith(_BIN_STDERR_OWN)
+        if not skip and line.strip():
+            out.append(line + "\n")
+    return "".join(out)
+
+
+def _strip_ansi(text: str) -> str:
+    """The text without the ANSI escape sequences of colors and styles (the ERROR() macro of the binary uses them)."""
+    import re
+    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+
+
+def _binary_error_line(stderr: str) -> str:
+    """The error message of a failed run of the binary on one line (from its stderr; '' if there is none)."""
+    lines = [s.strip() for s in _strip_ansi(stderr or "").splitlines()]
+    for k, s in enumerate(lines):
+        if "*** ERROR" in s:  # (the ERROR() macro of the binary: the message is on the next line)
+            return next((t for t in lines[k + 1:] if t), s)
+    return next((s for s in lines if s and not s.startswith("#")), "")
 
 
 _MTX_PY_MAX_NNZ = 1 << 16  # temporary MatrixMarket files with up to this many entries are formatted in Python
@@ -2698,16 +3077,54 @@ def _matrix_to_file(matrix, extension: str = ".mtx", temp_dir: str = "tmp") -> s
     return path
 
 
+def _matrix_num_cols(matrix: Any) -> int:
+    """
+    The number of columns of a matrix: a numpy array (or an array-like), a scipy sparse matrix, or a MatrixMarket file
+    (from its size line); -1 if unknown (e.g., for a file in another format, or a one-dimensional array).
+    """
+    if isinstance(matrix, (str, Path)):
+        try:
+            with open(str(matrix)) as f:
+                if not f.readline().startswith("%%MatrixMarket"):
+                    return -1
+                for line in f:
+                    parts = line.split()
+                    if parts and not parts[0].startswith("%"):
+                        return int(parts[1]) if len(parts) >= 2 else -1
+        except (OSError, ValueError, UnicodeDecodeError):
+            return -1
+        return -1
+    shape = getattr(matrix, "shape", None)
+    if shape is None:
+        import numpy as np
+        try:
+            shape = np.asarray(matrix).shape
+        except Exception:  # (not an array-like)
+            return -1
+    return int(shape[1]) if len(shape) == 2 else -1
+
+
+def _check_has_columns(kind: str, *matrices: Any) -> None:
+    """
+    ValueError for a matrix without columns (n = 0, see _matrix_num_cols()) among the inputs of a code: since version
+    0.17.2, with every engine (the binary stopped with an M4RI error).
+    """
+    if any(M is not None and _matrix_num_cols(M) == 0 for M in matrices):
+        raise ValueError(f"invalid {kind} input: a matrix without columns (n = 0)")
+
+
 def has_noise(circuit: Any) -> bool:
     """
-    Checks if a Stim circuit has noise: a noise channel (e.g., DEPOLARIZE1, X_ERROR, PAULI_CHANNEL_2, E, or
-    HERALDED_ERASE), or a measurement with a flip probability (e.g., M(0.001) or MPP(0.01)), i.e., if strip_noise()
-    changes it.
+    Checks if a Stim circuit (stim.Circuit or a .stim file) has noise: a noise channel (e.g., DEPOLARIZE1, X_ERROR,
+    PAULI_CHANNEL_2, E, or HERALDED_ERASE), or a measurement with a flip probability (e.g., M(0.001) or MPP(0.01)),
+    i.e., if strip_noise() changes it.
     """
     try:
         stim = _get_stim()
     except ImportError:
         return False
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
     if not isinstance(circuit, stim.Circuit):
         return False
     return circuit.without_noise() != circuit
@@ -2739,12 +3156,34 @@ def _add_noise_recursive(
     noisy_circuit = stim.Circuit()
     for inst in circuit:
         if isinstance(inst, stim.CircuitRepeatBlock):
-            noisy_body = _add_noise_recursive(
-                inst.body_copy(), p, num_qubits, active_qubits
+            rep_count = inst.repeat_count
+            if rep_count <= 0:
+                continue
+            body = inst.body_copy()
+            entry_active = set(active_qubits)
+            first_body = _add_noise_recursive(
+                body, p, num_qubits, active_qubits
             )
-            noisy_circuit.append(
-                stim.CircuitRepeatBlock(inst.repeat_count, noisy_body)
-            )
+            if rep_count == 1 or active_qubits == entry_active:
+                noisy_circuit.append(
+                    stim.CircuitRepeatBlock(rep_count, first_body)
+                )
+            else:
+                rest_active = set(active_qubits)
+                rest_body = _add_noise_recursive(
+                    body, p, num_qubits, rest_active
+                )
+                active_qubits.clear()
+                active_qubits.update(rest_active)
+                if rest_body == first_body:
+                    noisy_circuit.append(
+                        stim.CircuitRepeatBlock(rep_count, first_body)
+                    )
+                else:
+                    noisy_circuit += first_body
+                    noisy_circuit.append(
+                        stim.CircuitRepeatBlock(rep_count - 1, rest_body)
+                    )
             continue
         name = inst.name
         if name == "TICK":
@@ -2806,7 +3245,8 @@ def add_noise(circuit: Any, p: float = 0.001, force: bool = False) -> Any:
       CX rec[-1] 5 or CZ sweep[0] 5) gets DEPOLARIZE1(p/10) on its qubit;
     - DEPOLARIZE1(p/10) after one-qubit gates (I, X, Y, Z, H, H_XY, H_YZ, S, S_DAG, SQRT_X, SQRT_Y and their _DAG
       versions, C_XYZ, C_ZYX, and the other variants), and on the qubits idle since the previous TICK (at each TICK,
-      and at the end of the circuit);
+      peeling the first iteration of a REPEAT block when its entry and exit active sets differ, and at the end of the
+      circuit);
     - X (Z) flips with probability p after Z-basis or Y-basis (X-basis) resets and before measurements, both before and
       after a measurement with reset (MR, MRX, MRY);
     - none for the multi-qubit measurements (MPP, MXX, MYY, MZZ) and the Pauli product gates (SPP, SPP_DAG).
@@ -2839,7 +3279,16 @@ def add_noise(circuit: Any, p: float = 0.001, force: bool = False) -> Any:
 
 
 def remove_empty_detectors(circuit: Any) -> Tuple[Any, int]:
-    """Removes DETECTOR instructions that have no measurement record targets."""
+    """Removes DETECTOR instructions that have no measurement record targets.
+
+    Args:
+        circuit: A stim.Circuit instance (not a file path).
+
+    Returns:
+        Tuple of (new_circuit, removed_count), where removed_count weights empty
+        DETECTOR instructions inside REPEAT blocks by their repeat_count
+        multiplicity.
+    """
     stim = _get_stim()
     new_circuit = stim.Circuit()
     removed = 0
@@ -2876,19 +3325,23 @@ def has_repeat_block(circuit: Any) -> bool:
 
 
 def set_circuit_rounds(circuit: Any, rounds: int) -> Any:
-    """Sets the repeat_count of CircuitRepeatBlocks in a Stim circuit.
+    """Sets the repeat_count of top-level CircuitRepeatBlocks in a Stim circuit.
 
-    For circuits with a single repeat block, sets its repeat_count to rounds.
-    For circuits with two repeat blocks (e.g. preamble + periodic body),
-    adjusts them to achieve total requested rounds.
+    For circuits with a single top-level repeat block, sets its repeat_count to
+    rounds. For circuits with two top-level repeat blocks (e.g. preamble +
+    periodic body), adjusts them to achieve the requested total rounds. Nested
+    REPEAT blocks inside a round body are kept unchanged.
 
     Args:
-        circuit: A stim.Circuit instance.
-        rounds: The new repetition count to set for repeat blocks. If <= 0,
-            repeat blocks are omitted.
+        circuit: A stim.Circuit instance or path to a .stim file.
+        rounds: Non-negative repetition count to set for top-level repeat
+            blocks. If 0, top-level repeat blocks are omitted.
 
     Returns:
-        A new stim.Circuit instance with modified repeat counts.
+        A new stim.Circuit instance with modified top-level repeat counts.
+
+    Raises:
+        ValueError: If rounds < 0.
     """
     stim = _get_stim()
     if isinstance(circuit, (str, Path)):
@@ -2920,17 +3373,17 @@ def set_circuit_rounds(circuit: Any, rounds: int) -> Any:
                 cnt = b1_count if block_idx == 0 else b2_count
                 block_idx += 1
                 if cnt > 0:
-                    new_body = set_circuit_rounds(inst.body_copy(), cnt)
-                    new_circuit.append(stim.CircuitRepeatBlock(cnt, new_body))
+                    new_circuit.append(
+                        stim.CircuitRepeatBlock(cnt, inst.body_copy())
+                    )
             else:
                 new_circuit.append(inst)
     else:
         for inst in circuit:
             if isinstance(inst, stim.CircuitRepeatBlock):
                 if rounds > 0:
-                    new_body = set_circuit_rounds(inst.body_copy(), rounds)
                     new_circuit.append(
-                        stim.CircuitRepeatBlock(rounds, new_body)
+                        stim.CircuitRepeatBlock(rounds, inst.body_copy())
                     )
             else:
                 new_circuit.append(inst)
@@ -2962,16 +3415,27 @@ def detect_basis(
     filepath: Optional[Union[str, Path]] = None,
     basis_arg: Optional[str] = None
 ) -> str:
-    """Determines the primary memory basis ('X' or 'Z') of a Stim circuit."""
+    """Determines the primary memory basis ('X' or 'Z') of a Stim circuit.
+
+    Precedence order:
+    1. Explicit basis_arg ('X' or 'Z', case-insensitive).
+    2. Filename stem token ('X' or 'HX' vs 'Z' or 'HZ' among '_'- or '-'-split
+       tokens of filepath, needed when X prep/readout is decomposed into R/M + H).
+    3. Initial resets before the first REPEAT block or measurement (RX vs R/RZ).
+    4. Final measurements after the last REPEAT block (MX/MRX vs M/MZ/MR/MRZ),
+       defaulting to 'Z'.
+    """
     if basis_arg is not None and str(basis_arg).upper() in ["X", "Z"]:
         return str(basis_arg).upper()
 
     if filepath is not None:
         stem = Path(filepath).stem.upper()
-        parts = stem.replace("-", "_").split("_")
-        if "X" in parts or "HX" in parts or stem.endswith("X"):
+        parts = set(stem.replace("-", "_").split("_"))
+        has_x = bool(parts & {"X", "HX"})
+        has_z = bool(parts & {"Z", "HZ"})
+        if has_x and not has_z:
             return "X"
-        if "Z" in parts or "HZ" in parts or stem.endswith("Z"):
+        if has_z and not has_x:
             return "Z"
 
     stim = _get_stim()
@@ -2987,7 +3451,7 @@ def detect_basis(
             rx_count += len(inst.targets_copy())
         elif inst.name in ["R", "RZ"]:
             rz_count += len(inst.targets_copy())
-        elif inst.name in ["M", "MX", "MZ", "MR", "MRX", "MRZ"]:
+        elif stim.gate_data(inst.name).produces_measurements:
             break
     if rx_count > rz_count:
         return "X"
@@ -3011,20 +3475,42 @@ def detect_basis(
 def track_circuit_carriers(circuit: Any) -> List[List[int]]:
     """Dynamically tracks logical syndrome carriers across the circuit to measurements.
 
-    Accounts for physical qubit permutations via SWAP, CXSWAP, CZSWAP, ISWAP,
-    and ISWAP_DAG gates, as well as CNOT/CZ syndrome handoffs onto fresh ancilla
-    or routing qubits.
+    Accounts for physical qubit permutations via SWAP, CXSWAP, SWAPCX, CZSWAP,
+    ISWAP, and ISWAP_DAG gates, as well as CNOT/CZ syndrome handoffs onto fresh
+    ancilla or routing qubits. Every instruction that produces measurement
+    records (including MPP, MXX/MYY/MZZ, MPAD, and HERALDED_*) emits one entry
+    per measurement record.
 
     Returns:
-        meas_carriers: List mapping each measurement index to a list of initial
-            logical qubit IDs whose syndrome or state is carried into that
-            measurement.
+        meas_carriers: List mapping each measurement record index to a sorted
+            list of initial logical qubit IDs whose syndrome or state is carried
+            into that measurement (empty for MPAD and heralded noise channels).
     """
     stim = _get_stim()
     if isinstance(circuit, (str, Path)):
         circuit = stim.Circuit.from_file(str(circuit))
     num_qubits = circuit.num_qubits
     phys_to_log = {q: q for q in range(num_qubits)}
+    swap_gates = ("SWAP", "CXSWAP", "SWAPCX", "CZSWAP", "ISWAP", "ISWAP_DAG")
+    entangling_swaps = ("CXSWAP", "SWAPCX", "CZSWAP", "ISWAP", "ISWAP_DAG")
+    two_q_cliffords = (
+        "CX", "ZCX", "CY", "ZCY", "CZ", "ZCZ",
+        "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ",
+    )
+
+    def apply_swaps(blk: Any, mapping: Dict[int, int]) -> None:
+        for sub_inst in blk:
+            if isinstance(sub_inst, stim.CircuitRepeatBlock):
+                if sub_inst.repeat_count > 0:
+                    sub_body = sub_inst.body_copy()
+                    for _ in range(sub_inst.repeat_count):
+                        apply_swaps(sub_body, mapping)
+            elif sub_inst.name in swap_gates:
+                sub_t = sub_inst.targets_copy()
+                for a, b in zip(sub_t[::2], sub_t[1::2]):
+                    if a.is_qubit_target and b.is_qubit_target:
+                        q1, q2 = a.value, b.value
+                        mapping[q1], mapping[q2] = mapping[q2], mapping[q1]
 
     tot_resets: Dict[int, int] = {q: 0 for q in range(num_qubits)}
     tot_meas: Dict[int, int] = {q: 0 for q in range(num_qubits)}
@@ -3033,22 +3519,11 @@ def track_circuit_carriers(circuit: Any) -> List[List[int]]:
         for inst in block:
             if isinstance(inst, stim.CircuitRepeatBlock):
                 rep_count = inst.repeat_count
+                if rep_count <= 0:
+                    continue
                 body = inst.body_copy()
                 map_copy = dict(p_to_l)
-                for sub_inst in body:
-                    if not isinstance(sub_inst, stim.CircuitRepeatBlock):
-                        if sub_inst.name in [
-                            "SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"
-                        ]:
-                            t_vals = [
-                                t.value for t in sub_inst.targets_copy()
-                                if t.is_qubit_target
-                            ]
-                            for idx in range(0, len(t_vals), 2):
-                                q1, q2 = t_vals[idx], t_vals[idx + 1]
-                                map_copy[q1], map_copy[q2] = (
-                                    map_copy[q2], map_copy[q1]
-                                )
+                apply_swaps(body, map_copy)
                 if map_copy == p_to_l:
                     pass1(body, p_to_l, mult * rep_count)
                 else:
@@ -3056,23 +3531,29 @@ def track_circuit_carriers(circuit: Any) -> List[List[int]]:
                         pass1(body, p_to_l, mult)
                 continue
             name = inst.name
-            t_vals = [
-                t.value for t in inst.targets_copy() if t.is_qubit_target
-            ]
-            if name in [
-                "R", "RX", "RY", "RZ", "MR", "MRX", "MRY", "MRZ"
-            ]:
-                for q in t_vals:
-                    tot_resets[p_to_l[q]] += mult
-            if name in [
-                "M", "MX", "MY", "MZ", "MR", "MRX", "MRY", "MRZ"
-            ]:
-                for q in t_vals:
-                    tot_meas[p_to_l[q]] += mult
-            if name in ["SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"]:
-                for idx in range(0, len(t_vals), 2):
-                    q1, q2 = t_vals[idx], t_vals[idx + 1]
-                    p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
+            gd = stim.gate_data(name)
+            targets = inst.targets_copy()
+            if gd.is_reset:
+                for t in targets:
+                    if t.qubit_value is not None:
+                        tot_resets[p_to_l[t.qubit_value]] += mult
+            if gd.produces_measurements and name != "MPAD":
+                noise_ch = (
+                    gd.is_noisy_gate and 0 not in gd.num_parens_arguments_range
+                )
+                if not noise_ch:
+                    for grp in inst.target_groups():
+                        qs = [
+                            t.qubit_value for t in grp
+                            if t.qubit_value is not None
+                        ]
+                        if len(qs) == 1:
+                            tot_meas[p_to_l[qs[0]]] += mult
+            if name in swap_gates:
+                for a, b in zip(targets[::2], targets[1::2]):
+                    if a.is_qubit_target and b.is_qubit_target:
+                        q1, q2 = a.value, b.value
+                        p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
 
     pass1(circuit, dict(phys_to_log), 1)
     max_resets = max(tot_resets.values()) if tot_resets else 0
@@ -3092,6 +3573,25 @@ def track_circuit_carriers(circuit: Any) -> List[List[int]]:
     fresh_anc: Set[int] = set(range(num_qubits)) - data_log
     meas_carriers: List[List[int]] = []
 
+    def handoff_pair(l1: int, l2: int) -> None:
+        if l1 not in data_log and l2 not in data_log:
+            if l2 in fresh_anc and l1 not in fresh_anc:
+                active_carriers[l2] = set(active_carriers[l1])
+                fresh_anc.discard(l2)
+            elif l1 in fresh_anc and l2 not in fresh_anc:
+                active_carriers[l1] = set(active_carriers[l2])
+                fresh_anc.discard(l1)
+            else:
+                comb = active_carriers[l1] | active_carriers[l2]
+                active_carriers[l1] = set(comb)
+                active_carriers[l2] = set(comb)
+                fresh_anc.discard(l1)
+                fresh_anc.discard(l2)
+        elif l1 in data_log and l2 not in data_log:
+            fresh_anc.discard(l2)
+        elif l2 in data_log and l1 not in data_log:
+            fresh_anc.discard(l1)
+
     def pass2(block: Any, p_to_l: Dict[int, int]) -> None:
         for inst in block:
             if isinstance(inst, stim.CircuitRepeatBlock):
@@ -3100,20 +3600,7 @@ def track_circuit_carriers(circuit: Any) -> List[List[int]]:
                 if rep_count <= 0:
                     continue
                 map_copy = dict(p_to_l)
-                for sub_inst in body:
-                    if not isinstance(sub_inst, stim.CircuitRepeatBlock):
-                        if sub_inst.name in [
-                            "SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"
-                        ]:
-                            t_vals = [
-                                t.value for t in sub_inst.targets_copy()
-                                if t.is_qubit_target
-                            ]
-                            for idx in range(0, len(t_vals), 2):
-                                q1, q2 = t_vals[idx], t_vals[idx + 1]
-                                map_copy[q1], map_copy[q2] = (
-                                    map_copy[q2], map_copy[q1]
-                                )
+                apply_swaps(body, map_copy)
                 if map_copy == p_to_l:
                     idx0 = len(meas_carriers)
                     pass2(body, p_to_l)
@@ -3126,63 +3613,52 @@ def track_circuit_carriers(circuit: Any) -> List[List[int]]:
                         pass2(body, p_to_l)
                 continue
             name = inst.name
-            t_vals = [
-                t.value for t in inst.targets_copy() if t.is_qubit_target
-            ]
-            if name in ["R", "RX", "RY", "RZ"]:
-                for q in t_vals:
-                    lq = p_to_l[q]
-                    active_carriers[lq] = {lq}
-                    if lq not in data_log:
-                        fresh_anc.add(lq)
-            elif name in ["M", "MX", "MY", "MZ"]:
-                for q in t_vals:
-                    lq = p_to_l[q]
-                    meas_carriers.append(sorted(list(active_carriers[lq])))
-            elif name in ["MR", "MRX", "MRY", "MRZ"]:
-                for q in t_vals:
-                    lq = p_to_l[q]
-                    meas_carriers.append(sorted(list(active_carriers[lq])))
-                    active_carriers[lq] = {lq}
-                    if lq not in data_log:
-                        fresh_anc.add(lq)
-            elif name in [
-                "CX", "ZCX", "CY", "ZCY", "CZ", "ZCZ",
-                "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ"
-            ]:
-                for idx in range(0, len(t_vals), 2):
-                    q1, q2 = t_vals[idx], t_vals[idx + 1]
-                    l1, l2 = p_to_l[q1], p_to_l[q2]
-                    if l1 not in data_log and l2 not in data_log:
-                        if l2 in fresh_anc and l1 not in fresh_anc:
-                            active_carriers[l2] = set(active_carriers[l1])
-                            fresh_anc.discard(l2)
-                        elif l1 in fresh_anc and l2 not in fresh_anc:
-                            active_carriers[l1] = set(active_carriers[l2])
-                            fresh_anc.discard(l1)
-                        else:
-                            comb = active_carriers[l1] | active_carriers[l2]
-                            active_carriers[l1] = set(comb)
-                            active_carriers[l2] = set(comb)
-                            fresh_anc.discard(l1)
-                            fresh_anc.discard(l2)
-                    elif l1 in data_log and l2 not in data_log:
-                        fresh_anc.discard(l2)
-                    elif l2 in data_log and l1 not in data_log:
-                        fresh_anc.discard(l1)
+            gd = stim.gate_data(name)
+            targets = inst.targets_copy()
+            if gd.produces_measurements:
+                noise_ch = (
+                    gd.is_noisy_gate and 0 not in gd.num_parens_arguments_range
+                )
+                for grp in inst.target_groups():
+                    if name == "MPAD" or noise_ch:
+                        meas_carriers.append([])
+                    else:
+                        qs = [
+                            t.qubit_value for t in grp
+                            if t.qubit_value is not None
+                        ]
+                        comb_c: Set[int] = set()
+                        for q in qs:
+                            comb_c |= active_carriers[p_to_l[q]]
+                        meas_carriers.append(sorted(comb_c))
+                        if gd.is_reset:
+                            for q in qs:
+                                lq = p_to_l[q]
+                                active_carriers[lq] = {lq}
+                                if lq not in data_log:
+                                    fresh_anc.add(lq)
+            elif gd.is_reset:
+                for t in targets:
+                    if t.qubit_value is not None:
+                        lq = p_to_l[t.qubit_value]
+                        active_carriers[lq] = {lq}
+                        if lq not in data_log:
+                            fresh_anc.add(lq)
+            elif name in two_q_cliffords:
+                for a, b in zip(targets[::2], targets[1::2]):
+                    if a.is_qubit_target and b.is_qubit_target:
+                        handoff_pair(p_to_l[a.value], p_to_l[b.value])
             elif name == "SWAP":
-                for idx in range(0, len(t_vals), 2):
-                    q1, q2 = t_vals[idx], t_vals[idx + 1]
-                    p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
-            elif name in ["CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"]:
-                for idx in range(0, len(t_vals), 2):
-                    q1, q2 = t_vals[idx], t_vals[idx + 1]
-                    l1, l2 = p_to_l[q1], p_to_l[q2]
-                    if l1 in data_log and l2 not in data_log:
-                        fresh_anc.discard(l2)
-                    elif l2 in data_log and l1 not in data_log:
-                        fresh_anc.discard(l1)
-                    p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
+                for a, b in zip(targets[::2], targets[1::2]):
+                    if a.is_qubit_target and b.is_qubit_target:
+                        q1, q2 = a.value, b.value
+                        p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
+            elif name in entangling_swaps:
+                for a, b in zip(targets[::2], targets[1::2]):
+                    if a.is_qubit_target and b.is_qubit_target:
+                        q1, q2 = a.value, b.value
+                        handoff_pair(p_to_l[q1], p_to_l[q2])
+                        p_to_l[q1], p_to_l[q2] = p_to_l[q2], p_to_l[q1]
 
     pass2(circuit, dict(phys_to_log))
     return meas_carriers
@@ -3196,28 +3672,34 @@ def _rewrite_circuit_internal(
     """Rewrites a Stim circuit by tracking SWAPs virtually."""
     stim = _get_stim()
     new_circ = stim.Circuit()
+    swap_gates = ("SWAP", "CXSWAP", "SWAPCX", "CZSWAP", "ISWAP", "ISWAP_DAG")
     non_active_instructions = {
         "QUBIT_COORDS", "SHIFT_COORDS", "TICK",
         "DETECTOR", "OBSERVABLE_INCLUDE", "MPAD"
     }
 
+    def apply_swaps(blk: Any, mapping: Dict[int, int]) -> None:
+        for sub_inst in blk:
+            if isinstance(sub_inst, stim.CircuitRepeatBlock):
+                if sub_inst.repeat_count > 0:
+                    sub_body = sub_inst.body_copy()
+                    for _ in range(sub_inst.repeat_count):
+                        apply_swaps(sub_body, mapping)
+            elif sub_inst.name in swap_gates:
+                sub_t = sub_inst.targets_copy()
+                for a, b in zip(sub_t[::2], sub_t[1::2]):
+                    if a.is_qubit_target and b.is_qubit_target:
+                        q1, q2 = a.value, b.value
+                        mapping[q1], mapping[q2] = mapping[q2], mapping[q1]
+
     for inst in circ:
         if isinstance(inst, stim.CircuitRepeatBlock):
             rep_count = inst.repeat_count
+            if rep_count <= 0:
+                continue
             body = inst.body_copy()
             map_copy = dict(phys_to_log)
-            for sub_inst in body:
-                if not isinstance(sub_inst, stim.CircuitRepeatBlock):
-                    if sub_inst.name in [
-                        "SWAP", "CXSWAP", "CZSWAP", "ISWAP", "ISWAP_DAG"
-                    ]:
-                        targets = sub_inst.targets_copy()
-                        for idx in range(0, len(targets), 2):
-                            q1 = targets[idx].value
-                            q2 = targets[idx + 1].value
-                            map_copy[q1], map_copy[q2] = (
-                                map_copy[q2], map_copy[q1]
-                            )
+            apply_swaps(body, map_copy)
             if map_copy == phys_to_log:
                 new_body = _rewrite_circuit_internal(
                     body, phys_to_log, active_gates_count
@@ -3235,7 +3717,9 @@ def _rewrite_circuit_internal(
         targets = inst.targets_copy()
         args = inst.gate_args_copy()
 
-        if name == "SWAP":
+        if name == "MPAD":
+            new_circ.append(inst)
+        elif name == "SWAP":
             for idx in range(0, len(targets), 2):
                 q1 = targets[idx].value
                 q2 = targets[idx + 1].value
@@ -3250,6 +3734,20 @@ def _rewrite_circuit_internal(
                 l1 = phys_to_log[q1]
                 l2 = phys_to_log[q2]
                 cx_targets.extend([l1, l2])
+                active_gates_count[l1] = active_gates_count.get(l1, 0) + 1
+                active_gates_count[l2] = active_gates_count.get(l2, 0) + 1
+                phys_to_log[q1], phys_to_log[q2] = (
+                    phys_to_log[q2], phys_to_log[q1]
+                )
+            new_circ.append("CX", cx_targets, args)
+        elif name == "SWAPCX":
+            cx_targets = []
+            for idx in range(0, len(targets), 2):
+                q1 = targets[idx].value
+                q2 = targets[idx + 1].value
+                l1 = phys_to_log[q1]
+                l2 = phys_to_log[q2]
+                cx_targets.extend([l2, l1])
                 active_gates_count[l1] = active_gates_count.get(l1, 0) + 1
                 active_gates_count[l2] = active_gates_count.get(l2, 0) + 1
                 phys_to_log[q1], phys_to_log[q2] = (
@@ -3307,21 +3805,27 @@ def _rewrite_circuit_internal(
                         active_gates_count[l_q] = (
                             active_gates_count.get(l_q, 0) + 1
                         )
-                    new_targets.append(stim.target_x(l_q))
+                    new_targets.append(
+                        stim.target_x(l_q, invert=t.is_inverted_result_target)
+                    )
                 elif t.is_y_target:
                     l_q = phys_to_log[t.value]
                     if name not in non_active_instructions:
                         active_gates_count[l_q] = (
                             active_gates_count.get(l_q, 0) + 1
                         )
-                    new_targets.append(stim.target_y(l_q))
+                    new_targets.append(
+                        stim.target_y(l_q, invert=t.is_inverted_result_target)
+                    )
                 elif t.is_z_target:
                     l_q = phys_to_log[t.value]
                     if name not in non_active_instructions:
                         active_gates_count[l_q] = (
                             active_gates_count.get(l_q, 0) + 1
                         )
-                    new_targets.append(stim.target_z(l_q))
+                    new_targets.append(
+                        stim.target_z(l_q, invert=t.is_inverted_result_target)
+                    )
                 else:
                     new_targets.append(t)
             new_circ.append(name, new_targets, args)
@@ -3341,6 +3845,13 @@ def classify_qubits_thorough(
     CSS codes as well as locally basis-rotated CSS codes (such as XZZX codes)
     via 2-coloring of the check-data Pauli compatibility graph.
 
+    Args:
+        circuit: A stim.Circuit object or path to a .stim file.
+        verbose: Kept for API compatibility (unused).
+        basis_arg: Optional explicit primary memory basis ('X' or 'Z').
+        filepath: Optional file path hint used by detect_basis() when circuit
+            is passed as a stim.Circuit object.
+
     Returns:
         Dictionary with keys:
         - 'x_ancillas': Sorted list of X-type (or X-sector) ancilla qubit IDs.
@@ -3348,10 +3859,13 @@ def classify_qubits_thorough(
         - 'data_qubits': Sorted list of data qubit IDs.
         - 'routing_qubits': Sorted list of idle/routing qubit IDs.
         - 'rotated_data_qubits': Sorted list of data qubits with rotated local basis.
-        - 'is_css': True if the circuit implements a (possibly locally rotated) CSS code.
+        - 'is_css': True if the circuit implements a (possibly locally rotated) CSS
+          code with distinct X and Z check supports; False for CSS color codes
+          (identical X and Z check supports), so drop="css" is not used on them.
         - 'is_rotated_css': True if CSS only after local data basis rotations (e.g. XZZX).
         - 'basis': Primary memory basis ('X' or 'Z').
-        - 'rewritten_circuit': Circuit with SWAPs virtually eliminated.
+        - 'rewritten_circuit': Virtual-SWAP rewrite of the circuit after capping
+          every REPEAT count at 2.
     """
     stim = _get_stim()
     if isinstance(circuit, (str, Path)):
@@ -3365,13 +3879,10 @@ def classify_qubits_thorough(
         for inst in blk:
             if isinstance(inst, stim.CircuitRepeatBlock):
                 collect_qubits(inst.body_copy())
-            else:
+            elif inst.name != "MPAD":
                 for t in inst.targets_copy():
-                    if (
-                        t.is_qubit_target or t.is_x_target
-                        or t.is_y_target or t.is_z_target
-                    ):
-                        all_qubits_set.add(t.value)
+                    if t.qubit_value is not None:
+                        all_qubits_set.add(t.qubit_value)
 
     collect_qubits(circuit)
     max_q = max(all_qubits_set) if all_qubits_set else -1
@@ -3382,12 +3893,13 @@ def classify_qubits_thorough(
         out = stim.Circuit()
         for inst in blk:
             if isinstance(inst, stim.CircuitRepeatBlock):
-                out.append(
-                    stim.CircuitRepeatBlock(
-                        min(inst.repeat_count, 2),
-                        cap_repeats(inst.body_copy())
+                if inst.repeat_count > 0:
+                    out.append(
+                        stim.CircuitRepeatBlock(
+                            min(inst.repeat_count, 2),
+                            cap_repeats(inst.body_copy())
+                        )
                     )
-                )
             else:
                 out.append(inst)
         return out
@@ -3405,7 +3917,7 @@ def classify_qubits_thorough(
 
     tot_resets: Dict[int, int] = {q: 0 for q in active_qubits}
     tot_meas: Dict[int, int] = {q: 0 for q in active_qubits}
-    meas_records: List[int] = []
+    meas_records: List[Tuple[int, ...]] = []
     used_in_detector: Set[int] = set()
     used_in_observable: Set[int] = set()
     first_detector_seen = False
@@ -3416,48 +3928,49 @@ def classify_qubits_thorough(
     for inst in flat_circ:
         name = inst.name
         targets = inst.targets_copy()
-        if name in ["R", "RX", "RY", "RZ"]:
-            for t in targets:
-                if t.is_qubit_target and t.value in tot_resets:
-                    tot_resets[t.value] += 1
-        elif name in ["M", "MX", "MY", "MZ"]:
-            for t in targets:
-                if t.is_qubit_target:
-                    if t.value in tot_meas:
-                        tot_meas[t.value] += 1
-                    meas_records.append(t.value)
-                    if not first_detector_seen:
-                        meas_before_first_det.add(t.value)
-        elif name in ["MR", "MRX", "MRY", "MRZ"]:
-            for t in targets:
-                if t.is_qubit_target:
-                    if t.value in tot_resets:
-                        tot_resets[t.value] += 1
-                    if t.value in tot_meas:
-                        tot_meas[t.value] += 1
-                    meas_records.append(t.value)
-                    if not first_detector_seen:
-                        meas_before_first_det.add(t.value)
-        elif name == "DETECTOR":
+        if name == "DETECTOR":
             first_detector_seen = True
-            recs = [
+            rec_tuples = [
                 meas_records[len(meas_records) + t.value]
                 for t in targets
                 if t.is_measurement_record_target
                 and 0 <= len(meas_records) + t.value < len(meas_records)
             ]
-            for q in recs:
-                used_in_detector.add(q)
-            if len(recs) == 1:
-                r1_single_det_anc.add(recs[0])
-            elif len(recs) > 1:
-                multi_det_groups.append(set(recs))
+            rec_qubits = [q for qs in rec_tuples for q in qs]
+            used_in_detector.update(rec_qubits)
+            if len(rec_tuples) == 1 and len(rec_qubits) == 1:
+                r1_single_det_anc.add(rec_qubits[0])
+            elif len(rec_qubits) > 1:
+                multi_det_groups.append(set(rec_qubits))
         elif name == "OBSERVABLE_INCLUDE":
             for t in targets:
                 if t.is_measurement_record_target:
                     idx = len(meas_records) + t.value
                     if 0 <= idx < len(meas_records):
-                        used_in_observable.add(meas_records[idx])
+                        used_in_observable.update(meas_records[idx])
+        else:
+            gd = stim.gate_data(name)
+            if gd.is_reset:
+                for t in targets:
+                    if t.qubit_value is not None and t.qubit_value in tot_resets:
+                        tot_resets[t.qubit_value] += 1
+            if gd.produces_measurements:
+                noise_ch = (
+                    gd.is_noisy_gate and 0 not in gd.num_parens_arguments_range
+                )
+                for grp in inst.target_groups():
+                    if name == "MPAD" or noise_ch:
+                        qs: Tuple[int, ...] = ()
+                    else:
+                        qs = tuple(
+                            t.qubit_value for t in grp
+                            if t.qubit_value is not None
+                        )
+                        if len(qs) == 1 and qs[0] in tot_meas:
+                            tot_meas[qs[0]] += 1
+                        if not first_detector_seen:
+                            meas_before_first_det.update(qs)
+                    meas_records.append(qs)
 
     max_resets = max(tot_resets.values()) if tot_resets else 0
     max_meas = max(tot_meas.values()) if tot_meas else 0
@@ -3489,10 +4002,22 @@ def classify_qubits_thorough(
     first_round_insts: List[Tuple[str, List[int]]] = []
     measured_anc: Set[int] = set()
     has_any_anc_meas = False
+    u1_cliffords = {
+        "H", "H_XZ", "H_NXZ", "H_XY", "H_NXY", "H_YZ", "H_NYZ",
+        "S", "S_DAG", "SQRT_Z", "SQRT_Z_DAG",
+        "SQRT_X", "SQRT_X_DAG", "SQRT_Y", "SQRT_Y_DAG",
+        "C_XYZ", "C_NXYZ", "C_XNYZ", "C_XYNZ",
+        "C_ZYX", "C_NZYX", "C_ZNYX", "C_ZYNX",
+    }
+    u2_cliffords = {
+        "CX", "ZCX", "CZ", "ZCZ", "CY", "ZCY",
+        "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ",
+    }
 
     for inst in flat_circ:
         name = inst.name
-        t_vals = [t.value for t in inst.targets_copy() if t.is_qubit_target]
+        targets = inst.targets_copy()
+        t_vals = [t.value for t in targets if t.is_qubit_target]
         if name in ["R", "RZ", "RX", "RY"]:
             if has_any_anc_meas and any(
                 q in anc_candidates and q in measured_anc for q in t_vals
@@ -3522,26 +4047,32 @@ def classify_qubits_thorough(
                     ]:
                         reset_basis[q] = b
             first_round_insts.append((name, t_vals))
-        elif name in [
-            "H", "H_XZ", "H_XY", "H_YZ", "S", "S_DAG",
-            "SQRT_Z", "SQRT_Z_DAG", "SQRT_X", "SQRT_X_DAG",
-            "SQRT_Y", "SQRT_Y_DAG",
-            "CX", "ZCX", "CZ", "ZCZ", "CY", "ZCY",
-            "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ"
-        ]:
+        elif name in u1_cliffords:
             first_round_insts.append((name, t_vals))
+        elif name in u2_cliffords:
+            pair_vals: List[int] = []
+            for a, b_t in zip(targets[::2], targets[1::2]):
+                if a.is_qubit_target and b_t.is_qubit_target:
+                    pair_vals.extend([a.value, b_t.value])
+            if pair_vals:
+                first_round_insts.append((name, pair_vals))
+
+    c_xyz_set = {"C_XYZ", "C_NXYZ", "C_XNYZ", "C_XYNZ"}
+    c_zyx_set = {"C_ZYX", "C_NZYX", "C_ZNYX", "C_ZYNX"}
 
     def conj_1q(gate: str, p: str) -> str:
         if p == "I":
             return "I"
-        if gate in ["H", "H_XZ"]:
+        if gate in ["H", "H_XZ", "H_NXZ", "SQRT_Y", "SQRT_Y_DAG"]:
             return "Z" if p == "X" else ("X" if p == "Z" else "Y")
-        if gate in ["S", "S_DAG", "SQRT_Z", "SQRT_Z_DAG", "H_XY"]:
+        if gate in ["S", "S_DAG", "SQRT_Z", "SQRT_Z_DAG", "H_XY", "H_NXY"]:
             return "Y" if p == "X" else ("X" if p == "Y" else "Z")
-        if gate in ["SQRT_X", "SQRT_X_DAG", "H_YZ"]:
+        if gate in ["SQRT_X", "SQRT_X_DAG", "H_YZ", "H_NYZ"]:
             return "Z" if p == "Y" else ("Y" if p == "Z" else "X")
-        if gate in ["SQRT_Y", "SQRT_Y_DAG"]:
-            return "Z" if p == "X" else ("X" if p == "Z" else "Y")
+        if gate in c_xyz_set:
+            return "Y" if p == "X" else ("Z" if p == "Y" else "X")
+        if gate in c_zyx_set:
+            return "Z" if p == "X" else ("Y" if p == "Z" else "X")
         return p
 
     mul_tab = {
@@ -3623,11 +4154,7 @@ def classify_qubits_thorough(
             for q in t_vals:
                 if q in anc_to_bit:
                     active_anc_mask &= ~anc_to_bit[q]
-        elif name in [
-            "H", "H_XZ", "H_XY", "H_YZ", "S", "S_DAG",
-            "SQRT_Z", "SQRT_Z_DAG", "SQRT_X", "SQRT_X_DAG",
-            "SQRT_Y", "SQRT_Y_DAG"
-        ]:
+        elif name in u1_cliffords:
             for q in t_vals:
                 if q in data_qubits:
                     data_init_basis[q] = conj_1q(name, data_init_basis[q])
@@ -3640,22 +4167,23 @@ def classify_qubits_thorough(
                 mask = active_anc_mask if q in anc_candidates else all_anc_mask
                 x_m = qx[q] & mask
                 z_m = qz[q] & mask
-                if name in ["H", "H_XZ", "SQRT_Y", "SQRT_Y_DAG"]:
+                if name in ["H", "H_XZ", "H_NXZ", "SQRT_Y", "SQRT_Y_DAG"]:
                     nx_m, nz_m = z_m, x_m
                 elif name in [
-                    "S", "S_DAG", "SQRT_Z", "SQRT_Z_DAG", "H_XY"
+                    "S", "S_DAG", "SQRT_Z", "SQRT_Z_DAG", "H_XY", "H_NXY"
                 ]:
                     nx_m, nz_m = x_m, x_m ^ z_m
-                elif name in ["SQRT_X", "SQRT_X_DAG", "H_YZ"]:
+                elif name in ["SQRT_X", "SQRT_X_DAG", "H_YZ", "H_NYZ"]:
                     nx_m, nz_m = x_m ^ z_m, z_m
+                elif name in c_xyz_set:
+                    nx_m, nz_m = x_m ^ z_m, x_m
+                elif name in c_zyx_set:
+                    nx_m, nz_m = z_m, x_m ^ z_m
                 else:
                     nx_m, nz_m = x_m, z_m
                 qx[q] = (qx[q] & ~mask) | nx_m
                 qz[q] = (qz[q] & ~mask) | nz_m
-        elif name in [
-            "CX", "ZCX", "CZ", "ZCZ", "CY", "ZCY",
-            "XCX", "XCY", "XCZ", "YCX", "YCY", "YCZ"
-        ]:
+        elif name in u2_cliffords:
             if name in ["CX", "ZCX"]:
                 ax, az, bx, bz = 0, all_anc_mask, all_anc_mask, 0
             elif name in ["CZ", "ZCZ"]:
@@ -3919,7 +4447,7 @@ def verify_qubit_metadata(
     basis_arg: Optional[str] = None,
     filepath: Optional[Union[str, Path]] = None
 ) -> Dict[str, Any]:
-    """Verifies qubit classification and returns basis tracking metadata."""
+    """Verifies qubit classification and returns basis tracking metadata (see classify_qubits_thorough())."""
     return classify_qubits_thorough(
         circuit, verbose=verbose, basis_arg=basis_arg, filepath=filepath
     )
@@ -3933,15 +4461,17 @@ def strip_minority_detectors(
     thorough_res: Optional[Dict[str, Any]] = None,
     mask_out: Optional[List[bool]] = None
 ) -> Tuple[Any, int, int]:
-    """Strips detectors corresponding to the minority basis from a Stim circuit.
+    """Strips minority-basis (and empty) detectors from a Stim circuit.
 
     Always uses ancilla and data basis tracking (and dynamic carrier tracking
     across SWAPs and syndrome handoffs) to identify each detector's basis.
+    DETECTOR instructions with no measurement record targets are also stripped
+    and counted in stripped_count (marked True in mask_out).
 
     Args:
         circuit: A stim.Circuit object or path to a .stim file.
         basis: Primary memory basis ('X' or 'Z'). Detectors of the opposite
-            basis are removed.
+            basis (and empty detectors) are removed.
         verbose: Whether to print warnings/statistics.
         thorough: Kept for API compatibility (basis tracking is always enabled).
         thorough_res: Optional precomputed result from classify_qubits_thorough.
@@ -3997,7 +4527,7 @@ def strip_minority_detectors(
         and x_coords.isdisjoint(z_coords)
     )
 
-    meas_history: List[int] = []
+    meas_history: List[Tuple[int, ...]] = []
     det_mask: List[bool] = []  # one entry per detector (REPEAT blocks unrolled): True if stripped
     stripped_count = 0
     kept_count = 0
@@ -4033,15 +4563,6 @@ def strip_minority_detectors(
                             * (rep_count - 1)
                         )
                 new_block.append(stim.CircuitRepeatBlock(rep_count, new_body))
-            elif inst.name in [
-                "M", "MX", "MY", "MZ", "MR", "MRX", "MRY", "MRZ"
-            ]:
-                if inst.name in ["MY", "MRY"]:
-                    floquet_suspected = True
-                for t in inst.targets_copy():
-                    if t.is_qubit_target:
-                        meas_history.append(t.value)
-                new_block.append(inst)
             elif inst.name == "DETECTOR":
                 cur_meas = len(meas_history)
                 rec_targets = [
@@ -4054,9 +4575,10 @@ def strip_minority_detectors(
                     continue
 
                 qubits = [
-                    meas_history[cur_meas + t.value]
+                    q
                     for t in rec_targets
                     if 0 <= cur_meas + t.value < cur_meas
+                    for q in meas_history[cur_meas + t.value]
                 ]
                 is_x_qubit = any(q in x_anc for q in qubits)
                 is_z_qubit = any(q in z_anc for q in qubits)
@@ -4119,6 +4641,24 @@ def strip_minority_detectors(
                     new_block.append(inst)
                 det_mask.append(is_minority)
             else:
+                gd = stim.gate_data(inst.name)
+                if gd.produces_measurements:
+                    if inst.name in ("MY", "MRY", "MYY"):
+                        floquet_suspected = True
+                    noise_ch = (
+                        gd.is_noisy_gate
+                        and 0 not in gd.num_parens_arguments_range
+                    )
+                    for grp in inst.target_groups():
+                        if inst.name == "MPAD" or noise_ch:
+                            meas_history.append(())
+                        else:
+                            meas_history.append(
+                                tuple(
+                                    t.qubit_value for t in grp
+                                    if t.qubit_value is not None
+                                )
+                            )
                 new_block.append(inst)
         return new_block
 
@@ -4171,6 +4711,64 @@ def _write_dem_file(dem: Any, path: str) -> None:
             f.write(str(dem))
 
 
+def _dem_num_detectors(dem: Any) -> int:
+    """The number of detectors of a DEM (a stim.DetectorErrorModel or a .dem file; -1 if unknown), counted by stim."""
+    n = getattr(dem, "num_detectors", None)
+    if n is None and isinstance(dem, (str, Path)) and os.path.isfile(str(dem)):
+        try:
+            n = _get_stim().DetectorErrorModel.from_file(str(dem)).num_detectors
+        except Exception:  # (stim not installed, or a DEM which stim does not read)
+            n = None
+    return int(n) if n is not None else -1
+
+
+def _dem_pmin_cut(dem: Any, pmin: float) -> Any:
+    """
+    The DEM (a stim.DetectorErrorModel, a .dem file, or the text of a DEM) without its error mechanisms of probability
+    < pmin, as the dist_m4ri binary reads it with pmin=...: a flattened stim.DetectorErrorModel (the other instructions
+    kept).  Used for engine='cert' with pmin > 0 (since version 0.17.2; qec_cert has no such cutoff).
+    """
+    stim = _get_stim()
+    if isinstance(dem, (str, Path)) and os.path.isfile(str(dem)):
+        dem = stim.DetectorErrorModel.from_file(str(dem))
+    elif not isinstance(dem, stim.DetectorErrorModel):
+        dem = stim.DetectorErrorModel(str(dem))
+    out = stim.DetectorErrorModel()
+    for inst in dem.flattened():
+        if inst.type == "error" and inst.args_copy()[0] < pmin:
+            continue
+        out.append(inst)
+    return out
+
+
+def _dem_instruction_parts(line: str) -> Tuple[str, str, str]:
+    """
+    The parts (name, args, rest) of a line of a DEM, e.g., ('error', '0.01', 'D0 D1 L0') for 'error[tag](0.01) D0 D1
+    L0  # comment': the name of the instruction (without its tag in brackets, which stim writes since version 1.15 and
+    which may contain spaces, '#', and backslash escapes), the text in the parentheses ('' if none), and the targets,
+    without the comment; ('}', '', '') for the end of a repeat block, and ('', '', '') for a blank or comment line.
+    """
+    s = line.strip()
+    if not s or s[0] == '#':
+        return "", "", ""
+    if s[0] == '}':
+        return "}", "", ""
+    i = 0
+    while i < len(s) and (s[i].isalnum() or s[i] == '_'):
+        i += 1
+    name, j = s[:i], i
+    if j < len(s) and s[j] == '[':  # the tag: up to the first ']' which is not escaped
+        j += 1
+        while j < len(s) and s[j] != ']':
+            j += 2 if s[j] == '\\' else 1
+        j = min(j + 1, len(s))
+    rest = s[j:].split('#', 1)[0].strip()
+    if rest.startswith('('):
+        k = rest.find(')')
+        return (name, rest[1:].strip(), "") if k < 0 else (name, rest[1:k].strip(), rest[k + 1:].strip())
+    return name, "", rest
+
+
 def _dem_error_columns(dem: Any, pmin: float = 0.0, with_prob: bool = False) -> List[Tuple[Any, ...]]:
     """
     The columns of a DEM (a stim.DetectorErrorModel, or a .dem file) as read by the dist_m4ri binary: the detector and
@@ -4189,33 +4787,33 @@ def _dem_error_columns(dem: Any, pmin: float = 0.0, with_prob: bool = False) -> 
     def block(i: int, shift: int) -> Tuple[int, int]:
         # runs the instructions from line i up to the closing brace (or the end): (next line, detector shift)
         while i < len(lines):
-            s = lines[i].split('#', 1)[0].strip()
+            name, args, rest = _dem_instruction_parts(lines[i])
             i += 1
-            if not s:
+            if not name:
                 continue
-            if s.startswith('}'):
+            if name == '}':
                 return i, shift
-            if s.startswith('repeat'):
-                count = int(s.split()[1])
+            if name == 'repeat':
+                count = int(rest.split()[0])
                 body, end = i, i
                 for _ in range(count):
                     end, shift = block(body, shift)
                 if count <= 0:  # skip the body
                     depth = 1
                     while end < len(lines) and depth > 0:
-                        t = lines[end].split('#', 1)[0].strip()
+                        nm = _dem_instruction_parts(lines[end])[0]
                         end += 1
-                        depth += t.startswith('repeat') - t.startswith('}')
+                        depth += (nm == 'repeat') - (nm == '}')
                 i = end
-            elif s.startswith('shift_detectors'):
-                shift += int(s.rsplit(None, 1)[-1])
-            elif s.startswith('error'):
-                p_text = s[s.index('(') + 1:s.index(')')].strip()
+            elif name == 'shift_detectors':
+                shift += int(rest.split()[-1])
+            elif name == 'error':
+                p_text = args
                 if float(p_text) < pmin:
                     continue
                 dets: Set[int] = set()
                 obs: Set[int] = set()
-                for tok in s[s.index(')') + 1:].split():
+                for tok in rest.split():
                     if tok[0] == 'D':
                         dets ^= {int(tok[1:]) + shift}
                     elif tok[0] == 'L':
@@ -4279,19 +4877,30 @@ def read_drop_file(path: Union[str, Path]) -> Tuple[List[int], Optional[int]]:
     Returns:
         (detectors, num_detectors): the sorted distinct detectors, and the number of detectors of the DEM from the
         comment line '# N of M detectors dropped ...' written by the binary (None if there is none).
+
+    Raises:
+        ValueError: for an entry which is not a non-negative integer (as the binary; since version 0.17.2).
     """
     import re
     dets: Set[int] = set()
     num: Optional[int] = None
     with open(str(path)) as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             s = line.strip()
             if s.startswith('#') or s.startswith('%'):
                 mm = re.match(r"#\s*\d+ of (\d+) detectors dropped", s)
                 if mm and num is None:
                     num = int(mm.group(1))
                 continue
-            dets.update(int(tok) for tok in s.replace(',', ' ').split())
+            for tok in s.replace(',', ' ').split():
+                try:
+                    v = int(tok)
+                except ValueError:
+                    v = -1
+                if v < 0:  # (as the binary: an error since version 0.17.2)
+                    raise ValueError(f"drop file '{path}', line {lineno}: invalid entry '{tok}' (expected 0-based "
+                                     f"detector indices)")
+                dets.add(v)
     return sorted(dets), num
 
 
@@ -4305,23 +4914,28 @@ def write_reduced_dem(
 ) -> Tuple[str, str]:
     """
     Writes the DEM (a stim.DetectorErrorModel or a .dem file) without the detectors `dropped` (0-based, e.g., those
-    dropped by the binary, see compute_dem_distance(outD=..., out_reduced=...)) to PREFIX_red.dem: the errors which
-    touch none of them (after the cutoff pmin, in the order of the flattened DEM; a decomposed error as the sum of its
-    components), with the other detectors numbered consecutively, and the observables unchanged.  The maps go to
-    PREFIX_red.json: "detectors" (the original index of each detector of the reduced DEM, i.e., the complement of
-    "dropped"), "errors" (the original index of each error of the reduced DEM, 0-based in the order of the flattened DEM
-    after the cutoff pmin, as the columns of the codewords in outC), "dropped", "num_detectors", "num_errors", "pmin",
-    and the entries of meta.  If dropping the detectors is exact (as verified by the binary), the reduced DEM has the
-    same distance, and its codewords map to codewords of the DEM with "errors".
+    dropped by the binary, see compute_dem_distance(outD=..., out_reduced=...); an index of no detector of the DEM is
+    ignored, as by the binary, and a negative one is a ValueError, since version 0.17.2) to PREFIX_red.dem: the
+    errors which touch none of them (after the cutoff pmin, in the order of the flattened DEM; a decomposed error as
+    the sum of its components), with the other detectors numbered consecutively, and the observables unchanged.  The
+    maps go to PREFIX_red.json: "detectors" (the original index of each detector of the reduced DEM, i.e., the
+    complement of "dropped"), "errors" (the original index of each error of the reduced DEM, 0-based in the order of
+    the flattened DEM after the cutoff pmin, as the columns of the codewords in outC), "dropped", "num_detectors",
+    "num_errors", "pmin", and the entries of meta.  If dropping the detectors is exact (as verified by the binary),
+    the reduced DEM has the same distance, and its codewords map to codewords of the DEM with "errors".
 
     Returns:
         (dem_path, json_path): the files written.
     """
     cols = _dem_error_columns(dem, pmin, with_prob=True)
-    drop_set = set(int(r) for r in dropped)
-    m = 1 + max([d for S, _, _ in cols for d in S] + list(drop_set), default=-1)
+    if any(int(r) < 0 for r in dropped):
+        raise ValueError("write_reduced_dem: negative detector index in dropped")
+    m = 1 + max((d for S, _, _ in cols for d in S), default=-1)
     if num_detectors is not None:
         m = max(m, int(num_detectors))
+    else:
+        m = max(m, _dem_num_detectors(dem))
+    drop_set = set(int(r) for r in dropped if int(r) < m)  # (a larger index is ignored, as by the binary)
     k = 1 + max((o for _, O, _ in cols for o in O), default=-1)
     kept = [r for r in range(m) if r not in drop_set]
     new_index = {r: i for i, r in enumerate(kept)}
@@ -4359,6 +4973,9 @@ def write_reduced_dem(
     return dem_path, json_path
 
 
+_EXPAND_MAX = 1 << 22  # the most codewords of _expand_equal_columns() without maxC (as the expansion of the binary)
+
+
 def _expand_equal_columns(
     cws: List[List[int]],
     dem: Any,
@@ -4371,8 +4988,8 @@ def _expand_equal_columns(
     over the choices among equal columns (the same detectors and observables), which the binary merges (merge=1).
     Each codeword is mapped to the first columns of its sets of equal columns (two equal columns cancel), and every
     distinct result c is expanded into the prod_{j in c} |set(j)| codewords with one column from each set (sorted, in
-    the order of cws).  With maxC > 0, at most maxC codewords are returned, with a warning to stderr if some are
-    dropped.
+    the order of cws).  At most maxC codewords are returned (without maxC: at most _EXPAND_MAX = 2^22, as the binary
+    caps its own expansion, since version 0.17.2), with a warning to stderr if some are dropped.
     """
     if not cws:
         return []
@@ -4400,7 +5017,8 @@ def _expand_equal_columns(
         for r in key:
             num *= len(members[r])
         total += num
-    limit = total if maxC <= 0 else min(total, maxC)
+    cap = maxC if maxC > 0 else _EXPAND_MAX  # (without maxC: at most _EXPAND_MAX codewords, since version 0.17.2)
+    limit = min(total, cap)
     out: List[List[int]] = []
     for key in keys:
         if len(out) >= limit:
@@ -4410,8 +5028,9 @@ def _expand_equal_columns(
             if len(out) >= limit:
                 break
     if limit < total:
+        what = f"maxC={maxC}" if maxC > 0 else f"{_EXPAND_MAX} (without maxC)"
         sys.stderr.write(f"# Warning: expand: the expanded list has {total} codewords ({len(keys)} up to equal "
-                         f"columns); only the first maxC={maxC} are written (the list is incomplete)\n")
+                         f"columns); only the first {what} are written (the list is incomplete)\n")
     elif verbose:
         print(f"[dist_m4ri] expand: {len(keys)} codewords up to equal columns -> {total} codewords")
     return out
@@ -4453,7 +5072,7 @@ def _css_combine(
 
 def _sector_record(dmin: int, dmax: int, rw_steps: int, cws: List[List[int]]) -> Dict[str, Any]:
     """A cache record of a classical or quantum code (or of a CSS sector) with the bounds [dmin, dmax]."""
-    if dmax > 0 and dmin > dmax:
+    if (dmax > 0 and dmin > dmax) or dmax == 1:  # (a codeword of weight 1: d = 1, exact)
         dmin = dmax
     return {
         "dist": _dist_from_bounds(dmin, dmax),
@@ -4595,6 +5214,8 @@ def _cached_code_distance(
     """
     global _distance_cache, _last_run_stats
     _last_run_stats = {}  # the statistics of the binary run (none if the result is cached)
+    if fdem is None:
+        _check_has_columns(kind, H, G, L)
     same_file = bool(finC and outC) and os.path.abspath(str(finC)) == os.path.abspath(str(outC))
     finC = check_finc_outc(finC, outC, verbose=verbose)
 
@@ -4839,18 +5460,22 @@ def compute_classical_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
-            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
-            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
-            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
+            canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
+            the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
+            by them, e.g., on deep circuit DEMs: RW runs to num_steps or the timeout); see run_dist_m4ri().  Passed if
+            not None and >= 0 (None, the default: the binary's 5; 0: off, and then the repeated hits are not counted,
+            unless codewords are collected with do_cws, outC, or maxC).
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
+            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
             win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
@@ -4888,9 +5513,9 @@ def compute_classical_distance(
         cc_prune: The CC search of the binary (see run_dist_m4ri()): 0, the walk of the versions before 0.15.0; 1,
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
-        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
-            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
-            it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
+            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
+            for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -4917,13 +5542,15 @@ def compute_classical_distance(
             see run_dist_m4ri()).  The result and the cache key do not depend on it.
 
     Returns:
-        dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
+        dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
+        without nonzero codewords (k = 0, e.g., a full-rank H) has no codeword to find: dist is then the lower bound
+        dmin > n of the binary, with d_info [dmin, 0, 0].
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         ValueError: for an invalid option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63),
-            for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
-            solver="codedistance".
+            for H without columns (n = 0, since version 0.17.2), for method=2 with timeout <= 0 but without wmax,
+            dmax, or dstop, or for do_cws / outC with solver="codedistance".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
         RuntimeError: if the binary exits with an error (e.g., for a missing input file).
         ImportError: if solver="codedistance" but the codedistance package is not installed.
@@ -4931,9 +5558,12 @@ def compute_classical_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_classical_distance, kwargs)
+    _check_has_columns("classical", H)
     _check_rw_opt(rw_opt)
     cert_mode = _resolve_cert_engine(solver, engine)
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
+                                       engine_cert=cert_mode == "cert")
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
     _warn_experimental_ksub(ksub, method, solver)
 
     if solver == "codedistance" or str(engine or "").strip().lower() == "codedistance":
@@ -4972,7 +5602,7 @@ def compute_classical_distance(
                 qec_io.DistanceProblem(_cert_to_csr(H, qec_io), None, None),
                 wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                 seed=seed if seed != 0 else 1,
-                time_limit=float(timeout) if timeout and timeout > 0 else 0.0,
+                time_limit=_auto_timeout(timeout),
                 mode=mode_arg,
             ),
             label="classical", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
@@ -5067,18 +5697,22 @@ def compute_quantum_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
-            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
-            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
-            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
+            canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
+            the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
+            by them, e.g., on deep circuit DEMs: RW runs to num_steps or the timeout); see run_dist_m4ri().  Passed if
+            not None and >= 0 (None, the default: the binary's 5; 0: off, and then the repeated hits are not counted,
+            unless codewords are collected with do_cws, outC, or maxC).
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
+            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
             win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
@@ -5116,9 +5750,9 @@ def compute_quantum_distance(
         cc_prune: The CC search of the binary (see run_dist_m4ri()): 0, the walk of the versions before 0.15.0; 1,
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
-        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
-            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
-            it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
+            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
+            for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -5138,26 +5772,37 @@ def compute_quantum_distance(
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
         engine: None or "dist_m4ri" (default): the dist_m4ri binary.  "cert": qec_cert (an error for codeword
-            extraction; a lower bound of qec_cert is cached only if it is unconditional, and an upper bound only with
-            a verified witness).  "auto" (since version 0.17.0, a two-stage portfolio for a distance-only method=3
-            call; otherwise the binary, see _auto_two_stage()): Stage A, the binary for tau_1 = timeout if timeout
-            <= 2 s, else min(max(2, timeout / 10), 10) s; if its bracket is still open and more than 1 s is left,
-            Stage B, qec_cert with the remaining time, from the bounds of Stage A (wmin = dmin_A, wmax = dmax_A - 1);
-            the binary only, with the whole timeout, if qec_cert is not installed.  A cached exact result is used
-            without a run (and without importing qec_cert).  The details are in _last_run_stats["engine_auto"].
+            extraction; finC, smax, dW, maxC, and start are ignored with a warning, since version 0.17.2; a lower bound
+            of qec_cert is cached only if it is unconditional, and an upper bound only with a verified witness;
+            ImportError if qec_cert is not usable; a code without logical operators, which qec_cert certifies with the
+            status 'infeasible', gives [0, 0, 0]).  It searches the weights from the certified lower bound of the cache
+            record (not from the caller's dmin, since version 0.17.2: its lower bound would be conditional on it and
+            could not be cached; dmin only tightens the returned bounds) up to dmax - 1 (or wmax, or dstop - 1; 40
+            without any of them, where its stages which do not depend on the weight, e.g., the graphlike or rank-DP
+            bounds, may still certify a larger distance), see _cert_code_distance().  "auto" (since version 0.17.0, a
+            two-stage portfolio for a distance-only method=3 call; otherwise the binary, see _auto_two_stage()): Stage
+            A, the binary for tau_1 = timeout if timeout <= 2 s, else min(max(2, timeout / 10), 10) s; if its bracket is
+            still open and more than 1 s is left, Stage B, qec_cert with the remaining time, from the bounds of Stage A
+            (wmin = max(1, dmin_A), wmax = dmax_A - 1; its randomized upper-bound stage only if dmax_A - max(1, dmin_A)
+            >= 3 or no codeword is known, since version 0.17.1); if qec_cert ends early with an open bracket, the binary
+            with the time left; the binary only, with the whole timeout, if qec_cert is not installed (or not usable,
+            with a warning once per process).  A cached exact result is used without a run (and without importing
+            qec_cert).  The details are in _last_run_stats["engine_auto"].
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The result and the cache key do not depend on it.
 
     Returns:
-        dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True)
+        dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
+        without logical operators (k = 0) has no codeword: dist is then the lower bound dmin > n of the binary, with
+        d_info [dmin, 0, 0].
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
-        ValueError: if neither or both of G and L are given (or G is not given, with solver="codedistance"), for an
-            invalid option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63), for
-            method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
-            solver="codedistance".
+        ValueError: if neither or both of G and L are given (or G is not given, with solver="codedistance"), for a
+            matrix without columns (n = 0, since version 0.17.2), for an invalid option value (e.g., start, cc_prune
+            other than 0, 1, or 2, or rw_opt outside -1..63), for method=2 with timeout <= 0 but without wmax, dmax,
+            or dstop, or for do_cws / outC with solver="codedistance".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
         RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for rows
             of H and G which are not orthogonal).
@@ -5166,9 +5811,12 @@ def compute_quantum_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_quantum_distance, kwargs)
+    _check_has_columns("quantum", H, G, L)
     _check_rw_opt(rw_opt)
     cert_mode = _resolve_cert_engine(solver, engine)
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
+                                       engine_cert=cert_mode == "cert")
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
     _warn_experimental_ksub(ksub, method, solver)
 
     if G is None and L is None:
@@ -5231,19 +5879,22 @@ def compute_quantum_distance(
         method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
     ):
         def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
+            t_call = time.monotonic()
+
             def certify(w_lo: int, w_hi: int) -> Any:
-                _, qec_io, qec_pipeline = _get_qec_cert()
+                _, qec_io, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
                 return qec_pipeline.certify(
                     qec_io.DistanceProblem(
                         _cert_to_csr(H, qec_io), _cert_to_csr(L, qec_io), _cert_to_csr(G, qec_io)
                     ),
                     wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8), seed=seed if seed != 0 else 1,
-                    time_limit=t_lim, mode="auto", use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s),
+                    time_limit=_cert_time_left(t_lim, t_call), mode="auto",
+                    use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s),
                 )
             return _cert_code_distance(
                 lambda: _matrix_cache_key(H, G, L, False), certify, label="quantum", dmin=dmin_s, dmax=dmax_s,
                 dstop=dstop, wmax=wmax, eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
-                certified_dmin=cert_dmin,
+                certified_dmin=cert_dmin, keep_stats=True,
             )
         res = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop,
                               wmax=wmax, label="quantum", debug=debug, verbose=verbose)
@@ -5264,7 +5915,7 @@ def compute_quantum_distance(
                 ),
                 wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                 seed=seed if seed != 0 else 1,
-                time_limit=float(timeout) if timeout and timeout > 0 else 0.0,
+                time_limit=_auto_timeout(timeout),
                 mode=mode_arg,
             ),
             label="quantum", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
@@ -5380,18 +6031,22 @@ def compute_css_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
-            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
-            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
-            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
+            canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
+            the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
+            by them, e.g., on deep circuit DEMs: RW runs to num_steps or the timeout); see run_dist_m4ri().  Passed if
+            not None and >= 0 (None, the default: the binary's 5; 0: off, and then the repeated hits are not counted,
+            unless codewords are collected with do_cws, outC, or maxC).
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
+            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
             win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
@@ -5428,9 +6083,9 @@ def compute_css_distance(
         cc_prune: The CC search of the binary (see run_dist_m4ri()): 0, the walk of the versions before 0.15.0; 1,
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
-        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
-            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
-            it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
+            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
+            for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -5450,10 +6105,13 @@ def compute_css_distance(
         seed: Random seed.
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
-        engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert for each sector; "auto" (since
-            version 0.17.0): the two-stage portfolio of compute_quantum_distance() for each sector (a distance-only
-            method=3 call): the binary first (Stage A, from the timeout as there), and qec_cert only for a sector
-            whose bracket is still open (Stage B); each sector has the whole timeout, as with the other engines.
+        engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert for each sector (as in
+            compute_quantum_distance()); "auto" (since version 0.17.0): the two-stage portfolio of
+            compute_quantum_distance() for each sector (a distance-only method=3 call): the binary first (Stage A,
+            from the timeout as there), qec_cert only for a sector whose bracket is still open (Stage B; wmin =
+            max(1, dmin_A), wmax = dmax_A - 1, and its upper-bound stage only for a wide bracket), and the binary again
+            with the time left if qec_cert ends early with an open bracket; each sector has the whole timeout, as with
+            the other engines.
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The result and the cache key do not depend on it.
@@ -5461,12 +6119,15 @@ def compute_css_distance(
     Returns:
         tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
         else (dist, dX_info, dZ_info)
+        A sector without logical operators (k = 0) has no codeword: its bounds are [dmin, 0, 0] with the lower bound
+        dmin > n of the binary.
 
     Raises:
         ValueError: if Hx or Hz is missing or empty (use compute_quantum_distance() for one sector, or
-            compute_classical_distance() for a classical code), for an invalid option value (e.g., start, cc_prune
-            other than 0, 1, or 2, or rw_opt outside -1..63), for method=2 with timeout <= 0 but without wmax, dmax, or
-            dstop, or for do_cws / outC with solver="codedistance".
+            compute_classical_distance() for a classical code), for matrices without columns (n = 0, since version
+            0.17.2), for an invalid option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside
+            -1..63), for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
+            solver="codedistance".
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
         RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for
@@ -5493,9 +6154,12 @@ def compute_css_distance(
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max  # an upper bound on d = min(dX, dZ), not on either sector
     _check_kwargs(compute_css_distance, kwargs)
+    _check_has_columns("CSS", Hx, Hz, Lx, Lz)
     _check_rw_opt(rw_opt)
     cert_mode = _resolve_cert_engine(solver, engine)
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
+                                       engine_cert=cert_mode == "cert")
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
     _warn_experimental_ksub(ksub, method, solver)
     _warn_ortho(ortho, Lx is None or Lz is None, solver)  # (G of the sectors: Hz unless Lx, Hx unless Lz)
 
@@ -5577,20 +6241,22 @@ def compute_css_distance(
         ):
             def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float, s: str = s, H_s: Any = H_s,
                          G_s: Any = G_s, L_s: Any = L_s) -> Dict[str, Any]:
+                t_call = time.monotonic()
+
                 def certify(w_lo: int, w_hi: int) -> Any:
-                    _, qec_io, qec_pipeline = _get_qec_cert()
+                    _, qec_io, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
                     return qec_pipeline.certify(
                         qec_io.DistanceProblem(
                             _cert_to_csr(H_s, qec_io), _cert_to_csr(L_s, qec_io), _cert_to_csr(G_s, qec_io)
                         ),
                         wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
-                        seed=seed if seed != 0 else 1, time_limit=t_lim, mode="auto",
+                        seed=seed if seed != 0 else 1, time_limit=_cert_time_left(t_lim, t_call), mode="auto",
                         use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s),
                     )
                 return _cert_code_distance(
                     lambda: _matrix_cache_key(H_s, G_s, L_s, False), certify, label=f"CSS {s}-sector", dmin=dmin_s,
                     dmax=dmax_s, dstop=sector_stop, wmax=wmax, eff_cache_file=eff_cache_file, debug=debug,
-                    verbose=verbose, certified_dmin=cert_dmin,
+                    verbose=verbose, certified_dmin=cert_dmin, keep_stats=True,
                 )
             # (a sector: the user's dmax is a bound on min(dX, dZ), passed as the stop target, not as an upper bound)
             res[s] = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=0, dstop=sector_stop,
@@ -5609,7 +6275,7 @@ def compute_css_distance(
                     ),
                     wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                     seed=seed if seed != 0 else 1,
-                    time_limit=float(timeout) if timeout and timeout > 0 else 0.0,
+                    time_limit=_auto_timeout(timeout),
                     mode=mode_arg,
                 ),
                 label=f"CSS {s}-sector", dmin=eff_dmin, dmax=0, dstop=sector_stop, wmax=wmax,
@@ -5754,6 +6420,11 @@ def _dem_from_input(
     if dem is not None and circuit is not None:
         _warn_ignored("both 'dem' and 'circuit' were given; using 'dem' (the circuit is ignored).")
         circuit = None
+    for what, src in (("DEM", dem), ("Stim circuit", circuit)):  # (since version 0.17.2: a missing file was taken
+        # for the text of a DEM)
+        if isinstance(src, Path) or (isinstance(src, str) and "\n" not in src and "(" not in src):
+            if not os.path.isfile(str(src)):
+                raise FileNotFoundError(f"{what} file not found: '{src}'")
     if dem is not None and isinstance(dem, (str, Path)) and str(dem).endswith(".stim"):
         circuit = dem
         dem = None
@@ -5956,18 +6627,22 @@ def compute_dem_distance(
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method (1=RW, 2=CC, 3=Bracketing default).
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
-        timeout: Execution timeout in seconds (default: 60.0; 0: no limit).
+        timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
-            the minimum weight found and for a representative set of cov_cws lowest-weight codewords (see
-            run_dist_m4ri()); passed if not None and >= 0 (None, the default: the binary's 5; 0: off, and then the
-            repeated hits are not counted, unless codewords are collected with do_cws, outC, or maxC).
+            the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
+            canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
+            the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
+            by them, e.g., on deep circuit DEMs: RW runs to num_steps or the timeout); see run_dist_m4ri().  Passed if
+            not None and >= 0 (None, the default: the binary's 5; 0: off, and then the repeated hits are not counted,
+            unless codewords are collected with do_cws, outC, or maxC).
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500, see
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
+            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
             win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
@@ -6001,9 +6676,9 @@ def compute_dem_distance(
         cc_prune: The CC search of the binary (see run_dist_m4ri()): 0, the walk of the versions before 0.15.0; 1,
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
-        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step; see
-            run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512 for matrices.  The cache key does not depend on
-            it.
+        win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
+            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
+            for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -6076,12 +6751,15 @@ def compute_dem_distance(
             strip_noise(); with p_noise=0, all noise is removed, e.g., to save the noiseless circuit with out_stim),
             e.g., to compare circuits with the same noise model (default: False).
         engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert (certify_circuit() for a Stim
-            circuit, certify_dem() for a DEM); "auto" (since version 0.17.0, for a distance-only method=3 call with
-            pmin=0, without outD and out_reduced; otherwise the binary): with more than 25,000 raw error mechanisms
-            and a timeout of at least 3 s (or 0, no limit), qec_cert first, whose exact reductions of large DEMs run
-            before any search (the binary with the time left if qec_cert ends early with an open bracket); otherwise
-            the two-stage portfolio of compute_quantum_distance() (the binary first, then qec_cert if the bracket is
-            still open); the binary only, with the whole timeout, if qec_cert is not installed.
+            circuit, certify_dem() for a DEM; with pmin > 0, certify_dem() of the DEM without the error mechanisms of
+            probability < pmin, as the binary reads it: since version 0.17.2, before which qec_cert certified the full
+            DEM, whose distance was cached under the key of the cut DEM); "auto" (since version 0.17.0, for a
+            distance-only method=3 call with pmin=0, without outD and out_reduced; otherwise the binary): with more
+            than 25,000 raw error mechanisms and a timeout of at least 3 s (or 0, no limit), qec_cert first, whose
+            exact reductions of large DEMs run before any search (the binary with the time left if qec_cert ends early
+            with an open bracket, also with timeout=0); otherwise the two-stage portfolio of compute_quantum_distance()
+            (the binary first, then qec_cert if the bracket is still open, and then the binary again with the time
+            left); the binary only, with the whole timeout, if qec_cert is not installed or not usable (a warning).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The result and the cache key do not depend on it.
@@ -6095,7 +6773,8 @@ def compute_dem_distance(
             p_noise outside [0, 0.5], for an invalid drop (e.g., a file which does not exist) or another invalid
             option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63), for method=2 with
             timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
-        FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
+        FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()), or if a DEM or circuit
+            file does not exist (since version 0.17.2; before, its name was read as the text of a DEM).
         RuntimeError: if the binary exits with an error.
         ImportError: if stim is needed (e.g., for a Stim circuit) or solver="codedistance", but the package is not
             installed.
@@ -6109,7 +6788,9 @@ def compute_dem_distance(
     if start_scan:  # (the binary merges the equal columns of a DEM, which changes the order of the columns)
         _warn_ignored("start_scan=1 is not available for a DEM (ignored)")
         start_scan = False
-    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan)
+    start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
+                                       engine_cert=cert_mode == "cert")
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
     _warn_experimental_ksub(ksub, method, solver)
     _warn_disabled_simple_full(simple, full)
 
@@ -6204,20 +6885,19 @@ def compute_dem_distance(
         ):
             _, _, qec_pipeline = _get_qec_cert()
             mode_arg = "ub" if method == 1 else "auto"
-            t_lim = float(timeout) if timeout and timeout > 0 else 0.0
+            t_lim = _auto_timeout(timeout)
             n_thr = threads or (os.cpu_count() or 8)
             r_seed = seed if seed != 0 else 1
+
+            def certify_cut(w_lo: int, w_hi: int) -> Any:
+                kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg)
+                if pmin > 0.0:  # (qec_cert has no cutoff: it gets the DEM of the cache key, without the errors < pmin)
+                    return qec_pipeline.certify_dem(_dem_pmin_cut(dem, pmin), **kw)
+                if circuit is not None:
+                    return qec_pipeline.certify_circuit(circuit, **kw)
+                return qec_pipeline.certify_dem(fdem_run, **kw)
             res = _cert_code_distance(
-                lambda: _dem_cache_key(dem, pmin),
-                lambda w_lo, w_hi: (
-                    qec_pipeline.certify_circuit(
-                        circuit, wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg
-                    )
-                    if circuit is not None else
-                    qec_pipeline.certify_dem(
-                        fdem_run, wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg
-                    )
-                ),
+                lambda: _dem_cache_key(dem, pmin), certify_cut,
                 label="DEM", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
                 eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
             )
@@ -6243,10 +6923,12 @@ def compute_dem_distance(
         ):
             def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
                 n_thr, r_seed = threads or (os.cpu_count() or 8), seed if seed != 0 else 1
+                t_call = time.monotonic()
 
                 def certify(w_lo: int, w_hi: int) -> Any:
-                    _, _, qec_pipeline = _get_qec_cert()
-                    kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode="auto",
+                    _, _, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
+                    kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed,
+                              time_limit=_cert_time_left(t_lim, t_call), mode="auto",
                               use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s))
                     if circuit is not None:
                         return qec_pipeline.certify_circuit(circuit, **kw)
@@ -6254,6 +6936,7 @@ def compute_dem_distance(
                 return _cert_code_distance(
                     lambda: _dem_cache_key(dem, pmin), certify, label="DEM", dmin=dmin_s, dmax=dmax_s, dstop=dstop,
                     wmax=wmax, eff_cache_file=eff_cache_file, debug=debug, verbose=verbose, certified_dmin=cert_dmin,
+                    keep_stats=True,
                 )
             num_err = (_dem_num_raw_errors(dem, limit=_AUTO_DEM_FAST_PATH_ERRORS)
                        if _timeout_at_least(timeout, _AUTO_DEM_FAST_PATH_MIN_TIMEOUT) else -1)
@@ -6307,11 +6990,11 @@ def _model_detector_groups(circuit: Any) -> Tuple[List[int], List[bool], int]:
     """
     The groups of the detectors of a Stim circuit for its code-sized model (see compute_model_lower_bound()): two
     detectors are in the same group if they share a measurement record other than a final data measurement.  The final
-    data measurements are the measurements in the final measurement block (after the last detector which precedes the
-    last measurement) of qubits not measured before it, or all measurements of the final block if there are none
-    (e.g., if every qubit is measured in each round).  In a memory circuit, the groups are the chains of the detectors
-    of the checks, linked by the measurements of their ancillas in consecutive rounds; the chain of a check of the
-    measured basis ends with its detector of the final data measurements.
+    data measurements are the measurements in the final measurement block (after both the last detector which precedes
+    the last measurement and the last unitary gate) of qubits not measured before it, or all measurements of the final
+    block if there are none (e.g., if every qubit is measured in each round).  In a memory circuit, the groups are the
+    chains of the detectors of the checks, linked by the measurements of their ancillas in consecutive rounds; the
+    chain of a check of the measured basis ends with its detector of the final data measurements.
 
     Returns:
         (group, final, num_final): the group of each detector (numbered in the order of their first detectors), for
@@ -6392,63 +7075,59 @@ def _dem_detector_groups(dem: Any, pmin: float = 0.0) -> Tuple[List[int], List[b
     max_det = -1
     max_obs = -1
 
+    parse_dem_line = _dem_instruction_parts  # (the name, args, and targets of a line; tags and comments)
+
     def parse_block(i: int, det_shift: int, c_shift: Tuple[float, ...]) -> Tuple[int, int, Tuple[float, ...]]:
         nonlocal max_det, max_obs
         while i < len(lines):
-            s = lines[i].split("#", 1)[0].strip()
+            name, args, rest = parse_dem_line(lines[i])
             i += 1
-            if not s:
+            if not name:
                 continue
-            if s.startswith("}"):
+            if name == "}":
                 return i, det_shift, c_shift
-            if s.startswith("repeat"):
-                count = int(s.split()[1])
+            if name == "repeat":
+                count = int(rest.split()[0])
                 body, end = i, i
                 for _ in range(count):
                     end, det_shift, c_shift = parse_block(body, det_shift, c_shift)
                 if count <= 0:
                     depth = 1
                     while end < len(lines) and depth > 0:
-                        t = lines[end].split("#", 1)[0].strip()
+                        nm, _, _ = parse_dem_line(lines[end])
                         end += 1
-                        depth += t.startswith("repeat") - t.startswith("}")
+                        depth += (nm == "repeat") - (nm == "}")
                 i = end
-            elif s.startswith("shift_detectors"):
-                if "(" in s and ")" in s:
-                    vals = [float(x) for x in s[s.index("(") + 1:s.index(")")].split(",") if x.strip()]
+            elif name == "shift_detectors":
+                if args:
+                    vals = [float(x) for x in args.split(",") if x.strip()]
                     n_c = max(len(c_shift), len(vals))
                     c_shift = tuple(
                         (c_shift[k] if k < len(c_shift) else 0.0) + (vals[k] if k < len(vals) else 0.0)
                         for k in range(n_c)
                     )
-                    rest = s[s.index(")") + 1:].strip()
-                else:
-                    rest = s.split(None, 1)[1].strip() if len(s.split()) > 1 else "0"
                 if rest:
                     det_shift += int(rest.rsplit(None, 1)[-1])
-            elif s.startswith("detector"):
+            elif name == "detector":
                 coords: Tuple[float, ...] = ()
-                if "(" in s and ")" in s:
-                    vals = [float(x) for x in s[s.index("(") + 1:s.index(")")].split(",") if x.strip()]
+                if args:
+                    vals = [float(x) for x in args.split(",") if x.strip()]
                     coords = tuple(vals[k] + (c_shift[k] if k < len(c_shift) else 0.0) for k in range(len(vals)))
-                    rest = s[s.index(")") + 1:]
-                else:
-                    rest = s[len("detector"):]
                 for tok in rest.split():
                     if tok.startswith("D"):
                         d = int(tok[1:]) + det_shift
                         max_det = max(max_det, d)
                         if coords:
                             det_coords[d] = coords
-            elif s.startswith("logical_observable"):
-                for tok in s.split()[1:]:
+            elif name == "logical_observable":
+                for tok in rest.split():
                     if tok.startswith("L"):
                         max_obs = max(max_obs, int(tok[1:]))
-            elif s.startswith("error"):
-                p_text = s[s.index("(") + 1:s.index(")")].strip()
+            elif name == "error":
+                p_text = args.strip()
                 if float(p_text) < pmin:
                     continue
-                for tok in s[s.index(")") + 1:].split():
+                for tok in rest.split():
                     if tok.startswith("D"):
                         max_det = max(max_det, int(tok[1:]) + det_shift)
                     elif tok.startswith("L"):
@@ -6605,36 +7284,42 @@ def compute_model_lower_bound(
     **kwargs
 ) -> Any:
     """
-    Certified lower bound on the circuit-level distance of a Stim memory circuit from its code-sized model.
+    Certified lower bound on the circuit-level distance of a Stim memory circuit (or standalone DEM) from its
+    code-sized model.
 
-    The model is a row reduction of the DEM (H, L) of the circuit (processed as in compute_dem_distance(), with the
-    options rounds, p_noise, force_noise, and pmin): two detectors are linked if they share a measurement record other
-    than a final data measurement, and each group of linked detectors gives one row, the sum of the rows of its
-    detectors (see _model_detector_groups()).  In a memory circuit, the groups are the chains of the detectors of the
-    checks over the rounds: the chain of a check h of the measured basis telescopes to the parity of the final data
-    measurements on its support, so that the column of an error mechanism is the syndrome of its net data error (a
-    data error or a hook error), and the chains of the minority-basis checks (with minority=True) add the net change
-    of their values between their first and last measurements.  Equal columns are merged, and the errors with no effect
-    on the rows nor on the observables (e.g., ancilla measurement errors) are dropped; the model has a few columns per
-    data qubit.  Since every row is a sum of detector rows, every codeword x of the DEM (Hx = 0, Lx != 0) gives a model
-    codeword of weight at most |x|: the distance of the model, as certified by CC (its dmin), is a lower bound on the
-    distance of the DEM.  It ignores the timing within the rounds, so it is not tight in general (e.g., 5 for the
-    bb_72 circuit of distance 6).  Any circuit gives a valid bound, but a useful one needs this structure; if an error
-    flips an observable but no row, the bound is 1 (with a note to stderr).
+    The model is a row reduction of the DEM (H, L) of the circuit or DEM (processed as in compute_dem_distance(), with
+    the options rounds, p_noise, force_noise, and pmin): for a circuit, two detectors are linked if they share a
+    measurement record other than a final data measurement, and each group of linked detectors gives one row, the sum
+    of the rows of its detectors (see _model_detector_groups()).  For a standalone DEM (or if the circuit groups are
+    trivial), detector chains across rounds are grouped by spatial detector coordinates (x, y, ..., t) when present, or
+    else by linking consecutive-round detectors via dominant weight-2 observable-free error mechanisms (see
+    _dem_detector_groups()).  In a memory circuit, the groups are the chains of the detectors of the checks over the
+    rounds: the chain of a check h of the measured basis telescopes to the parity of the final data measurements on its
+    support, so that the column of an error mechanism is the syndrome of its net data error (a data error or a hook
+    error), and the chains of the minority-basis checks (with minority=True) add the net change of their values between
+    their first and last measurements.  Equal columns are merged, and the errors with no effect on the rows nor on the
+    observables (e.g., ancilla measurement errors) are dropped; the model has a few columns per data qubit.  Since
+    every row is a sum of detector rows, every codeword x of the DEM (Hx = 0, Lx != 0) gives a model codeword of weight
+    at most |x|: the distance of the model, as certified by CC (its dmin), is a lower bound on the distance of the DEM.
+    It ignores the timing within the rounds, so it is not tight in general (e.g., 5 for the bb_72 circuit of distance
+    6).  Any circuit or DEM gives a valid bound, but a useful one needs this structure; if an error flips an observable
+    but no row, the bound is 1 (with a note to stderr).
 
     The binary runs on the model with the rows of the measured-basis chains first, and then (with minority=True) on
-    the model with all rows, starting from that bound (the extra rows can only raise it): RW first, which ends as soon
-    as it finds a model codeword of that weight (then the bound is not raised), and only otherwise with `method` (CC
-    from dmin).  The minority-basis rows are off by default: with depolarizing-type noise, every net data error which
-    flips the measured-basis observable also occurs without a component of the other basis, so that a lightest model
-    codeword has a version which the minority-basis rows do not detect (they never raised the bound of the benchmark
-    circuits or of the surface-code circuits of stim, and cost up to 9 s for the mitten_270 circuits); they may raise
-    it for other noise models (e.g., biased noise).  The certified bound is stored as dmin in the cache record of the
-    DEM (the same key as compute_dem_distance(); "dmin_model": the bound), so that a later compute_dem_distance()
-    starts CC from it; the distances of the models are cached under their own keys.
+    the model with all rows, starting from that bound (the extra rows can only raise it): RW first (unless method=2 or
+    num_steps=0), which ends as soon as it finds a model codeword of that weight (then the bound is not raised), and
+    only otherwise with `method` (CC from dmin).  The minority-basis rows are off by default: with depolarizing-type
+    noise, every net data error which flips the measured-basis observable also occurs without a component of the other
+    basis, so that a lightest model codeword has a version which the minority-basis rows do not detect (they never
+    raised the bound of the benchmark circuits or of the surface-code circuits of stim, and cost up to 9 s for the
+    mitten_270 circuits); they may raise it for other noise models (e.g., biased noise).  The certified bound is stored
+    as dmin in the cache record of the DEM (the same key as compute_dem_distance(); "dmin_model": the bound), so that a
+    later compute_dem_distance() starts CC from it; the distances of the models are cached under their own keys.
 
     Args:
-        circuit: Stim memory circuit (stim.Circuit or .stim file).
+        circuit: Stim memory circuit (stim.Circuit or .stim file), or a DEM (stim.DetectorErrorModel or .dem file)
+            when `dem` is omitted.
+        dem: Optional standalone DEM (stim.DetectorErrorModel or .dem file); takes precedence over `circuit` if given.
         dist_m4ri: Path to dist_m4ri executable (optional).
         method: Solver method for the model (1=RW, 2=CC, 3=Bracketing default); only CC certifies a bound.
         threads / timeout / num_steps / seed / nothrottle / pairs: As for compute_dem_distance(), for each run of the
@@ -6650,7 +7335,8 @@ def compute_model_lower_bound(
             checks of a CSS circuit) are rows of the model as well (default: False; CLI: --model-minority).
         pmin: Probability cutoff for the error mechanisms of the DEM.
         rounds / p_noise / force_noise: The processing of the circuit, as in compute_dem_distance().
-        out_model: If given, the model (with all rows used) is written to PREFIX_HR.mtx and PREFIX_LR.mtx.
+        out_model: If given, the model matrices H and L (the measured-basis rows by default, or all rows with
+            minority=True) are written to PREFIX_HR.mtx and PREFIX_LR.mtx.
         cache_file: Optional JSON file path for persistent distance caching.
         debug / verbose: As for compute_dem_distance().
         return_info: If True, return (bound, info).
@@ -6666,7 +7352,9 @@ def compute_model_lower_bound(
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
-        ValueError: if the input is not a Stim circuit.
+        ValueError: if neither a Stim circuit (.stim) nor a DEM (.dem) is given, if `rounds` is given without a
+            circuit or is negative, if `p_noise` is outside [0, 0.5], if `rw_opt` is out of range, or if the circuit
+            and DEM detector counts disagree.
     """
     global _distance_cache
     _check_kwargs(compute_model_lower_bound, kwargs, aliases=())
@@ -6757,8 +7445,12 @@ def compute_model_lower_bound(
         if full is not part and (dstop <= 0 or bound < dstop) and (wmax <= 0 or bound <= wmax):
             # all rows: RW first (a model codeword of weight `bound` ends the search), then CC from the bound
             dmin = bound if bound > 1 else 0
-            info["model_d_info"] = run(full, dmin, 1, wmin=bound)
-            if method != 1 and not 0 < info["model_d_info"][1] <= bound:
+            if method == 1 or (method != 2 and num_steps != 0):
+                info["model_d_info"] = run(full, dmin, 1, wmin=bound)
+                need_cc = method != 1 and not 0 < info["model_d_info"][1] <= bound
+            else:
+                need_cc = True
+            if need_cc:
                 info["model_d_info"] = run(full, dmin, method)
             bound = max(bound, info["model_d_info"][0])
     info["d_info"] = [bound, 0, 0]
@@ -6799,8 +7491,81 @@ def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
             f.write(f"{len(cw)} " + " ".join(str(idx + 1) for idx in cw) + "\n")
 
 
+_CLI_FALSE = ("0", "false", "no", "off", "none")  # the CLI values of a flag which mean off (also as "" for some)
+# the CLI file options which also take the file name as the next argument, as in the binary ('finH= FILE')
+_CLI_FILE_KEYS = ("fdem", "dem", "finh", "fing", "finl", "fin", "hx", "finhx", "hz", "finhz", "lx", "finlx", "lz",
+                  "finlz", "finc", "outc", "outd", "drop")
+
+
+def _cli_arg_text(key: str, val: str, arg: str) -> str:
+    """The argument as written, for the messages: 'key=val' (also for the form '--key VALUE')."""
+    return arg if "=" in arg else f"{key}={val}"
+
+
+def _cli_int(val: str, arg: str) -> int:
+    """
+    The integer value of a CLI argument arg (e.g., 'steps=1000'), also written as a number with an integer value (e.g.,
+    steps=1e5, as the dist_m4ri binary accepts since version 0.17.2); ValueError naming the argument otherwise.
+    """
+    s = str(val).strip()
+    try:
+        return int(s, 10)
+    except ValueError:
+        pass
+    try:
+        f = float(s)
+    except ValueError:
+        f = None
+    if f is None or not f.is_integer():
+        raise ValueError(f"invalid '{arg}': expected an integer")
+    return int(f)
+
+
+def _cli_float(val: str, arg: str) -> float:
+    """The finite number of a CLI argument arg (e.g., 'timeout=1.5'); ValueError naming the argument otherwise."""
+    import math
+    try:
+        v = float(str(val).strip())
+    except ValueError:
+        v = math.nan
+    if not math.isfinite(v):  # (nan, inf: not a value; timeout=0 is no limit)
+        raise ValueError(f"invalid '{arg}': expected a number")
+    return v
+
+
+def _cli_int_or_text(val: str) -> Union[int, str]:
+    """The value of a disabled CLI option (noscan, cbeg, cend, irred, css): an integer, or the text as given (ignored
+    with a warning in either case, see _warn_disabled_options() and _warn_cli_conflicts())."""
+    try:
+        return int(str(val).strip(), 10)
+    except ValueError:
+        return str(val)
+
+
+def _cli_flag(val: str) -> bool:
+    """The value of a CLI flag given as key=value: False for 0, false, no, off, or none (any case), True otherwise."""
+    s = str(val).strip()
+    return bool(int(s)) if s.isdigit() else s.lower() not in _CLI_FALSE
+
+
+def _cli_is_number(tok: str) -> bool:
+    """Whether the CLI token is a finite number (e.g., the negative value in '--kwin -1')."""
+    import math
+    try:
+        return math.isfinite(float(tok))
+    except ValueError:
+        return False
+
+
 def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
-    """Parses CLI arguments supporting both key=value pairs and standard --flags."""
+    """
+    Parses CLI arguments supporting both key=value pairs and standard --flags.
+
+    The values are checked: ValueError (naming the argument) for an invalid one, except for the disabled options
+    noscan, cbeg, cend, irred, and css, which are kept as given (ignored with a warning).  A file option given as
+    'key=' takes the file name from the next argument (e.g., 'finH= FILE', as the binary), and the form '--key VALUE'
+    also takes a negative number (e.g., '--kwin -1').
+    """
     args: Dict[str, Any] = {
         "method": 3,
         "finH": None,
@@ -7083,8 +7848,9 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 key = key[1:]
         elif arg.startswith("--") or arg.startswith("-"):
             key = arg.lstrip("-")
-            if i + 1 < len(argv) and not argv[i + 1].startswith("-") and "=" not in argv[i + 1]:
-                val = argv[i + 1]
+            nxt = argv[i + 1] if i + 1 < len(argv) else None
+            if nxt is not None and "=" not in nxt and (not nxt.startswith("-") or _cli_is_number(nxt)):
+                val = nxt
                 i += 1
             else:
                 val = "1"
@@ -7108,6 +7874,13 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
         if key:
             key_lower = key.lower()
+            if val == "" and "=" in arg and key_lower in _CLI_FILE_KEYS:  # ('finH= FILE': the next argument)
+                if i + 1 >= len(argv):
+                    raise ValueError(f"'{arg}': missing file name")
+                i += 1
+                val = argv[i]
+                arg = f"{arg}{val}"
+            num_arg = _cli_arg_text(key, val, arg)
             if key_lower in ("cache", "cache_file", "cachefile"):
                 if val.lower() in ("0", "none", "false", "off", "no"):
                     args["use_cache"] = False
@@ -7139,21 +7912,23 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["outC"] = val
                 args["do_cws"] = True
             elif key_lower in ("method", "m"):
-                args["method"] = int(val)
+                args["method"] = _cli_int(val, num_arg)
+                if args["method"] not in (1, 2, 3):
+                    raise ValueError(f"invalid '{num_arg}': method should be 1 (RW), 2 (CC), or 3 (both)")
             elif key_lower in ("dmin", "d_min"):
-                args["dmin"] = int(val)
+                args["dmin"] = _cli_int(val, num_arg)
             elif key_lower in ("dmax", "d_max"):
-                args["dmax"] = int(val)
+                args["dmax"] = _cli_int(val, num_arg)
             elif key_lower == "dstop":
-                args["dstop"] = int(val)
+                args["dstop"] = _cli_int(val, num_arg)
                 if args["dstop"] < 0:
-                    raise ValueError(f"invalid '{arg}': dstop must be non-negative")
+                    raise ValueError(f"invalid '{num_arg}': dstop must be non-negative")
             elif key_lower in ("wmin", "w_min"):
-                args["wmin"] = int(val)
+                args["wmin"] = _cli_int(val, num_arg)
             elif key_lower in ("wmax", "w_max"):
-                args["wmax"] = int(val)
+                args["wmax"] = _cli_int(val, num_arg)
             elif key_lower == "smax":
-                args["smax"] = int(val)
+                args["smax"] = _cli_int(val, num_arg)
             elif key_lower == "start":
                 args["start"] = _normalize_start_list(val)
             elif key_lower in ("trust_start", "trust-start", "truststart"):
@@ -7162,51 +7937,54 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 )
             elif key_lower in ("start_scan", "start-scan", "startscan"):
                 if val not in ("0", "1"):
-                    raise ValueError(f"invalid '{arg}': start_scan should be 0 or 1")
+                    raise ValueError(f"invalid '{num_arg}': start_scan should be 0 or 1")
                 args["start_scan"] = val == "1"
             elif key_lower == "cbeg":
-                args["cbeg"] = int(val)
+                args["cbeg"] = _cli_int_or_text(val)
             elif key_lower == "cend":
-                args["cend"] = int(val)
+                args["cend"] = _cli_int_or_text(val)
             elif key_lower == "css":
-                args["css"] = int(val)
+                args["css"] = _cli_int_or_text(val)
             elif key_lower in ("dexp", "dest", "d_exp"):
-                args["dexp"] = int(val)
+                args["dexp"] = _cli_int(val, num_arg)
             elif key_lower in ("steps", "num_steps", "nsteps"):
-                args["steps"] = int(val)
+                args["steps"] = _cli_int(val, num_arg)
             elif key_lower in ("threads", "num_threads", "t"):
-                args["threads"] = int(val)
+                args["threads"] = _cli_int(val, num_arg)
             elif key_lower in ("timeout", "time"):
-                args["timeout"] = float(val)
+                t_val = val.strip()  # (a trailing 's' is accepted, as by the binary: timeout=10s)
+                t_val = t_val[:-1] if t_val[-1:] in ("s", "S") else t_val
+                inf = t_val.lower().lstrip("+") in ("inf", "infinity")  # (no limit, as in the binary)
+                args["timeout"] = 0.0 if inf else _cli_float(t_val, num_arg)
             elif key_lower == "dw":
-                args["dW"] = int(val)
+                args["dW"] = _cli_int(val, num_arg)
             elif key_lower in ("maxc", "max_c"):
-                args["maxC"] = int(val)
+                args["maxC"] = _cli_int(val, num_arg)
             elif key_lower == "pmin":
-                args["pmin"] = float(val)
+                args["pmin"] = _cli_float(val, num_arg)
             elif key_lower in ("merge", "expand"):
                 if val.lower() in ("1", "true", "yes", "on"):
                     args[key_lower] = True
                 elif val.lower() in ("0", "false", "no", "off"):
                     args[key_lower] = False
                 else:
-                    raise ValueError(f"invalid '{arg}': {key_lower} should be 0 or 1")
+                    raise ValueError(f"invalid '{num_arg}': {key_lower} should be 0 or 1")
             elif key_lower in ("sort_rows", "sort-rows", "sortrows"):
                 if val.lower() in ("1", "true", "yes", "on"):
                     args["sort_rows"] = True
                 elif val.lower() in ("0", "false", "no", "off"):
                     args["sort_rows"] = False
                 else:
-                    raise ValueError(f"invalid '{arg}': sort_rows should be 0 or 1")
+                    raise ValueError(f"invalid '{num_arg}': sort_rows should be 0 or 1")
             elif key_lower in ("cc_prune", "cc-prune", "ccprune"):
                 if val not in ("0", "1", "2"):
-                    raise ValueError(f"invalid '{arg}': cc_prune should be 0, 1, or 2")
+                    raise ValueError(f"invalid '{num_arg}': cc_prune should be 0, 1, or 2")
                 args["cc_prune"] = int(val)
             elif key_lower in ("rw_opt", "rw-opt", "rwopt"):
-                args["rw_opt"] = _parse_rw_opt(val, arg)
+                args["rw_opt"] = _parse_rw_opt(val, num_arg)
             elif key_lower == "ortho":
                 if val not in ("0", "1"):
-                    raise ValueError(f"invalid '{arg}': ortho should be 0 or 1")
+                    raise ValueError(f"invalid '{num_arg}': ortho should be 0 or 1")
                 args["ortho"] = val == "1"
             elif key_lower == "drop":  # (the values take precedence over files with these names, as in the binary)
                 if val.lower() in ("1", "true", "yes", "on", "auto"):
@@ -7234,13 +8012,13 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 else:
                     _add_help_topic(val)  # help=TOPIC: the same as morehelp=TOPIC
             elif key_lower == "noscan":
-                args["noscan"] = int(val)
+                args["noscan"] = _cli_int_or_text(val)
             elif key_lower == "irred":  # (disabled: ignored with a warning, see _warn_cli_conflicts())
-                args["irred"] = int(val)
+                args["irred"] = _cli_int_or_text(val)
             elif key_lower == "classical":
-                args["classical"] = int(val)
+                args["classical"] = _cli_int(val, num_arg)
             elif key_lower == "seed":
-                args["seed"] = int(val)
+                args["seed"] = _cli_int(val, num_arg)
             elif key_lower in ("debug", "dbg"):
                 args["debug"] |= parse_debug_value(val)  # OR-combined (the default is 0)
             elif key_lower == "solver":
@@ -7248,37 +8026,41 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             elif key_lower == "engine":
                 args["engine"] = val
             elif key_lower in ("verbose", "v"):
-                args["verbose"] = bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
-            elif key_lower == "cws":
-                args["do_cws"] = bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no"))
-            elif key_lower in ("nothrottle", "no_throttle"):
-                args["nothrottle"] = (
-                    bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
-                )
+                args["verbose"] = _cli_flag(val)
+            elif key_lower in ("cws", "do_cws", "do-cws", "docws"):
+                args["do_cws"] = _cli_flag(val)
+            elif key_lower in ("nothrottle", "no_throttle", "no-throttle"):
+                args["nothrottle"] = _cli_flag(val)
+            elif key_lower in ("silent", "quiet", "q"):
+                args["silent"] = _cli_flag(val)
+            elif key_lower in ("no-cache", "no_cache", "nocache"):
+                if _cli_flag(val):
+                    args["use_cache"] = False
+                    args["cache_file"] = None
             elif key_lower in ("chunk_size", "chunksize", "batch", "chunk"):
-                args["chunk_size"] = int(val)
+                args["chunk_size"] = _cli_int(val, num_arg)
             elif key_lower == "ksub":
-                args["ksub"] = int(val)
+                args["ksub"] = _cli_int(val, num_arg)
             elif key_lower in ("kwin", "win"):
-                args["kwin"] = int(val)
+                args["kwin"] = _cli_int(val, num_arg)
             elif key_lower in ("win_mode", "winmode"):
-                args["win_mode"] = int(val)
+                args["win_mode"] = _cli_int(val, num_arg)
             elif key_lower in ("win_hyb", "winhyb"):
-                args["win_hyb"] = int(val)
+                args["win_hyb"] = _cli_int(val, num_arg)
                 if args["win_hyb"] < 0:
-                    raise ValueError(f"invalid '{arg}': win_hyb should be 0 (256 columns for a DEM, 512 for "
+                    raise ValueError(f"invalid '{num_arg}': win_hyb should be 0 (256 columns for a DEM, 512 for "
                                      f"matrices) or positive")
             elif key_lower == "pairs":
-                args["pairs"] = int(val)
+                args["pairs"] = _cli_int(val, num_arg)
                 if not -1 <= args["pairs"] <= 64:
-                    raise ValueError(f"invalid '{arg}': pairs should be -1 (auto), 0 (off), or 1 to 64 (random pivot "
-                                     f"rows of the buckets)")
+                    raise ValueError(f"invalid '{num_arg}': pairs should be -1 (auto), 0 (off), or 1 to 64 (random "
+                                     f"pivot rows of the buckets)")
             elif key_lower in ("min_hits", "minhits", "max_hits", "maxhits"):
-                args["min_hits"] = int(val)
+                args["min_hits"] = _cli_int(val, num_arg)
             elif key_lower in ("cov_cws", "covcws"):
-                args["cov_cws"] = int(val)
+                args["cov_cws"] = _cli_int(val, num_arg)
             elif key_lower == "refresh":
-                args["refresh"] = int(val)
+                args["refresh"] = _cli_int(val, num_arg)
             elif key_lower in ("simple", "simplified", "full"):  # disabled since version 0.13.0 (ignored, a warning)
                 args["full" if key_lower == "full" else "simple"] = (
                     bool(int(val)) if val.isdigit()
@@ -7291,11 +8073,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                     )
                 args["basis"] = val.upper()
             elif key_lower == "rounds":
-                args["rounds"] = int(val)
+                args["rounds"] = _cli_int(val, num_arg)
             elif key_lower in ("p_noise", "p-noise", "pnoise"):
-                args["p_noise"] = float(val)
+                args["p_noise"] = _cli_float(val, num_arg)
                 if not 0.0 <= args["p_noise"] <= 0.5:
-                    raise ValueError(f"invalid '{arg}': the noise strength must be in [0, 0.5]")
+                    raise ValueError(f"invalid '{num_arg}': the noise strength must be in [0, 0.5]")
             elif key_lower in ("force_noise", "force-noise", "forcenoise", "force"):
                 args["force_noise"] = (
                     bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
@@ -7333,10 +8115,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
 
     # Auto-infer classical mode when not explicitly set (matching src/util_io.c)
     if args["classical"] == -1:
+        css_input = args["Hx"] is not None or args["Hz"] is not None  # (Lx / Lz are only used with them)
         if (
             args["finG"] is not None or args["finL"] is not None
-            or args["Hz"] is not None or args["Lz"] is not None
-            or args["Lx"] is not None
+            or args["Hz"] is not None or (css_input and (args["Lz"] is not None or args["Lx"] is not None))
             or args["fdem"] is not None or args["fin"] is not None
         ):
             args["classical"] = 0
@@ -7351,20 +8133,23 @@ def print_cli_short_help(file: Optional[Any] = None) -> None:
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Allowed parameters:
-  fdem, finH, finG, finL, fin, Hx, Hz, Lx, Lz, pmin, merge, drop, outD,
-  --out-reduced, classical, --simple, --full, basis, --rounds, --out-dir,
-  --out-dem, --out-stim, --p-noise, --force-noise, --model-lb, --model-minority,
-  --out-model, method, dmin, dmax, dstop, dexp (dest), steps, wmin, wmax,
-  timeout, threads, nothrottle, chunk_size (batch), ksub, kwin (win), win_mode,
-  win_hyb, pairs, min_hits, cov_cws, refresh, smax, noscan, start, start_scan,
-  cbeg, cend, finC, outC, maxC, expand, dW, irred, seed, debug, solver, engine,
-  cache, --no-cache, --verbose, --silent, --cws, --trust-start, sort_rows,
-  cc_prune, ortho, rw_opt
+  fdem (dem), finH, finG, finL, fin, Hx (finHx), Hz (finHz), Lx (finLx),
+  Lz (finLz), pmin, merge, drop, outD, --out-reduced, classical, css,
+  --simple (--simplified), --full, basis, --rounds, --out-dir, --out-dem,
+  --out-stim, --p-noise, --force-noise, --model-lb, --model-minority,
+  --out-model, method (m), dmin, dmax, dstop, dexp (dest),
+  steps (nsteps, num_steps), wmin, wmax, timeout (time),
+  threads (t, num_threads), nothrottle, chunk_size (batch, chunk), ksub,
+  kwin (win), win_mode, win_hyb, pairs, rw_opt, min_hits (max_hits), cov_cws,
+  refresh, smax, noscan, start, start_scan, cbeg, cend, finC, outC, maxC,
+  expand, dW, irred, seed, debug (dbg), solver, engine, cache (cache_file),
+  --no-cache, --verbose, --silent (-q, --quiet), --cws (--do_cws),
+  --trust-start, sort_rows, cc_prune, ortho
 
 Help options:
-  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
-  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)
-  --version     : display the versions of dist_m4ri.py and of the dist_m4ri binary
+  -h, -?, --help : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
+  --morehelp     : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)
+  --version      : display the versions of dist_m4ri.py and of the dist_m4ri binary
 """
     print(text, file=file)
 
@@ -7374,12 +8159,12 @@ def print_cli_help(file: Optional[Any] = None) -> None:
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Input matrices & models:
-  fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file
+  fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file (also dem=FILE)
   finH=FILE             Parity check matrix H (classical) or Hx (CSS quantum) (.mmx/.mtx)
   finG=FILE, finL=FILE  Hz check matrix or Lx logical operator matrix (quantum CSS)
   fin=PREFIX            Base prefix for CSS matrices (loads ${{fin}}X.mtx, ${{fin}}Z.mtx, e.g. try -> tryX.mtx)
-  Hx=FILE, Hz=FILE      CSS check matrices, both required (computes dX and dZ)
-  Lx=FILE, Lz=FILE      CSS logical operators (optional, constructed if omitted)
+  Hx=FILE, Hz=FILE      CSS check matrices, both required (computes dX and dZ; also finHx=, finHz=)
+  Lx=FILE, Lz=FILE      CSS logical operators (optional, constructed if omitted; also finLx=, finLz=)
   pmin=PROB             Minimum error probability threshold for DEM errors (default: 0.0)
   merge=0|1             Merge equal DEM columns (exact; codewords use the first one) (default: 1)
   drop=auto|0|css|FILE  DEM detectors to drop if verified exact: auto=1 (default), 0 (none), css, or a file
@@ -7387,70 +8172,69 @@ Input matrices & models:
   --out-reduced [PFX]   Save the reduced DEM and its maps to the DEM: PFX_red.dem and PFX_red.json
   classical=0|1         1: classical code (finH only), 0: quantum CSS (auto-detected)
   basis=X|Z             Override primary memory basis ('X' or 'Z') for .stim circuits (with drop=css)
-  --rounds [N]          Set the REPEAT count of a .stim circuit (N=2 if omitted; warns if no REPEAT)
+  --rounds [N]          Set the REPEAT count of a .stim circuit (N=2 if omitted; error without .stim)
   --out-dir DIR         Output directory for saved .dem/.stim files (default: input file dir)
   --out-dem [FILE]      Save constructed DEM (default: <basename>_full.dem)
   --out-stim [FILE]     Save processed/noisy Stim circuit (default: <basename>_full.stim)
   --p-noise P           Strength of the noise added to a noiseless .stim circuit (default: 0.001; 0: none)
   --force-noise         Replace the noise of a .stim circuit by that of --p-noise (with P=0: remove it)
-  --model-lb            Certified lower bound for a .stim circuit from its code-sized model
+  --model-lb            Certified lower bound for a .stim circuit or .dem from its code-sized model
   --model-minority      With --model-lb, also the rows of the minority-basis checks (default: off)
 
 Method and distance bounds:
-  method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3)
+  method=1|2|3          1=RW (upper bound), 2=CC (lower bound/exact), 3=Bracketing (default: 3; alias: m)
   dmin=N                Certified lower bound, inclusive (CC starts from dmin) (default: 0)
   dmax=N                Known upper bound, inclusive (CC up to w=dmax-1 only) (default: 0)
   dstop=N               Stop once CC certifies dmin>=dstop (not an upper bound) (default: 0)
   dexp=N                Expected distance estimate (alias: dest) (default: 0)
 
 Search limits and stopping criteria:
-  steps=N               Maximum RW steps / information sets (default: 100000)
-  wmax=N                Maximum cluster weight to search in CC (0=until bound/timeout)
+  steps=N               Maximum RW steps / information sets (default: 100000; aliases: nsteps, num_steps)
+  wmax=N                Maximum cluster weight to search in CC (0=until bound/timeout; at most 99)
   wmin=N                Stop immediately if cw with weight <= wmin is found (default: 1)
-  min_hits=N            Stop RW when lowest-weight cws are hit N times on average (default: 5)
-  timeout=SEC           Execution timeout in seconds, 0 for infinite (default: 60.0)
+  min_hits=N            Stop RW at <n> >= N hits per cw, or by the canonical classes of rw_opt 16 (default: 5; max_hits)
+  timeout=SEC           Execution timeout in seconds, 0 or inf for no timeout (default: 60.0; alias: time)
 
 Multithreading & execution:
-  threads=N             Max worker threads (default: all logical CPUs; throttled unless nothrottle=1)
+  threads=N             Max worker threads (default: all logical CPUs; throttled unless nothrottle=1; t, num_threads)
   solver=NAME           Distance solver backend: 'dist_m4ri' (default), 'cert', 'auto', or 'codedistance' (also engine=)
 
 Codeword collection & caching:
-  --cws                 Collect and output non-trivial minimum-weight codewords
+  --cws                 Collect minimum-weight codewords in the cache record (outC=FILE writes them; --do_cws)
   outC=FILE             Save output codewords (for CSS, auto-suffixed _X.nz / _Z.nz)
   finC=FILE             Input initial candidate codewords (.nz file)
   expand=0|1            DEM codewords: list all choices among equal columns (merge) (default: 0)
-  cache=FILE            Persistent JSON cache file (default: tmp_dist_cache.json)
-  --no-cache / nocache  Disable persistent JSON caching
+  cache=FILE, --no-cache  Persistent JSON cache (default: tmp_dist_cache.json; alias: cache_file; nocache/0: off)
   --verbose / -v        Explain bounds, steps, cache status, and miss probability estimates
-  --silent / -q         No warnings on stderr for the inputs which are ignored
+  --silent / -q         No warnings on stderr for ignored inputs or disabled options (also --quiet)
 
 Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
   start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (also start_scan=1; see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
-  noscan, cbeg, cend    Disabled in Python (ignored with a warning; also irred=0, --simple, --full)
+  noscan, cbeg, cend    Disabled in Python (ignored with a warning; also css=, irred=0, --simple/--simplified, --full)
   ortho=0|1 (1)         Expert: 0 skips the check H G^T = 0 of G (valid only if it holds)
   sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
   cc_prune=0|1|2 (1)    CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
-  chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500, alias: batch)
+  chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500; aliases: batch, chunk)
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
-  kwin=N (0)            RW localized window size (0: auto/hybrid for n>=500, -1: none, alias: win)
+  kwin=N (0)            RW window size (0: hybrid for n>=500, DEM only if rw_opt!=0 unless win_hyb>0; -1: none; win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
-  win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM, 512 for matrices)
+  win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM; 512 for matrices with rw_opt=0, uniform otherwise)
   pairs=N (-1)          RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
+  rw_opt=N (-1)         RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63 (also --rw-opt N)
   cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
-  refresh=N (5000)      Basis refresh interval in RW steps (experimental ksub only; 0 = off)
+  refresh=N             RW basis refresh interval (0; 5000 with ksub>0; experimental ksub only)
   maxC=N (0)            Maximum number of codewords to collect (0: unlimited)
-  dW=N (0)              Extra weight window above dmin to collect codewords
+  dW=N (-1, unset)      Extra weight above the minimum weight found (binary 0; any dW>=0 collects cws, native in auto)
   seed=N (0)            Random number generator seed
-  debug=N (0)           Debug bitmap, OR-combined (1: summary, 2: progress, 4: status, ...)
+  debug=N (0)           Debug bitmap, OR-combined (1: summary, 2: progress, 4: status, ...; alias: dbg)
 
 Help options:
-  -h, --help [TOPIC]    Display this help message (with TOPIC: the same as --morehelp TOPIC)
-  --morehelp [TOPIC]    Display full help for all parameters (or only for TOPIC, e.g., maxC or windows)
-  --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary
-"""
+  -h, -?, --help [TOPIC]  Display this help message (with TOPIC: the same as --morehelp TOPIC)
+  --morehelp [TOPIC]      Display full help for all parameters (or only for TOPIC, e.g., maxC or windows)
+  --version               Display the versions of dist_m4ri.py and of the dist_m4ri binary"""
     print(help_text, file=file)
 
 
@@ -7460,7 +8244,7 @@ def _cli_morehelp_text() -> str:
 Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Required input (at least one matrix/model specification):
-  fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file.
+  fdem=FILE             Detector Error Model (.dem) or Stim circuit (.stim) file (also dem=FILE).
                         Automatically constructs parity check H and logical L matrices.  An error
                         channel which stim cannot write as independent errors (e.g., PAULI_CHANNEL_1
                         without Y errors) is converted with approximate_disjoint_errors=True (only the
@@ -7471,9 +8255,11 @@ Required input (at least one matrix/model specification):
   finL=FILE             Logical operator matrix Lx for quantum CSS codes in Matrix Market format.
                         Note: For a quantum CSS code, either finL (Lx) or finG (Hz) is required.
   fin=PREFIX            Base prefix for CSS matrices (loads ${{fin}}X.mtx and ${{fin}}Z.mtx, e.g. try -> tryX.mtx).
-  Hx=FILE, Hz=FILE      CSS check matrices Hx and Hz, both required: computes both dX and dZ, and
-                        d = min(dX, dZ) (finH=Hx with finG=Hz gives dZ only).
-  Lx=FILE, Lz=FILE      Alternative syntax for specifying CSS logical operator matrices.
+  Hx=FILE, Hz=FILE      CSS check matrices Hx and Hz, both required (alias: finHx=FILE; also
+                        finHz=FILE): computes both dX and dZ, and d = min(dX, dZ) (finH=Hx with
+                        finG=Hz gives dZ only).
+  Lx=FILE, Lz=FILE      Alternative syntax for specifying CSS logical operator matrices (alias:
+                        finLx=FILE; also finLz=FILE).
   ortho=0|1             Expert option (default: 1): 1, the dist_m4ri binary checks that the rows of H
                         and G (finG, fin without finL, or Hx and Hz in each sector of a CSS code without
                         Lx or Lz) are orthogonal, H G^T = 0, and stops with an error otherwise; 0 skips
@@ -7499,7 +8285,8 @@ Required input (at least one matrix/model specification):
                         detector), with the same observables (or with L + A H for one matrix A):
                         then the distance of the DEM is found from the smaller DEM without these
                         detectors and the errors touching them, and the codewords found (outC) are
-                        codewords of the DEM which use only errors touching no dropped detector.
+                        codewords of the DEM which use only errors touching no dropped detector;
+                        finC codewords and CC start columns (see start) are mapped to the twins.
                         drop=auto: the binary searches for the largest such set (with the same
                         observables) in the DEM alone, e.g., the minority-basis detectors of a CSS
                         circuit with the usual noise (see the README).  drop=css: for a Stim circuit
@@ -7525,35 +8312,46 @@ Required input (at least one matrix/model specification):
                         outD), "errors" (the original index of each error, as the columns of outC),
                         "dropped", "num_detectors", "num_errors", "pmin", "source", "dem", "drop",
                         and "__version__" (also out_reduced=PREFIX; default PREFIX: the basename of
-                        the input file, without _full or _simp, in --out-dir or the directory of
-                        the input file).  The reduced DEM has the same distance, and its codewords
-                        are mapped to codewords of the DEM by "errors".
+                        the input file, without _full or _simp; a PREFIX without a directory goes,
+                        like the default, to --out-dir or the directory of the input file: write
+                        ./PREFIX for the current directory).  The reduced DEM has the same distance,
+                        and its codewords are mapped to codewords of the DEM by "errors".
   classical=0|1         Code type override:
                         1: Classical linear code (finH only; ignored with a warning if finG, finL,
-                           fin, fdem, Hz, Lx, or Lz is given).
+                           fin, fdem, or Hz is given, or Lx or Lz with Hx; Lx / Lz without Hx and Hz
+                           are ignored with a warning).
                         0: Quantum CSS code (requires logicals or Hz).
                         Default: auto-detected (1 if only finH is given; 0 otherwise).
-  --simple / --full     Disabled since version 0.13.0 (also simple=1, full=1): accepted for backward
-                        compatibility, but ignored with a warning to stderr.  The DEM of a Stim circuit
-                        always has all detectors: the binary drops detectors if this is exact (see
-                        drop; e.g., the minority-basis detectors which --simple stripped), which is
-                        as fast and gives the distance of the full DEM (the stripped DEM only gives a
-                        lower bound when dropping them is not exact).
+  css=N                 Disabled in the Python interface (CSS codes only; reserved in the binary for
+                        future non-CSS quantum code support): accepted for compatibility with the
+                        binary, and ignored with a warning to stderr.
+  --simple / --full     Disabled since version 0.13.0 (alias: --simplified; also simple=1, full=1):
+                        accepted for backward compatibility, but ignored with a warning to stderr.  The
+                        DEM of a Stim circuit always has all detectors: the binary drops detectors if
+                        this is exact (see drop; e.g., the minority-basis detectors which --simple
+                        stripped), which is as fast and gives the distance of the full DEM (the
+                        stripped DEM only gives a lower bound when dropping them is not exact).
   basis=X|Z             Explicitly set primary memory basis ('X' or 'Z') for .stim circuits
                         (default: auto-detected from filename or initial/final resets/measurements);
                         with drop=css, the detectors of the other basis are dropped if this is exact
                         (otherwise only used for the --verbose report; ignored with a warning).
   --rounds [N]          Construct DEM from a .stim circuit with N repetitions in its REPEAT block
-                        (default: 2 when --rounds is given without a number; also rounds=N).
-                        Issues a warning and continues with the original circuit if no REPEAT block.
+                        (default: 2 when --rounds is given without a number; 0 omits REPEAT blocks;
+                        also rounds=N).  Issues a warning and continues with the original circuit if
+                        it has no REPEAT block; an error if the input is not a .stim circuit.
   --out-dir DIR         Output directory for saving constructed DEM and/or processed Stim circuit
-                        files (also out_dir=DIR; default: directory of the input .stim/.dem file).
-  --out-dem [FILE]      Save constructed (flattened) DEM to FILE. If given without a filename (or
-                        out_dem=1), automatically saves as <basename>_full.dem.
+                        files (also out_dir=DIR; default: directory of the input .stim/.dem file):
+                        the default names, and a FILE (or PREFIX) without a directory, of --out-dem,
+                        --out-stim, and --out-reduced go there (write ./FILE for the current
+                        directory).
+  --out-dem [FILE]      Save constructed (flattened) DEM to FILE (without a directory: in --out-dir,
+                        see there). If given without a filename (or out_dem=1), automatically saves
+                        as <basename>_full.dem.
                         The codewords (outC) index its error lines: save the DEM in the same run (a DEM
                         generated again from the circuit may differ, e.g., with another stim version).
-  --out-stim [FILE]     Save processed (noisy, rounds-adjusted) Stim circuit to FILE. If given without
-                        a filename (or out_stim=1), automatically saves as <basename>_full.stim.
+  --out-stim [FILE]     Save processed (noisy, rounds-adjusted) Stim circuit to FILE (without a
+                        directory: in --out-dir, see there). If given without a filename (or
+                        out_stim=1), automatically saves as <basename>_full.stim.
   --p-noise P           Strength p of the uniform circuit-level noise added to a noiseless Stim circuit
                         (also p_noise=P; default: 0.001; 0: no noise is added, and then a noiseless
                         circuit gives no distance): DEPOLARIZE2(p) after two-qubit gates (CX, CZ,
@@ -7571,22 +8369,25 @@ Required input (at least one matrix/model specification):
                         noise; see stim's Circuit.without_noise()), and then the uniform noise of
                         --p-noise is added (none with --p-noise 0, e.g., to save the noiseless circuit
                         with --out-stim), e.g., to compare circuits with the same noise model.
-  --model-lb            Certified lower bound on the distance of a Stim memory circuit (fdem=FILE.stim)
-                        from its code-sized model, instead of the distance of its DEM (also
-                        model_lb=1; see compute_model_lower_bound()): the detectors linked by shared
-                        measurements, other than the final data measurements, form chains (one per
-                        check of a memory circuit), and each chain gives a row of the model, the sum
-                        of its detector rows (the chain of a check of the measured basis telescopes
-                        to the parity of the final data measurements on the check; the chains of the
-                        minority-basis checks only with --model-minority), with the equal columns
-                        merged.  Each codeword of the DEM gives a model codeword of no larger weight,
-                        so the model distance certified by CC is a lower bound on the circuit
-                        distance; it ignores the timing within the rounds (not tight in general, e.g.,
-                        5 for the bb_72 circuit of distance 6).  The binary runs on the model with the
-                        measured-basis rows, then (with --model-minority) with all rows from that bound
-                        (RW first; method, threads, timeout, steps, dstop, wmax, seed, nothrottle,
-                        pairs, sort_rows, and cc_prune apply to each run).  The bound is stored as dmin
-                        in the cache record of the DEM, and the bounds of the circuit are printed.
+  --model-lb            Certified lower bound on the distance of a Stim memory circuit or DEM
+                        (fdem=FILE.stim or fdem=FILE.dem) from its code-sized model, instead of the
+                        distance of its DEM (also model_lb=1; see compute_model_lower_bound()): the
+                        detectors linked across rounds (in a circuit, by shared measurements other
+                        than the final data measurements; in a standalone DEM, by spatial detector
+                        coordinates, or else by dominant weight-2 observable-free error mechanisms)
+                        form chains, and each chain gives a row of the model, the sum of its detector
+                        rows (in a memory circuit, the chain of a check of the measured basis
+                        telescopes to the parity of the final data measurements on the check; the
+                        chains without a final data measurement, e.g., minority-basis checks, only
+                        with --model-minority), with the equal columns merged.  Each codeword of the
+                        DEM gives a model codeword of no larger weight, so the model distance
+                        certified by CC is a lower bound on the DEM distance; it ignores the timing
+                        within the rounds (not tight in general, e.g., 5 for the bb_72 circuit of
+                        distance 6).  The binary runs on the model with the measured-basis rows, then
+                        (with --model-minority) with all rows from that bound (RW first; method,
+                        threads, timeout, steps, dstop, wmax, seed, debug, nothrottle, pairs,
+                        sort_rows, cc_prune, and rw_opt apply to each run).  The bound is stored as
+                        dmin in the cache record of the DEM, and the bounds of the DEM are printed.
   --model-minority      With --model-lb, also the chains of the minority-basis checks are rows of the
                         model (also model_minority=1; default: off).  With depolarizing-type noise,
                         they do not raise the bound (a lightest model codeword has a version without
@@ -7601,11 +8402,12 @@ Required input (at least one matrix/model specification):
                         binary ignores fin followed by finH, finG, or finL, and fin after them is an
                         error); the ignored inputs (e.g., matrices with fdem, pmin, merge, expand,
                         drop, or outD without fdem, basis, --p-noise, or --force-noise without a Stim
-                        circuit, basis without drop=css, fin with finH, classical=1 with finG,
-                        ortho=0 without G) give a warning (unless --silent).
+                        circuit (--rounds without one is an error), basis without drop=css, fin with
+                        finH, classical=1 with finG, ortho=0 without G) give a warning (unless
+                        --silent).
 
 Calculation method:
-  method=1|2|3          Calculation method (default: 3):
+  method=1|2|3          Calculation method (default: 3; alias: m=1|2|3):
                         1: Random Window (RW) algorithm (upper bound on distance).
                            Repeatedly samples random information sets to find low-weight
                            codewords. Fast for discovering small errors.
@@ -7619,7 +8421,10 @@ Calculation method:
 
 Distance bounds and guidance:
   dmin=N                Known certified lower bound on distance (default: 0).
-                        CC search begins at weight w = max(1, dmin).
+                        CC search begins at weight w = max(1, dmin).  In the output 'dmin dmax
+                        rw_steps', dmin - 1 is the largest weight w certified to have no codeword
+                        of weight <= w (0: none above 1; odd weights are skipped if all codewords
+                        have even weight; when exact, dmin = dmax = d, including d = 1).
   dmax=N                Known upper bound on distance (default: 0).
                         CC ends once dmin = dmax (with outC, after the rounds w = dmax..dmax+dW);
                         RW ignores candidate codewords of weight >= dmax unless collecting codewords
@@ -7638,20 +8443,25 @@ Distance bounds and guidance:
 
 Search limits and stopping criteria:
   steps=N               Maximum number of RW steps / information sets across all threads
-                        (default: 100000).
-  wmax=N                Maximum cluster weight to analyze in CC (default: 0 = until bound/timeout;
-                        with method=2, a known dmax is used as wmax).
+                        (default: 100000; alias: nsteps=N; also num_steps=N).
+  wmax=N                Maximum cluster weight to analyze in CC (default: 0 = until a codeword is
+                        found, the bounds meet, dmin >= dstop, or the timeout; method=2 then needs
+                        timeout>0, dmax>0, or dstop>0; with outC and dW > 0, the CC rounds continue
+                        to the weight dmax + dW; up to the weight 99 at most, which is the largest
+                        wmax).
   wmin=N                Minimum distance threshold (default: 1).
                         If a codeword of weight w <= wmin is discovered, search halts immediately
                         (not when collecting codewords with outC or maxC).
-  timeout=SEC           Execution timeout in seconds (default: 60.0; set 0 for infinite).
+  timeout=SEC           Execution timeout in seconds (default: 60.0; 0 or inf: no timeout; a
+                        trailing 's' is accepted, e.g., timeout=10s; alias: time=SEC).
                         In method=3, it guides the CC vs RW thread balance, and a CC round predicted
                         not to finish in time is not started while RW runs (in method=2, and with
                         steps=0, it is started anyway: it may still find a codeword of weight dmin).
 
 Multithreading & throttling:
   threads=N             Maximum number of worker threads to allocate (default: all logical CPUs
-                        available to the process, i.e., its CPU affinity mask, e.g., with taskset).
+                        available to the process, i.e., its CPU affinity mask, e.g., with taskset;
+                        alias: num_threads=N; also t=N).
                         Subject to automatic thread throttling unless nothrottle=1 is specified:
                         - Small codes, methods 1 and 3 (<= 4 threads for n < 60, or for m*n < 2e4
                           with a small RW workload m*n*steps < 5e7; otherwise <= 16 threads for
@@ -7669,7 +8479,7 @@ Multithreading & throttling:
                         Forces allocation of the exact number of threads requested.
   chunk_size=N          Maximum RW batch claimed at once by a thread (default: 0 = adaptive
                         25-500). Near the end of the steps, batches shrink to at most
-                        ceil(remaining / (4 * RW threads)) steps. Alias: batch=N.
+                        ceil(remaining / (4 * RW threads)) steps. Alias: batch=N (also chunk=N).
   ksub=N                EXPERIMENTAL, should not be used (a warning is printed): subspace sketch
                         dimension for RW (default: 0 = full matrix).
                         Precomputes N = ker(H) once; each thread echelonizes a compact
@@ -7682,19 +8492,27 @@ Multithreading & throttling:
                         column j0, used in every RW step (alias: win=N).  Default: 0 = automatic
                         hybrid for n>=500: every other step uses an index window (win_mode=1) of
                         win_hyb columns, and the other steps uniform random permutations (also
-                        for codewords which are not local in the column order).  kwin=-1 (any
-                        negative value): no windows, uniform random permutations in every step.
+                        for codewords which are not local in the column order); with rw_opt != 0
+                        (including the default -1), used only for a DEM (matrices use uniform
+                        permutations unless rw_opt=0 or win_hyb > 0).  kwin=-1 (any negative
+                        value): no windows, uniform random permutations in every step.
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
   win_hyb=N             Window size of the hybrid RW steps (kwin=0, n>=500; at most 3n/4).
-                        Default: 0 = 256 columns for a DEM, 512 for matrices.  The window
-                        columns come first in the elimination order; in a DEM, they are errors
-                        close in time, which touch few detectors: windows of 192-256 columns find
-                        circuit codewords 2-10 times faster than 512, and windows of one round of
-                        columns much slower.  With --verbose (or debug&1), the binary prints the
-                        rounds of a DEM (estimated from the time translation of its errors: D
-                        detectors and L columns per round) and the codewords found by the
-                        uniform and by the window steps.
+                        Default: 0 = 256 columns for a DEM, 512 for matrices with rw_opt=0 (with
+                        rw_opt != 0, including the default -1, matrices use uniform permutations
+                        unless win_hyb > 0 or kwin > 0).  The window columns come first in the
+                        elimination order; in a DEM, they are errors close in time, which touch few
+                        detectors: windows of 192-256 columns find circuit codewords 2-10 times
+                        faster than 512, and windows of one round of columns much slower.  With
+                        --verbose (or debug&1), the binary prints the rounds of a DEM (estimated
+                        from the time translation of its errors: D detectors and L columns per
+                        round; printed only, the search does not use it, and a folded schedule,
+                        whose rounds alternate between two forms, gives no round structure) and the
+                        codewords found by the uniform and by the window steps (line '# RW step
+                        types': the codewords in hash, i.e., without outC, --cws, and maxC at most
+                        cov_cws of the minimum weight, the first found; 'both': found by both kinds
+                        of steps).
   pairs=N               RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern): a RW
                         step also finds the codewords with exactly two non-pivot columns,
                         checking only the pairs of columns which agree on N random pivot rows
@@ -7707,26 +8525,63 @@ Multithreading & throttling:
                         7-26 times faster, and lighter codewords of codes with a large distance.
                         Not with ksub.  With --verbose (or debug&1), the binary prints the pairs
                         checked per step and the codewords found by pairs and by single columns.
-  rw_opt=N              Expert option (since version 0.17.0; also --rw-opt N): the stages of the RW
-                        search of the dist_m4ri binary.  Default: -1 = automatic, the stages which
-                        apply to the input (1 + 16 for quantum codes, also 8 for wide DEMs and 32
-                        when collecting codewords; 2 and 4 only if listed; none for classical
-                        codes); 0: all off (the RW of version 0.16.1, e.g., for comparisons); a
-                        bitmask from 1 to 63 (decimal or 0x...): only the stages listed, 1: the
-                        weight-3 relations T3 of the columns (found after merge and drop) with the
-                        contraction of the candidates of a RW step and the Stern filter of its
-                        pairs; 2: the shortening of the candidates by the rows of G (finG); 4:
-                        row-slab windows of a multi-round DEM; 8: the sparse-dual elimination (an
-                        m x m inverse instead of the m x n matrix); 16: the canonical classes of
-                        the minimum-weight codewords, which the min_hits stopping rule counts
-                        (Good-Turing and Chao2 estimates from the uniform RW steps), and the
-                        Harris-FKG score; 32: the codewords collected (outC, maxC) expanded by the
-                        T3 relations.  Only with full-matrix RW (ksub=0).  With rw_opt != 0, the
-                        automatic hybrid windows (kwin=0) are used only for a DEM (matrices:
-                        uniform permutations, unless kwin > 0 or win_hyb > 0).  The distance is
-                        valid with any rw_opt, and the cache key does not depend on it.  With
-                        --verbose (or debug&1), the binary prints the stages used, |T3|, the
-                        canonical classes, and the Harris-FKG score.
+  rw_opt=N              Expert option (since version 0.17.0; also --rw-opt N): RW stages with the
+                        weight-3 degeneracies T3 (triplets of columns with zero syndromes of H and L)
+                        and the known generators (doc/rw_triplet_degeneracies.tex).  Default: -1 =
+                        automatic (the stages below which apply to the input; none for classical
+                        codes); 0: all off (the RW of version 0.16.1, e.g., for comparisons); or the
+                        sum of the stages to use (1 to 63, decimal or 0x...):
+                        1: enumerate T3 (after merge and drop) and contract the candidates (2 -> 1,
+                           3 -> 0 columns): the single-column candidates up to the weight
+                           min(dmax+8, 64), the pairs up to min(dmax+1, 64) (+dW when collecting); in
+                           the pairs, skip the columns whose circuit (the column and its pivot
+                           columns) has a zero L syndrome and at most 3 columns (the Stern filter:
+                           only while dmax+8 <= 64, as it needs the contraction; when collecting
+                           codewords with --cws, outC, or maxC, only with 32); a zero column of H
+                           with a nonzero column of L gives d=1 at once (automatic: quantum codes,
+                           steps > 2);
+                        2: with G (finG, fin, or Hx/Hz without Lx/Lz), shorten the candidates by the
+                           rows of G (steepest descent, before the contraction of 1; the
+                           single-column candidates up to min(dmax+w_G-2, 64), with 1 up to
+                           min(dmax+max(8, w_G-2), 64)) and skip the columns whose circuits are rows
+                           of G in the pairs (only while that weight is at most 64; not when
+                           collecting; automatic: off);
+                        4: row-slab windows of a DEM in time order (kwin=0, not with sort_rows=1):
+                           every other step, the columns inside a range of min(320, m/2) detectors
+                           (the first or the last range with 15% probability each), a random
+                           independent set of the triplet graph first (automatic: off; on deep circuit
+                           DEMs, the index windows with 1 found more minimum-weight codewords per
+                           second; on some single-round DEMs, the slabs found lighter codewords much
+                           sooner, e.g., weight 16 of the double-gross DEM with one round, but they
+                           often find the same few codewords again, which raises <n> of min_hits
+                           without 16);
+                        8: sparse-dual elimination: an m x m inverse instead of the m x n matrix (the
+                           same information sets, less memory per RW thread; quantum inputs with up to
+                           64 rows of L; automatic: m x n above 512 KiB, and n >= 20 m or m >= 1400;
+                           no '# RW FKG score');
+                        16: canonical classes: the codewords of the minimum weight found in the
+                           uniform RW steps are counted by their canonical form (2 <-> 2 exchanges
+                           across two triplets with a common column, or half-overlap exchanges with
+                           the even rows of G), each at most once per step, and min_hits stops RW by
+                           the Good-Turing / Chao2 rule (see min_hits; only with min_hits > 0, not
+                           with kwin > 0; automatic: quantum codes); the tables hold up to 2^24
+                           classes and codewords (up to about 640 MiB; then the rule of <n> is used);
+                           the codewords of a RW step are recorded at its end (lighter ones at once),
+                           each at most once (with an active 1 or 2 as well);
+                        32: when collecting codewords (--cws, outC, or maxC), add the codewords
+                           obtained from the codewords found by T3 before the export: 2 <-> 2
+                           exchanges and 1 -> 2 splits, up to the weight min_w+dW (see irred and
+                           maxC; automatic: quantum codes when collecting: --cws, outC, or maxC).
+                        With rw_opt != 0, matrices (finH, Hx/Hz) use uniform random permutations in
+                        all RW steps unless kwin > 0 or win_hyb > 0 (the hybrid windows are for DEMs,
+                        see kwin), even if no stage applies (rw_opt=0x0 in the run plan, e.g., for a
+                        classical code).  Only with full-matrix RW (ksub=0) and steps > 0 (automatic:
+                        steps > 2).  The distance is valid with any rw_opt, and the cache key does not
+                        depend on it.  With --verbose (or debug&1), the binary prints the stages used
+                        and their statistics (lines '# RW triplets', '# RW canonical', and '# RW FKG
+                        score': the mean Harris-FKG bound -sum ln(1 + |S_a|) on ln Pr(J) of the dense
+                        full-matrix steps with pairs, with any stage but not with 8 or on the slab
+                        steps, and -ln C(n, r)).
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = off; alias: max_hits).
                         Stops RW when the average number of hits <n> per codeword (by all RW steps,
                         with or without windows, and by CC or finC) reaches min_hits, both for the
@@ -7739,17 +8594,30 @@ Multithreading & throttling:
                         strongly non-uniform (then exp(-<n>) is optimistic), together with an
                         information-set estimate (uniform random information sets) of the
                         probability to miss a lighter codeword and of the RW steps needed for 1%.
-                        With --verbose, both estimates are always shown for a result which is not
-                        certified.  With min_hits=0, RW records only the codewords lighter than the
-                        upper bound (unless collecting codewords with outC, maxC, or --cws), so
-                        that the repeated hits are not counted.
+                        With --verbose, the active stopping rule and the baseline information-set
+                        estimate are shown for a result which is not certified.  With min_hits=0, RW
+                        records only the codewords lighter than the upper bound (unless collecting
+                        codewords with outC, maxC, or --cws), so that the repeated hits are not
+                        counted.
+                        With the canonical classes of rw_opt (16, automatic for quantum codes with
+                        min_hits > 0 and kwin <= 0), RW stops instead once the canonical classes of
+                        the minimum weight found in the uniform steps (C of them, Q1 and Q2 found in
+                        exactly one and two steps, N step incidences in total) give
+                        N >= max(15, 3 min_hits), N/C >= min_hits, the Good-Turing unseen mass
+                        Q1/N <= min(0.02, 3 exp(-min_hits)), and the Chao2 unseen fraction
+                        C0/(C+C0) <= 0.05 with C0 = Q1(Q1-1)/(2(Q2+1)).  Only the uniform steps
+                        count: while none of them has found a codeword of the minimum weight (e.g.,
+                        on deep circuit DEMs, where the window steps find them), the min_hits stop is
+                        inactive and RW runs until the steps or the timeout end (the status line and
+                        the summary say so; the window steps are shown for information only, see
+                        '# RW step types').  Without 16, <n> above (all steps).
   cov_cws=N             Size of the representative set of lowest-weight codewords for min_hits
                         (default: 100; 0 = only the minimum weight).  Without outC and maxC, at
                         most cov_cws minimum-weight codewords are tracked (all if cov_cws=0).
                         With fewer minimum-weight codewords, a smaller cov_cws may stop RW
                         earlier.
   refresh=N             Periodic adaptive basis refresh interval in RW steps, only with the
-                        experimental ksub > 0 (default: 5000 when ksub > 0, 0 to disable).
+                        experimental ksub > 0 (default: 0; 5000 with ksub > 0).
                         Re-echelonizes N and replaces one heavier basis row by a discovered
                         minimum-weight codeword.
 
@@ -7757,19 +8625,19 @@ Connected Cluster (CC) search options:
   smax=N                Maximum syndrome weight for confinement profile (default: 0).
                         When smax > 0, tracks minimum syndrome weights for each error weight.
                         When smax=0, confinement is not computed.  The binary disables it if
-                        dmin > 1 (also a lower bound from the cache), as the small cluster weights
-                        are then skipped.
+                        dmin > 1 (including a lower bound from the cache), as the small cluster
+                        weights are then skipped.
   sort_rows=0|1         Sort the rows of H by increasing weight (stable) in the dist_m4ri binary
                         (default: the binary's, 1 for matrices and 0 for a DEM).  With cc_prune=0,
                         CC extends a cluster by the columns of the first row of its syndrome (in
                         row order), so that light rows first reduce the CC work for matrices with
                         very different row weights (e.g., 1.7-4x with the hook columns of an
                         extended CSS distance), while the detectors of a DEM are in time order,
-                        which is better (use sort_rows=0 also for matrices exported from a DEM).
+                        which is better (use sort_rows=0 for matrices exported from a DEM as well).
                         With cc_prune=1 or 2, the order of the rows only breaks ties.  The
                         distance, RW, and the cache key do not depend on the order of the rows; CC
                         enumerates the same codewords (outC), possibly in another order (with
-                        cc_prune=0, also with other hit counts).
+                        cc_prune=0, with other hit counts as well).
   cc_prune=0|1|2        The CC search of the dist_m4ri binary (with smax=0; default: the binary's,
                         1; also --cc-prune N).  0: the walk of the versions before 0.15.0, which
                         extends a cluster by the columns of the first unsatisfied row of its
@@ -7778,7 +8646,7 @@ Connected Cluster (CC) search options:
                         forbidden in the later ones (each codeword is found once: one CC hit), and
                         a branch is pruned by lower bounds on the number of columns needed (an
                         unsatisfied row without available columns, or a packing of unsatisfied
-                        rows with disjoint sets of available columns).  2: also the coverage and
+                        rows with disjoint sets of available columns).  2: adds the coverage and
                         fractional cover bounds (fewer nodes, more work per node).  All values
                         find the same codewords and distances (doc/cc_completeness.tex); with the
                         expert start list (and start_scan=0), cc_prune=1 and 2 forbid the columns
@@ -7790,7 +8658,9 @@ Connected Cluster (CC) search options:
                         quasi-cyclic code.  WARNING: dmin (and an exact result) is valid only if a
                         code symmetry maps every minimum-weight codeword to one containing a listed
                         column; dmax is always valid.  For DEM input, columns index the error
-                        mechanisms in their order in the (flattened) DEM, after the pmin cutoff.
+                        mechanisms in their order in the (flattened) DEM, after the pmin cutoff; with
+                        drop, a listed column touching a dropped detector is replaced by its twin (or
+                        removed if it has none, see drop).
                         Results are cached under a separate key '<key>:start=a,b,c'; only dmax and
                         codewords are merged into the main cache record.  (Before version 0.10.0,
                         start=N limited CC to clusters started at column N using only larger
@@ -7805,7 +8675,7 @@ Connected Cluster (CC) search options:
                         columns then need much less work, the least if each orbit is a range of
                         consecutive columns.  Cached under '<key>:start=a,b,c:scan'.  Not for a DEM.
   --trust-start         Expert option (also trust_start=1): accept the start-list results as valid,
-                        i.e., also merge dmin and rw_steps into the main cache record, and copy an
+                        i.e., merge dmin and rw_steps into the main cache record as well, and copy an
                         existing exact start-list record to the main record even if no calculation
                         is needed.  Only use it if the code symmetry assumption above holds.
   noscan, cbeg, cend    Disabled in the Python interface: accepted for backward compatibility, but
@@ -7816,7 +8686,10 @@ Connected Cluster (CC) search options:
                         Run the dist_m4ri binary directly to use them (see its --morehelp).
 
 Codeword collection and export:
-  --cws                 Collect and display non-trivial minimum-weight codewords.
+  --cws                 Collect non-trivial minimum-weight codewords (up to min_w + dW) into the
+                        cache record (also --do_cws, cws=0|1, do_cws=0|1).  Does not print them to
+                        stdout; use outC=FILE to write them to a file.  Uses the native binary with
+                        engine=auto (an error with engine=cert or codedistance).
   outC=FILE             Export found codewords of weight up to min_w + dW (min_w: minimum weight
                         found) to file in .nz format.  In method=2/3, once the distance d is
                         known, CC rounds w = d..d+dW enumerate all such irreducible codewords
@@ -7825,18 +8698,23 @@ Codeword collection and export:
                         In CSS mode, automatically saves X-codewords to FILE_X.nz and
                         Z-codewords to FILE_Z.nz.  The codewords of the run are merged with the
                         cached ones; with finC=FILE (the same file), those already in FILE are kept
-                        (also reducible ones recorded before version 0.14.8).
+                        (including reducible ones recorded before version 0.14.8).
   finC=FILE             Import initial candidate codewords from file in .nz format.
                         In CSS mode (Hx=, Hz=), each sector reads its own file FILE_X.nz or FILE_Z.nz
                         if at least one of them exists and is not empty (a sector without its file
                         gets no input codewords); otherwise, FILE itself is given to both sectors
                         (the binary skips the codewords which are not valid in a sector).  If FILE
                         is the same file as outC, a missing or empty file is ignored.  The binary
-                        replaces a reducible codeword by an irreducible part (see irred).
+                        replaces a reducible codeword by an irreducible part (see irred).  A column
+                        index below 1 is an error; codewords with a column beyond n, not orthogonal to
+                        H, or orthogonal to L are skipped (with a warning), and so are those heavier
+                        than wmax > 0 (with method=2 and wmax=0, heavier than 99).  With drop (fdem),
+                        finC codewords are mapped to the twins.
   maxC=N                Maximum number of codewords to collect (default: 0 = unlimited); with
-                        expand=1, also the maximum number of codewords of the expanded list.
-  dW=N                  Extra weight window above minimum distance to collect codewords
-                        (w <= min_w + dW) (default: 0).
+                        expand=1, bounds the size of the expanded list as well.
+  dW=N                  Extra weight window above the minimum weight found to collect codewords
+                        (w <= min_w + dW; default: -1 = unset, i.e., 0 in the binary; any dW >= 0
+                        collects codewords and uses the native binary with engine=auto).
   irred=0|1             Disabled in the Python interface: irred=0, an expert option of the
                         dist_m4ri binary, is ignored with a warning to stderr.  Only irreducible
                         codewords are recorded (irred=1, the default of the binary): a codeword
@@ -7846,8 +8724,8 @@ Codeword collection and export:
   expand=0|1            Python only, for a DEM: list each codeword found once for every choice
                         among equal columns, which the binary merges (see merge; default: 0).  The
                         binary and the cache keep the merged list.  With dW <= 1, the expanded list
-                        is that of merge=0 (with dW >= 2, merge=0 also lists lighter codewords with
-                        two equal columns added).  The list grows quickly with the weight: with
+                        is that of merge=0 (with dW >= 2, merge=0 lists lighter codewords with two
+                        equal columns added as well).  The list grows quickly with the weight: with
                         maxC > 0, at most maxC codewords are written (a warning if some are dropped).
   (DEM codewords)       The indices refer to the error lines of the DEM in the order of the flattened
                         DEM, after the pmin cutoff.  For a Stim circuit, save the DEM with --out-dem in
@@ -7855,43 +8733,77 @@ Codeword collection and export:
                         circuit may differ (e.g., with another stim version).
 
 Distance caching (Python CLI):
-  cache=FILE            Path to persistent JSON cache file (default: tmp_dist_cache.json).
+  cache=FILE            Path to persistent JSON cache file (default: tmp_dist_cache.json; alias:
+                        cache_file=FILE; 0 or none disables caching).
   --no-cache / nocache  Disable reading and writing to the persistent JSON cache.
 
 General options:
   solver=NAME, engine=NAME
-                        Distance calculation engine: 'dist_m4ri' (default), 'cert' ('qec_cert'),
-                        'auto', or 'codedistance'.  'auto' (since version 0.17.0): a two-stage
-                        portfolio for a distance-only method=3 run of a quantum code, a CSS sector,
-                        or a DEM (otherwise, e.g., for a classical code or with codewords, the
-                        dist_m4ri binary): the binary first (Stage A) for the whole timeout if it
-                        is at most 2 s, else for min(max(2, timeout/10), 10) s; then, if the bounds
-                        differ and more than 1 s is left, qec_cert with the remaining time (Stage
-                        B), from the bounds of the binary (wmin=dmin, wmax=dmax-1).  A DEM with more
-                        than 25,000 error mechanisms goes to qec_cert first (timeout >= 3 s or 0).
-                        qec_cert is imported only when it runs; without it, the binary runs with
-                        the whole timeout.  --verbose reports the stages.
+                        Distance calculation engine (engine takes precedence over solver; ignored with
+                        a warning under --model-lb): 'dist_m4ri' (default; engine=native or off),
+                        'cert' ('qec_cert', 'qec-cert'), 'auto', or 'codedistance'.
+                        'cert': runs qec_cert on distance-only requests (error if qec_cert or
+                        libqeccert.so is missing, or with codeword collection --cws or outC; outD,
+                        --out-reduced, finC, smax, dW, maxC, and start are ignored with a warning; with
+                        pmin > 0, certifies the DEM without errors of probability < pmin; method=1 runs
+                        its upper-bound mode 'ub'; '0 0 0' for an input without logical codewords,
+                        which qec_cert certifies as 'infeasible').  qec_cert gets wmin from a cached
+                        certified lower bound (dmin=N only tightens the returned bounds, not passed as
+                        wmin) and wmax from dmax-1, wmax, or dstop-1 (40 if none); only unconditional
+                        lower bounds (including those conditioned solely on that cached certified
+                        wmin) and upper bounds with a verified witness are cached.
+                        'auto' (since version 0.17.0): two-stage portfolio for distance-only method=3
+                        runs on quantum codes, CSS sectors, DEMs, or Stim circuits (classical codes,
+                        method=1 or 2, codeword collection --cws/outC/dW>=0/maxC>0, finC, smax>0,
+                        start, outD, --out-reduced, and pmin>0 run the native dist_m4ri binary
+                        without importing qec_cert):
+                        - A DEM or Stim circuit with > 25,000 raw error mechanisms (and timeout >= 3 s
+                          or 0) runs qec_cert first (exact DEM reductions before search); if qec_cert
+                          fails or ends early with an open bracket and > 1 s remains (or timeout=0),
+                          Stage C runs the native binary with the remaining time (no limit for
+                          timeout=0), seeded with the qec_cert bounds.
+                        - Otherwise, Stage A runs the native binary (method=3) for tau_1 = timeout if
+                          timeout <= 2 s, else min(max(2, timeout/10), 10) s, returning at once
+                          without importing qec_cert if exact, dmin >= dstop > 0, CC reached wmax > 0,
+                          timeout=0, or <= 1 s remains; Stage B then imports and runs qec_cert with
+                          the remaining time, seeded with wmin = max(1, dmin_A) and wmax = dmax_A - 1
+                          (Stage A's CC-certified dmin_A discharges lb_assumed_wmin <= dmin_A;
+                          qec_cert runs its randomized upper-bound stage use_ub=True when dmax_A <= 0
+                          or dmax_A - max(1, dmin_A) >= 3, skipping it use_ub=False only for a narrow
+                          bracket 0 < dmax_A - max(1, dmin_A) < 3); if Stage B fails or ends early
+                          with an open bracket and > 1 s remains, Stage C runs the native binary with
+                          the remaining time from the tightened bounds.
+                        If qec_cert is not installed (or not usable, e.g., without libqeccert.so:
+                        warns once per process), the native binary runs once with the whole timeout.
+                        'codedistance': runs the codedistance Python package (error if missing, or
+                        with --cws or outC; uses steps and seed, and ignores non-default dist_m4ri
+                        binary options with a warning).  --verbose reports the engine='auto' stages.
   --verbose / -v        Enable verbose output with detailed explanations of bounds,
                         timings, steps, and cache status (implies the debug bits 1, 2,
                         65536, and 131072).  For a RW upper bound which is not certified,
-                        also estimates the probability that a lighter codeword was missed
-                        (from the average hits <n>, and from uniform random information sets
-                        with n, rank(H), and the RW steps), with the RW steps and time needed
-                        for a 1% miss probability.
+                        reports the active stopping rule and miss-probability estimates
+                        (from <n> or canonical classes, and from uniform random information sets
+                        with n, rank(H), and the RW steps, with the steps and time for 1%).
   --silent / -q         No warnings on stderr for the inputs which are ignored (e.g., matrices with
                         fdem, the options of the binary with solver=codedistance, or the options
-                        not used with --model-lb); the warnings on the validity of a result are
-                        still written.  In Python: set_silent().
+                        not used with --model-lb) or for the disabled options (--simple, --full,
+                        noscan, cbeg, cend, irred=0, css=); the warnings on the validity of a result
+                        are still written (also --quiet, silent=0|1).  In Python: set_silent().
   seed=N                Random number generator seed (default: 0; the binary replaces seed<=0 by
                         time(NULL) + 10*pid - 1000*seed).
-  debug=N               Debug bitmap (default: 0), a decimal or hexadecimal (0x...) integer;
-                        multiple debug arguments are OR-combined.  Bits 1 to 32768 are passed
-                        to the dist_m4ri binary, which prints diagnostic output to stderr (see
-                        its --morehelp; lower bits are more informative):
+  debug=N               Debug bitmap (default: 0; alias: dbg), a decimal or hexadecimal (0x...)
+                        integer; multiple debug arguments are OR-combined.  At debug=0, validity
+                        warnings, ignored/overridden parameter warnings, invalid finC warnings, and
+                        the smax > 0 confinement profile of the binary are still forwarded to stderr.
+                        Bits 1 to 32768 are passed to the dist_m4ri binary, which prints diagnostic
+                        output to stderr (see its --morehelp; lower bits are more informative):
                           1: summary (input matrices, rounds of a DEM, RW windows, stop reason,
-                             codeword statistics, codewords found by each kind of RW step),
-                          2: progress (run plan, finished CC rounds, new upper bounds),
-                          4: periodic status (after 1, 2, 4, ... s, then every 60 s),
+                             codeword statistics, RW information sets, pairs, step types, and stages
+                             rw_opt),
+                          2: progress (run plan, finished CC rounds, new upper bounds, RW convergence),
+                          4: periodic status (after 1, 2, 4, ... s, then every 60 s: bounds, RW steps
+                             and rate, the min_hits statistic <n> or the canonical classes of rw_opt
+                             16, progress of the current CC round),
                           8: thread allocation and timing, 16: code parameters (ranks, k),
                           32: codeword supports, 64: arguments, 128: matrices,
                           256: codeword dump, 2048: no size cutoff.
@@ -7902,7 +8814,7 @@ General options:
                           524288: keep (and list) the temporary files.
 
 Option groups (--help GROUP prints all entries of GROUP):
-  windows               kwin, win_mode, win_hyb
+  windows               kwin, win_mode, win_hyb, rw_opt
   stopping, stop        steps, wmin, timeout, min_hits, cov_cws
   bounds                dmin, dmax, dstop, dexp, wmax
   dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand
@@ -7916,7 +8828,8 @@ Option groups (--help GROUP prints all entries of GROUP):
   experimental          ksub, refresh
 
 Help options:
-  -h, --help [TOPIC]    Display summary help message (fits 80 rows); with TOPIC, the same as
+  -h, -?, --help [TOPIC]
+                        Display summary help message (fits 80 rows); with TOPIC, the same as
                         --morehelp TOPIC (also --help=TOPIC).
   --morehelp [TOPIC]    Display this full help message with all parameters, or only the entries of
                         TOPIC, e.g., --morehelp maxC (also --morehelp=TOPIC; several topics separated
@@ -7928,6 +8841,14 @@ Help options:
                         entries of the group, and a parameter of a group also the other entries of
                         its group (see also).
   --version             Display the versions of dist_m4ri.py and of the dist_m4ri binary.
+
+Exit codes:
+  exit codes            0: success; 1: an invalid value of an argument (also an unknown help topic);
+                        2 (since version 0.17.2; a traceback before): a package or library which is
+                        missing or not usable (e.g., qec_cert without libqeccert.so, stim), the
+                        binary not found or failed (its error message), or a file which cannot be
+                        read or written; 255: an unrecognized parameter, or no input.  Errors are
+                        written to stderr on one line: 'Error: ...'.
 """
 
 
@@ -8065,17 +8986,20 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                                      ("--p-noise", args.get("p_noise") is not None),
                                      ("--force-noise", bool(args.get("force_noise")))) if on]
     warns = []
+    warned: Set[str] = set()  # (the options with a warning: one warning per option, since version 0.17.2)
     if args.get("fdem"):
         ign = given("finH", "finG", "finL", "fin", "Hx", "Hz", "Lx", "Lz")
         if ign:
             warns.append(f"fdem={args['fdem']} given: ignoring {', '.join(k + '=' for k in ign)}")
         if stim_opts and not str(args["fdem"]).endswith(".stim"):
             warns.append(f"{', '.join(stim_opts)}: only used for a Stim circuit (.stim); ignored")
+            warned.update(stim_opts)
         elif (args.get("basis") is not None and str(args.get("drop")).lower() != "css"
               and not args.get("verbose")):  # (with --verbose, the basis of the classification is reported)
             warns.append("basis=: only used with drop=css (the minority-basis detectors of a CSS circuit); ignored")
         if args.get("expand") and not (args.get("outC") or args.get("do_cws")):
             warns.append("expand=: only used with outC= or --cws; ignored")
+            warned.add("expand=")
     else:
         dem_opts = stim_opts + [opt for opt, on in (("--out-dir", args.get("out_dir") is not None),
                                                     ("--out-dem", args.get("out_dem") is not None)) if on]
@@ -8105,7 +9029,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
             if args.get("fin") is not None and ign:
                 warns.append(f"fin={args['fin']} together with {', '.join(k + '=' for k in ign)}: the explicit file "
                              "names take precedence")
-    if args.get("classical") == 1 and given("finG", "finL", "fin", "fdem", "Hz", "Lx", "Lz"):
+    css_input = bool(given("Hx", "Hz"))  # (Lx and Lz are only used with them)
+    if args.get("classical") == 1 and (given("finG", "finL", "fin", "fdem", "Hz") or (css_input and given("Lx", "Lz"))):
         warns.append("classical=1 ignored: the input is a quantum code or a DEM")
     if args.get("ortho") is False:  # (a quantum code: compute_quantum_distance() and compute_css_distance() warn)
         quantum = bool(given("Hx", "Hz", "finG", "finL", "fin")) or args.get("classical") == 0
@@ -8131,8 +9056,7 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                                    ("merge=", args.get("merge") is not None),
                                    ("expand=", args.get("expand") is not None),
                                    ("wmin=", args.get("wmin", 1) != 1), ("smax=", args.get("smax") is not None),
-                                   ("noscan=", bool(args.get("noscan"))), ("cbeg=", args.get("cbeg") is not None),
-                                   ("cend=", args.get("cend") is not None),
+
                                    ("--trust-start", bool(args.get("trust_start"))),
                                    ("start_scan=", bool(args.get("start_scan"))),
                                    ("chunk_size=", bool(args.get("chunk_size"))), ("ksub=", bool(args.get("ksub"))),
@@ -8143,8 +9067,10 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                                    ("refresh=", args.get("refresh") is not None),
                                    ("solver=", args.get("solver") not in (None, "dist_m4ri")),
                                    ("engine=", args.get("engine") not in (None, "dist_m4ri"))) if on]
+        ign = [opt for opt in ign if opt not in warned]
         if ign:
             warns.append(f"{', '.join(ign)}: not used with --model-lb; ignored")
+        _warn_disabled_options(args.get("noscan"), args.get("cbeg"), args.get("cend"))  # (as without --model-lb)
     else:
         if args.get("out_model") is not None:
             warns.append("--out-model: only used with --model-lb; ignored")
@@ -8155,12 +9081,24 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """The CLI (see print_cli_help()); with --silent, set_silent() is on during the run, and restored at its end."""
-    report = _report_ignored
+    """
+    The CLI (see print_cli_help()).  With --silent, set_silent() is on during the run, and with --no-cache the distance
+    cache is disabled (see disable_distance_cache()); both are restored at its end (the cache since version 0.17.2).
+
+    Returns:
+        The exit code: 0 on success, 1 for an invalid argument value (and the help of an unknown parameter), 2 if a
+        package or library is missing (e.g., qec_cert), the binary is not found or fails, or a file cannot be read or
+        written (since version 0.17.2; before, a traceback), and 255 for an unrecognized parameter or without an input.
+    """
+    report, use_cache = _report_ignored, _use_distance_cache
     try:
         return _main(argv)
     finally:
         set_silent(not report)
+        if use_cache:
+            enable_distance_cache()
+        else:
+            disable_distance_cache()
 
 
 def _main(argv: Optional[List[str]] = None) -> int:
@@ -8545,6 +9483,12 @@ def _main(argv: Optional[List[str]] = None) -> int:
     except ValueError as e:
         sys.stderr.write(f"Error: {e}\n")
         return 1
+    except (ImportError, RuntimeError, OSError) as e:  # (since version 0.17.2: one line, exit code 2) a package or
+        # library which is missing or not usable (qec_cert, stim, codedistance), a failed run of the binary (its error
+        # message), the binary not found, or a file which cannot be read or written
+        lines = str(e).strip().splitlines()
+        sys.stderr.write(f"Error: {lines[0] if lines else type(e).__name__}\n")
+        return 2
 
     return 0
 

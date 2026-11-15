@@ -1,6 +1,6 @@
 Authors: Leonid P. Pryadko & Weilei Zeng
 
-Date: 2026-11-14
+Date: 2026-11-15
 
 ## Overview
 
@@ -40,10 +40,11 @@ summarizes how the program works; `README.md` describes all parameters (also `di
   full DEM is reduced to the size of the simplified one; `drop=FILE` gives the detectors in a file, and `drop=0` keeps
   all (the Python options `--simple` and `--full` are disabled since version 0.13.0).
 
-All matrices are binary, with `n` columns, in Matrix Market format (`.mtx` or `.mmx`). For a CSS code, they obey the
-orthogonality conditions `Hx Hz^T = 0`, `Hx Lz^T = 0`, and `Lx Hz^T = 0`, and the number of encoded qubits is
-`k = n - rank(Hx) - rank(Hz)`, which is also the rank of `Lx Lz^T` for complete sets of logical operators `Lx` and `Lz`.
-With `debug=16`, the program prints the ranks of the input matrices and `k`.
+All matrices are binary, with `n` columns, in Matrix Market format (`.mtx` or `.mmx`; since version 0.17.2, the values
+of an entry listed more than once are summed mod 2, with a warning, and an index out of range is an error). For a CSS
+code, they obey the orthogonality conditions `Hx Hz^T = 0`, `Hx Lz^T = 0`, and `Lx Hz^T = 0`, and the number of encoded
+qubits is `k = n - rank(Hx) - rank(Hz)`, which is also the rank of `Lx Lz^T` for complete sets of logical operators
+`Lx` and `Lz`. With `debug=16`, the program prints the ranks of the input matrices and `k`.
 
 ## How it works: RW algorithm (method=1)
 
@@ -59,8 +60,9 @@ Russians", with tables of combinations of the pivot rows), which gives the same 
 matrices.
 
 Variants: a window localizes the column order around a random column, in every step with `kwin > 0` (`kwin` columns),
-and by default (`kwin=0`) for `n >= 500` in every other step, with windows of `win_hyb` consecutive columns: 256 for a
-DEM, whose errors are in time order, and 512 for matrices; `kwin=-1` turns the windows off.
+and by default (`kwin=0`) for a DEM with `n >= 500` in every other step, with windows of `win_hyb` consecutive columns:
+256 for a DEM, whose errors are in time order (matrices get such windows, 512 columns, only with `rw_opt=0` or
+`win_hyb > 0`); `kwin=-1` turns the windows off.
 The window columns come first in the elimination order, so that a codeword with most of its columns in the window is
 found far more often; a window much larger than the minimum-weight codewords, e.g., one round of a DEM, has many
 columns which cannot be pivots and helps little.
@@ -76,17 +78,21 @@ others, so that the hit-count criterion `min_hits` may end RW early.
 Since version 0.17.0, RW also uses the weight-3 degeneracies of the matrix, the triplets `T3` of columns with zero
 syndromes of `H` and `L` (e.g., the CNOT hook triangles of a circuit; `doc/rw_triplet_degeneracies.tex`), selected by
 the expert option `rw_opt` (default `-1`: automatic; `0`: the RW of version 0.16.1; or a sum of stages). The triplets
-are enumerated exactly after merging and `drop=auto` (milliseconds); every single-column candidate is contracted
-(2 -> 1 and 3 -> 0 columns) before it is recorded, and the pairs skip the columns whose short circuits the contraction
+are enumerated exactly after merging and `drop=auto` (milliseconds); the candidates are contracted (2 -> 1 and 3 -> 0
+columns) before they are recorded, those of single columns up to the weight `min(dmax + 8, 64)` and those of the pairs
+up to `min(dmax + 1, 64)`, and while `dmax + 8 <= 64`, the pairs skip the columns whose short circuits the contraction
 already covers (stage 1). With `min_hits`, the minimum-weight codewords of the uniform steps are counted by canonical
 classes (exchanges across two triplets with a common column), and RW stops by a Good-Turing / Chao2 rule (stage 16):
-much sooner when the classes are large (degenerate DEMs and code-sized models), later when there are many classes. On
-wide DEMs, the elimination works with an `m x m` inverse (sparse dual, stage 8: the same information sets, less memory
-per thread, so that more RW threads are allowed); with `outC` or `maxC`, the exported codewords are completed by the
-triplet exchanges (stage 32). Shortening by the rows of `G` (stage 2) and row-slab windows (stage 4) are explicit
-only. On the benchmark of version 0.17.0 (Section 11 of `benchmark/BENCHMARK.md`), the automatic mode records 1.1 to 8
-times more minimum-weight hits per second on circuit DEMs and code-sized models, and reaches the lightest known
-codewords of the `bb_360` and double-gross DEMs 2 to 3.5 times sooner.
+much sooner when the classes are large (degenerate DEMs and code-sized models), later when there are many classes;
+while no uniform step has found a codeword of the minimum weight (e.g., on deep circuit DEMs, where the window steps
+find them), this stop is inactive, and RW runs until `steps` or the `timeout` end. On wide DEMs, the elimination works
+with an `m x m` inverse (sparse dual, stage 8: the same information sets, less memory per thread, so that more RW
+threads are allowed); with `outC` or `maxC`, the exported codewords are completed by the triplet exchanges (stage 32).
+Shortening by the rows of `G` (stage 2, before the contraction) and row-slab windows (stage 4) are explicit only. On
+the benchmark of version 0.17.0 (Section 11 of `benchmark/BENCHMARK.md`), the automatic mode records 1.1 to 8 times
+more minimum-weight hits per second (of the at most 100 codewords kept) on 13 of 15 circuit DEMs and code-sized models,
+and reaches the weights 24 of the `bb_360` DEM and 18 of the double-gross DEM 3.5 and 2.1 times sooner (medians of 2
+and 3 seeds; the lightest known codewords of these DEMs have the weights 23 and 16).
 
 RW ends after `steps` steps (default: 100000), at the `timeout`, as soon as a codeword of weight at most `wmin` is
 found, or when the hit-count criterion `min_hits` is met (see Convergence below).
@@ -110,7 +116,7 @@ extended from the unsatisfied check with the fewest available columns; the colum
 later branches, so that every codeword is found exactly once; and a cluster is pruned if lower bounds on the number of
 columns still needed exceed the weight left (an unsatisfied check without available columns, or a packing of
 unsatisfied checks with disjoint sets of available columns). It visits far fewer clusters, by factors which grow with
-the weight (e.g., 30-100 times fewer, in 10-26 times less CC time, in the rounds `w = 11..13` of the codes with
+the weight (e.g., 30-110 times fewer, in 10-26 times less CC time, in the rounds `w = 11..13` of the codes with
 `d = 14` to `20` of the benchmark), and it finds the same codewords; the proof is in `doc/cc_completeness.tex`. With
 `cc_prune=0`, the first unsatisfied check in the order of the rows of `H` is taken, as in earlier versions: for
 matrices, the rows are sorted by increasing weight (`sort_rows=1`, the default), which reduces the work when the row
@@ -145,21 +151,30 @@ the number of non-pivot columns and `C(a, b)` is the binomial coefficient, plus,
 `P2(w) = C(w, 2) C(n-w, s-2) / C(n, s) * C(r-w+2, l) / C(r, l)` with `r = rank(H)`. See the section "RW Convergence:
 Empirical Test and Probability to Find a Codeword" in `README.md` for details.
 
+With the canonical classes of `rw_opt` (stage 16, automatic for quantum codes with `min_hits > 0` and `kwin <= 0`), RW
+stops instead by a Good-Turing / Chao2 rule: the `C` canonical classes of the minimum-weight codewords found in the
+uniform steps, with `N` step incidences in total and `Q1` and `Q2` classes found in exactly one and two steps, must
+give `N >= max(15, 3 min_hits)`, `N / C >= min_hits`, the unseen mass `Q1 / N <= min(0.02, 3 exp(-min_hits))`, and the
+Chao2 unseen fraction at most 0.05. Only the uniform steps count: while none of them has found a codeword of the
+minimum weight, the stop is inactive (the summary says so since version 0.17.2), and RW runs until `steps` or the
+`timeout` end.
+
 ## Output
 
-The program prints one line to `stdout`, `dmin dmax rw_steps`: `dmin - 1` is the largest cluster weight analyzed by CC
-without finding a codeword, `dmax` the smallest weight of a codeword found (or the supplied upper bound `dmax`; never
-the stop target `dstop`), and `rw_steps` the number of completed RW steps (0 if CC found a minimum-weight codeword);
-`dmin = dmax` is the exact distance. All diagnostic output goes to `stderr`, as selected by the `debug` bitmap
-(default: 3, the summary and the progress; `debug=0` is silent, `debug=7` adds a periodic status line). Example (run
-from the repository root):
+The program prints one line to `stdout`, `dmin dmax rw_steps`: `dmin - 1` is the largest weight `w` certified to have
+no codeword of weight at most `w` (CC found none from the supplied `dmin`, default 1, up to `w`; the odd weights are
+skipped if all codewords have even weight), `dmax` the smallest weight of a codeword found (or the supplied upper bound
+`dmax`; never the stop target `dstop`), and `rw_steps` the number of completed RW steps (0 if CC found a minimum-weight
+codeword); `dmin = dmax` is the exact distance. All diagnostic output goes to `stderr`, as selected by the `debug`
+bitmap (default: 3, the summary and the progress; `debug=0` is silent, `debug=7` adds a periodic status line). Example
+(run from the repository root):
 
 ```text
 $ ./src/dist_m4ri finH=examples/c204H.mmx threads=8 seed=7
 # input: classical code, n=204 (finH='examples/c204H.mmx')
 #   H: 102 x 204, 606 nonzeros, max row weight 6, max column weight 3
 # Warning: smax=0, confinement profile is not computed
-# run plan: method=3 (bracketing), 8 threads (RW on up to 8), steps=100000, min_hits=5, ksub=0, CC from w=1, ...
+# run plan: method=3 (bracketing), 8 threads (RW on up to 8), steps=100000, min_hits=5, ksub=0, rw_opt=0x0, ...
 # [thread 0] RW found new upper bound cw of weight 48 (using 8 RW threads)
 ...
 # [thread 3] RW found new upper bound cw of weight 8 (using 6 RW threads)

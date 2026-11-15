@@ -27,7 +27,8 @@ typedef struct {
   int n;               /**< number of columns of H */
   long long ntrip;     /**< |T_3|, the number of triplets */
   long long probes;    /**< hash probes of the enumeration: the pairs of columns with the same smallest row */
-  int complete;        /**< 1: T_3 enumerated (0: skipped, more probes than the budget; then ntrip = 0) */
+  int complete;        /**< 1: T_3 enumerated (0: skipped, more probes than the budget, or too many triplets for the
+                        *   tables, 6 |T_3| > 2^30; then ntrip = 0) */
   double ms;           /**< time of the enumeration in ms */
   int npure;           /**< number of pure-logical columns (h_u = 0, l_u != 0): codewords of weight 1 */
   int *pure;           /**< the pure-logical columns (increasing) */

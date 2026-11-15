@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <ctype.h>
 #include "mmio.h"
 
@@ -99,23 +100,11 @@ size_t mzd_weight(const mzd_t *A){
 /**
  * Copy of mzd_gauss_delayed from mzd.c (m4ri package) except additionally 
  * returns the list of pivot columns in second argument 
- * permutation q must be initialized!
+ * permutation q must be initialized! (only its first `pivots` entries are written)
  */
 rci_t mzd_gauss_naive(mzd_t *M, mzp_t *q, int full) {
   rci_t startcol=0, startrow = 0;
   rci_t pivots = 0;
-#if 0  
-  if (q==NULL) 
-    q=mzp_init(M->ncols);
-  else {
-    if ((q->length)!=M->ncols){ 
-      mzp_free(q);
-      q=mzp_init(M->ncols);
-    }
-    else 
-      mzp_set_ui(q,1);
-  }
-#endif 
 
   for (rci_t i = startcol; i < M->ncols ; ++i) {
     for(rci_t j = startrow ; j < M->nrows; ++j) {
@@ -155,8 +144,8 @@ int csr_max_row_wght(const csr_t * const p){
 
 
 /** 
- * transpose compressed CSR matrix, 
- * (re) allocate if needed 
+ * transpose compressed CSR matrix: allocate dst if it is NULL, otherwise dst must have the transposed size and room
+ * for the entries (an error otherwise)
  * return resulting matrix
  * TODO: add code for List of Pairs 
  */
@@ -215,13 +204,6 @@ mzd_t *mzd_generator_from_csr(mzd_t *G, const csr_t * const H){
   mzd_t *mat=mzd_from_csr(NULL,H); /* convert to dense matrix */
   mzp_t * pivots = mzp_init(n);    /* initialize the permutation */
   rci_t ra = mzd_gauss_naive(mat, pivots, 1);
-#if 0  
-  if ((prm.debug & 2048) && (n<=80)){ 
-    mzd_print(mat);
-    mzp_out(pivots);    
-    printf("\n");
-  }
-#endif
   /* now we can check if G is the right size and reallocate if needed */
   if ((G!=NULL) && ((G->ncols!=n) || (G->nrows!=n-ra))){
     mzd_free(G); 
@@ -237,7 +219,7 @@ mzd_t *mzd_generator_from_csr(mzd_t *G, const csr_t * const H){
     mzd_t * winCT=mzd_init_window(G,0,0,n-ra,ra);
     mzd_transpose(winCT,matC);
     mzd_free(winCT); /* window is no longer needed */
-    mzd_free(matC);  /* \todo see why window does not seem to work here */
+    mzd_free(matC);  /* (a copy: an M4RI window needs a column offset which is a multiple of 64, and ra is arbitrary) */
   }
   for(int i=0; i<n-ra ; i++)
     mzd_write_bit(G,i,i+ra,1); /* identity matrix on the right */
@@ -391,7 +373,7 @@ int csr_csr_mul_non_zero(const csr_t * const A, const csr_t * const B){
 }
 
 /** 
- * just check whether syndrome is zero or not 
+ * the syndrome weight of the row vector `row`: the number of rows of spaQ with an odd overlap
  */ 
 int syndrome_bit_count(const mzd_t * const row, const csr_t * const spaQ){
   int wei=0;
@@ -569,13 +551,16 @@ csr_t *csr_init(csr_t *mat, int rows, int cols, int nzmax){
 #include "sort.h"
 
 /**
- *  compress a CSR matrix  
+ *  compress a CSR matrix in pair form: sort the entries by row and column (repeated entries are kept, see
+ *  csr_compress_mod2())
  */ 
 void csr_compress(csr_t *mat){
   int nz=mat->nz;
   if(nz==-1)
     ERROR("matrix already compressed");
   int_pair *pairs=calloc(nz,sizeof(int_pair));
+  if ((nz > 0) && !pairs)
+    ERROR("memory allocation");
   for(int i=0;i<nz;i++){
     pairs[i].a=mat->p[i];
     pairs[i].b=mat->i[i];
@@ -592,6 +577,51 @@ void csr_compress(csr_t *mat){
   mat->p[i]=j; /* final value */
   mat->nz=-1; /* indicate compressed form */
   free(pairs);
+}
+
+/**
+ *  compress a binary CSR matrix in pair form as csr_compress(), with the repeated entries summed mod 2: an entry
+ *  (row, column) listed an even number of times is removed, one listed an odd number of times is kept once.  Returns
+ *  the number of positions (row, column) listed more than once, and (if not NULL) the first one in `*dup` and the
+ *  number of those removed in `*ncancel`.  The entries must be in range (0 <= row < rows).
+ */
+int csr_compress_mod2(csr_t *mat, int_pair *dup, int *ncancel){
+  int nz=mat->nz;
+  if(nz==-1)
+    ERROR("matrix already compressed");
+  int_pair *pairs=calloc(nz,sizeof(int_pair));
+  if ((nz > 0) && !pairs)
+    ERROR("memory allocation");
+  for(int i=0;i<nz;i++){
+    pairs[i].a=mat->p[i];
+    pairs[i].b=mat->i[i];
+  }
+  int_pair_quick_sort(pairs, nz);
+  int ndup = 0, nc = 0, out = 0;
+  for (int s = 0; s < nz;) { /* the runs of equal entries */
+    int e = s + 1;
+    while ((e < nz) && (pairs[e].a == pairs[s].a) && (pairs[e].b == pairs[s].b)) e++;
+    if (e - s > 1) {
+      if ((ndup == 0) && dup) *dup = pairs[s];
+      ndup++;
+      if (((e - s) & 1) == 0) nc++;
+    }
+    if ((e - s) & 1) pairs[out++] = pairs[s];
+    s = e;
+  }
+  int i, j=0;
+  for(i=0;i<mat->rows;i++){
+    mat->p[i]=j;
+    while ((j<out)&&(pairs[j].a == i)){
+      mat->i[j]=pairs[j].b;
+      j++;
+    }
+  }
+  mat->p[i]=j; /* final value */
+  mat->nz=-1; /* indicate compressed form */
+  free(pairs);
+  if (ncancel) *ncancel = nc;
+  return ndup;
 }
 
 csr_t * csr_from_pairs(csr_t *mat, const int nz, int_pair * const prs, const int nrows, const int ncols){
@@ -648,7 +678,10 @@ void csr_print(const csr_t * const smat, const char str[]){
 
 
 /**
- * read sparse matrix into a (binary) CSR (all entries default to 1)
+ * read sparse matrix into a (binary) CSR: the entries are reduced mod 2 (pattern entries are 1, an even value is 0),
+ * and an entry (row, column) listed more than once (in the coordinate format; a symmetric file which also lists the
+ * mirror image of an entry) is the sum of its values mod 2, with one warning on stderr, so that the dense and the
+ * sparse uses of the matrix agree; an index out of range (1-based: 1 <= row <= M, 1 <= column <= N) is an error.
  * (re)allocate mat if needed
  * use transpose=1 to transpose.
  */
@@ -679,15 +712,23 @@ csr_t *csr_mm_read(char *fin, csr_t *mat, int transpose){
   if (mm_is_coordinate(matcode)) {
     if ((ret_code = mm_read_mtx_crd_size(f, &M, &N, &nz)) != 0)
       ERROR("Cannot read coordinate size in input file %s", fin);
+    if ((M < 0) || (N < 0) || (nz < 0))
+      ERROR("invalid size line '%d %d %d' (rows, columns, entries) in %s", M, N, nz, fin);
+    if (mm_is_symmetric(matcode) && (nz > INT_MAX / 2))
+      ERROR("too many entries (%d) in %s", nz, fin);
   } else { // array (dense)
     if ((ret_code = mm_read_mtx_array_size(f, &M, &N)) != 0)
       ERROR("Cannot read array size in input file %s", fin);
+    if ((M < 0) || (N < 0) || ((long long)M * (long long)N > INT_MAX))
+      ERROR("invalid array size line '%d %d' (rows, columns) in %s", M, N, fin);
     if (mm_is_symmetric(matcode)) {
       nz = M * M;
     } else {
       nz = M * N;
     }
   }
+  if (mm_is_symmetric(matcode) && (M != N))
+    ERROR("a symmetric matrix must be square: %d x %d in %s", M, N, fin);
 
   int nzmax;
   if (mm_is_coordinate(matcode)) {
@@ -727,6 +768,9 @@ csr_t *csr_mm_read(char *fin, csr_t *mat, int transpose){
           ERROR("Failed to read pattern entry %d in %s", i, fin);
         }
       }
+      if ((r < 1) || (r > M) || (c < 1) || (c > N))
+        ERROR("entry %d of %s: row %d, column %d out of range for a %d x %d matrix (1-based indices)", i + 1, fin, r,
+              c, M, N);
       r--; c--; // 1-based to 0-based
 
       if (v % 2 != 0) {
@@ -786,7 +830,13 @@ csr_t *csr_mm_read(char *fin, csr_t *mat, int transpose){
   }
 
   mat->nz = k;
-  csr_compress(mat); /* sort entries by row and remove duplicates */
+  int_pair dup = {0, 0};
+  int ncancel = 0;
+  const int ndup = csr_compress_mod2(mat, &dup, &ncancel); /* sort the entries, and sum repeated ones mod 2 */
+  if (ndup > 0)
+    fprintf(stderr, "# WARNING: %d position(s) of the matrix in %s have more than one entry (first: row %d, column %d, "
+            "1-based): their values are summed mod 2 (%d position(s) become zero)\n", ndup, fin,
+            1 + (transpose ? dup.b : dup.a), 1 + (transpose ? dup.a : dup.b), ncancel);
   fclose(f);
   return mat;
 }

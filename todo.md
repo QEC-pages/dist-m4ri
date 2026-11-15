@@ -64,9 +64,10 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ### Task 2: Localized & Windowed Column Permutations for DEMs
 - [x] Add parameters `kwin=[int]` (window size $W$ in every step; default `0`: uniform random permutations, and for
-  $n \ge 500$ an index window of `win_hyb` columns on every other step, see **RW windows for big DEMs** in section 2;
-  alias `win=[int]`) and `win_mode=[0|1]` (default `0`). A negative `kwin` (e.g., `-1`) turns the windows off
-  (uniform random permutations in every step; documented, and passed by the Python wrapper, since 2026-11-07).
+  $n \ge 500$ an index window of `win_hyb` columns on every other step, since 0.17.0 for matrices only with `rw_opt=0`
+  or `win_hyb > 0`, see **RW windows for big DEMs** in section 2; alias `win=[int]`) and `win_mode=[0|1]` (default
+  `0`). A negative `kwin` (e.g., `-1`) turns the windows off (uniform random permutations in every step; documented,
+  and passed by the Python wrapper, since 2026-11-07).
 - [x] **Window Construction**:
   - Pick a seed column $j_0 \in [0, n-1]$ uniformly at random per trial.
   - **Mode 0 (Tanner Graph BFS Neighbors)**: Perform BFS on the bipartite graph between columns and check rows starting
@@ -123,11 +124,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - In RW (`method=1` or `method=3`), stop when the average number of hits per codeword $\langle n\rangle$ reaches
     `min_hits`, both for the minimum-weight codewords and for the representative set (a single codeword suffices,
     e.g., for a classical code with $k=1$). As in QDistRnd, a lighter codeword is missed with probability
-    $\approx e^{-\langle n\rangle}$, assuming that lighter codewords are found at least as often.
+    $\approx e^{-\langle n\rangle}$, assuming that lighter codewords are found at least as often. Since 0.17.0, the
+    canonical rule of Stage 5 of Task 7 (`rw_opt` bit `0x10`, automatic for quantum codes) replaces this rule.
   - The hits of all RW steps count, including the window steps (`kwin > 0`, and the hybrid windows on every other
-    step for $n \ge 500$, on by default), as well as the CC and `finC` hits; the window steps find local codewords
-    much more often, so that $e^{-\langle n\rangle}$ can be optimistic for codewords which are not local (found by the
-    uniform steps only).
+    step for $n \ge 500$, on by default, since 0.17.0 for a DEM, or for matrices with `rw_opt=0` or `win_hyb > 0`), as
+    well as the CC and `finC` hits; the window steps find local codewords much more often, so that
+    $e^{-\langle n\rangle}$ can be optimistic for codewords which are not local (found by the uniform steps only).
 - [x] **Hit Uniformity Check**: at the end (`debug&1`, result not certified), a dispersion test of the hit counts in
   each weight class of the representative set (zero-truncated Poisson); a warning if they are strongly non-uniform.
 - [x] **Information-Set Estimate** (Python `--verbose`, and in the binary with the hit uniformity warning): with
@@ -180,11 +182,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     times, others once), so that $e^{-\langle n\rangle}$ is optimistic there.
 - Possible directions:
   - [x] Separate hit statistics for the uniform and the windowed RW steps (0.14.3): with `debug&1`, the binary prints
-    the distinct codewords and hits of the three lowest weights found by each kind of step (`# RW step types, ...`),
-    and the Python model check of the information-set estimate uses the hits of the uniform steps only. Codewords
-    which violate the window model (e.g., time-like codewords with one error per round) are still found only by the
-    uniform steps, which are kept for this. The `min_hits` stop and the hit uniformity check still use the hits of
-    both kinds of steps (`cnt`); only the printed statistics and the Python model check separate them.
+    the distinct codewords and hits of the three lowest weights found by each kind of step (`# RW step types, ...`;
+    the codewords in the hash table, i.e., without `outC` and `maxC` at most `cov_cws` of the minimum weight), and the
+    Python model check of the information-set estimate uses the hits of the uniform steps only. Codewords which
+    violate the window model (e.g., time-like codewords with one error per round) are still found only by the uniform
+    steps, which are kept for this. The vector rule of `min_hits` and the hit uniformity check still use the hits of
+    both kinds of steps (`cnt`); the canonical rule of Stage 5 of Task 7 (0.17.0) counts only the uniform steps
+    (`cnt_u`), and its stop is inactive while no uniform step has found a codeword of the minimum weight (the window
+    steps are informational; the status line and the summary say so since 0.17.2).
   - Empirical per-weight hit rates from the representative set, extrapolated to weights below the minimum found.
   - Account for the small-weight trivial vectors explicitly (see **Trivial Codeword Statistics** below); this may
     also give a more accurate round estimate (degenerate multiplicity). Studied for the weight-3 ones: the
@@ -196,7 +201,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 
 ### Task 7: Weight-3 Degeneracies ($\mathcal{T}_3$) in RW: Implementation of the Nov 2026 Study
 - [x] **Study** (Nov 2026): `doc/rw_triplet_degeneracies.tex` (with `doc/rw_triplet_degeneracies.bib`; prototypes and
-  benchmarks in `scratch/triplet_rw/`, summary in `scratch/reports/triplet_rw_analysis.md`). Weight-3 degeneracies
+  benchmarks in `scratch/triplet_rw/`, whose raw logs are only in `/tmp/exp5/` and `/tmp/exp2_out.txt`, to be copied
+  to `scratch/triplet_rw/logs/`; summary in `scratch/reports/triplet_rw_analysis.md`). Weight-3 degeneracies
   (column triplets with zero sum in $H$ and $L$) come from the CNOT hook triangles of the circuit (Prop. 1, Sec. 3.1),
   are found exactly with $\sum_i \binom{|G_i|}{2}$ hash probes (Lemma 1, Sec. 3.2), and span the whole degeneracy
   space $\ker H \cap \ker L$ on 12 of 14 circuit DEMs (Sec. 3.3). Their effects on RW (ambushed pivot pairs,
@@ -213,29 +219,33 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     Stages 3 and 4 (no time axis, $\le 12.7$ KiB in L1/L2) and `win=256` on data-then-hooks matrices stay off.
   - **Q2 — Static degenerate CSS and 2BGA codes $(H_X, H_Z)$** (Sec. 8.3, Thm. 5, Prop. 6, Table 10): when $w_{\rm deg}
     = 3$ (e.g., SHYPS gauge sector, $|\mathcal{T}_3| = 525$, $\mathrm{GAP} = 0$), Stages 1, 2, and 5 apply verbatim
-    ($245\times$–$366\times$ hits/s). On the 7 Bicycle Race `2bga_*` codes ($w = 5$–$9$), meet-in-the-middle ($w \le 6$)
+    ($266\times$–$366\times$ hits/s). On the 7 Bicycle Race `2bga_*` codes ($w = 5$–$9$), meet-in-the-middle ($w \le 6$)
     plus ISD finds $w_{\rm deg} = w_{\max}$ ($\mathcal{T}_3 = \emptyset$); in general 2BGA codes (Lin–Pryadko 2024),
     subgroup/coset combinations can give extra light generators $w < w_{\max}$ (weight-3 ones caught by Lemma 1,
     $w \ge 4$ via low-weight search of $\mathrm{rowspan}(G)$ or extra `finG` rows). With explicit generators
     $\mathcal{G}$ (`finG`), steepest-descent $\mathcal{G}$-shortening up to $d_{\max} + w_{\mathcal{G}} - 2$ lowers
-    $5.7\%$–$87\%$ of $p = 1$ candidates (supplying up to $92\%$–$100\%$ of weight-$d$ hits on `2bga_288_4` and
-    `2bga_292`), and omitting realized generators $C_P(x) \in \mathcal{G}$ from Stern Bucket 0 is loss-free ($0$ lost in
-    $24$ sectors; unlisted $w_x \ge 3$ trivial columns must not be filtered). Even-weight generators give $(w/2)
+    $5.7\%$–$88\%$ of $p = 1$ candidates in the 24 sectors (supplying $92\%$–$100\%$ of the weight-$d$ hits on
+    `2bga_288_4` and `2bga_292` in the $X$ sectors of Table 10, and 4 of 5 in the $Z$ sector of `2bga_292`), and
+    omitting realized generators $C_P(x) \in \mathcal{G}$ from Stern Bucket 0 is loss-free ($0$ lost in $24$ sectors;
+    unlisted $w_x \ge 3$ trivial columns must not be filtered). Even-weight generators give $(w/2)
     \leftrightarrow (w/2)$ sibling swaps ($\mathrm{canon}_{\mathcal{E}}$); odd-weight generators alone give none.
   - **Q3 — Single-round ($T = 1$) circuit DEMs, reduced vs. unreduced** (Sec. 8.4, Lemma 2, Table 11): in a CSS memory
     circuit with $T = 1$ cycle (`rounds=0` when cycle 1 precedes `REPEAT`), minority checks are measured once, so zero
     minority detectors exist (`drop=auto` deletes $0$ detectors, full merged DEM $=$ CSS-reduced DEM, and each
     `DEPOLARIZE2` yields $\le 3$ distinct nonzero columns; $n/m \le 9.4$, whereas two-sector reduction begins at
     $T = 2$, and non-CSS `color_xyz` stays irreducible). Within-cycle CNOT triangles keep $\mathrm{GAP} = 0$, so
-    Stages 1, 2, and 5 stay on ($3.7\times$–$45\times$ `V4_cnt_uni`, up to $1075\times$ `V6_cnt_win`), Stages 3 and 4
-    stay off, and `win=256` still yields $6.5\times$–$33\times$ at $T = 1$ for $n \gtrsim 10^3$ from Stim's spatial
-    column order (vanishing under random column permutation).
+    Stages 1, 2, and 5 stay on ($3.7\times$–$45\times$ hits/s for `V4_cnt_uni`, up to $1075\times$ for `V6_cnt_win`),
+    Stages 3 and 4 stay off, and `win=256` still yields $6.5\times$–$33\times$ hits/step ($6.0\times$–$31\times$ hits/s)
+    at $T = 1$ for $n \gtrsim 10^3$ on mitten and SHYPS from Stim's spatial column order (vanishing under random column
+    permutation; on `dgross_288`, $n = 1728$, only the window variants found weight-18 hits: 47 and 115 against 0).
   - **Cross-regime $\Pr(J)$ concentration and termination** (Secs. 8.5–8.6, Cor. 2, Tables 12–13): $\kappa(H) =
     \mathbb{E}_{\Pr}[\ln \Pr(J)] + \ln\binom{n}{r} = D_{\rm KL}(\Pr \| U_r) > 0$ for every binary matrix with
     $2 \le \mathrm{rank}\,H \le n - 2$ (exclusion of dependent $r$-subsets plus basis non-uniformity), so
     `rw_infoset_find_prob` is never exact and must stay a diagnostic. Canonical `cnt_u` Good–Turing / Chao1–Chao2
-    stopping halts $2\times$–$13\times$ earlier with $0$ missed logical classes when $M_{\rm eff} \gg 1$, and matches
-    vector-level behavior when $M_{\rm eff} = 1$.
+    stopping halts $5\times$–$13\times$ earlier with $0$ missed logical classes when $M_{\rm eff} \gg 1$ (16–111),
+    $1.9\times$–$2.2\times$ earlier on the `bb_72` extended matrix and model with $M_{\rm eff} = 3.5$ (1.3–2.0% of the
+    swap clusters missed), and matches vector-level behavior when $M_{\rm eff} = 1$ (the prototype counted the Chao1
+    abundances of the hits, not the Chao2 step incidences of the implementation).
 - [x] **Implementation in `dist_m4ri`** (0.17.0; RW, `method=1` and `method=3`; stage-by-stage plan `M1`–`M6` in
   `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, logs in `scratch/m1_m4/{c_work,py_work}/SUMMARY.md`, benchmark in
   `scratch/bench_0.17/REPORT.md` and Section 11 of `benchmark/BENCHMARK.md`; these Stages 1–5 are those of Sec. 9 of
@@ -243,58 +253,71 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   defaults (D1–D5) with one expert C/Python bitmask switch (`rw_opt=-1` auto default, `0` legacy 0.16.1 off, bits
   `1..63` per-stage ablation: `0x01` T3 + contraction + filter, `0x02` G-shortening, `0x04` row slabs, `0x08` sparse
   dual, `0x10` canonical classes and stopping, `0x20` `outC` expansion; new `src/rw_triplet.{h,c}`). The automatic
-  mode is `0x11` (+ `0x08` on wide DEMs, + `0x20` when collecting); classical codes get no stage. Idle-machine ablation
-  (16 threads, 22 inputs of the four regimes): 1.13–7.45x the minimum-weight hits per second on 13 of 15 DEMs and
-  models with `0x01`, inert on static codes; `bb_360` to the weight 24 in 2.9 s instead of 10.1 s, double-gross DEM to
-  18 in 0.54 s instead of 1.15 s; `rw_opt=0` within 4% of the 0.16.1 binary.
+  mode is `0x11` (+ `0x08` on wide DEMs, + `0x20` when collecting); classical codes get no stage (and, as all matrices
+  with `rw_opt != 0`, no hybrid windows: D3). Idle-machine ablation (16 threads, 22 inputs of the four regimes):
+  1.13–7.45x the minimum-weight hits per second (of the at most 100 codewords kept) on 14 of 15 DEMs and models with
+  `0x01`, inert on static codes; `bb_360` to the weight 24 in 2.9 s instead of 10.1 s, double-gross DEM to 18 in
+  0.54 s instead of 1.15 s (medians of 2 and 3 seeds; the lightest known weights are 23 and 16); `rw_opt=0` within 5%
+  of the 0.16.1 binary.
   - [x] Stage 1 (bit `0x01`, automatic for quantum inputs with `steps > 2`; 0.04–8.8 ms after merge and drop, e.g.,
     47520 triplets of `bb_360` in 8.75 ms): exact $\mathcal{T}_3$ enumeration (Lemma 1: minimum-detector buckets and a
     Zobrist hash of the columns of $(H, L)$) on the matrix that RW searches, i.e., after merging and `drop=auto` (never
     on a raw full DEM, see the costs below), building the ordered-pair table $(u < v) \mapsto w$ and the CSR adjacency
-    of the triplet graph $G_3$; a pure-logical column gives $d = 1$ at once. Built lazily on the first RW step (not for
-    `method=2`, nor for very short screening runs); D1: if $\mathcal{T}_3 = \emptyset$ (static codes with checks of
-    weight $\ge 4$), nothing is kept.
+    of the triplet graph $G_3$; a pure-logical column gives $d = 1$ at once. Built before the run, since 0.17.2 within
+    the timeout (not for `method=2`, nor for very short screening runs, `steps <= 2`); D1: if
+    $\mathcal{T}_3 = \emptyset$ (static codes with checks of weight $\ge 4$), nothing is kept.
   - [x] Stage 2 (bit `0x01`; with `finG` bit `0x02`, explicit only: on top of the automatic mask, `0x13` against
     `0x11` gives 0.84–1.00x hits/s on four static codes and 1.37x on `2bga_288_4`, so Rule D2 keeps it off): test
     $\mathrm{sig}(y) \ne 0$ with the 64-bit reduced-logical syndromes before the support of a $p = 1$
     candidate is formed; greedy $2 \to 1$ / $3 \to 0$ contraction of the $p = 1$ candidates of weight at most
-    $\min(d_{\max} + 8, 64)$ (0.17.1 caps shortening at `RW_SHORTEN_WMAX = 64` so heavy initial candidates do not incur
-    $O(w^3)$ scans); and skip the columns with $\mathrm{sig}(x) = 0$, $w_x \le 2$ in the buckets of `rw_pairs_step()`
-    (Stern Bucket-0 filter, loss-free only together with the contraction: Thms. 1–3, Secs. 4.1–4.3). Prototypes:
-    $2.8\times$–$20.2\times$ the minimum-weight hits per second of windowed RW (Sec. 5). With `finG` (D2):
-    steepest-descent shortening by the rows of $G$ up to weight $\min(d_{\max} + w_G - 2, 64)$ and filtering of
+    $\min(d_{\max} + 8, 64)$ and of the pair candidates up to $\min(d_{\max} + 1, 64)$ (0.17.1 caps shortening at
+    `RW_SHORTEN_WMAX = 64` so heavy initial candidates do not incur $O(w^3)$ scans); and skip the columns with
+    $\mathrm{sig}(x) = 0$, $w_x \le 2$ in the buckets of `rw_pairs_step()` (Stern Bucket-0 filter, loss-free only
+    together with the contraction: Thms. 1–3, Secs. 4.1–4.3; since 0.17.2 only while $d_{\max} + 8 \le 64$, below the
+    cap). Prototypes: $2.8\times$–$20.2\times$ the minimum-weight hits per second of windowed RW (Sec. 5). With `finG`
+    (D2): steepest-descent shortening by the rows of $G$ up to weight $\min(d_{\max} + w_G - 2, 64)$, since 0.17.2
+    before the $\mathcal{T}_3$ contraction (with `0x03`, contracting first lost about 5% of the minimum-weight hits on a
+    constructed $[[8,1,3]]$ code, against the loss-free $G$ filter: TEX2-11 of the 0.17.1 review), and filtering of
     realized generators only (Thm. 5, Sec. 8.3; e.g., 272 of the 296 weight-$d$ hits of `2bga_288_4` came from
-    shortening);
-    default for CSS runs only after a C implementation shows a wall-clock gain. Never filter columns with
-    $\mathrm{sig}(x) = 0$, $w_x \ge 3$ whose circuits are not listed.
+    shortening; also only below the cap, and not when collecting). Never filter columns with $\mathrm{sig}(x) = 0$,
+    $w_x \ge 3$ whose circuits are not listed.
   - [x] Stage 3 (bit `0x04`, explicit only: the slabs never reach the weight 18 of the double-gross DEM in 25 s and slow
-    the gross DEM to d 3.4x; but on the $T = 1$ double-gross DEM they found the weight 16 in 0.2–0.7 s, where the other
-    masks found 17–18 in 12 s): row-slab windows (a contiguous range of $m_{\rm sub} \le 320$ detectors of a DEM in time
-    order, the columns inside it, MIS push-back order, Stage 2) for DEMs with $m \ge 600$ and $T \ge 2$ (D4), with
-    positive weight on the two boundary slabs: $49\times$–$493\times$ the window hits per second on `shyps_225` and
-    `bidir`, $0.33\times$–$2.13\times$ for $m$ from 420 to 561, and no hits on `dgross_288` with uniform slab starts
-    (Sec. 4.4, Sec. 5). This is the item **RW window steps restricted to the window** of section 4.
-  - [x] Stage 4 (bit `0x08`, automatic behind the gate below; bit-identical to the dense elimination; gated inputs:
-    1.51x steps/s on the double-gross DEM, 2.65x on `bb_360`; forced elsewhere 0.40–0.75x): sparse-dual $m \times m$
-    inverse RREF with lazy reduced columns (Prop. 3, Sec. 4.4: the same pivots,
-    circuits, and signatures) behind a heuristic gate (D4: the dense $m \times n$ matrix spills L2, and $n/m \ge 20$ or
-    $m \ge 1400$): $1.16\times$–$2.66\times$ RW steps per second on `bidir`, `bb_72_full`, and `dgross_288`,
-    $0.83\times$–$0.96\times$ below the gate (Sec. 5).
-  - [x] Stage 5 (bit `0x10`, automatic for quantum inputs with `min_hits > 0` and `kwin <= 0`; lines `# RW canonical`
-    and `# RW FKG score` with `debug&1`, parsed by `dist_m4ri.py`; with `min_hits=5` it stops 2.3–9x sooner on the
-    degenerate models and surface/color DEMs, and 1.3–7x later where many classes exist): maintain a separate uncapped
-    canonical-class table keyed by $\mathrm{canon}_{\mathcal{T}_3}(c)$ (by
-    $\mathrm{canon}_{\mathcal{E}}(c)$ of Prop. 6 if $\mathcal{T}_3 = \emptyset$ and $G$ is given; raw vectors
+    the gross DEM to d 3.4x against `rw_opt=0` (4.4x against `0x01`); but on the $T = 1$ double-gross DEM they found the
+    weight 16 in 0.2–0.7 s, where the other masks found 17–18 in 12 s, although they often find the same few codewords
+    again, which raises $\langle n\rangle$ of the vector rule): row-slab windows (a contiguous range of
+    $m_{\rm sub} = \min(320, m/2)$ detectors of a DEM in time order, the columns inside it, MIS push-back order, Stage
+    2) for any DEM with $m \ge 4$, `kwin=0`, and the rows in time order (`sort_rows=0`; the gate $m \ge 600$, $T \ge 2$
+    of D4 in the notes is not implemented), with positive weight on the two boundary slabs: $49\times$–$493\times$ the
+    window hits per second on `shyps_225` and `bidir`, $0.33\times$–$2.13\times$ for $m$ from 420 to 561, and no hits on
+    `dgross_288` with uniform slab starts (Sec. 4.4, Sec. 5). This is the item **RW window steps restricted to the
+    window** of section 4.
+  - [x] Stage 4 (bit `0x08`, automatic behind the gate below, for quantum codes with at most 64 rows of $L$;
+    bit-identical to the dense elimination; gated inputs: 1.51x steps/s on the double-gross DEM and 2.65x on `bb_360`
+    against `rw_opt=0`, 1.55x and 2.60x against `0x11`; forced elsewhere 0.60–0.98x against `0x11` on the other DEMs
+    and models, 0.49–1.15x on static codes; no `# RW FKG score`): sparse-dual $m \times m$ inverse RREF with lazy
+    reduced columns (Prop. 3, Sec. 4.4: the same pivots, circuits, and signatures) behind a heuristic gate (D4: the
+    dense $m \times n$ matrix above 512 KiB, i.e., spilling L2, and $n/m \ge 20$ or $m \ge 1400$):
+    $1.16\times$–$2.66\times$ RW steps per second on `bidir`, `bb_72_full`, and `dgross_288`, $0.83\times$–$0.96\times$
+    below the gate (Sec. 5).
+  - [x] Stage 5 (bit `0x10`, automatic for quantum inputs with `min_hits > 0` and `kwin <= 0`; line `# RW canonical`
+    with `debug&1`, parsed by `dist_m4ri.py`; with `min_hits=5`, `0x11` stops 2.3–9x sooner than `rw_opt=0` on the
+    degenerate models and surface/color DEMs, and 1.3–7x later where many classes exist, i.e., 1.5–3.2x sooner on the
+    models, and 2–57x later, than `0x01`): maintain a separate canonical-class table (up to $2^{24}$ classes and
+    codewords, then the vector rule; canonical forms up to the weight 64) keyed by $\mathrm{canon}_{\mathcal{T}_3}(c)$
+    (by $\mathrm{canon}_{\mathcal{E}}(c)$ of Prop. 6 if $\mathcal{T}_3 = \emptyset$ and $G$ is given; raw vectors
     otherwise, D5) so `p->codewords` continues to store raw irreducible supports for `outC` / `maxC` without
     interference; count the step-incidences of the uniform steps only (`cnt_u`), and stop by the Good–Turing /
-    Chao1–Chao2 rule of Sec. 7.3 instead of the vector-level `min_hits`; report `rw_infoset_find_prob` only as a
-    diagnostic (Cor. 2, Sec. 8.5), optionally with the zero-cost Harris–FKG score (Cor. 1). The Python wrapper parses
-    the new statistics (and its model check of the information-set estimate is updated); `min_hits` and `cov_cws` keep
-    their meaning for raw vectors.
+    Chao1–Chao2 rule of Sec. 7.3 instead of the vector-level `min_hits` (inactive while no uniform step has found a
+    codeword of the minimum weight; the status line and the summary say so since 0.17.2); report
+    `rw_infoset_find_prob` only as a diagnostic (Cor. 2, Sec. 8.5), optionally with the zero-cost Harris–FKG score
+    (Cor. 1; the line `# RW FKG score` comes with any stage, for the dense full-matrix steps with pairs, not with
+    `0x08` and not for the slab steps). The Python wrapper parses the new statistics (and its model check of the
+    information-set estimate is updated); `min_hits` and `cov_cws` keep their meaning for raw vectors.
   - Windows (D3): keep the hybrid `win=256` steps for DEMs in circuit column order ($T \ge 2$; $T = 1$ with
     $n \gtrsim 10^3$, where the spatial order alone gives $6.5\times$–$33\times$ on mitten and SHYPS, Lemma 2 and
     Sec. 8.4); uniform steps only for extended matrices (data columns, then hooks) and static codes. MIS Drop is never
-    used (Prop. 2).
+    used (Prop. 2). Implemented as: hybrid windows for every DEM with $n \ge 500$, and for matrices only with
+    `rw_opt=0` or `win_hyb > 0` (also when no stage applies, e.g., for classical codes).
   - Tests: the same distances with each stage on and off, and verified codeword-output behavior with `outC` / `dW`
     (codes, models, $T = 1$ and multi-round DEMs, `method=1` and `method=3`, one and many threads); hits per second and
     time to the distance in `benchmark/BENCHMARK.md`; README, `--help`/`--morehelp`, `introduction.md`, and the Python
@@ -302,9 +325,10 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [x] **Non-interfering codeword output (`outC` / `maxC`, weights $w \le d + \mathrm{dW}$) and $\mathcal{T}_3$-based
   enumeration from recorded representatives** (0.17.0: the Stern Bucket-0 filter only with bit `0x20` when collecting,
   the raw candidate kept besides its contracted form when collecting with `dW >= 1`, and the $\mathcal{T}_3$ BFS of bit
-  `0x20`, automatic with `outC`/`maxC`; RW exports the complete CC sets, e.g., `surf_rot_d5` 8172/8172 in 10 steps, and
-  in the benchmark `mitten_150` at $T = 1$ 100/100 codewords of weight 7 in 4000 steps against 74 with `rw_opt=0`;
-  still open: the optional export of compact canonical representatives):
+  `0x20`, automatic with `outC`/`maxC` for quantum codes; RW exports the complete or nearly complete CC sets, e.g.,
+  `surf_rot_d5` 8172/8172 in 10 steps and `color_xyz_d5` 5021/5030 (no log was saved), and in the benchmark
+  `mitten_150` at $T = 1$ 100/100 codewords of weight 7 in 4000 steps against 74 with `rw_opt=0`; still open: the
+  optional export of compact canonical representatives):
   - Separate the two targets cleanly (`collecting = (outC != NULL || maxC > 0)`):
     1. *Distance-bound mode* (`!collecting`): full Stage 2 contraction ($2 \to 1$ / $3 \to 0$), Stern Bucket-0 pruning
        ($\mathrm{sig}(x) = 0, w_x \le 2$), and Stage 5 canonical stopping run at maximum speed with zero export work.
@@ -374,22 +398,26 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [x] **Placement: `dist_m4ri`, `qec_cert`, or both** (Nov 2026 analysis of the author's question; measurements in
   `scratch/todo_arch/startup_bench/summary.md`):
   - `dist_m4ri`: all five stages. They change the RW steps, the candidate stream, the codeword hash, and the hit
-    statistics, which exist only here: codeword lists (`outC`, `maxC`, `dW`, e.g., for vecdec), `method=1`, `finC`,
-    `smax > 0`, `pmin > 0`, and `start` lists always run the native binary (`_can_delegate_to_cert()` in
-    `dist_m4ri.py`), and `qec_cert` returns a single verified witness. RW is also the fastest source of the upper
+    statistics, which exist only here: with `engine="auto"`, codeword lists (`outC`, `maxC`, `dW`, e.g., for vecdec),
+    `method=1`, `finC`, `smax > 0`, `pmin > 0`, and `start` lists always run the native binary
+    (`_can_delegate_to_cert()` in `dist_m4ri.py`; `engine="cert"` refuses codeword lists and hands the rest to
+    `qec_cert`), and `qec_cert` returns a single verified witness. RW is also the fastest source of the upper
     bounds that `qec_cert` needs: 0.13–2.38 s to a minimum-weight witness on the 13 CSS codes of its benchmark that CC
     does not certify in 60 s, e.g., 0.18 s against 2.37 s for its own Stern ISD on `yarn_smitten_1200`
     (`../qec-cert/doc/benchmarks_3way.md`, Sec. 7.2.2).
-  - Startup (existing binary, one thread): on the `drop=auto`-reduced DEM, Stage 1 takes 0.1–66 ms up to
-    $n \approx 3 \cdot 10^4$ (dgross_288: 20 ms and 3.9 MiB, against 0.19 s before the search and 0.95 s per RW step),
-    34 ms for bb_360, and 0.11 s and 16 MiB for bb_756 ($n = 1.3 \cdot 10^5$): about 1% of the 2.3 s, 3.3 s, and
-    10.9 s that the binary spends before the search on these full DEMs (reading, merging, `drop=auto`), and up to 27%
-    only where that time is below 0.25 s. About 1 µs and 130 bytes per triplet. On a raw full DEM it would take
-    0.3–4.2 s and up to 475 MiB (bb_756: $3.6 \cdot 10^6$ triplets), hence after `drop=auto` only. Codes with checks of
-    weight $\ge 4$: no triplet, found in at most 0.1 ms; the hash of the rows of $G$ with the incidence lists takes
-    1.5–14 µs. The fixed costs per call are larger: 10 ms to start the binary, 0.11 s to import `dist_m4ri.py`, and
-    0.64 s to import `qec_cert`. So the added analysis does not slow the startup noticeably and gives no reason to
-    move the stages.
+  - Startup (a prototype measurement before 0.17.0: a harness for Stage 1, and the binary of 0.16.1 on one thread; the
+    implementation of 0.17.0 took 0.04–8.8 ms, see Stage 1 above): on the `drop=auto`-reduced DEM, Stage 1 takes
+    0.1–66 ms up to $n \approx 3 \cdot 10^4$ (on the simplified DEM of dgross_288: 20 ms and 3.9 MiB, 6.75 MiB at the
+    peak, 11% of its 0.19 s before the search, and 0.95 s per RW step), 34 ms for bb_360, and 0.11 s and 16 MiB (29.5
+    MiB at the peak) for bb_756 ($n = 1.3 \cdot 10^5$): about 1% of the 2.3 s, 3.3 s, and 10.9 s that the binary
+    spends before the search on the full DEMs of dgross_288, bb_360, and bb_756 (reading, merging, `drop=auto`), and up
+    to 27% only where that time is below 0.25 s. About 1 µs and 130 bytes per triplet. On a raw full DEM (merged only)
+    it would take 0.05–4.2 s and up to 475 MiB (642 MiB at the peak; bb_756: $3.6 \cdot 10^6$ triplets), hence after
+    `drop=auto` only. Codes with checks of weight $\ge 4$: no triplet, found in at most 0.1 ms; the hash of the rows of
+    $G$ with the incidence lists takes 1.5–14 µs. The fixed costs per call are larger: 10 ms to start the binary,
+    0.11 s to start Python and import `dist_m4ri.py` (0.045 s for the import alone), and 0.2–0.6 s to import
+    `qec_cert` (0.215 s in the fresh processes of the benchmark of Section 11.3, 0.64 s in this earlier, colder
+    measurement). So the added analysis does not slow the startup noticeably and gives no reason to move the stages.
   - `qec_cert` (optional, its upper-bound stage only): Stage 2 fits `ts_enumerate()` in `../qec-cert/src/ub/stern.c`,
     which has the same $p = 1$ / $p = 2$ structure; Stage 3 exists there in another form (elimination restricted to
     the rows touching a time slab of 1–3 rounds or a Tanner-graph ball, see **RW window steps restricted to the
@@ -407,14 +435,16 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   `scratch/bench_0.17/` with `REPORT.md`, `benchmark/BENCHMARK.md` Sections 4 and 11.2, figures `scaling_*.png` with the
   0.17.0 curve and `scaling_rw_017.png`). Results: double-gross DEM RW 34x at 64 threads (0.15.2: 11x), 0.63 s instead
   of 2.36 s; `bb_72` full DEM with hits recorded 63x at 128 threads against 34x for `rw_opt=0` (1.9x the hits per
-  second: the per-step coalescing removes the `cw_mutex` bottleneck); `bb_72` model 1.36x the best hit rate of 0.16.1;
-  `bb_360` 3.8x the steps per second with `nothrottle=1`; the default throttle of these short runs is set by the steps
-  throttle ($\lceil \texttt{steps}/10 \rceil$), and on the 236-GiB server the memory throttle allows the cap of 32 RW
-  threads to both modes (the Stage 4 footprint matters on smaller machines: 16 GiB, 10 against 32 threads for
-  `bb_756`). Open: `-1` on the `2bga_102` DEM at 64–128 threads (0.62–0.92x the steps per second of `rw_opt=0`, not
-  from `0x10`); the CC of the double-gross DEM 0.05–0.07 s slower than with the 0.16.1 binary (note: the `bb_756`
-  first-step slowdown with `-1` from $O(w^3)$ contraction on heavy initial candidates was resolved in 0.17.1 via
-  `RW_SHORTEN_WMAX = 64`). Plan (`M5` of
+  second: the per-step coalescing removes the `cw_mutex` bottleneck); `bb_72` model at 16 threads 1.36x the hit rate
+  of 0.16.1 at 16 threads, 1.12x its best (at 8 threads), and 1.32–1.69x at 64–128 threads; `bb_360` with
+  `nothrottle=1`: 120–132 steps/s at 32 and 128 threads (63 at 64) against 33–35 for `rw_opt=0`; the default throttle
+  of these short runs is set by the steps throttle ($\lceil \texttt{steps}/10 \rceil$), and on the 236-GiB server the
+  memory throttle allows the cap of 32 RW threads to both modes (the Stage 4 footprint matters on smaller machines:
+  16 GiB, 10 against 32 threads for `bb_756`). Open: `-1` on the `2bga_102` DEM at 64–128 threads (0.62–0.88x the
+  steps per second of `rw_opt=0` in two series, 0.93x at 16 threads; not from `0x10`); the CC of the double-gross DEM
+  0.05–0.07 s slower than with the 0.16.1 binary (note: the cap `RW_SHORTEN_WMAX = 64` of 0.17.1 is expected to remove
+  the 1.45x longer first RW steps of `-1` on `bb_756`, from the $O(w^3)$ contraction of heavy initial candidates; not
+  re-measured). Plan (done as above; `M5` of
   `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, updating `benchmark/BENCHMARK.md` Section 4):
   - Sweep `threads = 1, 2, 4, 8, 16, 32, 64, 96, 128` (default throttling vs. `nothrottle=1`, NUMA/socket-aware,
     medians of $\ge 5$ runs for short cases) comparing `0.16.1` (`rw_opt=0`) against the Stage 1–5 pipeline (`rw_opt=-1`
@@ -431,9 +461,10 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   `timeout=45`, 64 threads, fresh processes, `scratch/bench_0.17/REPORT.md`, `benchmark/BENCHMARK.md` Section 11.3,
   `figures/portfolio_ecdf.png`). Certified exact: native 26, `qec_cert` 32, the delegation of 0.16.1 32, the two-stage
   `"auto"` 31; median time on the 20 easy instances 0.087 s for `"auto"` against 0.443 s for 0.16.1 (`import qec_cert`:
-  0.215 s); the default $\tau_1 = 22.5$ s costs time where `qec_cert` is the faster certifier (`bb_360` 20.1 s against
-  2.45 s), and $\tau_1 = 2$ s is the best or equal on all 8 instances of the sweep (31 exact in 266 s against 294 s).
-  Follow-ups: see the item **`engine="auto"` as a two-stage portfolio** in section 4. Plan (`M5` of
+  0.215 s); the 0.17.0 default $\tau_1 = 22.5$ s (at `timeout=45`) costs time where `qec_cert` is the faster certifier
+  (`bb_360` 20.1 s against 2.45 s), and $\tau_1 = 2$ s is the best, or within the run-to-run noise, on all 8 instances
+  of the sweep (31 exact in 266 s against 294 s). Follow-ups (done in 0.17.1): see the item **`engine="auto"` as a
+  two-stage portfolio** in section 4. Plan (done as above, with $\tau_1 \in \{2, 5, 15, 22.5\}$ s; `M5` of
   `scratch/triplet_rw/IMPLEMENTATION_PLAN.md`, paired with **`engine="auto"` as a two-stage portfolio** in section 4):
   - Systematic 4-way benchmark across Track A (static CSS, BB, Mitten, and 2BGA codes), Track B ($T = 1$ and
     multi-round circuits/DEMs, including `gross`, `mitten_270`, `2bga_102/120`, `shyps_225`, `dgross_288`, `bb_360`),
@@ -444,6 +475,36 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Sweep Stage-1 budget $\tau_1 \in \{2, 5, 15, 30\}$ s and DEM raw-mechanism fast-path thresholds at $p = 16$ and
     $p = 64 / 128$ threads (60 s total cap per instance), reporting exact certifications, bracket widths, startup
     savings on small/classical inputs, and cumulative ECDF (instances certified vs. wall time).
+- [x] **Review of 0.17.1 and the fixes of 0.17.2** (2026-11-15; 243 verified findings in
+  `scratch/review_0.17.1/VERIFIED.md`, the fixes and their checks in `scratch/fix_0.17.2/`):
+  - Binary: repeated Matrix Market entries summed mod 2, with a warning (the dense and the sparse readers disagreed,
+    and CC could certify a wrong lower bound; `examples/surf_d3_L.mmx` and `surf_d5_L.mmx` deduplicated), and index
+    range errors; a `finC` index 0 is an error (it was read as the column $-1$: a wrong exact $d = 1$); integer values
+    such as `1e5` or `100000.0` (`1e5` was read as 1), other trailing text ignored with a warning, `timeout=inf`, NaN
+    rejected; `dW < 0` read as 0; DEM instruction tags; the $G$ descent before the $\mathcal{T}_3$ contraction, and the
+    Stern filters only below the cap 64; the $\mathcal{T}_3$ build counted in the timeout; the inactive canonical
+    `min_hits` stop reported (status line, summary, `# RW canonical` with `n/a`, a note); `drop=auto` says when its
+    search was not exhaustive and prefers twins with the same observables; the `ksub` fallback before the stages; an
+    input without columns is an error, one without rows runs CC only; help texts and comments; Tests 123–132 (the
+    stop polls of the sparse dual, Stage 4 together with Stage 5, and the changes above).
+  - Python: `engine="cert"` applies `pmin` (the old `dem:...:pmin=` cache records are dropped), warns on the options it
+    ignores, and does not pass the caller's `dmin`; no cache-key collisions for lists of NumPy rows; `method=2` with
+    `dmax` keeps the `dW` rounds; the binary's warnings also with `debug=0`; one `ImportError` for an unusable
+    `qec_cert`, one warning per process with `engine="auto"`; CLI exit code 2 for import, binary, and file errors;
+    `timeout=None` = 60 s for every engine; `[1, 1, 0]` for $d = 1$; the DEM and circuit helpers (tags, `MPP`
+    records, idle noise across `REPEAT`, ...); the CLI parser (numbers, `finH= FILE`, flags as `key=value`, negative
+    values); help texts and docstrings; tests.
+  - Docs: README, `introduction.md`, the notes `doc/*.tex`, and `benchmark/BENCHMARK.md` (e.g., the lightest known
+    codewords of the double-gross and `bb_360` DEMs have the weights 16 and 23).
+  - [ ] Timings to re-measure on the idle server (`scratch/fix_0.17.2/cfix/postponed_timing.sh`): the stop time of
+    `bb_756` with `timeout=20` and the sparse dual (37–43 s in 0.17.0, before the stop polls of 0.17.1); short
+    timeouts with the $\mathcal{T}_3$ build counted; steps/s and hits/s while $d_{\max} + 8 > 64$ (filters off);
+    `rw_opt=3` with `finG` and triplets; `drop=FILE` with $A \ne 0$ on a large DEM; the `ksub` fallback on a DEM; the
+    README numbers of the double-gross CC (0.15.x, with the odd rounds) and the hit rates with `cov_cws=0`.
+  - [ ] Open: a fallback of the canonical rule where only the window steps find the minimum weight (deep DEMs; since
+    0.17.2 reported, not changed); C1-14 (the Stern filter with duplicate columns when collecting; not reproduced);
+    `engine="cert"` on an input without logical codewords gives `[0, 0, 0]`, the binary a vacuous `[dmin, 0, 0]` with
+    `dmin > n`; the Python CLI rejects `steps=1.5`, which the binary reads as 1 (with a warning).
 
 ---
 
@@ -466,11 +527,11 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     bound is kept with the probability $\binom{r-l}{w-2}/\binom{r}{w-2} < 0.8$. The information-set estimate
     includes the $P_2$ term, and `debug&1` prints the pairs checked per step and the codewords from pairs and single
     columns.
-  - Results (fixed RW steps): the minimum-weight codewords of circuit DEMs 7–26x more often per second (bb_72 7x,
-    gross 22x, surf_d7 and mitten_150 26x); dgross: weight 18 in 3000 steps on 32 threads (20 without pairs; 2% more
-    time per step); bb_360: 24 in 600 steps (26); classical LDPC codes with large distances: c1920H 210 instead of 320
-    in 1000 steps (auto $l = 1$). Small codes: 2–5x longer steps (more hits recorded under the codeword mutex), but
-    `min_hits` is reached in 2–34x fewer steps, in about the same time or less.
+  - Results (fixed RW steps): the minimum-weight codewords of circuit DEMs are found 7–26x more often per second
+    (bb_72 7x, gross 22x, surf_d7 and mitten_150 26x); dgross: weight 18 in 3000 steps on 32 threads (20 without
+    pairs; 2% more time per step); bb_360: 24 in 600 steps (26); classical LDPC codes with large distances: c1920H 210
+    instead of 320 in 1000 steps (auto $l = 1$). Small codes: 2–5x longer steps (more hits recorded under the codeword
+    mutex), but `min_hits` is reached in 2–34x fewer steps, in about the same time or less.
   - Possible follow-ups: thread-local batches of the recorded hits (the codeword mutex limits small codes with many
     threads, also without pairs); a cost model for $l$ (time of the pairs vs the elimination) instead of the fixed
     keep probability 0.8; triples ($p=3$) for small ranks (as in the Stern ISD of `qec_cert`, which has $p \le 3$:
@@ -511,8 +572,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   si1000-type noise these errors are error mechanisms).
   - Python could map the data errors to DEM columns by their detector signatures and pass the codeword as `finC`.
   - This gives at once dgross $\le 18$, bb_360 $\le 24$, bb_756 $\le 34$ (RW: 18, 23, 58).
-  - **Done differently in `qec_cert`** (used by `dist_m4ri.py` with `engine="cert"`, and with `engine="auto"` for
-    distance-only `method=3` calls): its first Stern ISD stage runs on time slabs of 1–3 rounds, including the two
+  - **Done differently in `qec_cert`** (used by `dist_m4ri.py` with `engine="cert"`, and with `engine="auto"` for the
+    open Stage-A brackets and raw DEMs above 25,000 mechanisms): its first Stern ISD stage runs on time slabs of 1–3
+    rounds, including the two
     boundary slabs (`build_time_slab_column_windows()` in `../qec-cert/qec_cert/circuits/sandwich.py`, with the rounds
     of the coordinate-free detector chains of `chains.py`). A slab is a window sub-DEM, whose codewords are DEM
     codewords (`../qec-cert/doc/soundness_circuits.md`, Sec. 4.2), and a one-round slab contains the code logicals
@@ -561,8 +623,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     models, static codes, and $T = 1$ DEMs (Sec. 8); for static codes, the weight of the lightest trivial codewords
     (exact up to weight 6) and the trivial fundamental circuits per RW step that are rows of $G$ ("realized
     generators", Sec. 8.3).
-  - [ ] In the binary: report $|\mathcal{T}_3|$ (Stage 1 of Task 7) and the realized triplets or generators per RW
-    step (Stage 2).
+  - [x] In the binary: report $|\mathcal{T}_3|$ (Stage 1 of Task 7; since 0.17.0 with `debug&1`,
+    `# RW triplets: T3=...`).
+  - [ ] In the binary: report the realized triplets or generators per RW step (Stage 2).
 - [x] **Sorting Optimization**:
   - The codeword supports `ee` are sorted with the type-specific `rci_quick_sort` from `sort.h` (bitonic sort for up
     to 16 elements) instead of the generic `qsort`; with `ksub > 0`, the supports are extracted already sorted.
@@ -647,7 +710,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     packing bound) of J. Y. Lee, Okada, Maskara, Kasai, Zhou, arXiv:2609.30069, App. B, used by G. Lee,
     arXiv:2610.13880, App. C.4 (see **Branch-and-bound CC** below).
     - [x] The branch-and-bound papers are cited as [LOMKZ26] and [Lee26] in `introduction.md` (text and references),
-      and inline in the CC section of the README (not yet in its references).
+      and in the CC section and the references of the README.
   - Statistics: index-of-dispersion tests and zero-truncated Poisson fits of the hit counts.
   - Circuit-level distance: stim's search for undetectable logical errors, SAT/MaxSAT and ILP approaches (e.g., for
     the BB codes), spacetime codes (Delfosse, Paetznick), hook errors and distance-preserving schedules, extended CSS
@@ -678,7 +741,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 ### Mode: Upper Bound Search with Hit-Count Saturation
 - Run RW with `method=1 steps=N min_hits=M cov_cws=K`.
 - Collects the lowest-weight codewords into the hash table, terminating when the average number of hits per codeword
-  reaches $M$, both for the minimum-weight codewords and for the representative set of $K$ lowest-weight codewords.
+  reaches $M$, both for the minimum-weight codewords and for the representative set of $K$ lowest-weight codewords
+  (for quantum codes, the canonical classes of `rw_opt` 16 decide instead: see the `min_hits` help).
 
 ### More debug bits
 - [x] Debug bits reorganized by usability (see README "Debug Output" and `--morehelp`): 1 summary (input summary,
@@ -689,7 +753,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [x] Detailed timing information (measured / predicted values, reasons for termination): debug bits 8 and 1.
 - [x] ranks of the matrices and their sizes and code dimensions (to avoid doing rank in python)
   - [x] After RW, with `debug&1`, the binary prints `# RW information sets: n=..., rank(H)=...,
-    steps=... (uniform permutations: ...), ksub=..., ... s/step per thread, ... RW threads` (parsed by Python).
+    steps=... (uniform permutations: ...), ksub=..., pairs=..., ... s/step per thread, ... RW threads` (parsed by
+    Python).
   - [x] With `debug&16`, the binary prints rank(H), rank(L) or rank(G), and k (dense elimination at startup); sizes,
     numbers of nonzeros, and maximum row and column weights are in the input summary (`debug&1`).
   - [ ] Python could parse the `# code parameters:` line instead of computing ranks itself. Needed for
@@ -697,7 +762,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [x] in addition, print estimated prob to find (miss) a single codeword of given
   weight based on the number of information sets and the n and distance found with RW.
   - Done: Python `--verbose`, and the binary with the hit uniformity warning (Task 4); a proper estimate for DEMs
-    was studied in Nov 2026 (Task 6) and is to be implemented as Stage 5 of Task 7.
+    was studied in Nov 2026 (Task 6) and implemented as Stage 5 of Task 7 (0.17.0).
 - [ ] The periodic status shows that in `method=3` a CC round can wait for a whole RW batch before any CC thread
   starts (e.g., `c1920H.mmx`: 100 RW steps of 6.6 ms per batch, i.e., 0.66 s): smaller RW batches while CC rounds
   are short, or an RW batch interruption when a CC round starts.
@@ -708,7 +773,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - Proposal: batches of at most about 0.25 s by the measured step time, or leave the batch when a CC round needs the
     thread.
 
-### More improvements 
+### More improvements
 - [x] try verifying (using cluster decomposition from vecdec (?)) if the
       constructed / imported non-trivial CW can be decomposed into disconnected
       components.  Keep only non-trivial part (does it ever happen? how
@@ -723,12 +788,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     codewords only** below).
 - [ ] See that matrices constructed when generating L from H (e.g.) are reused when codeword searching.
 - [x] For a very large circuit, when RW is very slow, should we try constructing
-      codewords from the underlying code (can this even be done from a DEM ---
+      codewords from the underlying code (can this even be done from a DEM —
       or should it be done in python?)
   - See **Full DEM from the simplified DEM** below (done by hand for mitten_270 in Oct 2026).
-  - Answered by `qec_cert` (Python orchestration of C kernels; with `engine="cert"`, or `"auto"` for distance-only
-    `method=3` calls): from the DEM alone, it finds detector chains (coordinates, DEM structure, or measurement
-    records), searches the code-sized $\mathcal{P}_1$ projection and time slabs, and lifts and verifies the witnesses
+  - Answered by `qec_cert` (Python orchestration of C kernels; with `engine="cert"`, or `"auto"` for the open Stage-A
+    brackets and raw DEMs above 25,000 mechanisms): from the DEM alone, it finds detector chains (coordinates, DEM
+    structure, or measurement records), searches the code-sized $\mathcal{P}_1$ projection and time slabs, and lifts
+    and verifies the witnesses
     (`../qec-cert/qec_cert/circuits/`: `chains.py`, `sandwich.py`, `fold.py` with an exact MILP fiber lift,
     `replay.py`; proofs in `../qec-cert/doc/soundness_circuits.md`, Secs. 3–5 and 7); see **Upper bounds from code
     logicals** in section 2.
@@ -832,7 +898,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     - Results (16 threads, 120 s per run): tight for the stim surface-code circuits ($d = 3, 5$, X and Z), mitten_90
       hef (4), mitten_270 hef (7), and the torus n120 circuit (6); below $d$ for mitten_90 custom 4 ($d = 5$) and
       mitten_270 custom 8 ($d = 9$; the same as $d_{\rm ext}$), mitten_150 custom 6 ($d = 7$), the torus n60
-      circuit 4 ($d = 6$), and bb_72 5 (X and Z), bb_90 7, bb_108 6, gross 8, as the prototype. In the torus circuits
+      circuit 4 ($d = 6$), and bb_72 5 (X and Z), bb_90 7, bb_108 6, gross 8, as in the prototype. In the torus circuits
       all qubits are measured in each round (the final data measurements are then all those of the final block).
     - The minority-basis rows raised none of these bounds within the time. CC on the model with all rows alone is
       much slower (bb_90: 53 s instead of 0.1 s; gross: only 7 certified in 75 s), which the RW stage avoids (gross:
@@ -855,8 +921,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     the largest set with $A = 0$ found from the DEM alone, `drop=auto`, 0.14.0; see the items above), and the
     code-sized model as a lower bound in Python (`compute_model_lower_bound()`, 0.14.5), not in C. Still open: the
     lossy reductions in C, with lifting, verification, and refinement.
-  - **Done in `qec_cert`** (Python orchestration of its C kernels; used with `engine="cert"`, or `"auto"` for
-    distance-only `method=3` calls; `../qec-cert/qec_cert/circuits/`, proofs in
+  - **Done in `qec_cert`** (Python orchestration of its C kernels; used with `engine="cert"`, or `"auto"` for the open
+    Stage-A brackets and raw DEMs above 25,000 mechanisms; `../qec-cert/qec_cert/circuits/`, proofs in
     `../qec-cert/doc/soundness_circuits.md`): exact reductions (parallel merge, clean and pivot twins with frame
     maps), the $\mathcal{P}_1$ time collapse = the code-sized model (`sandwich.project_p1`), capped and uncapped mod-$p$
     folds (`fold.py`, see **Folded models** below), witness lifting with verification and Stim replay (`replay.py`,
@@ -941,7 +1007,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     without symmetry can be canonicalized when merged); the expanded list only on request (it can be huge: e.g.,
     $|\mathrm{Aut}| = 4\cdot 10^{11}$ for AG(2,64)).
   - Dependency: python-igraph is optional (networkx is too slow for large graphs); or nauty/Traces in C.
-  - **Done in `qec_cert`** for the distance (with `engine="cert"`, or `"auto"` for distance-only `method=3` calls):
+  - **Done in `qec_cert`** for the distance (with `engine="cert"`, or `"auto"` for the open Stage-A brackets):
     Tanner-graph automorphisms from `dreadnaut` (nauty/Traces, optional; plain prefix anchoring without it), filtered
     to $\mathrm{rank}[H; L; L\pi] = \mathrm{rank}[H; L]$ with every generator and element verified, Schreier–Sims
     (`../qec-cert/qec_cert/symmetry/automorphism.py`, `orbits.py`); `.sym` files with one anchor per column orbit,
@@ -965,7 +1031,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     every column below a listed one is in an earlier orbit), and it is exactly the orbit exclusion if each orbit is a
     range of consecutive columns, e.g., `start=0,l start_scan=1` for the two blocks of a 2BGA code over an abelian
     group (2x less CC work than `start=0,l`), or after renumbering the columns by orbits (largest first) in the program
-    which builds the code. `scratch/bench_0.15.1_scan/`. Still open: the inputs below (orbits in any column order,
+    which builds the code (`scratch/bench_0.15.1_scan/`). Still open: the inputs below (orbits in any column order,
     verified generators), and the work-unit split for few start columns (`scratch/symmetry/REPORT.md`).
   - Input, one of:
     - `orbits=FILE`: an orbit label for each column ($n$ integers, in the original 0-based column order), and one start
@@ -1009,9 +1075,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     for $n > 6000$), or alternating causal balls of 1280/1920/2560 columns (`../qec-cert/doc/algorithms-ub.tex`,
     Lemma `lem:ub-stern`). Prototyped for `dist_m4ri` RW as row-slab windows in the Nov 2026 notes (Sec. 4.4,
     variant `V8_subwin` in Sec. 5); implementation: Stage 3 of Task 7. Tubes for time-like logicals: not tried.
-- [x] **Exact distance from extended CSS distance** Formulate explicit criteria
+- [x] **Exact distance from extended CSS distance**: Formulate explicit criteria
       on the exactness of the extended CSS distance, and learn to recognize such
-      DEMs / circuits, as an alternative to code-sized model bounds
+      DEMs / circuits, as an alternative to code-sized model bounds.
   - Done: the extended matrix is the code-sized model under the conditions of Sec. 8.2 of the Nov 2026 notes (see
     **Extended CSS distance as a seed**), and `qec_cert` recognizes exactness automatically: the sandwich test
     `check_sandwich_theorem()` proves $d = d(\mathcal{P}_1)$ when a single-round window sub-DEM has the columns of
@@ -1037,8 +1103,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     threads and work units; Python: `_last_run_stats["cc_rounds"]`), the Python pass-through (also
     `compute_model_lower_bound()`), Tests 110 and 111. M3 benchmark (2026-10-25): `benchmark/BENCHMARK.md` Section 9
     (4–35x for $d = 14$–18; the distances of the `yarn_*` codes with $d \ge 16$ and of `bb_360` certified, up to
-    $d = 24$). M4 and the checks of 0.15.1 in 0.15.2 (below); later runs: $d_X$ of `yarn_mitten_975` (the round
-    $w = 23$, about 46 min) and the row-weight-12 GB code $[[254, 16, \le 24]]$.
+    $d = 24$). M4 and the checks of 0.15.1 in 0.15.2 (below); later runs: see the open item below.
   - [ ] Later runs: $d_X$ of `yarn_mitten_975` (the round $w = 23$, about 46 min on 128 threads) and the row-weight-12
     GB code $[[254, 16, \le 24]]$.
   - **Checks of 0.15.1** (2026-10-28, `scratch/bench_0.15.1_p0/`: 413 runs, 33 checks, mostly 128 threads): the same
@@ -1050,7 +1115,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     with two listed columns and 22–31% with eight (against the separate runs); `method=3` on the full DEMs:
     `cc_prune=0` as fast as 0.14.7 (0.94–1.08x), the branch and bound 1.4–2.5x faster on the DEMs which take more than
     1 s.
-  - **M4: per-node cost (0.15.2, 2026-10-28**; `scratch/reports/m4_per_node_0.15.2.md`): with callgrind (one thread),
+  - **M4: per-node cost** (0.15.2, 2026-10-28; `scratch/reports/m4_per_node_0.15.2.md`): with callgrind (one thread),
     the packing bound took about half of the instructions on codes, and the hash lookups of the last two levels about
     40% on DEMs.
     - `kfirst[r]`: the position of the first column after the start column in each row (updated with `acnt`), so that
@@ -1211,7 +1276,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   COO, a quantum pair, and a matrix above 65536 entries; `verify_writer.py`); `test_matrix_writer`.
 
 - [x] see if linear algebra can be used to eliminate the possibility of
-      non-trivial DEM code words stretching over multiple REPEAT rounds.
+      non-trivial DEM codewords stretching over multiple REPEAT rounds.
   - Done in `qec_cert` (sufficient conditions, verified at run time; `../qec-cert/doc/soundness_circuits.md`): the
     sandwich test (Theorem 3.2: if a single-round window sub-DEM has the columns of the time collapse
     $\mathcal{P}_1$, then $d = d(\mathcal{P}_1)$, realized by a codeword within one round), the zero-slack fiber lift
@@ -1221,11 +1286,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] native python interface (as opposed to calling external program) to speed
       up multiple repeated calls?  Or, perhaps a simplified version only for
       small time-out?
-  - Partly done through `qec_cert`: with `engine="cert"`, or `"auto"` for distance-only `method=3` calls,
-    `dist_m4ri.py` calls `qec_cert` in its own process, and `qec_cert` loads `libqeccert.so` with `ctypes`
-    (`../qec-cert/qec_cert/_lib.py`); `import qec_cert` costs 0.64 s once. The native binary (codeword lists,
-    `method=1`, `--model-lb`) still costs a process per call: about 10 ms to start, 12–31 ms in total with one RW step
-    for small codes and DEMs ($n \le 2232$), and only 1–2 ms more through `dist_m4ri.py` (Nov 2026, Task 7).
+  - Partly done through `qec_cert`: with `engine="cert"`, `dist_m4ri.py` calls `qec_cert` in its own process, and
+    `qec_cert` loads `libqeccert.so` with `ctypes` (`../qec-cert/qec_cert/_lib.py`); `import qec_cert` costs 0.2–0.6 s
+    once. Since 0.17.0, `"auto"` runs the native binary first on all such small calls (classical codes, and quantum
+    codes and DEMs up to 25,000 raw mechanisms), and imports `qec_cert` only for open Stage-A brackets or larger raw
+    DEMs, so that it costs a process per call like the native runs (codeword lists, `method=1` and `2`,
+    `--model-lb`): about 10 ms to start, 12–31 ms in total with one RW step for small codes and DEMs ($n \le 2232$),
+    and only 1–2 ms more through `dist_m4ri.py` (Nov 2026, Task 7).
 - [ ] Recognize folded circuits (see https://arxiv.org/abs/2604.09797): an option to detect a memory circuit with a
   folded structure, i.e., in which each measurement round $i > 1$ is done in the reverse addressing order of the first
   one. For such a circuit, it is sufficient to compute the circuit distance at $T = 1$ (a single round). Open: the
@@ -1248,13 +1315,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
       `dreadnaut` (if available),
   - [x] to speed CC (top of each orbit): done in `qec_cert` (see **Symmetry in code mode** and **Orbit exclusion**).
   - [ ] symmetry-based accumulation of canonical CWs (RW) - hit counts (see **Orbit-canonical RW hit counts**).
-  - [x] Does RW blocking make sense for T=1 DEMs? Answered in the Nov 2026 notes (Sec. 8.4, Lemma 2 and the table
-    of $T = 1$ DEMs; D3 of Task 7): with one cycle, the windows help only through the within-cycle (spatial) column
-    order of Stim, $6.5\times$–$33\times$ on the mitten and SHYPS $T = 1$ DEMs ($n \gtrsim 10^3$); they are harmless
-    for $n \le 256$, where a window step has the uniform law, and useless for extended matrices and static codes.
-  - [ ] For circuit distance calculation, if d_code has not been reached, continue
-    with RW beyond steps (within timeout).
-- [ ] even smarter termination logic for CC ?
+- [x] Does RW blocking make sense for T=1 DEMs? Answered in the Nov 2026 notes (Sec. 8.4, Lemma 2 and the table
+  of $T = 1$ DEMs; D3 of Task 7): with one cycle, the windows help only through the within-cycle (spatial) column
+  order of Stim, $6.5\times$–$33\times$ on the mitten and SHYPS $T = 1$ DEMs ($n \gtrsim 10^3$); they are harmless
+  for $n \le 256$, where a window step has the uniform law, and useless for extended matrices and static codes.
+- [ ] For circuit distance calculation, if d_code has not been reached, continue
+  with RW beyond steps (within timeout).
+- [ ] even smarter termination logic for CC?
   - Since then: the bounds of the branch and bound (0.15.0), and the even-weight rounds of 0.16.1 (with $1_n$ in the
     row space of $H$, only even weights are searched and the certified bound moves by 2). Candidates from the search
     kernel of `qec_cert` (`../qec-cert/doc/soundness_search.md`): the early-exit covering bound $B_4$, the two-stage
@@ -1264,13 +1331,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   `dist_m4ri.py`, `scratch/m1_m4/py_work/SUMMARY.md`; benchmark in Section 11.3 of `benchmark/BENCHMARK.md`: 31 of 35
   certified, native start-up on easy instances). Follow-ups from the benchmark (done in 0.17.1): a smaller default
   Stage-A budget ($\tau_1 = \min(\max(2, \texttt{timeout}/10), 10)$ s, `_AUTO_STAGE1_FRAC = 0.1`,
-  `_AUTO_STAGE1_MAX = 10.0`: $\tau_1 = 2$ s was the best or equal on all 8 instances of the sweep), and keeping the
-  upper-bound stage of `qec_cert` in Stage B when the bracket is wide (`dmax_A - max(1, dmin_A) >= 3`: `use_ub=False`
-  had lost the weight 16 of the $T = 1$ double-gross DEM, $[13, 18]$ against $[14, 16]$ for `qec_cert` alone). Before
-  0.17.0, `"auto"` handed every
-  distance-only `method=3` call (also classical codes) to `qec_cert` whenever it is importable, although `qec_cert`
-  costs 0.64 s to import and 1.6–2.0 s per fresh CLI call even on small instances (`qec-cert-search`: 0.14–0.16 s),
-  against 0.01–0.1 s for `dist_m4ri`. The policy of `qec_cert` itself is the reverse
+  `_AUTO_STAGE1_MAX = 10.0`: $\tau_1 = 2$ s was the best, or within the run-to-run noise, on all 8 instances of the
+  sweep), and keeping the upper-bound stage of `qec_cert` in Stage B when the bracket is wide
+  (`dmax_A - max(1, dmin_A) >= 3`: `use_ub=False` had lost the weight 16 of the $T = 1$ double-gross DEM, $[13, 18]$
+  against $[14, 16]$ for `qec_cert` alone). Before 0.17.0, `"auto"` handed every distance-only `method=3` call (also
+  classical codes) to `qec_cert` whenever it is importable, although `qec_cert` costs 0.2–0.6 s to import and 1.6–2.0 s
+  per fresh call of its CLI (`qec-cert-search`: 0.14–0.16 s; two of the three runs of this measurement hit their 1-s
+  time limit, and one was the `gross_144` full DEM), against 0.01–0.1 s for `dist_m4ri`. The policy of `qec_cert`
+  itself is the reverse
   (`../qec-cert/doc/benchmarks_3way.md`, Sec. 7.2; `../qec-cert/doc/todo.md`, "Combined strategy"): `dist_m4ri`
   first, for up to about 30 s (RW for a verified upper bound, then CC), and only the open instances go to `qec_cert`,
   with the RW witness as the upper bound (`--wmax UB-1 --isd-trials 0`, or the planned `--ub-witness`); this
@@ -1279,9 +1347,11 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   the `tropidist` item below.
 - [ ] **Optional `engine="tropidist"` delegation fallback** (future work): an external subprocess fallback for large
   quantum codes and circuits when `qec_cert` is not installed:
-  - **Auto resolution order**: in `engine="auto"`, try `qec_cert` first, then `tropidist` (if configured via
-    `TROPIDIST_ROOT` and the instance size exceeds a minimum threshold), then the native `dist_m4ri` binary.
-  - **Delegation gate & cache safety**: apply the same distance-only gate as `engine="cert"` (fall back to native
+  - **Auto resolution order**: in `engine="auto"` (since 0.17.0), the native `dist_m4ri` binary first (Stage A; raw
+    DEMs above 25,000 mechanisms go to `qec_cert` first), then `qec_cert` for an open bracket (Stage B), then
+    `tropidist` (if configured via `TROPIDIST_ROOT` and the instance size exceeds a minimum threshold), and the binary
+    again with the time left.
+  - **Delegation gate & cache safety**: apply the same distance-only gate as `engine="auto"` (fall back to native
     `dist_m4ri` when codeword enumeration `do_cws` / `outC`, `finC`, `smax`, `dW`, `maxC`, `start` list, `outD`,
     `out_reduced`, `pmin > 0`, or single-sided `method=1` / `2` is requested) and the same verified-only cache write
     rules (only unconditional lower bounds and independently verified upper-bound witnesses are written to the cache).

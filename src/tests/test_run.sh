@@ -26,6 +26,7 @@ assert_output() {
     local expected_exit="$2"
     local expected_out_regex="$3"
     local expected_err_regex="$4"
+    local unexpected_err_regex="$5"
     
     echo "Running: $cmd"
     local stdout_file=$(mktemp)
@@ -48,6 +49,13 @@ assert_output() {
         if [ -n "$expected_err_regex" ]; then
             if ! grep -q -E "$expected_err_regex" "$stderr_file"; then
                 echo "  [FAIL] Stderr did not match regex: $expected_err_regex"
+                echo "         Got: $(cat $stderr_file)"
+                FAILED=1
+            fi
+        fi
+        if [ -n "$unexpected_err_regex" ]; then
+            if grep -q -E "$unexpected_err_regex" "$stderr_file"; then
+                echo "  [FAIL] Stderr unexpectedly matched regex: $unexpected_err_regex"
                 echo "         Got: $(cat $stderr_file)"
                 FAILED=1
             fi
@@ -262,8 +270,8 @@ rm -f "$TEMP_FORK_CWS1" "$TEMP_FORK_CWS2"
 # Test 31: dist_m4ri timeout graceful termination
 assert_output \
     "$BIN_FORK method=1 finH=$EXAMPLES_DIR/surf_d5_H.mmx \
-finL=$EXAMPLES_DIR/surf_d5_L.mmx steps=10000000 timeout=0.5 debug=0 threads=4" \
-    0 "^1 5 [0-9]+$" ""
+finL=$EXAMPLES_DIR/surf_d5_L.mmx steps=10000000 min_hits=0 timeout=0.5 debug=1 threads=4" \
+    0 "^1 5 [0-9]+$" "^# stopped after [0-9.]+s: timeout=0\.5s reached, [0-9]+ of 10000000 RW steps done$"
 
 # Test 32: dist_m4ri classical mode
 assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/surf_d5_H.mmx wmax=3 debug=0 threads=4" 0 "^2 2 0$" ""
@@ -290,7 +298,7 @@ finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 timeout=0.0001 debug=0 threads=4" \
 assert_output \
     "$BIN_FORK method=3 finH=$EXAMPLES_DIR/surf_d5_H.mmx \
 finL=$EXAMPLES_DIR/surf_d5_L.mmx wmax=5 timeout=0.0001 debug=0 threads=4" \
-    0 "^[1-5] [0-5] [0-9]+$" ""
+    0 "^[1-5] (0|5) [0-9]+$" ""
 
 # Test 37: dmin parameter starting CC search directly at dmin
 assert_output \
@@ -317,11 +325,15 @@ assert_output "$BIN_FORK debug=1 debug=0x40 method=2 fdem=$EXAMPLES_DIR/surf_d3.
 assert_output "$BIN debug=1 debug=2 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2" 0 "^-2$" ""
 assert_output "$BIN_FORK debug=-1 method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=2" 255 "" "invalid 'debug=-1'"
 echo "Running Test 40: debug=0 is silent"
-ERR40=$($BIN_FORK debug=0 method=3 fdem=$EXAMPLES_DIR/surf_d3.dem threads=2 2>&1 >/dev/null)
-if [ -n "$ERR40" ]; then
-    echo "  [FAIL] Test 40: debug=0 gives stderr '$ERR40'"
+OUT40=$(mktemp)
+ERR40=$(mktemp)
+$BIN_FORK debug=0 method=3 fdem=$EXAMPLES_DIR/surf_d3.dem threads=2 > "$OUT40" 2> "$ERR40"
+EXIT40=$?
+if [ $EXIT40 -ne 0 ] || ! grep -q -E "^3 3 [0-9]+$" "$OUT40" || [ -s "$ERR40" ]; then
+    echo "  [FAIL] Test 40: exit=$EXIT40, stdout='$(cat "$OUT40")', stderr='$(cat "$ERR40")'"
     FAILED=1
 fi
+rm -f "$OUT40" "$ERR40"
 
 # Test 41: dist_m4ri error on no arguments (short help)
 assert_output "$BIN_FORK" 255 "" "Allowed parameters:"
@@ -343,10 +355,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.17.1" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.17.2" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.17.1" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.17.2" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -386,14 +398,8 @@ assert_output \
     0 "^5 5 [0-9]+$" "Warning: smax=0, confinement profile is not computed"
 
 # Test 57: no smax=0 warning in DEM mode under debug&1==1
-echo "Running Test 57: no smax=0 warning in DEM mode"
-STDERR_DEM=$(mktemp)
-$BIN_FORK debug=1 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=4 > /dev/null 2> "$STDERR_DEM"
-if grep -q "confinement profile is not computed" "$STDERR_DEM"; then
-    echo "  [FAIL] Unexpected smax=0 warning in DEM mode"
-    FAILED=1
-fi
-rm -f "$STDERR_DEM"
+assert_output "$BIN_FORK debug=1 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=4" \
+    0 "^3 3 [0-9]+$" "" "confinement profile is not computed"
 
 # Expert CC options: noscan, start (list, unlimited clusters), cbeg/cend (split runs)
 S5="finH=$EXAMPLES_DIR/surf_d5_H.mmx finL=$EXAMPLES_DIR/surf_d5_L.mmx"
@@ -605,12 +611,8 @@ then
     FAILED=1
 fi
 rm -f "$OUT83" "$ERR83"
-echo "Running Test 83: no hit-count warning for QX150"
-if $BIN_FORK method=1 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx steps=50000 seed=7 threads=1 \
-    debug=1 2>&1 | grep -q "non-uniform"; then
-    echo "  [FAIL] Test 83: unexpected hit-count warning for QX150"
-    FAILED=1
-fi
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx steps=50000 seed=7 \
+threads=1 debug=1" 0 "^1 6 [0-9]+$" "" "non-uniform"
 
 # Debug bits (see --morehelp): 4 status, 8 timing, 16 code parameters, 32 codewords, 64 arguments, 128 matrices,
 # 256 codeword dump; with debug=1, the reason why the run ended
@@ -711,12 +713,8 @@ assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx ksub=16 steps=10
     0 "^1 [0-9]+ 100$" "$KSUB_WARN"
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem ksub=32 steps=200 threads=2 debug=0" \
     0 "^1 3 [0-9]+$" "$KSUB_WARN"
-echo "Running Test 92: no ksub warning with method=2"
-if $BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem ksub=32 wmax=3 threads=2 debug=0 2>&1 | \
-    grep -q "is experimental"; then
-    echo "  [FAIL] Test 92: unexpected ksub warning with method=2"
-    FAILED=1
-fi
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem ksub=32 wmax=3 threads=2 debug=0" \
+    0 "^3 3 0$" "" "is experimental"
 
 # Test 93: space form of the file arguments ("fin= name", "finH= name", ...); a missing file name is an error
 assert_output "$BIN_FORK method=2 fin= $EXAMPLES_DIR/try wmax=8 threads=2 debug=0" 0 "^4 4 0$" ""
@@ -1027,10 +1025,7 @@ CWS106A=$(mktemp --suffix=.nz)
 CWS106B=$(mktemp --suffix=.nz)
 for bin in "$BIN_FORK" "$BIN"; do
     assert_output "$bin method=2 $S5 wmax=5 threads=2 debug=1" 0 "^5( 5 0)?$" "$SORTED106"
-    if $bin method=2 $S5 wmax=5 sort_rows=0 threads=2 debug=1 2>&1 | grep -q "rows of H sorted"; then
-        echo "  [FAIL] Test 106: rows sorted with sort_rows=0 ($bin)"
-        FAILED=1
-    fi
+    assert_output "$bin method=2 $S5 wmax=5 sort_rows=0 threads=2 debug=1" 0 "^5( 5 0)?$" "" "rows of H sorted"
 done
 assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS106A threads=2 debug=0" 0 "^5 5 0$" ""
 assert_output "$BIN_FORK method=2 $S5 wmax=5 outC=$CWS106B sort_rows=0 threads=2 debug=0" 0 "^5 5 0$" ""
@@ -1047,15 +1042,10 @@ if [ "$RW106A" != "$RW106B" ] || [ "$(cat "$CWS106A")" != "$(cat "$CWS106B")" ];
     echo "  [FAIL] Test 106: RW results differ with sort_rows=0 and 1: '$RW106A' vs '$RW106B'"
     FAILED=1
 fi
-if $BIN_FORK method=2 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx wmax=3 debug=1 2>&1 | \
-   grep -q "rows of H sorted"; then
-    echo "  [FAIL] Test 106: rows of equal weight reported as sorted (QX150)"
-    FAILED=1
-fi
-if $BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=1 2>&1 | grep -q "rows of H sorted"; then
-    echo "  [FAIL] Test 106: the detectors of a DEM sorted by default"
-    FAILED=1
-fi
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/QX150.mtx finG=$EXAMPLES_DIR/QZ150.mtx wmax=3 debug=1" \
+    0 "^4 0 0$" "" "rows of H sorted"
+assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 threads=2 debug=1" \
+    0 "^3 3 0$" "" "rows of H sorted"
 assert_output "$BIN_FORK method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 sort_rows=1 threads=2 debug=1" 0 "^3 3 0$" \
     "$SORTED106"
 assert_output "$BIN_FORK method=2 $S5 wmax=3 sort_rows=2" 255 "" "invalid 'sort_rows=2': sort_rows should be 0 or 1"
@@ -1065,8 +1055,8 @@ rm -f "$CWS106A" "$CWS106B"
 # win_hyb=0 (the default) gives 256 columns for a DEM and 512 for matrices, win_hyb=N the size (at most 3n/4); with
 # debug&1, the input summary gives the rounds of a DEM (here a repetition code with 50 checks in 12 rounds: measurement
 # errors flip two detectors D=50 apart, and a shift by D maps errors to errors; n=1162 columns, L = n D / m = 97
-# columns per round; no round structure for the same DEM with randomly permuted detectors; none for matrices), and the
-# end of RW the codewords found by the uniform and by the window steps; win_hyb is ignored with kwin > 0 and for
+# columns per round; no round structure for the same DEM with randomly permuted detectors; none for matrices), and at
+# the end of RW the codewords found by the uniform and by the window steps; win_hyb is ignored with kwin > 0 and for
 # n < 500 (warnings); invalid values are an error
 DEM107=$(mktemp --suffix=.dem)
 DEM107P=$(mktemp --suffix=.dem)
@@ -1100,20 +1090,10 @@ assert_output "$BIN_FORK fdem=$DEM107P $RW107" 0 "" \
     "^#   rounds of the DEM: no round structure found \(best score 0\.[0-4][0-9]* < 0\.5\)$"
 assert_output "$BIN_FORK fdem=$DEM107 $RW107 win_hyb=2000" 0 "" "^#   RW windows: 871 $WIN107 \(win_hyb=2000\)$"
 assert_output "$BIN_FORK $S5 $RW107 rw_opt=0" 0 "" "^#   RW windows: 512 $WIN107 $AUTO107"
-if $BIN_FORK $S5 $RW107 2>&1 | grep -q "RW windows"; then
-    echo "  [FAIL] Test 107: hybrid windows for a matrix with rw_opt=-1 (the default)"
-    FAILED=1
-fi
-ERR107=$($BIN_FORK fdem=$DEM107 method=2 wmax=1 threads=2 debug=1 2>&1)
-if printf '%s\n' "$ERR107" | grep -q -E "RW windows|RW step types" || \
-   ! printf '%s\n' "$ERR107" | grep -q "rounds of the DEM: D=50 detectors"; then
-    echo "  [FAIL] Test 107: CC alone: $ERR107"
-    FAILED=1
-fi
-if $BIN_FORK $S5 $RW107 2>&1 | grep -q "rounds of the DEM"; then
-    echo "  [FAIL] Test 107: rounds reported for a matrix"
-    FAILED=1
-fi
+assert_output "$BIN_FORK $S5 $RW107" 0 "^1 [0-9]+ [0-9]+$" "" "RW windows"
+assert_output "$BIN_FORK fdem=$DEM107 method=2 wmax=1 threads=2 debug=1" 0 "^2 0 0$" \
+    "rounds of the DEM: D=50 detectors" "RW windows|RW step types"
+assert_output "$BIN_FORK $S5 $RW107" 0 "^1 [0-9]+ [0-9]+$" "" "rounds of the DEM"
 # every codeword of RW was found by the uniform steps, the window steps, or both
 STEPS107=$($BIN_FORK fdem=$DEM107 method=1 steps=200 cov_cws=50 threads=2 debug=1 2>&1 | grep "^# RW step types")
 if [ -z "$STEPS107" ] || ! printf '%s\n' "$STEPS107" | awk '{
@@ -1157,10 +1137,8 @@ for pr in 0 -1; do
     N108="$N108 $(grep -vc '^%' "$CWS108")"
     assert_output "$BIN_FORK $S5 method=1 steps=1 finC=$CWS108 cov_cws=0 pairs=0 threads=1 debug=1" 0 "^1 5 1$" \
         "^# read [0-9]+ codewords from .*, total [0-9]+, min weight 5$"
-    if $BIN_FORK $S5 method=1 steps=1 finC=$CWS108 cov_cws=0 threads=1 debug=1 2>&1 | grep -q "invalid codewords"; then
-        echo "  [FAIL] Test 108: invalid codewords exported (pairs=$pr)"
-        FAILED=1
-    fi
+    assert_output "$BIN_FORK $S5 method=1 steps=1 finC=$CWS108 cov_cws=0 threads=1 debug=1" 0 "^1 5 1$" \
+        "^# read [1-9][0-9]* codewords from" "invalid codewords"
 done
 echo "Running Test 108: minimum-weight codewords exported without and with pairs:$N108"
 if ! echo "$N108" | awk '{exit !($1 > 0 && $2 >= 5 * $1)}'; then
@@ -1365,10 +1343,7 @@ CWS114B=$(mktemp --suffix=.nz)
 assert_output "$BIN_FORK method=2 $C96 wmax=6 threads=2 debug=8" 0 "^6 6 0$" \
     "even weights only \(1 in rowspan\(H\)\)"
 assert_output "$BIN_FORK method=2 $C96 wmax=2 threads=2 debug=0" 0 "^4 0 0$" ""
-if $BIN_FORK method=2 $C96 wmax=6 threads=2 debug=8 2>&1 | grep -q "searching w=[135] "; then
-    echo "  [FAIL] Test 114: odd CC weights were not skipped on c96H with smax=0"
-    FAILED=1
-fi
+assert_output "$BIN_FORK method=2 $C96 wmax=6 threads=2 debug=8" 0 "^6 6 0$" "" "searching w=[135] "
 for dw in 0 1 2; do
     wm=$((6 + dw))
     $BIN_FORK method=2 $C96 wmax=$wm dW=$dw smax=0 outC=$CWS114A threads=2 debug=0 > /dev/null 2>&1
@@ -1430,11 +1405,8 @@ for ov in "1 1" "0x10 10" "4 4" "8 8" "2 0" "32 0" "63 1d" "0x3f 1d"; do
     assert_output "$BIN_FORK method=1 $D3DEM steps=300 seed=1 threads=2 rw_opt=$1 debug=1" 0 "^1 3 [0-9]+$" \
         "^# RW triplets: T3=[0-9]+ \([0-9.e+-]+ ms\), G_rows=0, rw_opt=0x$2$"
 done
-if $BIN_FORK method=1 $D3DEM steps=300 seed=1 threads=2 rw_opt=0 debug=1 2>&1 | \
-    grep -q -E "^# RW (triplets|canon|FKG)"; then
-    echo "  [FAIL] Test 116: RW stage lines with rw_opt=0"
-    FAILED=1
-fi
+assert_output "$BIN_FORK method=1 $D3DEM steps=300 seed=1 threads=2 rw_opt=0 debug=1" 0 "^1 3 [0-9]+$" \
+    "" "^# RW (triplets|canon|FKG)"
 assert_output "$BIN_FORK method=1 $D3DEM steps=300 seed=1 threads=2 rw_opt=0 debug=2" 0 "^1 3 [0-9]+$" \
     "^# run plan: method=1 \(RW\), 2 threads, steps=300, min_hits=5, ksub=0, timeout"
 assert_output "$BIN_FORK method=1 $D3DEM steps=300 seed=1 threads=2 debug=2" 0 "^1 3 [0-9]+$" \
@@ -1471,25 +1443,36 @@ assert_output "$BIN_FORK method=3 $D3DEM steps=300 seed=2 threads=2 rw_opt=63 de
 
 # Test 119: Stage 4 (sparse-dual elimination, an m x m inverse instead of the m x n matrix) gives the same information
 # sets, circuits, L syndromes, and buckets as the dense elimination: with one thread and a fixed seed, the same result,
-# codeword statistics, pairs, and exported codewords (in the same order) without and with the bit 8
+# codeword statistics, pairs, canonical-class counts (Stage 5, bit 16, with min_hits > 0), and exported codewords (in
+# the same order) without and with the bit 8
 CWS119A=$(mktemp --suffix=.nz)
 CWS119B=$(mktemp --suffix=.nz)
-for io in "$D3DEM steps=300|1|9" "$D3DEM steps=300|17|25" "$S5 steps=150 kwin=-1|0|8" "$S5 steps=150|1|9"; do
+LOG119A=$(mktemp)
+LOG119B=$(mktemp)
+for io in "$D3DEM steps=300 min_hits=0|1|9" "$D3DEM steps=300 min_hits=1000000|17|25" \
+          "$S5 steps=150 min_hits=0 kwin=-1|0|8" "$S5 steps=150 min_hits=0|1|9" \
+          "$S5 steps=150 min_hits=1000000|17|25"; do
     inp=${io%%|*}
     rest=${io#*|}
     a=${rest%%|*}
     b=${rest#*|}
-    R119A=$($BIN_FORK method=1 $inp min_hits=0 seed=4 threads=1 dW=1 maxC=1000000 outC=$CWS119A rw_opt=$a debug=1 \
-            2>&1 | grep -E "^[0-9]+ [0-9]+ [0-9]+$|^# codewords accumulated|^# RW pairs")
-    R119B=$($BIN_FORK method=1 $inp min_hits=0 seed=4 threads=1 dW=1 maxC=1000000 outC=$CWS119B rw_opt=$b debug=1 \
-            2>&1 | grep -E "^[0-9]+ [0-9]+ [0-9]+$|^# codewords accumulated|^# RW pairs")
+    $BIN_FORK method=1 $inp seed=4 threads=1 dW=1 maxC=1000000 outC=$CWS119A rw_opt=$a debug=3 >"$LOG119A" 2>&1
+    ECA=$?
+    $BIN_FORK method=1 $inp seed=4 threads=1 dW=1 maxC=1000000 outC=$CWS119B rw_opt=$b debug=3 >"$LOG119B" 2>&1
+    ECB=$?
+    PA=$([ "$a" = 0 ] && echo "^# run plan: .*ksub=0, timeout=" || printf '^# run plan: .* rw_opt=0x%x(,| \()' "$a")
+    PB=$(printf '^# run plan: .* rw_opt=0x%x(,| \()' "$b")
+    PAT119="^[0-9]+ [0-9]+ [0-9]+$|^# codewords accumulated|^# RW pairs|^# RW canonical"
+    R119A=$(grep -E "$PAT119" "$LOG119A")
+    R119B=$(grep -E "$PAT119" "$LOG119B")
     echo "Running Test 119: sparse-dual vs dense ($inp, rw_opt=$a and $b)"
-    if [ -z "$R119A" ] || [ "$R119A" != "$R119B" ] || ! cmp -s "$CWS119A" "$CWS119B"; then
-        echo "  [FAIL] Test 119: different results with rw_opt=$a and $b: '$R119A' vs '$R119B'"
+    if [ $ECA -ne 0 ] || [ $ECB -ne 0 ] || ! grep -q -E "$PA" "$LOG119A" || ! grep -q -E "$PB" "$LOG119B" || \
+       [ -z "$R119A" ] || [ "$R119A" != "$R119B" ] || ! cmp -s "$CWS119A" "$CWS119B"; then
+        echo "  [FAIL] Test 119 ($inp, rw_opt=$a/$b, exit=$ECA/$ECB): '$R119A' vs '$R119B'"
         FAILED=1
     fi
 done
-rm -f "$CWS119A" "$CWS119B"
+rm -f "$CWS119A" "$CWS119B" "$LOG119A" "$LOG119B"
 
 # Test 120: the codewords exported with the stages (outC, dW=1) are valid and irreducible: all of them are among the
 # codewords of weight 3..4 enumerated by CC (121 for surf_d3.dem); with the expansion by T3 (bit 32), RW exports all of
@@ -1512,11 +1495,8 @@ for o in 1 17 33 49 -1; do
             FAILED=1
         fi
     fi
-    if $BIN_FORK method=1 $D3DEM steps=1 finC=$CWS120R dW=1 maxC=1000000 threads=1 rw_opt=0 debug=1 2>&1 | \
-        grep -q -E "invalid codewords|reducible codewords replaced"; then
-        echo "  [FAIL] Test 120: invalid or reducible codewords exported with rw_opt=$o"
-        FAILED=1
-    fi
+    assert_output "$BIN_FORK method=1 $D3DEM steps=1 finC=$CWS120R dW=1 maxC=1000000 threads=1 rw_opt=0 debug=1" \
+        0 "^1 3 1$" "^# read [1-9][0-9]* codewords from" "invalid codewords|reducible codewords replaced"
 done
 assert_output "$BIN_FORK method=1 $D3DEM steps=400 dW=1 outC=$CWS120R seed=3 threads=2 rw_opt=33 debug=1" 0 "" \
     "^# RW triplets: the codewords found expanded by T3 \(2 <-> 2 exchanges, 1 -> 2 splits up to weight 4\): [0-9]+"
@@ -1535,10 +1515,8 @@ assert_output "$BIN_FORK method=1 $D3DEM steps=10000 seed=1 threads=2 debug=1" 0
     "^# RW FKG score: mean_unif=-[0-9.]+ \(steps=[0-9]+\), mean_win=-?[0-9.]+ \(steps=0\), -lnC=-[0-9.]+$"
 assert_output "$BIN_FORK method=1 $D3DEM steps=10000 seed=1 threads=2 kwin=20 debug=1" 0 "^1 3 [0-9]+$" \
     "^# stopped after [0-9.]+s: RW convergence reached \(<n>=[0-9.]+ >= min_hits=5 after [0-9]+ RW steps\)$"
-if $BIN_FORK method=1 $D3DEM steps=10000 seed=1 threads=2 kwin=20 debug=1 2>&1 | grep -q "^# RW canonical"; then
-    echo "  [FAIL] Test 121: canonical classes with kwin > 0"
-    FAILED=1
-fi
+assert_output "$BIN_FORK method=1 $D3DEM steps=10000 seed=1 threads=2 kwin=20 debug=1" 0 "^1 3 [0-9]+$" \
+    "" "^# RW canonical"
 
 # Test 122: Stage 3 (4, explicit only): the row-slab windows of a DEM in time order on every other step (kwin=0):
 # valid codewords (all among those enumerated by CC), the same distance; not in the automatic mode (here the
@@ -1576,6 +1554,231 @@ assert_output "$BIN_FORK method=1 fdem=$DEM122 steps=40 seed=3 threads=2 rw_opt=
 assert_output "$BIN_FORK method=1 $S5 steps=40 seed=3 threads=2 rw_opt=4 debug=1" 0 "" \
     "^# RW triplets: T3=[0-9]+ \([0-9.e+-]+ ms\), G_rows=0, rw_opt=0x0$"
 rm -f "$DEM122"
+
+# Test 123: Stage 4 (sparse dual, rw_opt bit 8) polls the stop flags during the single-column and pair-entry scans
+# (every 256 columns) and stops promptly near a short timeout (hang check: generous 5 s wall-time bound)
+OUT123=$(mktemp)
+ERR123=$(mktemp)
+for ro in "rw_opt=9 min_hits=0|9" "rw_opt=25 min_hits=100000000|19"; do
+    opt=${ro%%|*}
+    hex=${ro#*|}
+    echo "Running Test 123: sparse-dual timeout stop poll ($opt)"
+    T123=$(date +%s%N)
+    $BIN_FORK method=1 $S5 $opt steps=100000000 timeout=0.3 threads=2 debug=3 > "$OUT123" 2> "$ERR123"
+    EC123=$?
+    MS123=$(( ($(date +%s%N) - T123) / 1000000 ))
+    if [ $EC123 -ne 0 ] || [ "$MS123" -ge 5000 ] || ! grep -q -E "^1 5 [0-9]+$" "$OUT123" || \
+       ! grep -q -E "^# run plan: .* rw_opt=0x$hex(,| \([^)]*\),) timeout=0\.3s," "$ERR123" || \
+       ! grep -q -E "^# stopped after [0-9.]+s: timeout=0\.3s reached, [0-9]+ of 100000000 RW steps done$" \
+           "$ERR123"; then
+        echo "  [FAIL] Test 123 ($opt): exit=$EC123, wall=${MS123}ms, out='$(cat "$OUT123")'"
+        echo "         err='$(cat "$ERR123")'"
+        FAILED=1
+    fi
+done
+rm -f "$OUT123" "$ERR123"
+
+# Test 124: RW_SHORTEN_WMAX=64 cap on candidate shortening when dmax is unknown at the start and early candidates are
+# heavy (dmax + ext > 64): a 6-round repetition-code DEM with d=71 > 64 and T3=700 (rw_opt=1, 5, 9, and a short
+# timeout), and the [[756,16,<=34]] BB CSS code whose initial RW candidates exceed weight 64 (rw_opt=1 and 3)
+DEM124=$(mktemp --suffix=.dem)
+awk 'BEGIN { k = 70; R = 6
+  for (t = 0; t < R; t++) {
+    for (i = 0; i <= k; i++) {
+      s = "error(0.01)"
+      if (i > 0) s = s " D" (t * k + i - 1)
+      if (i < k) s = s " D" (t * k + i)
+      if (i == 0) s = s " L0"
+      print s
+    }
+    if (t < R - 1)
+      for (i = 0; i < k; i++) {
+        print "error(0.01) D" (t * k + i) " D" ((t + 1) * k + i)
+        if (i + 1 < k) print "error(0.01) D" (t * k + i) " D" ((t + 1) * k + i + 1)
+      }
+  }
+}' > "$DEM124"
+for o in 1 5 9; do
+    assert_output "$BIN_FORK method=1 fdem=$DEM124 rw_opt=$o steps=40 min_hits=0 seed=1 threads=2 debug=3" 0 \
+        "^1 (7[1-9]|[89][0-9]|[1-9][0-9]{2}) 40$" "^# RW triplets: T3=700 \([0-9.e+-]+ ms\), G_rows=0, rw_opt=0x$o$"
+done
+assert_output "$BIN_FORK method=1 fdem=$DEM124 rw_opt=1 steps=100000000 min_hits=0 timeout=0.2 threads=2 debug=1" 0 \
+    "^1 (7[1-9]|[89][0-9]|[1-9][0-9]{2}) [1-9][0-9]*$" \
+    "^# stopped after [0-9.]+s: timeout=0\.2s reached, [1-9][0-9]* of 100000000 RW steps done$"
+rm -f "$DEM124"
+BB756="finH=$WS_ROOT/benchmark/css/bb_756_16_34_Hx.mtx finG=$WS_ROOT/benchmark/css/bb_756_16_34_Hz.mtx"
+for o in 1 3; do
+    assert_output "$BIN_FORK method=1 $BB756 rw_opt=$o steps=30 min_hits=0 seed=1 threads=2 debug=3" 0 \
+        "^1 ([3-9][0-9]|[1-9][0-9]{2}) 30$" \
+        "^# run plan: .* rw_opt=0x$o \(matrices with rw_opt != 0: no hybrid windows\),"
+done
+
+# Test 125: Matrix Market reader validation (C2-01, C2-03): duplicate entries are summed mod 2 with a warning; out-of-
+# range 1-based row/column indices and non-square symmetric matrices are rejected with exit code 255
+DUP125=$(mktemp --suffix=.mtx)
+ROW0_125=$(mktemp --suffix=.mtx)
+COL4_125=$(mktemp --suffix=.mtx)
+SYM125=$(mktemp --suffix=.mtx)
+printf '%%%%MatrixMarket matrix coordinate integer general\n2 3 5\n1 1 1\n1 1 1\n1 2 1\n2 2 1\n2 3 1\n' > "$DUP125"
+printf '%%%%MatrixMarket matrix coordinate integer general\n2 3 5\n0 1 1\n1 2 1\n1 3 1\n2 2 1\n2 3 1\n' > "$ROW0_125"
+printf '%%%%MatrixMarket matrix coordinate integer general\n2 3 4\n1 1 1\n1 4 1\n2 2 1\n2 3 1\n' > "$COL4_125"
+printf '%%%%MatrixMarket matrix coordinate integer symmetric\n2 3 1\n1 1 1\n' > "$SYM125"
+assert_output "$BIN_FORK method=2 finH=$DUP125 wmax=3 debug=0" 0 "^1 1 0$" \
+    "WARNING: 1 position\(s\) of the matrix in .* have more than one entry"
+assert_output "$BIN method=2 finH=$DUP125 wmax=3 debug=0" 0 "^1$" \
+    "WARNING: 1 position\(s\) of the matrix in .* have more than one entry"
+assert_output "$BIN_FORK method=2 finH=$ROW0_125 wmax=2 debug=0" 255 "" "out of range"
+assert_output "$BIN_FORK method=2 finH=$COL4_125 wmax=2 debug=0" 255 "" "out of range"
+assert_output "$BIN_FORK method=2 finH=$SYM125 wmax=2 debug=0" 255 "" "symmetric matrix must be square"
+rm -f "$DUP125" "$ROW0_125" "$COL4_125" "$SYM125"
+
+# Test 126: NZLIST codeword reader rejects 0-based column index 0 in weight-1 entries (C2-02)
+BAD126=$(mktemp --suffix=.nz)
+printf '%%%% NZLIST\n1 0\n' > "$BAD126"
+assert_output "$BIN_FORK method=2 finH=$EXAMPLES_DIR/c96H.mmx finC=$BAD126 wmax=6 debug=0" 255 "" "column index 0"
+assert_output "$BIN method=2 finH=$EXAMPLES_DIR/c96H.mmx finC=$BAD126 wmax=6 debug=0" 255 "" "column index 0"
+rm -f "$BAD126"
+
+# Test 127: CLI numeric parsing (C2-21), negative dW warning (C2-19/C2B-08), and dist_m4ri_old ignored-options warning
+# (C2-14): integer scientific/float forms without fractional part (1e5, 100000.0) and trailing 's' on timeout= are
+# accepted cleanly; trailing junk after a valid prefix warns and keeps the prefix; non-numeric fails; dW < 0 warns
+CWS127=$(mktemp --suffix=.nz)
+for sv in "1e5" "100000.0"; do
+    assert_output "$BIN_FORK method=1 $D3DEM steps=$sv wmin=3 threads=2 debug=2" 0 "^1 3 [0-9]+$" \
+        "^# run plan: .* steps=100000," "WARNING"
+done
+assert_output "$BIN_FORK method=2 $D3DEM wmax=3 threads=4x debug=0" 0 "^3 3 0$" "WARNING: .*read as 4"
+assert_output "$BIN_FORK method=2 $D3DEM wmax=3 timeout=10s threads=2 debug=2" 0 "^3 3 0$" \
+    "^# run plan: .* timeout=10s," "WARNING"
+assert_output "$BIN_FORK method=1 $D3DEM steps=abc debug=0" 255 "" "invalid 'steps=abc'"
+assert_output "$BIN_FORK method=2 $D3DEM wmax=3 dW=-1 outC=$CWS127 threads=2 debug=0" 0 "^3 3 0$" \
+    "WARNING: dW=-1 is negative"
+assert_output "$BIN method=2 $D3DEM wmax=3 threads=7 timeout=1 debug=0" 0 "^3$" \
+    "ignored by dist_m4ri_old .*threads=7 timeout=1"
+rm -f "$CWS127"
+
+# Test 128: DEM instruction tags [...] (PY-A21): error[...], detector[...], shift_detectors[...], repeat[...], and
+# logical_observable[...] (including escaped '\]', spaces, and '#') parse identically to untagged DEMs; unterminated
+# '[' fails with exit code 255
+TAG128=$(mktemp --suffix=.dem)
+REP128=$(mktemp --suffix=.dem)
+BAD128=$(mktemp --suffix=.dem)
+CWS128A=$(mktemp --suffix=.nz)
+CWS128B=$(mktemp --suffix=.nz)
+sed -e 's/^error(/error[a](/; s/^detector(/detector[b](/; s/^shift_detectors(/shift_detectors[c](/;
+        s/^logical_observable /logical_observable[d] /' "$EXAMPLES_DIR/surf_d3.dem" > "$TAG128"
+assert_output "$BIN_FORK method=2 $D3DEM wmax=3 outC=$CWS128A threads=2 debug=0" 0 "^3 3 0$" ""
+assert_output "$BIN_FORK method=2 fdem=$TAG128 wmax=3 outC=$CWS128B threads=2 debug=0" 0 "^3 3 0$" ""
+if ! cmp -s <(grep -v '^%' "$CWS128A" | sort) <(grep -v '^%' "$CWS128B" | sort); then
+    echo "  [FAIL] Test 128: tagged surf_d3.dem exported different codewords than untagged surf_d3.dem"
+    FAILED=1
+fi
+cat << 'EOF' > "$REP128"
+error[a#b](0.1) D0 D1
+repeat[r 1] 2 {
+  error[x\]y](0.2) D0 D1
+  shift_detectors[s #1] 2
+}
+error[l](0.3) D0 ^ L0
+error[z](0.4) D0
+logical_observable[o #2] L0
+EOF
+assert_output "$BIN_FORK method=2 fdem=$REP128 wmax=2 threads=1 debug=0" 0 "^2 2 0$" ""
+printf 'error[x(0.1) D0\n' > "$BAD128"
+assert_output "$BIN_FORK method=2 fdem=$BAD128 wmax=2 debug=0" 255 "" "unterminated tag"
+rm -f "$TAG128" "$REP128" "$BAD128" "$CWS128A" "$CWS128B"
+
+# Test 129: Stage 2 shortening order with explicit bits 1+2 (TEX2-11): G descent runs before T3 contraction so the
+# Stern Bucket-0 filter remains loss-free (total_hits at min_w=3 with rw_opt=3 is >= that with rw_opt=0)
+H129=$(mktemp --suffix=.mtx)
+G129=$(mktemp --suffix=.mtx)
+cat << 'EOF' > "$H129"
+%%MatrixMarket matrix coordinate integer general
+5 8 16
+1 1 1
+2 2 1
+3 3 1
+4 4 1
+5 5 1
+2 6 1
+3 6 1
+4 6 1
+5 6 1
+1 7 1
+2 7 1
+3 7 1
+4 7 1
+5 7 1
+2 8 1
+3 8 1
+EOF
+cat << 'EOF' > "$G129"
+%%MatrixMarket matrix coordinate integer general
+2 8 8
+1 2 1
+1 3 1
+1 4 1
+1 5 1
+1 6 1
+2 2 1
+2 3 1
+2 8 1
+EOF
+hits129() {
+    local log=$(mktemp)
+    $BIN_FORK method=1 finH=$H129 finG=$G129 steps=1000 min_hits=100000 pairs=1 threads=1 seed=1 rw_opt=$1 \
+        debug=1 >"$log" 2>&1
+    local ec=$?
+    if [ $ec -eq 0 ] && grep -q -E "^1 3 1000$" "$log"; then
+        sed -n 's/^# codewords accumulated: total=[0-9]*, min_w=3: cws=1, total_hits=\([0-9]*\),.*/\1/p' "$log"
+    fi
+    rm -f "$log"
+}
+HITS129_0=$(hits129 0)
+HITS129_3=$(hits129 3)
+echo "Running Test 129: TEX2-11 w=3 hits with rw_opt=0 ($HITS129_0) vs rw_opt=3 ($HITS129_3)"
+if [ -z "$HITS129_0" ] || [ -z "$HITS129_3" ] || [ "$HITS129_3" -lt "$HITS129_0" ]; then
+    echo "  [FAIL] Test 129: rw_opt=3 lost min-weight hits ($HITS129_3 < $HITS129_0)"
+    FAILED=1
+fi
+rm -f "$H129" "$G129"
+
+# Test 130: Stage 5 (rw_opt bit 16) with no uniform-step hits at min_w reports n/a statistics and notes that the
+# min_hits stop was inactive (C1-01, C2-12/C1-08; pairs=0 so 1 step on surf_d7 finds no weight-7 codeword)
+CWS130=$(mktemp --suffix=.nz)
+FIN130=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK method=1 $S7 wmin=7 steps=10000 seed=1 threads=2 outC=$CWS130 debug=0" 0 "^1 7 [0-9]+$" ""
+awk 'NR==1 || (!done && !/^%/ && /^7 /) {print; if (/^7 /) done=1}' "$CWS130" > "$FIN130"
+NA130="^# RW canonical \(w=7\): classes=0, raw_cws=0, M_eff=n/a, unif_inc=0, f1=0, f2=0, p_GT=n/a, C0_Chao2=n/a$"
+assert_output "$BIN_FORK method=1 $S7 finC=$FIN130 steps=1 pairs=0 rw_opt=17 min_hits=5 threads=1 seed=1 debug=1" 0 \
+    "^1 7 1$" "$NA130"
+assert_output "$BIN_FORK method=1 $S7 finC=$FIN130 steps=1 pairs=0 rw_opt=17 min_hits=5 threads=1 seed=1 debug=1" 0 \
+    "^1 7 1$" "^# Note: the min_hits stop was inactive"
+rm -f "$CWS130" "$FIN130"
+
+# Test 131: drop=auto notes when the search is not exhaustive (C2B-04) and prefers a twin with the same observables
+# when multiple twins share the kept detectors (C2B-05)
+UNV131=$(mktemp --suffix=.dem)
+OUTD131=$(mktemp --suffix=.txt)
+TWN131=$(mktemp --suffix=.dem)
+printf 'error(0.1) D0 D1 D2\nerror(0.1) D0\nerror(0.1) D1\nerror(0.1) D2\nerror(0.1) D3 L0\nerror(0.1) D3\n' \
+    > "$UNV131"
+assert_output "$BIN_FORK method=2 fdem=$UNV131 drop=auto outD=$OUTD131 wmax=3 threads=1 debug=1" 0 "^2 2 0$" \
+    "found no detector to drop \(the search is not exhaustive"
+if ! grep -q "none found, the search is not exhaustive" "$OUTD131"; then
+    echo "  [FAIL] Test 131: unexpected outD header: $(cat "$OUTD131")"
+    FAILED=1
+fi
+printf 'error(0.1) D0 D1 L0\nerror(0.1) D0 L0\nerror(0.1) D0\nerror(0.1) D1\n' > "$TWN131"
+assert_output "$BIN_FORK method=2 fdem=$TWN131 drop=0 wmax=3 threads=1 debug=0" 0 "^2 2 0$" ""
+assert_output "$BIN_FORK method=2 fdem=$TWN131 wmax=3 threads=1 debug=1" 0 "^2 2 0$" \
+    "dropped 1 of 2 detectors" "drop=auto not used"
+rm -f "$UNV131" "$OUTD131" "$TWN131"
+
+# Test 132: ksub fallback to full-matrix RW (m < n - m) is decided before planning the RW stages, so an explicit rw_opt
+# stays active without a spurious 'ignored with ksub' warning (C1-03)
+assert_output "$BIN_FORK method=1 $D3DEM ksub=8 rw_opt=1 steps=100 threads=2 debug=3" 0 "^1 3 [0-9]+$" \
+    "^# run plan: .* ksub=0, rw_opt=0x1," "is ignored with ksub"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

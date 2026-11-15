@@ -38,7 +38,7 @@ extern "C"{
     int weight;
     int cnt;   /** number of hits (all sources) */
     int cnt_u; /** hits in the RW steps with a uniform random permutation */
-    int cnt_w; /** hits in the RW steps with a window (kwin, or the hybrid windows) */
+    int cnt_w; /** hits in the RW steps with a window (kwin, the hybrid index windows, or the row slabs of rw_opt 4) */
     int arr[0];
   };
 

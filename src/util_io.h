@@ -49,12 +49,14 @@ struct CW_VEC_T;
 typedef struct CW_VEC_T cw_vec_t;
 
 /* The stages of the RW search selected by `rw_opt=[int]` (a bitmask; -1: automatic, 0: none, as in version 0.16.1),
- * see rw_triplet.h and doc/rw_triplet_degeneracies.tex (Sec. 9, Stages 1-5 and the dispatch rules D1-D5) */
+ * see rw_triplet.h and doc/rw_triplet_degeneracies.tex (Sec. 9, Stages 1-5 and the dispatch rules D1-D5; the automatic
+ * mask follows D1-D5, except that Stage 2b and the row slabs of D4 are explicit only, see rw_stages_plan()) */
 #define RW_OPT_T3     0x01 /**< Stage 1 (T_3 enumeration) and 2a (contraction, hoisted L syndromes, Stern filter) */
 #define RW_OPT_GEN    0x02 /**< Stage 2b: shortening by the rows of G (finG) and the realized-generator filter */
 #define RW_OPT_SLAB   0x04 /**< Stage 3: row-slab windows of a DEM with MIS push-back order */
 #define RW_OPT_DUAL   0x08 /**< Stage 4: sparse-dual m x m inverse elimination */
-#define RW_OPT_CANON  0x10 /**< Stage 5: canonical classes, coalesced hits, Good-Turing / Chao2 stopping, FKG score */
+#define RW_OPT_CANON  0x10 /**< Stage 5: canonical classes, coalesced hits, Good-Turing / Chao2 stopping (the Harris-FKG
+                            *   score is printed with any stage, on the dense full-matrix steps with pairs) */
 #define RW_OPT_EXPAND 0x20 /**< the expansion of the collected codewords by T_3 before the export (outC) */
 #define RW_OPT_ALL    0x3f /**< all stages */
 
@@ -134,7 +136,8 @@ typedef struct{
   int drop_mode;   /* drop=0: keep all detectors, drop=1 or drop=auto (default): find the detectors to drop
                       (dem_drop_auto()), 2: drop=FILE (fdrop) */
   int drop_set;    /* 1: drop= given explicitly */
-  int drop_none;   /* 1: drop=auto found no detector which can be dropped exactly */
+  int drop_none;   /* 1: drop=auto found no detector which can be dropped exactly; 2: found none, but its search was
+                      not exhaustive (a group not verified, or the work limit reached) */
   int *drop_list;  /* the detectors dropped (0-based, increasing; ndrop of them), for outD */
   char *outD;      /* file to write the detectors dropped from a DEM to (outD=FILE) */
   int ndrop;       /* number of detectors dropped (0: none, or not verified) */
@@ -281,8 +284,12 @@ enum { CW_SRC_OTHER = 0, CW_SRC_RW_UNIFORM = 1, CW_SRC_RW_WINDOW = 2 };
 
 /**
  * @brief DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform random
- *        permutation and by those with a window (the distinct codewords and their hits), e.g., to see whether some
- *        codewords are found only by the uniform steps (not local in the column order).
+ *        permutation and by those with a window (index windows, kwin, or the row slabs of rw_opt 4): the distinct
+ *        codewords and their hits, e.g., to see whether some codewords are found only by the uniform steps (not
+ *        local in the column order).  Only the codewords in hash are counted: without outC and maxC, at most cov_cws
+ *        codewords of the minimum weight (the first ones found) and heavier ones only for the representative set of
+ *        min_hits (see codeword_add_maybe()); "both" counts the codewords found by both kinds of steps, and "of N cws"
+ *        all codewords of the weight in hash (also those found only by CC or read with finC).
  */
 void print_rw_step_stats(FILE *stream, const params_t * const p);
 
@@ -463,12 +470,24 @@ void codeword_hit_stats(const params_t * const p, cw_hit_stats_t * const st);
  * reaches p->min_hits, both for the codewords of weight p->min_w and for the representative set
  * of up to p->cov_cws lowest-weight codewords.  A single codeword (e.g., for a classical code
  * with k=1) suffices.  Otherwise returns 0.  With the canonical classes of rw_opt (RW_OPT_CANON, p->canon.active),
- * the rule of rw_canon_converged() is used instead.
+ * the rule of rw_canon_converged() is used instead (see min_hits_rule()).
  *
  * @param p Pointer to the params_t structure.
  * @return 1 if convergence criterion is met, 0 otherwise.
  */
 int check_min_hits_convergence(const params_t * const p);
+
+/** @brief The rule of the `min_hits` stop, see min_hits_rule(). */
+enum { MIN_HITS_OFF = 0, MIN_HITS_VECTOR = 1, MIN_HITS_CANON = 2 };
+
+/**
+ * @brief The rule of the `min_hits` stop of check_min_hits_convergence(): MIN_HITS_OFF (min_hits <= 0),
+ *        MIN_HITS_CANON (the canonical classes of rw_opt bit 16, rw_canon_converged(), unless their table is full), or
+ *        MIN_HITS_VECTOR (the average hits <n> of codeword_hit_stats()).  With MIN_HITS_CANON, only the codewords of
+ *        the minimum weight found in the uniform RW steps count: while there is none (e.g., when only the window steps
+ *        find codewords of the minimum weight), the stop cannot fire (the status line and the summary say so).
+ */
+int min_hits_rule(const params_t * const p);
 
 /**
  * @brief The canonical stopping rule of rw_opt (RW_OPT_CANON, Sec. 7.3 of doc/rw_triplet_degeneracies.tex): with the
@@ -521,12 +540,12 @@ double rw_infoset_find_prob(const int n, const int rank, const int w, const int 
  * @brief Print the information-set estimate of the probability that RW missed a codeword lighter than
  *        the upper bound found.
  *
- * Among the weights w_lo..w_hi (not excluded by CC), the weight w with the smallest P1(w) (see
- * rw_infoset_find_prob()) is used: a single codeword of this weight is missed in `steps` RW steps
- * with uniform random permutations with probability (1 - P1)^steps.  Also prints the total number
- * of RW steps for a 1% miss probability (with the fraction steps / steps_total of uniform steps, as
- * in this run; localized windows, used in about half of the steps for n >= 500, are not counted)
- * and, if `t_step` > 0, the corresponding time.
+ * Among the weights w_lo..w_hi (not excluded by CC), the weight w with the smallest probability P(w) = P1(w) + P2(w)
+ * (see rw_infoset_find_prob(); P2 = 0 without pairs) is used: a single codeword of this weight is missed in `steps`
+ * RW steps with uniform random permutations with probability (1 - P)^steps.  Also prints the total number of RW steps
+ * for a 1% miss probability (with the fraction steps / steps_total of uniform steps, as in this run; the window
+ * steps, i.e., the index windows of kwin or win_hyb and the row slabs of rw_opt 4, are not counted) and, if `t_step`
+ * > 0, the corresponding time.
  *
  * @param stream Output stream (typically stderr).
  * @param n Block length (number of columns of H).
@@ -590,7 +609,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.17.1"
+#define DIST_M4RI_VERSION "0.17.2"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -607,7 +626,8 @@ void print_short_help(const char *prog);
   "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, start_scan,\n" \
   "  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n" \
   "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, rw_opt,\n" \
-  "  min_hits, cov_cws, refresh, finC, outC, maxC, dW, irred, ortho, seed, debug\n\n" \
+  "  min_hits (max_hits), cov_cws, refresh, finC, outC, maxC, dW, irred, ortho,\n" \
+  "  seed, debug\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -802,7 +822,8 @@ void print_short_help(const char *prog);
   "                     In method=2, CC terminates after checking weight wmax.\n" \
   "                     0 means continue until a codeword is found, the bounds\n" \
   "                     meet, dmin >= dstop, or timeout (method=2 then needs\n" \
-  "                     timeout>0, dmax>0, or dstop>0).\n" \
+  "                     timeout>0, dmax>0, or dstop>0), up to the weight 99 at\n" \
+  "                     most (MAX_W - 1, see util_io.h; also the largest wmax).\n" \
   "  smax=[int]         Maximum syndrome weight for confinement profile (default: 0).\n" \
   "                     When smax > 0, tracks minimum syndrome weights for each\n" \
   "                     error weight. When smax=0, confinement is not computed.\n" \
@@ -849,7 +870,9 @@ void print_short_help(const char *prog);
   "                     block of a quasi-cyclic code. WARNING: dmin is valid only\n" \
   "                     if a code symmetry maps every minimum-weight codeword to one\n" \
   "                     containing a listed column. Cannot be combined with\n" \
-  "                     cbeg/cend.\n" \
+  "                     cbeg/cend.  With drop (fdem), a listed column touching a\n" \
+  "                     dropped detector is replaced by its twin (or removed if it\n" \
+  "                     has none, see drop).\n" \
   "  start_scan=[0|1]   Expert option, with start (default: 0).  1: a cluster grown\n" \
   "                     from a listed column c only uses the columns > c, as in the\n" \
   "                     scan of all columns (see cbeg).  WARNING: dmin is valid\n" \
@@ -880,7 +903,11 @@ void print_short_help(const char *prog);
   "  finC=[file]        Import initial candidate codewords from file in .nz format.\n" \
   "                     A reducible codeword is replaced by an irreducible part with\n" \
   "                     a nonzero syndrome of L (see irred).  If finC is the same\n" \
-  "                     file name as outC, a missing file is not an error.\n" \
+  "                     file name as outC, a missing file is not an error.  A\n" \
+  "                     column index below 1 is an error; codewords with a column\n" \
+  "                     beyond n, not orthogonal to H, or orthogonal to L are\n" \
+  "                     skipped (with a warning), and so are those heavier than\n" \
+  "                     wmax > 0 (with method=2 and wmax=0, heavier than 99).\n" \
   "  maxC=[int]         Maximum number of codewords to collect (default: 0).\n" \
   "                     0 means collect all valid codewords found up to wmax or stop\n" \
   "                     flag. If maxC > 0, halts when maxC codewords are collected.\n" \
@@ -950,8 +977,13 @@ void print_short_help(const char *prog);
   "                     round of columns much slower.  With debug&1, the binary\n" \
   "                     prints the rounds of a DEM (estimated from the time\n" \
   "                     translation of its errors: D detectors and L columns per\n" \
-  "                     round) and the codewords found by the uniform and by the\n" \
-  "                     window steps.\n" \
+  "                     round; printed only, the search does not use it, and a\n" \
+  "                     folded schedule, whose rounds alternate between two\n" \
+  "                     forms, gives no round structure) and the codewords found\n" \
+  "                     by the uniform and by the window steps (line '# RW step\n" \
+  "                     types': the codewords in hash, i.e., without outC and\n" \
+  "                     maxC at most cov_cws of the minimum weight, the first\n" \
+  "                     found; 'both': found by both kinds of steps).\n" \
   "  pairs=[int]        RW pairs of non-pivot columns (p=2, as in Lee-Brickell and\n" \
   "                     Stern): a RW step also finds the codewords with exactly two\n" \
   "                     non-pivot columns, checking only the pairs of columns which\n" \
@@ -974,50 +1006,69 @@ void print_short_help(const char *prog);
   "                     0: none (the RW search of version 0.16.1); or the sum of\n" \
   "                     the stages to use (1 to 63, also as 0x..):\n" \
   "                     1: enumerate T3 (after merge and drop) and contract the\n" \
-  "                        single-column candidates (2 -> 1, 3 -> 0 columns, up to\n" \
-  "                        the weight min(dmax+8, 64)); skip the columns with a zero\n" \
-  "                        L syndrome and at most 3 columns in the pairs (when\n" \
-  "                        collecting codewords with outC or maxC, only with 32);\n" \
-  "                        a zero column of H with a nonzero column of L gives\n" \
-  "                        d=1 at once (automatic: quantum codes, steps > 2);\n" \
+  "                        candidates (2 -> 1, 3 -> 0 columns): the single-column\n" \
+  "                        candidates up to the weight min(dmax+8, 64), the pairs\n" \
+  "                        up to min(dmax+1, 64) (+dW when collecting); in the\n" \
+  "                        pairs, skip the columns whose circuit (the column and\n" \
+  "                        its pivot columns) has a zero L syndrome and at most 3\n" \
+  "                        columns (the Stern filter: only while dmax+8 <= 64, as\n" \
+  "                        it needs the contraction; when collecting codewords with\n" \
+  "                        outC or maxC, only with 32); a zero column of H with a\n" \
+  "                        nonzero column of L gives d=1 at once (automatic:\n" \
+  "                        quantum codes, steps > 2);\n" \
   "                     2: with finG, also shorten the candidates by the rows of\n" \
-  "                        G (steepest descent, up to min(dmax+w_G-2, 64)) and\n" \
-  "                        skip the columns whose circuits are rows of G in the\n" \
-  "                        pairs (not when collecting; automatic: off);\n" \
-  "                     4: row-slab windows of a DEM in time order (kwin=0):\n" \
-  "                        every other step, the columns inside a range of\n" \
-  "                        min(320, m/2) detectors (the first or the last range\n" \
-  "                        with 15%% probability each), a random independent set\n" \
-  "                        of the triplet graph first (automatic: off; on deep\n" \
-  "                        circuit DEMs, the index windows with 1 found more\n" \
-  "                        minimum-weight codewords per second);\n" \
+  "                        G (steepest descent, before the contraction of 1; the\n" \
+  "                        single-column candidates up to min(dmax+w_G-2, 64),\n" \
+  "                        with 1 up to min(dmax+max(8, w_G-2), 64)) and skip the\n" \
+  "                        columns whose circuits are rows of G in the pairs (only\n" \
+  "                        while that weight is at most 64; not when collecting;\n" \
+  "                        automatic: off);\n" \
+  "                     4: row-slab windows of a DEM in time order (kwin=0, not\n" \
+  "                        with sort_rows=1): every other step, the columns inside\n" \
+  "                        a range of min(320, m/2) detectors (the first or the\n" \
+  "                        last range with 15%% probability each), a random\n" \
+  "                        independent set of the triplet graph first (automatic:\n" \
+  "                        off; on deep circuit DEMs, the index windows with 1\n" \
+  "                        found more minimum-weight codewords per second; on some\n" \
+  "                        single-round DEMs, the slabs found lighter codewords\n" \
+  "                        much sooner, e.g., weight 16 of the double-gross DEM\n" \
+  "                        with one round, but they often find the same few\n" \
+  "                        codewords again, which raises <n> of min_hits without\n" \
+  "                        16);\n" \
   "                     8: sparse-dual elimination: an m x m inverse instead of\n" \
   "                        the m x n matrix (the same information sets, less\n" \
-  "                        memory per RW thread; automatic: m x n above 512 KiB,\n" \
-  "                        and n >= 20 m or m >= 1400; up to 64 rows of L);\n" \
+  "                        memory per RW thread; quantum codes with up to 64 rows\n" \
+  "                        of L; automatic: m x n above 512 KiB, and n >= 20 m or\n" \
+  "                        m >= 1400; no '# RW FKG score');\n" \
   "                     16: canonical classes: the codewords of the minimum weight\n" \
   "                        found in the uniform RW steps are counted by their\n" \
   "                        canonical form (2 <-> 2 exchanges across two triplets\n" \
   "                        with a common column, or half-overlap exchanges with\n" \
   "                        the even rows of G), each at most once per step, and\n" \
   "                        min_hits stops RW by the Good-Turing / Chao2 rule (see\n" \
-  "                        min_hits; automatic: quantum codes; not with kwin > 0);\n" \
-  "                        the codewords of a RW step are recorded at its end\n" \
-  "                        (lighter ones at once), each at most once (also with 1\n" \
-  "                        or 2);\n" \
+  "                        min_hits; only with min_hits > 0, not with kwin > 0;\n" \
+  "                        automatic: quantum codes); the tables hold up to 2^24\n" \
+  "                        classes and codewords (up to about 640 MiB; then the\n" \
+  "                        rule of <n> is used); the codewords of a RW step are\n" \
+  "                        recorded at its end (lighter ones at once), each at\n" \
+  "                        most once (also with an active 1 or 2);\n" \
   "                     32: with outC or maxC, add the codewords obtained from the\n" \
   "                        codewords found by T3 before the export: 2 <-> 2\n" \
   "                        exchanges and 1 -> 2 splits, up to the weight min_w+dW\n" \
-  "                        (see irred and maxC).\n" \
+  "                        (see irred and maxC; automatic: quantum codes with outC\n" \
+  "                        or maxC).\n" \
   "                     With rw_opt != 0, matrices (finH) use uniform random\n" \
   "                     permutations in all RW steps unless kwin > 0 or win_hyb\n" \
-  "                     > 0 (the hybrid windows are for DEMs, see kwin).  Only\n" \
-  "                     with full-matrix RW (ksub=0) and steps > 0.  With debug&1,\n" \
-  "                     the binary prints the stages used and their statistics\n" \
+  "                     > 0 (the hybrid windows are for DEMs, see kwin), also if\n" \
+  "                     no stage applies (rw_opt=0x0 in the run plan, e.g., for\n" \
+  "                     a classical code).  Only with full-matrix RW (ksub=0) and\n" \
+  "                     steps > 0 (automatic: steps > 2).  With debug&1, the\n" \
+  "                     binary prints the stages used and their statistics\n" \
   "                     (lines '# RW triplets', '# RW canonical', and '# RW FKG\n" \
   "                     score': the mean Harris-FKG bound -sum ln(1 + |S_a|) on\n" \
-  "                     ln Pr(J) of the steps with pairs, and -ln C(n, r)).\n" \
-  "                     dist_m4ri_old ignores rw_opt.\n" \
+  "                     ln Pr(J) of the dense full-matrix steps with pairs, with\n" \
+  "                     any stage but not with 8 or on the slab steps, and\n" \
+  "                     -ln C(n, r)).  dist_m4ri_old ignores rw_opt.\n" \
   "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off;\n" \
   "                     alias: max_hits).  Stops RW when the average number of hits\n" \
   "                     <n> per codeword (by all RW steps, with or without windows,\n" \
@@ -1044,7 +1095,13 @@ void print_short_help(const char *prog);
   "                     max(15, 3 min_hits), N/C >= min_hits, the Good-Turing\n" \
   "                     unseen mass Q1/N <= min(0.02, 3 exp(-min_hits)), and the\n" \
   "                     Chao2 unseen fraction C0/(C+C0) <= 0.05 with C0 = Q1(Q1-1)\n" \
-  "                     /(2(Q2+1)).\n" \
+  "                     /(2(Q2+1)).  Only the uniform steps count: while none of\n" \
+  "                     them has found a codeword of the minimum weight (e.g., on\n" \
+  "                     deep circuit DEMs, where the window steps find them), the\n" \
+  "                     min_hits stop is inactive and RW runs until the steps or\n" \
+  "                     the timeout end (the status line and the summary say so;\n" \
+  "                     the window steps are shown for information only, see\n" \
+  "                     '# RW step types').  Without 16, <n> above (all steps).\n" \
   "  cov_cws=[int]      Size of the representative set of lowest-weight codewords\n" \
   "                     for min_hits (default: 100; 0 = only the minimum weight).\n" \
   "                     Without outC and maxC, at most cov_cws minimum-weight\n" \
@@ -1073,7 +1130,8 @@ void print_short_help(const char *prog);
   "    2    : Progress (default): run plan (threads, steps, timeout, seed),\n" \
   "           finished CC rounds, new upper bounds, RW convergence\n" \
   "    4    : Periodic status (after 1, 2, 4, ... s, then every 60 s): bounds,\n" \
-  "           RW steps and rate, <n>, progress of the current CC round\n" \
+  "           RW steps and rate, the min_hits statistic (<n>, or the\n" \
+  "           canonical classes of rw_opt 16), progress of the current CC round\n" \
   "    8    : Thread allocation and timing: throttling, CC round planning and\n" \
   "           re-planning, waits for RW, predicted vs measured CC work, and the\n" \
   "           nodes of each CC round (calls of the recursion)\n" \
@@ -1094,13 +1152,19 @@ void print_short_help(const char *prog);
   "  Standard output produces a single line with three space-separated integers:\n" \
   "    dmin dmax rw_steps\n" \
   "  where:\n" \
-  "    dmin-1   : Maximum cluster weight analyzed by CC without finding any codeword.\n" \
+  "    dmin-1   : The largest weight w certified to have no codeword of weight\n" \
+  "               <= w: CC found none from the supplied dmin (default 1) up to w\n" \
+  "               (odd weights are skipped if all codewords have even weight).\n" \
   "               If CC finds an exact minimum-weight codeword, dmin = dmax = weight.\n" \
   "               With the expert options noscan, start, or cbeg/cend, see the\n" \
   "               warnings above for the validity of dmin.\n" \
   "    dmax     : Smallest weight of a codeword found (by RW or CC, or read with\n" \
   "               finC), or the supplied dmax if smaller (0 if none).\n" \
-  "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n\n" \
+  "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n" \
+  "  The legacy single-threaded dist_m4ri_old (the same options) prints one number\n" \
+  "  and also its own progress and codeword lines to stdout, and ignores threads,\n" \
+  "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, and rw_opt\n" \
+  "  (with a warning).\n\n" \
   "Option groups (--help GROUP prints all entries of GROUP):\n" \
   "  windows            kwin, win_mode, win_hyb\n" \
   "  stopping, stop     steps, wmin, timeout, min_hits, cov_cws\n" \

@@ -1,7 +1,7 @@
-/** ********************************************************************** 
+/** **********************************************************************
  * @file dist_m4ri.c
  * @brief Multithreaded distance calculation and bracketing (dist_m4ri)
- * 
+ *
  * The program implements multithreaded distance calculation:
  * - method=1: Multithreaded Random Window (RW) algorithm (upper bound)
  * - method=2: Multithreaded Connected Cluster (CC) algorithm (lower bound / exact)
@@ -11,7 +11,7 @@
  *             and scaling characteristics.
  *
  * Output to stdout: "dmin dmax rw_steps"
- * where dmin-1 is the maximum cluster size analyzed without success by CC,
+ * where dmin-1 is the largest weight certified to have no codeword (CC found none from the supplied dmin up to it),
  * dmin=dmax if CC actually found a min-weight codeword of this size,
  * dmax is the smallest weight of a codeword found (by RW or CC, or read with finC), or the supplied dmax if smaller,
  * and rw_steps is the number of completed RW steps (0 if CC found a min-weight codeword
@@ -49,6 +49,15 @@
  * With irred=1 (the default), only irreducible codewords are recorded, i.e., not the union of a codeword and a disjoint
  * nonzero zero-syndrome vector: the CC codewords are tested by the rank of their columns (cw_irreducible()), and the RW
  * pairs of disjoint circuits are skipped (rw_pairs_step()); single RW candidates are circuits, hence irreducible.
+ *
+ * The RW stages of rw_opt (see rw_triplet.h, rw_stages_plan(); none with rw_opt=0, the RW search of version 0.16.1):
+ * Stage 1 enumerates the weight-3 degeneracies T_3 before the run; the RW candidates are then shortened (Stage 2: the
+ * T_3 contraction and the rows of G, see rw_candidate()), and a shortened candidate which is reducible is replaced by
+ * an irreducible part; the pairs skip the columns of the Stern filters (rw_filters_exact()); Stage 3 adds row-slab
+ * windows of a DEM, Stage 4 the sparse-dual elimination (less memory per RW thread, hence more RW threads under the
+ * memory throttling, see rw_thread_cap()); the codewords of a step are recorded once at its end (rw_rec_t); and with
+ * Stage 5 the `min_hits` stop counts the canonical classes of the minimum weight found in the uniform steps
+ * (rw_canon_converged(); no stop without such a codeword, see min_hits_rule()) instead of the average hits <n>.
  *
  * Timing model (method=2, 3): the CC work of a round is measured as the total CC thread time, and the work of the
  * next round is extrapolated with the growth factor of the last two rounds.  With a timeout, a CC round predicted not
@@ -1858,11 +1867,25 @@ static void rw_rec_record(distfork_ctx_t * const ctx, rw_thr_t * const th, const
  * replaced by an irreducible part (a lighter codeword).  The single candidates are circuits, hence irreducible.  Only
  * the candidates up to the weight min(dmax + rw_ext (+ dW with outC or maxC), RW_SHORTEN_WMAX) are shortened (none
  * before an upper bound is known, nor while dmax is still large: early candidates on wide DEMs can have hundreds of
- * columns, where greedy pair scans would take O(cnt^3) work). */
+ * columns, where greedy pair scans would take O(cnt^3) work).  The steepest descent over the rows of G comes first, on
+ * the candidate itself, then the T_3 contraction (alternating, at most 8 rounds): the realized-generator filter of
+ * rw_pairs_step() is loss-free only if the first descent move is made on the circuit C_P(y) (Theorem known_gen(c) of
+ * the notes); a T_3 contraction first can lower the gain of the realized row of G (rw_opt=3 lost minimum-weight hits on
+ * a small code).  The Stern filters are on only while the shortening is not capped, see rw_filters_exact(). */
 #define RW_SHORTEN_WMAX 64
 static inline int rw_lim_ext(const int limit, const int ext) {
   if (ext <= 0 || limit > RW_SHORTEN_WMAX) return limit;
   return minint(limit + ext, RW_SHORTEN_WMAX + 1);
+}
+
+/* The Stern filters of rw_pairs_step() (the columns with a zero L syndrome and w_x <= 2, rw_filter_t3, and those whose
+ * circuits are rows of G, rw_filter_g) skip a pair x, y only because the single candidate C_P(y), one or w_G - 2
+ * heavier than the pair, is shortened (Theorems 3(b) and 5(c) of the notes): this holds while the shortening is not
+ * capped by RW_SHORTEN_WMAX, i.e., for the upper bound dmax with dmax + rw_ext (+ dW when collecting) <= 64 */
+static inline bool rw_filters_exact(const distfork_ctx_t * const ctx) {
+  const int dm = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
+  const int dw = (ctx->collecting && ctx->p->dW > 0) ? ctx->p->dW : 0;
+  return dm > 0 && (long long)dm + dw + ctx->rw_ext <= RW_SHORTEN_WMAX;
 }
 
 static void rw_candidate(distfork_ctx_t * const ctx, rw_thr_t * const th, rci_t * const ee, const int cnt,
@@ -1877,8 +1900,8 @@ static void rw_candidate(distfork_ctx_t * const ctx, rw_thr_t * const th, rci_t 
     memcpy(sh, ee, (size_t)cnt * sizeof(int));
     for (int it = 0; it < 8; it++) {
       const int c0 = cs;
+      if (ctx->rw_gshort) cs = rw_gdb_shorten(ctx->gdb, th->ws, sh, cs); /* (first: see above) */
       if (ctx->rw_contract) cs = rw_t3_contract(ctx->t3, sh, cs);
-      if (ctx->rw_gshort) cs = rw_gdb_shorten(ctx->gdb, th->ws, sh, cs);
       if (cs == c0) break;
     }
   }
@@ -2166,7 +2189,7 @@ static word *dual_form(const distfork_ctx_t * const ctx, rw_dual_t * const d, co
 /* The entries of the pairs (see rw_pairs_step()) of a sparse-dual step: the formed columns with a nonzero L syndrome,
  * and the columns with a zero L syndrome in their buckets (formed now, with the Stern filters of rw_pairs_step()), in
  * increasing order of the columns in each group, so that the sort and the pairs are those of the dense step.  Returns
- * the number of entries. */
+ * the number of entries (0 also at a stop: then rw_pairs_step() checks no pair, and its step counts as completed). */
 static int rw_dual_entries(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_thr_t * const th,
                            const word * const piv_mask, const int rank, const int nk, const int * const kword,
                            const word * const kmask, const int kb, const int sh_key, const int sh_grp, const int ib,
@@ -2264,14 +2287,18 @@ static int rw_dual_entries(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_t
  * v->full, the reduced matrix `mH`: Gauss-Jordan, `rank` pivot rows, whose pivot columns are `pivs`, and its transpose
  * v->ht, row c: the column c in the pivot rows), `l` pivot rows of the buckets, the workspace `ws`, and the support
  * `ee`; `src` as in rw_record_codeword().  Adds the number of the pairs checked to `*checked`, and of the hits to
- * `*hits` (see rw_is_hit()); returns l (0: no pairs).  The bucket of a column is a hash of its l bits (64 bits; the
- * sort uses its top bits: the buckets with different bits are merged rarely, which only adds pairs).
+ * `*hits` (see rw_is_hit()); returns l (0: no pairs; also l after a stop in the pairs, which only end early).  The
+ * bucket of a column is a hash of its l bits (64 bits; the sort uses its top bits: the buckets with different bits are
+ * merged rarely, which only adds pairs).
  * With the stages of rw_opt (`th` not NULL): the L syndromes `srows` may be computed before (`srows_ready`, see
  * rw_srows()); the columns with a zero L syndrome and w_x <= 2 pivot rows (rw_filter_t3) and those whose circuits are
  * rows of G (rw_filter_g) are not used (the Stern Bucket-0 filter of Theorems 3(b) and 5(c) of the notes, loss-free
- * with the shortening of the single candidates); the pairs up to the weight limit + rw_ext2 - 1 are shortened (see
- * rw_candidate()); and for a full step, `*fkg` (if not NULL) is set to the Harris-FKG sum of ln(1 + w_x) over the
- * non-pivot columns x (NAN if the columns were not scanned). */
+ * with the shortening of the single candidates, hence only while it is not capped by RW_SHORTEN_WMAX, see
+ * rw_filters_exact()); the pairs up to the weight min(limit + rw_ext2, RW_SHORTEN_WMAX + 1) - 1 are formed and those
+ * up to min(dmax + rw_ext2 (+ dW), RW_SHORTEN_WMAX) shortened (see rw_candidate(), rw_lim_ext()); and for a full
+ * dense step, `*fkg` (if not NULL) is set to the Harris-FKG sum of ln(1 + w_x) over the non-pivot columns x (NAN if the
+ * columns were not scanned; not with the sparse dual `dl`, which does not form the columns of a zero L syndrome
+ * outside the buckets). */
 static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, const mzd_t * const mH,
                          const rci_t * const pivs, const word * const piv_mask, const int rank, int l,
                          rw_pairs_ws_t * const ws, rci_t * const ee, uint64_t * const rng_state, const int tid,
@@ -2318,8 +2345,10 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
   const int nl = v->full ? ws->nl : 0;
   if (nl > 0 && !srows_ready) rw_srows(ws, mH, pivs, rank, lhash);
   const int wsig = lim + 1; /* (otherwise) the L syndromes of the columns up to this weight */
-  /* rw_opt: the Stern Bucket-0 filter; an L syndrome from `lhash` is exact with at most 64 rows of L */
-  const bool filt_t3 = th && ctx->rw_filter_t3, filt_g = th && ctx->rw_filter_g;
+  /* rw_opt: the Stern Bucket-0 filter (only while the shortening of the single candidates is not capped, see
+   * rw_filters_exact()); an L syndrome from `lhash` is exact with at most 64 rows of L */
+  const bool filt_on = th && (ctx->rw_filter_t3 || ctx->rw_filter_g) && rw_filters_exact(ctx);
+  const bool filt_t3 = filt_on && ctx->rw_filter_t3, filt_g = filt_on && ctx->rw_filter_g;
   const bool lhash_exact = maskL && (maskL->kw == 1);
   double fsum = 0.0;
   const double * const ltab = (th && fkg && v->full) ? th->ltab : NULL;
@@ -2487,7 +2516,7 @@ static inline uint32_t slab_gen(rw_thr_t * const th, const int nvar) {
  * set of the triplet graph G_3 first, then the others (MIS push-back, Theorem 2(a) of the notes), each part in random
  * order; the slab matrix (msub rows) is reduced (Gauss-Jordan), and its single columns and pairs give codewords of H
  * (the slab columns touch no other row), mapped back to the columns of H.  Returns the rank of the slab matrix (-1:
- * stopped). */
+ * stopped in its elimination; a stop in the pairs returns the rank). */
 static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pairs_ws_t * const pws, rci_t * const ee,
                         uint64_t * const rng, const int tid, long long * const hits1, long long * const hits2,
                         long long * const n_pairs) {
@@ -2607,7 +2636,8 @@ static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pair
 
 /* Stage 4 (rw_opt, RW_OPT_DUAL): a full-matrix RW step with the sparse-dual elimination (see rw_dual_t) of the columns
  * order[0], order[1], ... in the rows 0..nrows_eff-1 of M: the single columns with a nonzero L syndrome, formed in
- * increasing order, and the pairs (see rw_dual_entries()).  Returns the rank (-1: stopped). */
+ * increasing order, and the pairs (see rw_dual_entries()).  Returns the rank (-1: stopped in the elimination or in the
+ * single columns; a stop in the pairs returns the rank, and the step counts as completed, as in the dense step). */
 static int rw_dual_step(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_thr_t * const th, rw_pairs_ws_t * const pws,
                         const int nrows_eff, const rci_t * const order, rci_t * const pivs, word * const piv_mask,
                         rci_t * const ee, uint64_t * const rng, const int tid, const int src, long long * const hits1,
@@ -2833,8 +2863,8 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
       }
     } else {
       /* rw_opt: the L syndromes of the single columns first (Stage 2a: with at most 64 rows of L, from the reduced rows
-       * of L, before the support of the candidate is formed), and the candidates up to the weight limit + rw_ext for
-       * the shortening (see rw_candidate()) */
+       * of L, before the support of the candidate is formed), and the candidates up to the weight min(limit + rw_ext,
+       * RW_SHORTEN_WMAX + 1) - 1 for the shortening (see rw_lim_ext(), rw_candidate()) */
       const bool use_sig = (pws->nl > 0);
       if (use_sig) {
         rw_srows(pws, mH, pivs->values, rank, ctx->rw_lhash);
@@ -3141,7 +3171,9 @@ static void *worker_thread_func(void *arg) {
       visited_cols = calloc(nvar, sizeof(int));
       visited_checks = calloc(ctx->p->spaH->rows, sizeof(int));
       col_queue = calloc(nvar, sizeof(int));
+      if (!visited_cols || !visited_checks || !col_queue) ERROR("memory allocation");
     }
+    if (!ee || !perm || !pivs) ERROR("memory allocation");
     if (use_ksub) {
       if (ksub_eff > 0) {
         M_sub = safe_mzd_init(ksub_eff, nvar);
@@ -3497,13 +3529,25 @@ static void ctx_status(distfork_ctx_t * const ctx) {
     int len = snprintf(rw_str, sizeof(rw_str), "; RW: %ld of %ld steps (%.3g/s)%s%s", steps, ctx->total_rw_steps,
                        rate, rw_on ? "" : ", ", rw_on ? "" : rw_end_state(ctx));
     if (p->min_hits > 0 && len > 0 && len < (int)sizeof(rw_str)) {
-      cw_hit_stats_t st;
+      /* the statistic of the min_hits stop: the canonical classes (rw_opt bit 16), or the average hits <n> */
+      cw_hit_stats_t st = {0};
       pthread_mutex_lock(&ctx->cw_mutex);
-      codeword_hit_stats(p, &st);
+      const int rule = min_hits_rule(p);
+      const rw_canon_stats_t cs = p->canon;
+      if (rule == MIN_HITS_VECTOR) codeword_hit_stats(p, &st);
       pthread_mutex_unlock(&ctx->cw_mutex);
-      if (st.set_cws > 0)
+      if (rule == MIN_HITS_CANON) {
+        if (cs.w < INT_MAX && cs.classes <= 0)
+          snprintf(rw_str + len, sizeof(rw_str) - len, ", min_hits stop inactive: no codeword of weight %d in the "
+                   "uniform steps yet", cs.w);
+        else if (cs.w < INT_MAX)
+          snprintf(rw_str + len, sizeof(rw_str) - len, ", canonical classes (w=%d): %.2f step incidences per class "
+                   "over %lld classes, p_GT=%.3g", cs.w, (double)cs.n_unif / (double)cs.classes, cs.classes,
+                   (double)cs.f1 / (double)cs.n_unif);
+      } else if (st.set_cws > 0) {
         snprintf(rw_str + len, sizeof(rw_str) - len, ", <n>=%.2f over %lld cws of weight %d..%d", st.avg,
                  st.set_cws, st.w_lo, st.w_hi);
+      }
     }
   }
   fprintf(stderr, "# status %.1fs: bounds [%d, %d]%s%s\n", t, atomic_load(&ctx->dmin), atomic_load(&ctx->dmax),
@@ -3567,8 +3611,10 @@ static void run_method1_coordinator(distfork_ctx_t *ctx) {
 
 /* Estimated work of the CC round at weight w in thread-seconds (the unit of `cc_time_per_weight`, i.e., wall time
  * times the number of CC threads): the measured work W(w-1) of the previous round times the growth factor
- * W(w-1)/W(w-2), clamped to [2, 10] (4 if W(w-2) is not known), also returned in `*growth`.  Returns 0 if W(w-1)
- * has not been measured (the first round at a supplied dmin > 1). */
+ * W(w-1)/W(w-2), clamped to [2, 10] (4 if W(w-2) is not known), also returned in `*growth`; when all codewords have
+ * even weight (even_weight_only: the odd rounds are skipped), W(w-2) times the factor W(w-2)/W(w-4) of two weights,
+ * clamped to [4, 100] (16 if W(w-4) is not known).  Returns 0 if the previous round has not been measured (the first
+ * round at a supplied dmin > 1). */
 static double cc_work_estimate(const distfork_ctx_t * const ctx, const int w, double * const growth) {
   if (ctx->even_weight_only && !(w & 1)) {
     *growth = 16.0;
@@ -4351,9 +4397,12 @@ static void rw_stages_setup(params_t * const p, const csr_t * const HT, rw_t3_t 
     *t3p = t3;
     if (!t3->complete) {
       p->rw_active &= ~(RW_OPT_T3 | RW_OPT_EXPAND);
-      if (p->debug & DBG_SUMMARY)
+      if ((p->debug & DBG_SUMMARY) && (t3->probes > RW_T3_BUDGET))
         fprintf(stderr, "# Note: RW triplets (rw_opt) not enumerated: %lld hash probes needed (more than %lld), no "
                 "contraction\n", t3->probes, RW_T3_BUDGET);
+      else if (p->debug & DBG_SUMMARY) /* (see rw_t3_build()) */
+        fprintf(stderr, "# Note: RW triplets (rw_opt) not kept: too many for the tables (6 |T3| > 2^30), no "
+                "contraction\n");
     }
     if ((p->rw_active & RW_OPT_T3) && t3->npure > 0) { /* the pure-logical columns: codewords of weight 1 */
       for (int i = 0; i < t3->npure; i++) p->codewords = codeword_add_maybe(p, &t3->pure[i], 1, CW_SRC_OTHER);
@@ -4376,6 +4425,8 @@ static void print_run_plan(const distfork_ctx_t * const ctx, const int init_dmax
   if ((p->method & 1) && ctx->rw_threads > 0) {
     fprintf(stderr, ", steps=%ld, min_hits=%d, ksub=%d", ctx->total_rw_steps, p->min_hits, p->ksub);
     if (p->rw_opt != 0) fprintf(stderr, ", rw_opt=0x%x", (unsigned int)ctx->rw_active);
+    if (p->rw_opt != 0 && p->ksub <= 0 && p->kwin == 0 && p->nvar >= 500 && !rw_hybrid_on(p, p->nvar))
+      fprintf(stderr, " (matrices with rw_opt != 0: no hybrid windows)"); /* (Rule D3, also with no stage) */
   }
   if (p->method & 2) {
     fprintf(stderr, ", CC from w=%d", p->noscan ? p->wmax : (p->dmin > 1 ? p->dmin : 1));
@@ -4557,7 +4608,10 @@ int main(int argc, char **argv) {
     nzlist_read(p->finC, p);
   }
 
-  /* Check ksub feasibility before thread throttling (require m >= nu >= n - m) */
+  /* Check ksub feasibility before the RW stages and the thread throttling (require m >= nu >= n - m): otherwise
+   * full-matrix RW (ksub=0), with the RW stages, the thread limits, and the L hashes of the pairs of ksub=0 */
+  mzd_t *ksub_N = NULL; /* (the basis of ker(H) for ksub > 0, see ctx.N_global) */
+  int ksub_nu = 0;
   if ((p->method & 1) && p->ksub > 0 && p->spaH) {
     int nrows = p->spaH->rows;
     int nvar = p->spaH->cols;
@@ -4569,7 +4623,34 @@ int main(int argc, char **argv) {
                 p->ksub, nrows, nvar - nrows);
       }
       p->ksub = 0;
+    } else if (!(p->method == 3 && p->steps == 0)) { /* (no RW with method=3 steps=0) */
+      const double t_ker0 = get_time_sec();
+      ksub_N = mzd_nullspace(p->spaH);
+      ksub_nu = ksub_N ? ksub_N->nrows : 0;
+      if (nrows < ksub_nu || ksub_nu <= 0) {
+        if (p->debug & DBG_SUMMARY) {
+          fprintf(stderr,
+                  "# Warning: ksub=%d requested, but m=%d < nu=%d; "
+                  "falling back to full-matrix RW (ksub=0)\n",
+                  p->ksub, nrows, ksub_nu);
+        }
+        safe_mzd_free(ksub_N);
+        ksub_N = NULL;
+        ksub_nu = 0;
+        p->ksub = 0;
+      } else if (p->debug & DBG_TIMING) {
+        fprintf(stderr, "# computed ker(H) in %.4fs: nu=%d, n=%d, ksub=%d (eff=%d)\n", get_time_sec() - t_ker0, ksub_nu,
+                nvar, p->ksub, minint(p->ksub, ksub_nu));
+      }
     }
+  }
+  if ((p->method & 1) && p->ksub > 0) { /* (after a fallback to ksub=0, the RW stages and the pairs run) */
+    if (p->rw_opt > 0)
+      fprintf(stderr, "# WARNING: rw_opt=%d is ignored with ksub=%d (no RW stages with the experimental ksub)\n",
+              p->rw_opt, p->ksub);
+    if (p->pairs > 0)
+      fprintf(stderr, "# WARNING: pairs=%d is ignored with ksub=%d (no RW pairs with the experimental ksub)\n",
+              p->pairs, p->ksub);
   }
 
   /* The RW stages of rw_opt (see rw_stages_plan()), before the thread throttling (Stage 4 needs less memory per RW
@@ -4634,7 +4715,9 @@ int main(int argc, char **argv) {
   }
 
   /* the columns of H (also for CC), and Stage 1 of rw_opt with the tables of the RW stages (before the bounds: the
-   * pure-logical columns are codewords of weight 1) */
+   * pure-logical columns are codewords of weight 1); the clock of the timeout starts here, so that the enumeration of
+   * T_3 (up to about one second, see RW_T3_BUDGET) counts */
+  const double t_start = get_time_sec();
   csr_t * const mHT = csr_transpose(NULL, p->spaH);
   rw_t3_t *t3 = NULL;
   rw_gdb_t *gdb = NULL;
@@ -4649,7 +4732,7 @@ int main(int argc, char **argv) {
   ctx.num_threads = num_threads;
   ctx.rw_threads = rw_threads;
   ctx.timeout = timeout;
-  ctx.start_time = get_time_sec();
+  ctx.start_time = t_start;
   ctx.dexp = p->dexp;
   ctx.total_rw_steps = (p->steps >= 0) ? p->steps : 1;
 
@@ -4675,6 +4758,7 @@ int main(int argc, char **argv) {
     rw_t3_free(t3);
     rw_gdb_free(gdb);
     free(zcol);
+    safe_mzd_free(ksub_N);
     var_kill(p);
     return 0;
   }
@@ -4688,6 +4772,7 @@ int main(int argc, char **argv) {
     rw_t3_free(t3);
     rw_gdb_free(gdb);
     free(zcol);
+    safe_mzd_free(ksub_N);
     var_kill(p);
     return 0;
   }
@@ -4703,6 +4788,7 @@ int main(int argc, char **argv) {
     rw_t3_free(t3);
     rw_gdb_free(gdb);
     free(zcol);
+    safe_mzd_free(ksub_N);
     var_kill(p);
     return 0;
   }
@@ -4741,7 +4827,9 @@ int main(int argc, char **argv) {
   if (ctx.rw_gshort && gdb->wmax - 2 > ctx.rw_ext) ctx.rw_ext = gdb->wmax - 2;
   ctx.rw_ext2 = ctx.rw_contract ? 1 : 0;
   /* the Stern filter (Theorems 3(b), 5(c)): with all triplets known; when collecting codewords, only with the expansion
-   * by T_3 (bit 32), which restores the codewords not found */
+   * by T_3 (bit 32), meant to restore the codewords which the filter skips (2 <-> 2 exchanges and 1 -> 2 splits; the
+   * notes prove this for the weight only, and on the surf_d5 matrices, with duplicate columns, outC lost none); and in
+   * a step only while the shortening is not capped (rw_filters_exact()) */
   ctx.rw_filter_t3 = (p->rw_active & RW_OPT_T3) && t3 && t3->complete &&
                      (!ctx.collecting || (p->rw_active & RW_OPT_EXPAND));
   ctx.rw_filter_g = ctx.rw_gshort && !ctx.collecting;
@@ -4835,40 +4923,13 @@ int main(int argc, char **argv) {
   }
   ctx.round_R = 1;
 
-  if ((p->method & 1) && p->ksub > 0 && ctx.rw_threads > 0) {
-    double t_ker0 = get_time_sec();
-    ctx.N_global = mzd_nullspace(p->spaH);
-    ctx.nu = ctx.N_global ? ctx.N_global->nrows : 0;
-    if (p->spaH->rows < ctx.nu || ctx.nu <= 0) {
-      if (p->debug & DBG_SUMMARY) {
-        fprintf(stderr,
-                "# Warning: ksub=%d requested, but m=%d < nu=%d; "
-                "falling back to full-matrix RW (ksub=0)\n",
-                p->ksub, p->spaH->rows, ctx.nu);
-      }
-      safe_mzd_free(ctx.N_global);
-      ctx.N_global = NULL;
-      ctx.nu = 0;
-      p->ksub = 0;
-      if (!p->nothrottle) { /* full-matrix RW workers need more memory: re-apply the RW thread limit */
-        const int rw_cap = rw_thread_cap(p);
-        if (p->method == 1 && num_threads > rw_cap) {
-          num_threads = rw_cap;
-          ctx.num_threads = rw_cap;
-        }
-        if (ctx.rw_threads > rw_cap) ctx.rw_threads = rw_cap;
-        if (p->debug & DBG_TIMING) {
-          fprintf(stderr, "# Note: %d threads, %d of them for RW (full-matrix RW)\n", num_threads, ctx.rw_threads);
-        }
-      }
-    } else if (p->debug & DBG_TIMING) {
-      fprintf(stderr,
-              "# computed ker(H) in %.4fs: nu=%d, n=%d, ksub=%d (eff=%d)\n",
-              get_time_sec() - t_ker0, ctx.nu, p->spaH->cols, p->ksub,
-              minint(p->ksub, ctx.nu));
-    }
+  if ((p->method & 1) && p->ksub > 0 && ctx.rw_threads > 0) { /* the basis of ker(H), computed above */
+    ctx.N_global = ksub_N;
+    ctx.nu = ksub_nu;
+    ksub_N = NULL;
     if (ctx.nu > 0) atomic_store(&ctx.rw_rank, p->spaH->cols - ctx.nu); /* rank of H */
   }
+  safe_mzd_free(ksub_N); /* (not used) */
 
   /* method 2 starts a few workers only, and the others once a CC round takes longer (see CC_SPAWN_INITIAL) */
   ctx.spawn_initial = (p->method == 2 && !p->nothrottle && num_threads > CC_SPAWN_INITIAL) ? CC_SPAWN_INITIAL
@@ -5012,13 +5073,26 @@ int main(int argc, char **argv) {
       if (cs->active && cs->w < INT_MAX) {
         const double n_u = (double)cs->n_unif;
         const double c0 = (double)cs->f1 * (double)(cs->f1 - 1) / (2.0 * (double)(cs->f2 + 1));
-        fprintf(stderr, "# RW canonical (w=%d): classes=%lld, raw_cws=%lld, M_eff=%.2f, unif_inc=%lld, f1=%lld, "
-                "f2=%lld, p_GT=%.3g, C0_Chao2=%.1f\n", cs->w, cs->classes, cs->raw,
-                (cs->classes > 0) ? (double)cs->raw / (double)cs->classes : 0.0, cs->n_unif, cs->f1, cs->f2,
-                (n_u > 0.0) ? (double)cs->f1 / n_u : 1.0, (cs->f1 > 1) ? c0 : 0.0);
-        if (cs->full)
+        if (cs->n_unif > 0) {
+          fprintf(stderr, "# RW canonical (w=%d): classes=%lld, raw_cws=%lld, M_eff=%.2f, unif_inc=%lld, f1=%lld, "
+                  "f2=%lld, p_GT=%.3g, C0_Chao2=%.1f\n", cs->w, cs->classes, cs->raw,
+                  (cs->classes > 0) ? (double)cs->raw / (double)cs->classes : 0.0, cs->n_unif, cs->f1, cs->f2,
+                  (double)cs->f1 / n_u, (cs->f1 > 1) ? c0 : 0.0);
+        } else { /* no codeword of the weight w in the uniform steps: no data (n/a, not placeholders) */
+          fprintf(stderr, "# RW canonical (w=%d): classes=%lld, raw_cws=%lld, M_eff=n/a, unif_inc=0, f1=0, f2=0, "
+                  "p_GT=n/a, C0_Chao2=n/a\n", cs->w, cs->classes, cs->raw);
+        }
+        if (cs->full) {
           fprintf(stderr, "# Note: more than %zu canonical classes or codewords: the min_hits rule of the codeword "
                   "hash was used\n", (size_t)RW_CANON_MAX);
+        } else if (cs->n_unif <= 0 && p->min_hits > 0) { /* why the min_hits stop could not fire (rw_opt bit 16) */
+          long long win_cws = 0; /* the codewords of the weight w in hash found by the window steps (information) */
+          for (const cw_vec_t *cw = p->codewords; cw != NULL; cw = (const cw_vec_t *)(cw->hh.next))
+            win_cws += (cw->weight == cs->w) && (cw->cnt_w > 0);
+          fprintf(stderr, "# Note: the min_hits stop was inactive: no codeword of the minimum weight %d was found in "
+                  "a uniform RW step (the canonical classes of rw_opt 16 count only these; the window steps found %lld "
+                  "codewords of weight %d in hash, not used to stop)\n", cs->w, win_cws, cs->w);
+        }
       }
       double fsum[2] = {0.0, 0.0};
       long fsteps[2] = {0, 0};

@@ -115,7 +115,7 @@ static inline int std_bitcount ( uint64_t x) {
 /**
  * sparse binary matrix in compressed-row form (CSR, nz=-1) or 
  * List-Of-Pairs (nz pairs).
- * use mzp_compress() to convert from LOP to CSR. 
+ * use csr_compress() to convert from LOP to CSR. 
  */
 typedef struct{    /*  */
   int rows ;	    /* number of rows */
@@ -244,7 +244,8 @@ extern "C" {
   /** 
    * @brief Transpose a compressed CSR sparse matrix.
    * 
-   * Transposes matrix p and stores the result in dst. (Re)allocates dst if needed.
+   * Transposes matrix p and stores the result in dst: allocates dst if it is NULL, otherwise dst must have the
+   * transposed size and room for the entries (an error otherwise).
    *
    * @param dst Destination sparse matrix (can be NULL, in which case it is allocated).
    * @param p Source sparse matrix.
@@ -393,14 +394,26 @@ extern "C" {
   csr_t *csr_init(csr_t *mat, int rows, int cols, int nzmax);
 
   /**
-   * @brief Compress CSR matrix (sort indices and remove duplicates/zeros).
+   * @brief Compress a CSR matrix in pair form: sort the entries by row and column.
    * 
-   * Compresses the representation of the sparse matrix and sorts column indices
-   * within each row to ensure consistency (critical for binary search / merging).
+   * Converts the pair form (nz entries) to the compressed-row form (nz = -1), with the column indices of each row
+   * sorted (critical for binary search / merging).  Repeated entries are kept (see csr_compress_mod2()).
    *
    * @param mat Pointer to the CSR matrix to compress in-place.
    */ 
   void csr_compress(csr_t *mat);
+
+  /**
+   * @brief Compress a binary CSR matrix in pair form as csr_compress(), with the repeated entries summed mod 2.
+   *
+   * An entry (row, column) listed an even number of times is removed, one listed an odd number of times is kept once.
+   *
+   * @param mat Pointer to the CSR matrix to compress in-place (entries in range).
+   * @param dup If not NULL: the first position (row, column) listed more than once.
+   * @param ncancel If not NULL: the number of positions listed an even number of times (removed).
+   * @return The number of positions listed more than once.
+   */
+  int csr_compress_mod2(csr_t *mat, int_pair *dup, int *ncancel);
 
   /**
    * @brief Construct a CSR sparse matrix from an array of coordinate pairs.
@@ -430,6 +443,10 @@ extern "C" {
   /**
    * @brief Read a sparse matrix from a Matrix Market (.mtx) file into CSR format.
    * 
+   * Coordinate (sparse) or array (dense) format, integer or pattern, general or symmetric.  The entries are reduced
+   * mod 2: an entry listed more than once is the sum of its values mod 2 (with one warning on stderr), and an index
+   * out of range is an error.
+   *
    * @param fin Path to the Matrix Market file.
    * @param mat Destination CSR matrix (can be NULL).
    * @param transpose Set to 1 to transpose the matrix while reading.

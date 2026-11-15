@@ -89,7 +89,8 @@ harmonic Jensen and tighter Harris--FKG lower bounds that capture $82\%$ of the 
 exhaustively enumerated surface-code sub-DEM. Third, we prove that pairs of shared-hub triplets form minimal
 weight-4 degeneracies inducing weight-preserving $2 \leftrightarrow 2$ plaquette swaps, and introduce a
 deterministic $\Tc$-canonicalization paired with Good--Turing and Chao1/Chao2 unseen-species estimators that
-avoids premature stopping on the circuit DEMs of our bootstrap tests while reducing over-running on single-logical
+avoids premature stopping on the circuit DEMs of our bootstrap tests (whose hybrid trajectory used a wrapping window)
+while reducing over-running on single-logical
 topological DEMs. Fourth, we extend the analysis to three further inputs of \ttt{dist-m4ri}. In hook-extended CSS
 matrices and code-sized models, the CNOT-order hook chain of every check of weight $w$ splits it into $w - 2$ weight-3
 degeneracies, which provably span the entire degeneracy space even for BB, mitten, and 2BGA codes without weight-3
@@ -157,7 +158,8 @@ When transitioning from code-capacity CSS matrices ($n \sim 10^2$--$10^3$) to mu
     sets. Simultaneously, pairs of weight-3 degeneracies sharing a hub fault generate large families of
     equal-weight degenerate logical siblings, causing vector-level codeword-hit stopping criteria to either
     over-run substantially on single-logical topological codes or stop prematurely while missing logical fault
-    classes on high-rate qLDPC circuits.
+    classes on high-rate qLDPC circuits (in our bootstrap test, with a wrapping window;
+    Section~\ref{subsec:stopping_failures}).
 \end{enumerate}
 
 \paragraph{Purpose and pedagogical structure of this document.}
@@ -260,7 +262,8 @@ $S_a(P),\; C_P(a),\; \mathrm{sig}(a)$ &
   Pivot support~\eqref{eq:Sa_def}; circuit $\{a\} \cup S_a(P)$; $L 1_{C_P(a)}$~\eqref{eq:sig_def} &
   Sec.~\ref{subsec:isd_bg} \\
 $w_x = |S_x(P)|,\; l,\; \mathrm{bkey}(x)$ &
-  Pivot-support weight of $x \in J$; Stern window size; $l$-bit key & Sec.~\ref{subsec:isd_bg} \\
+  Pivot-support weight of $x \in J$; Stern window size; $l$-bit key & Secs.~\ref{subsec:isd_bg},
+  \ref{subsec:contraction} \\
 $\mathcal{M}(H),\; \cl(S)$ &
   Binary vector matroid on $[n]$; flat closure (span) of $S$~\eqref{eq:closure_def} &
   Def.~\ref{def:matroid} \\
@@ -1438,9 +1441,15 @@ Bucket-0 filter: in the column loop of \ttt{rw\_pairs\_step()} ($p = 2$), column
 draining the condensate of Theorem~\ref{thm:mis_push}(b) with no loss of weight-$d$ hits. The hypothesis of Part~(b)
 is also a deployment constraint: the filter is loss-free only if $p = 1$ candidates of weight up to $d_{\max} + 1$
 are contracted using the complete triplet list of Lemma~\ref{lem:min_det_bucket}, so it must be enabled together
-with contraction ($\Delta w_1 \ge 1$), never on its own.
+with contraction ($\Delta w_1 \ge 1$), never on its own. In \ttt{dist-m4ri}, the candidates are contracted only up to
+the weight $\min(d_{\max} + \Delta w_1, 64)$ (since version 0.17.1; $+\,dW$ when codewords are collected, and pair
+candidates up to $\min(d_{\max} + 1, 64)$), as early candidates on wide DEMs can have hundreds of columns and greedy
+contraction takes $O(w^3)$ work; above the cap $64$ the hypothesis of Part~(b) fails, and since version 0.17.2 the
+binary enables the filter in a step only while $d_{\max} + \Delta w_1 \le 64$ (\ttt{rw\_filters\_exact()}).
 
 \paragraph{Cache-resident contraction (\ttt{greedy\_shorten\_cw}).}
+In the prototype benchmark (Section~\ref{sec:benchmarks}), the contraction is the function \ttt{greedy\_shorten\_cw};
+in \ttt{dist-m4ri} it is \ttt{rw\_t3\_contract()}, called by \ttt{rw\_candidate()}.
 On startup, each $T = \{u, v, w\} \in \Tc$ is stored as its three ordered pairs $(u < v) \mapsto w$, $(u < w)
 \mapsto v$, $(v < w) \mapsto u$ in an open-addressed table of $2^{\lceil \log_2(6|\Tc| + 32) \rceil}$ slots of $12$
 bytes ($8$-byte key + $4$-byte value): $192\text{ KB}$ ($2^{14}$ slots) on \ttt{bb\_72\_simp} ($|\Tc| = 2{,}376$)
@@ -1506,8 +1515,9 @@ In dense RREF, every row operation updates all $n$ fault columns ($n \sim 16{,}0
 change of detector basis is completely specified by an $m \times m$ linear transformation $M$ on the $m$ detectors
 alone ($m \sim 400$--$2{,}700$). Physically, $M_{1..r, q}$ is the dual syndrome response (Green's function) telling
 us which pivot faults in $P$ cancel a unit excitation on detector $q$, and $\hat{\ell}_q$ is the logical observable
-flipped by that unit-detector recovery. Because an elementary circuit fault $c$ excites only $|R(c)| \approx 3$--$6$
-detectors, summing $\hat{\ell}_q$ and $\hat{b}_q$ over $q \in R(c)$ yields $\mathrm{sig}(c)$ and $\mathrm{bkey}(c)$
+flipped by that unit-detector recovery. Because an elementary circuit fault $c$ excites only a few detectors
+($|R(c)| \approx 3$--$7.5$ on average, Table~\ref{tab:d3_bias}), summing $\hat{\ell}_q$ and $\hat{b}_q$ over $q \in
+R(c)$ yields $\mathrm{sig}(c)$ and $\mathrm{bkey}(c)$
 in a few scalar XORs without maintaining an $m \times n$ matrix. The formal proof is given in
 Appendix~\ref{app:dual_proof}.
 
@@ -1600,7 +1610,9 @@ The twelve benchmarked variants are:
 \caption{Wall-clock discovery rate at the circuit distance $d$ (\ttt{hits/s} for \ttt{V0\_unif}, and speedup
 multipliers relative to \ttt{V0\_unif}; final column \ttt{wcnt/win} gives the speedup of \ttt{V6\_cnt\_win} over
 \ttt{V0\_win256}). Here \ttt{hits/s} counts all weight-$d$ candidate events; see Table~\ref{tab:bench_detail} for
-distinct-step hit counts (\ttt{hit\_st}) and unique vectors (\ttt{uniq}). On \ttt{dgross\_288} ($d = 18$), uniform
+distinct-step hit counts (\ttt{hit\_st}) and unique vectors (\ttt{uniq}). On \ttt{dgross\_288}, the rates are those of
+weight-18 codewords, the lightest found by these prototype runs (its circuit distance is at most $16$: a weight-16
+codeword was found later, and \ttt{qec\_cert} certifies $13 \le d \le 16$); uniform
 runs found $0$ hits in $400$ steps, so raw \ttt{hits/s} are shown; \ttt{(bound.)} indicates that uniform slab
 offsets $r_0 \in \{0, \dots, 2{,}416\}$ missed boundary-supported weight-18 codewords.}\label{tab:bench_summary}
 \smallskip
@@ -1722,9 +1734,9 @@ Section~\ref{sec:rw_mods}:
     (\ttt{V8\_subwin}):} Across the six DEMs with $m \ge 420$, \ttt{V2\_dual} / \ttt{V2\_push} step-rate ratios are
     $0.85\times$ (\ttt{mitten\_150}, $n/m = 14.1$), $0.83\times$ (\ttt{2bga\_102}, $n/m = 14.7$), $0.96\times$
     (\ttt{shyps\_225}, $n/m = 13.9$), $1.16\times$ (\ttt{bidir\_sNESENn}, $m = 1{,}442, n/m = 20.2$), $1.36\times$
-    (\ttt{bb\_72\_full}, $m = 432, n/m = 37.5$; $1.40\times$ over \ttt{V0\_unif}, $2{,}980$ vs.\ $2{,}192\text{
-    steps/s}$), and $2.66\times$ (\ttt{dgross\_288}, $m = 2{,}736$; $2.58\times$ over \ttt{V0\_unif}, $198.0$ vs.\
-    $74.4\text{ steps/s}$, where dense $m \times n$ spills L2/L3 cache). On \ttt{dgross\_288}, dense \ttt{V7\_hyb\_lo}
+    (\ttt{bb\_72\_full}, $m = 432, n/m = 37.5$; $2{,}980$ vs.\ $2{,}192\text{ steps/s}$), and $2.66\times$
+    (\ttt{dgross\_288}, $m = 2{,}736$; $198.0$ vs.\ $74.4\text{ steps/s}$, where dense $m \times n$ spills L2/L3
+    cache). On \ttt{dgross\_288}, dense \ttt{V7\_hyb\_lo}
     reaches $3.64\text{ hits/s}$ ($18$ hits across $11$ steps, $16.9\times$ over \ttt{V0\_win256}). For row-slab
     windows ($m > 320$), \ttt{V8\_subwin} / \ttt{V0\_win256} is $0.33\times$ on \ttt{bb\_72\_full} ($m = 432$),
     $0.96\times$ on \ttt{mitten\_150} ($m = 420$), $2.13\times$ on \ttt{2bga\_102} ($m = 561$), $48.9\times$ on
@@ -1831,7 +1843,8 @@ estimators rather than on a model of $\Pr(J)$. Second, the theorem fixes the sam
 uniform steps are independent draws from one law $\Pr(J)$---exactly the i.i.d.\ sampling occasions assumed by
 Good--Turing and Chao2---whereas window and slab steps sample different (for windows, more concentrated) laws, and
 pooling them would violate the identical-distribution assumption. Stage~\ref{stage:conv} therefore accumulates
-stopping incidences only from uniform steps (\ttt{cnt\_u}), while window and slab steps remain free to lower
+stopping incidences only from uniform steps (each class at most once per step), while window and slab steps remain
+free to lower
 $d_{\max}$. The exact DP~\eqref{eq:dp_recursion} ($O(r 2^r)$) is a validation tool rather than a production
 component: it is the reference for the $O(n - r)$ bounds of Corollary~\ref{cor:harmonic_hub}, and the closure
 form~\eqref{eq:prJ_closure} also yields the Monte Carlo estimator of Table~\ref{tab:infoset_corr} (rows 4a--4b) for
@@ -1854,7 +1867,8 @@ weight-3 fundamental circuits.
 Retain all notation of Theorem~\ref{thm:infoset_likelihood} for a cleaned DEM $(H, L)$ with basis $P$ ($|P| = r$)
 and information set $J = [n] \setminus P$. For any integer $s \ge 0$, let $h_s \coloneqq \sum_{j=1}^s \frac{1}{j}$
 ($h_0 \coloneqq 0$, $h_1 = 1$, $h_2 = \frac{3}{2}$, $h_s = \ln s + \gamma_{\mathrm{EM}} + O(s^{-1})$) denote the
-$s$-th harmonic number (written $h_s$ to avoid confusion with check submatrices $H_S$), and define the
+$s$-th harmonic number (written $h_s$ to avoid confusion with check submatrices $H_S$; in this subsection $h_s$ is
+never the column $h_s$ of $H$ of Section~\ref{subsec:matroids}), and define the
 \emph{Harmonic Jensen Score} and \emph{Harris--FKG Score} of $J$:
 \begin{align}
   \LH(J) &\coloneqq - \sum_{a \in J} h_{|S_a(P)|}, \label{eq:LH_def} \\
@@ -1950,7 +1964,10 @@ diagnostic of Stage~\ref{stage:conv}. Part~(b) needs only the popcounts $|S_a(P)
 $A^\top$, which \ttt{RW} already evaluates (in full in the column loop of \ttt{rw\_pairs\_step()}, and up to the
 current weight limit in the $p = 1$ scan, whose early exit would be skipped on logged steps), so $\LFKG(J)$ (and
 $\LH(J)$) can be accumulated in $O(n - r)$ additions from a lookup table of $\ln(1 + s)$, $0 \le s \le r$, without
-any extra elimination work. Logging running means separately over uniform and window steps compares how concentrated
+any extra elimination work (the binary logs it with any \ttt{rw\_opt} stage on the dense full-matrix steps with
+Stern pairs; not with the sparse dual of Stage~\ref{stage:dual}, which forms no rows of $A^\top$ with a zero logical
+syndrome outside the buckets, and not on slab steps). Logging running means separately over uniform and window steps
+compares how concentrated
 the two sampling laws are, and since $\LFKG(J) \le \ln \Pr(J)$,
 any step with $\LFKG(J) > -\ln\binom{n}{r}$ certifies that its basis is more probable than under the uniform-subset
 model behind \ttt{rw\_infoset\_find\_prob}. This sufficient condition is far from met in practice: the mean of
@@ -2119,7 +2136,7 @@ pairs as the generator of these moves in circuit DEMs and applying them for $\Tc
 Proposition~\ref{prop:plaquette_swap} powers the $\Tc$-plaquette canonicalizer $\mathrm{canon}_{\Tc}$ of
 Stage~\ref{stage:conv} (prototyped as \ttt{canon\_t3\_greedy} in \ttt{exp4\_convergence.py}). Part~(b) guarantees
 that every greedy step $c \mapsto c \triangle Q$ maps a minimum-weight codeword to another one in the same logical
-class $L 1_c$, so $\bar{c} = \mathrm{canon}_{\Tc}(c)$ never merges distinct logical classes: keying the uncapped
+class $L 1_c$, so $\bar{c} = \mathrm{canon}_{\Tc}(c)$ never merges distinct logical classes: keying the
 Zobrist coverage table of Stage~\ref{stage:conv} by $\bar{c}$ instead of the raw vector $c$ can only collapse
 degenerate siblings within a class, never hide a logical class. Part~(a) guarantees that each move exchanges exactly
 two columns for two others, and since the moves are generated by triplet pairs sharing a hub, they are found from the
@@ -2163,7 +2180,9 @@ In \ttt{dist-m4ri} v0.16.1 (\ttt{src/util\_io.c}), convergence monitoring alread
         components), tracking only the first $100$ minimum-weight vectors with pooled uniform+window hits triggers
         $\langle n \rangle \ge 5$ at mean step $6{,}493$ in $200/200$ bootstrap resamples---missing $35.6\%$ of the
         $883$ sampled-induced clusters on average, and missing at least one observed weight-6 logical class in
-        $177/200$ resamples ($88.5\%$).
+        $177/200$ resamples ($88.5\%$). (Caveat: this trajectory used a \emph{wrapping} window, which concentrates the
+        hits; with the non-wrapping window of Section~\ref{subsec:pr_regimes} neither rule stops early on
+        \ttt{bb\_72\_simp}. The hybrid windows of the \ttt{dist-m4ri} binary also wrap.)
     \end{itemize}
   \item \textbf{Analytical single-codeword binomial diagnostic (\ttt{rw\_infoset\_find\_prob}):} Classic
     ISD formulas~\cite{Leon1988,CanteautChabaud1998} implemented in \ttt{dist-m4ri}'s $P_1(w) + P_2(w)$ diagnostic
@@ -2186,15 +2205,17 @@ Section~\ref{subsec:good_turing}:
     repeatedly scan pairs $\{u_a, u_b\} \subseteq c$; using the $\Tc$ hub adjacency list, iterate over shared hubs
     $z$ with $\{u_a, v_a, z\}, \{u_b, v_b, z\} \in \Tc$ and $\{v_a, v_b\} \cap (c \setminus \{u_a, u_b\}) =
     \emptyset$; replace $c$ by the lexicographically smallest neighbor $(c \setminus \{u_a, u_b\}) \cup \{v_a,
-    v_b\} <_{\mathrm{lex}} c$ until reaching a local minimum $\bar{c}$. Because $\mathrm{canon}_{\Tc}(c)$ steps
+    v_b\} <_{\mathrm{lex}} c$ until reaching a local minimum $\bar{c}$ (the C code, \ttt{rw\_triplet.c}, stops after
+    at most $4w + 16$ replacements: the result is still deterministic and class-preserving, though not necessarily a
+    local minimum). Because $\mathrm{canon}_{\Tc}(c)$ steps
     directly across unsampled intermediate weight-$d$ siblings via $\Tc$, it can even merge components that are
     disconnected within an incomplete sample: in our pure $p = 1$ run on \ttt{bb\_72\_simp} ($1{,}281$ sampled
     vectors out of $\ge 1{,}524$), $\mathrm{canon}_{\Tc}$ yields $881$ canonical representatives versus $883$
     sampled-induced BFS components, and on \ttt{surf\_d5} it compresses $4{,}962$ sampled vectors to $109$ canonical
     representatives (versus $141$ sampled-induced BFS components).
-  \item \textbf{Uniform-step Good--Turing + Chao1/Chao2 stopping rule:} Maintain an uncapped 64-bit Zobrist hash
+  \item \textbf{Uniform-step Good--Turing + Chao1/Chao2 stopping rule:} Maintain a 64-bit Zobrist hash
     table of canonical representatives $\bar{c}$, accumulating stopping statistics \textbf{exclusively from
-    uniform steps} (\ttt{cnt\_u}, leaving window steps free to lower $w_{\min}$ without biasing coverage). Let
+    uniform steps} (leaving window steps free to lower $w_{\min}$ without biasing coverage). Let
     $C_{\mathrm{obs}} = |\{q : m_q^{(\mathrm{unif})} \ge 1\}|$, $N_{\mathrm{unif}} = \sum_q m_q^{(\mathrm{unif})}$,
     $f_1 = |\{q : m_q^{(\mathrm{unif})} = 1\}|$, and $f_2 = |\{q : m_q^{(\mathrm{unif})} = 2\}|$. Declare
     convergence at target \ttt{min\_hits} (default $5$) iff $N_{\mathrm{unif}} \ge 15$ and
@@ -2209,6 +2230,22 @@ Section~\ref{subsec:good_turing}:
     Chao2~\cite{Chao1987,ChiuWangWaltherChao2014} removes intra-step hit correlations).
 \end{enumerate}
 
+\paragraph{The rule as implemented in \texorpdfstring{\ttt{dist-m4ri}}{dist-m4ri}.}
+In the binary (\ttt{rw\_opt} bit 16, automatic for quantum codes with \ttt{min\_hits} $> 0$ and no fixed window,
+\ttt{rw\_canon\_converged()}), a class counts at most once per uniform step, so that all counts are step incidences:
+$N_{\mathrm{unif}}$ is the number of incidences, and $(f_1, f_2) = (Q_1^{\mathrm{inc}}, Q_2^{\mathrm{inc}})$ enter both
+$\hat{p}_{\mathrm{GT}}$ and $\hat{C}_0$. The thresholds depend on \ttt{min\_hits}: $N_{\mathrm{unif}} \ge \max(15,
+3\,\ttt{min\_hits})$ and $\varepsilon_{\mathrm{GT}} = \min(0.02, 3 e^{-\ttt{min\_hits}})$ (the values above for
+$\ttt{min\_hits} \le 5$), $\varepsilon_{\mathrm{Chao}} = 0.05$; the factor $(T_u - 1)/T_u$ of the bias-corrected
+Chao2 estimator is omitted. The classes are kept in a separate table, not in the codeword hash of the vector rule,
+with at most $2^{24}$ classes and $2^{24}$ raw codewords (then the vector rule $\langle n \rangle$ is used); codewords
+heavier than $64$ are their own canonical form. The rule has no fallback where the uniform steps miss $w_{\min}$: if
+no uniform step finds a codeword of the minimum weight (as on deep circuit DEMs, where the window steps find them,
+e.g., \ttt{dgross\_288} in Table~\ref{tab:t1}), then $C_{\mathrm{obs}} = 0$ and \ttt{min\_hits} never stops
+\ttt{RW}; since version 0.17.2 the binary says so in its status line and summary, shows the window-step codewords for
+information only, and keeps running to the step limit or the timeout (by design: no stop without uniform-step
+evidence).
+
 \begin{table}[htbp]
 \centering
 \caption{Comparison of a simplified minimum-weight-only vector rule (\ttt{cov\_cws = 100}, $\langle n \rangle \ge
@@ -2217,7 +2254,8 @@ step budget, with conditional mean stopping step and ``miss'' denoting $\ge 1$ m
 against the uniform-step $\Tc$-canonical Good--Turing / Chao1 rule~\eqref{eq:stopping_rule} across $200$ bootstrap
 resamples of a recorded pure $p = 1$ \ttt{RW} trajectory (\ttt{unif} = uniform, \ttt{hyb} = $50/50$ window/uniform,
 \ttt{canon} = greedy $\mathrm{canon}_{\Tc}$ class count, and $119L$ = observed nontrivial $L$-classes;
-\ttt{exp4\_convergence.py}).}\label{tab:conv_bench}
+\ttt{exp4\_convergence.py}). The hybrid trajectory of \ttt{bb\_72\_simp} used a wrapping window; with a non-wrapping
+window neither rule stops early there (Section~\ref{subsec:pr_regimes}).}\label{tab:conv_bench}
 \smallskip
 \scriptsize
 \setlength{\tabcolsep}{2.3pt}
@@ -2522,12 +2560,13 @@ two subregimes arise.
     $9$)~\cite{Lee2026BicycleRace}, unless sums of checks are lighter. Lemma~\ref{lem:min_det_bucket} then finds no
     triplet, $\Tc$-contraction never fires, the filter of Theorem~\ref{thm:contraction_dominance}(b) removes nothing,
     and $\mathrm{canon}_{\Tc}$ is the identity: Stages~\ref{stage:enum}, \ref{stage:contract}, and~\ref{stage:conv}
-    reduce, at negligible cost, to standard \ttt{RW} with raw-vector keying.
+    reduce, at negligible cost, to standard \ttt{RW} with raw-vector keying. If $w_{\deg} = 4$, the weight-4 elements
+    of $\Dc$ still support $3 \to 1$ shortening and $2 \leftrightarrow 2$ swaps (Theorem~\ref{thm:known_gen},
+    Proposition~\ref{prop:even_swaps}).
   \item If $w_{\deg} = 3$, as for the weight-3 gauge operators of subsystem codes such as SHYPS
     codes~\cite{Malcolm2025SHYPS} (whose bare-distance sector has the gauge group as $\Dc$), then $\Tc \neq \emptyset$
     and Sections~\ref{sec:anatomy}--\ref{sec:convergence} apply verbatim, with the span of $\Tc$ an empirical question
-    as for DEMs. If $w_{\deg} = 4$, then $\Tc = \emptyset$, but the weight-4 elements of $\Dc$ support $3 \to 1$
-    shortening and $2 \leftrightarrow 2$ swaps.
+    as for DEMs.
 \end{enumerate}
 In both subregimes, $G$ is known explicitly. Theorem~\ref{thm:known_gen} and Proposition~\ref{prop:even_swaps} show
 which parts of the triplet machinery carry over when $\Tc$ is replaced by a list $\Gc$ of known generators of any
@@ -2542,7 +2581,8 @@ and changes the weight by $w_g - 2|C \cap g|$; it is a \emph{shortening move of 
 1$ if $|C \cap g| > w_g/2$. Equivalently, it replaces the $|C \cap g|$ shared positions by the $w_g - |C \cap g|$
 others: $2 \to 1$ for $w_g = 3$, $3 \to 1$ for $w_g = 4$, $3 \to 2$ for $w_g = 5$, and $4 \to 2$ for $w_g = 6$ at the
 smallest shortening overlap. \emph{Steepest-descent shortening} over $\Gc$ repeatedly applies a shortening move of
-maximal gain (ties broken lexicographically) until none exists. As in Section~\ref{subsec:isd_bg}, $P$ is a pivot
+maximal gain (ties broken by the smallest index of the generator in the list $\Gc$, the row of $G$ in the C code)
+until none exists. As in Sections~\ref{subsec:isd_bg} and~\ref{subsec:contraction}, $P$ is a pivot
 basis with $J = [n] \setminus P$, $C_P(a) = \{a\} \cup S_a(P)$, $\mathrm{sig}(a) = L 1_{C_P(a)}$, $w_a = |S_a(P)|$,
 $\mathrm{wt}_1(y) = |C_P(y)|$, and $C_2(x, y) = C_P(x) \triangle C_P(y)$ with $\mathrm{wt}_2(x, y) = |C_2(x, y)|$. A
 column $x \in J$ with $C_P(x) \in \Gc$ is a \emph{realized generator}.
@@ -2650,8 +2690,17 @@ CSS run $G$ is given (\ttt{finG}), so \ttt{dist-m4ri} can build at no enumeratio
 (the realized-generator test is a single lookup of the Zobrist hash of $C_P(x)$) and the column-to-row incidence
 lists used for shortening (a candidate $C$ costs $\sum_{u \in C} |\{g \ni u\}|$ overlap increments, i.e., $3|C|$ for
 BB codes). The weight cap must be raised from $d_{\max} + 1$ to $d_{\max} + w_{\Gc} - 2$ (e.g., $d_{\max} + 4$ for
-weight-6 checks and $d_{\max} + 7$ for weight-9 checks). When $w_{\deg} \ge 4$, every column with $\mathrm{sig}(x) =
-0$ has $w_x \ge 3$, so the triplet filter of Stage~\ref{stage:contract} is vacuous, and only realized generators may be
+weight-6 checks and $d_{\max} + 7$ for weight-9 checks). Two conditions of Part~(c) shape the implementation in
+\ttt{dist-m4ri} (\ttt{rw\_opt} bit 2, explicit only). First, the hypothesis is about the first steepest-descent move
+on $C_P(y)$ itself: if a $\Tc$-contraction (bit 1) acts first, it can remove a position of $C_P(y) \cap g$ and lower
+the gain of the realized generator $g$ below $\Delta$, so the guarantee is lost; with bits 1 and 2 the binary
+therefore runs the descent over $\Gc$ first and then the contraction, alternating (since version 0.17.2; with the
+contraction first, the explicit mask \ttt{rw\_opt=3} recorded $933$ instead of $980$ minimum-weight hits in $1{,}000$
+steps on a small $[[8, 1, 3]]$ example). Second, the shortening is capped at $\min(d_{\max} + w_{\Gc} - 2, 64)$
+(with $\max(8, w_{\Gc} - 2)$ when bit 1 is on, and $+\,dW$ when codewords are collected), so the filter is enabled
+only while that weight is at most $64$; it is also off when codewords are collected. When $w_{\deg} \ge 4$, every
+column with $\mathrm{sig}(x) = 0$ has $w_x \ge 3$, so the triplet filter of Stage~\ref{stage:contract} is vacuous, and
+only realized generators may be
 filtered; one of them lands in Stern's Bucket~0 with probability $\binom{r - w_g + 1}{l} / \binom{r}{l}$, the
 generalization of~\eqref{eq:bucket0_prob}. Part~(c) also forbids a tempting shortcut: extending the filter of
 Stage~\ref{stage:contract} to all columns with $\mathrm{sig}(x) = 0$ and $w_x = 3$ is loss-free only with a complete
@@ -2733,8 +2782,8 @@ sector besides its $225$ gauge rows ($\mathrm{GAP} = 0$); the merged surface cod
 $8$ rows. With $\Tc = \emptyset$, every \ttt{RW} variant is within noise of \ttt{V0\_unif} ($0.7\times$--$1.3\times$),
 \ttt{V2\_dual} is slower ($0.36\times$--$0.73\times$, except $1.4\times$ on the small surface code), and \ttt{win=256}
 is neutral for $n \le 256$ and erratic beyond ($0.37\times$--$1.56\times$ in hits per step and
-$0.37\times$--$1.03\times$ in distinct codewords); on SHYPS, $\Tc$-contraction gives $245\times$--$366\times$ in
-\ttt{hits/s}. The prototypes of
+$0.37\times$--$1.03\times$ in distinct codewords); on SHYPS, $\Tc$-contraction gives $266\times$--$366\times$ in
+\ttt{hits/s} (the $245\times$ of the slab variant \ttt{V8\_subwin} includes Stage~\ref{stage:slab}). The prototypes of
 Theorem~\ref{thm:known_gen} behave as predicted. Realized generators make up $46\%$--$99\%$ of the columns with
 $\mathrm{sig}(x) = 0$ ($26\%$ on SHYPS, where the non-row weight-3 elements supply about half of the rest), close to
 the rate predicted by a uniform information set, and every weight-$d$ Bucket-0 hit with a realized generator is
@@ -2754,7 +2803,7 @@ largely cancel, for instance sums over a subgroup or its cosets. Such elements f
 Theorem~\ref{thm:known_gen} holds for every list $\Gc \subseteq \Dc \setminus \{0\}$, so they can be appended to
 $\Gc$, and being lighter than the checks they do not raise the cap $d_{\max} + w_{\Gc} - 2$; even-weight ones also
 enter the list $\mathcal{E}$ of Proposition~\ref{prop:even_swaps}. Weight-3 elements are found automatically by
-Lemma~\ref{lem:min_det_bucket}, which moves the sector to regime R4 with $w_{\deg} = 3$ and switches the triplet
+Lemma~\ref{lem:min_det_bucket}, which then gives the sector $w_{\deg} = 3$ (still regime R4) and switches the triplet
 stages on. Heavier ones are found only by an explicit low-weight search of $\operatorname{rowspan}(G)$, such as the
 meet-in-the-middle count and information-set search behind Table~\ref{tab:static_css}, or when they are supplied as
 extra rows of \ttt{finG}.
@@ -2913,7 +2962,9 @@ keeps its effect at $T = 1$ (\ttt{V4\_cnt\_uni} $3.7\times$--$45\times$ over \tt
 on the three smallest DEMs (\ttt{surf\_d3}, \ttt{surf\_d5}, and the color code). Windows behave as the column order
 dictates: in hits per step at equal steps, they are neutral for $n \le 256$ (identical law) and on \ttt{bb\_72}
 ($1.07\times$, $n = 432$), but help on the larger DEMs (mitten $6.5\times$, \ttt{shyps\_225} $33\times$, and
-\ttt{dgross\_288}, where only window steps found weight-18 codewords), and \ttt{V6\_cnt\_win} is the best variant there
+\ttt{dgross\_288}, where only window steps found weight-18 codewords, the lightest in these runs; the row slabs of the
+binary later found weight $16$, and \ttt{qec\_cert} certifies $14 \le d \le 16$), and \ttt{V6\_cnt\_win} is the best
+variant there
 ($23\times$ on mitten and $1{,}075\times$ on \ttt{shyps\_225} over \ttt{V0\_unif} in \ttt{hits/s}). The same DEMs with
 randomly permuted columns lose the gain (mitten $6.52\times \to 0.69\times$, SHYPS $32.95\times \to 1.37\times$,
 \ttt{dgross\_288} $47 \to 0$ hits): the $T = 1$ window gain comes from the spatial order of the columns within the
@@ -3040,10 +3091,11 @@ circuits of $\mathcal{M}(H)$: triangles and $H$-triangles in regimes R1--R3, and
 operators of weight at least $\min(w_{\deg}, d) \ge 4$ when $\Tc = \emptyset$.
 
 \paragraph{Termination criteria across regimes.}
-\ttt{dist-m4ri} combines three stopping signals, and each rests on an assumption that the regimes violate to different
-degrees.
+\ttt{dist-m4ri} combines three convergence signals (a diagnostic and two stopping rules), and each rests on an
+assumption that the regimes violate to different degrees.
 \begin{enumerate}[label=(\roman*)]
-  \item \emph{Analytical estimate} (\ttt{rw\_infoset\_find\_prob}): one isolated codeword, information sets drawn from
+  \item \emph{Analytical estimate} (\ttt{rw\_infoset\_find\_prob}; printed as a diagnostic, never used to stop): one
+    isolated codeword, information sets drawn from
     $U_r$, and no contraction. It is wrong by Corollary~\ref{cor:kl_concentration}(c) in every regime; it ignores the
     sibling cloud of the class (a factor up to $M_{\mathrm{eff}}$, large wherever plaquette or half-overlap moves
     abound, Proposition~\ref{prop:even_swaps}(b)), the ambush repairs of Stage~\ref{stage:contract} (which add success
@@ -3058,13 +3110,15 @@ degrees.
     $\mathcal{E}$ in regime R4) and i.i.d.\ sampling occasions (uniform steps, Theorem~\ref{thm:infoset_likelihood});
     both are available in all four regimes, with $\mathrm{canon}_{\Tc}$ in R1--R3 and in R4 with $w_{\deg} = 3$, and
     $\mathrm{canon}_{\mathcal{E}}$ (even rows of $G$, even sums of two rows, or extra light even elements of $\Dc$) in
-    R4 with $w_{\deg} \ge 4$.
+    R4 with $w_{\deg} \ge 4$. (The C code, \ttt{rw\_opt} bit 16, uses the even rows of $G$ only: on a code whose rows
+    of $G$ all have odd weight, $\mathrm{canon}_{\mathcal{E}}$ is the identity, and the classes are raw vectors.)
 \end{enumerate}
 
 \paragraph{Measurements across regimes.}
 Table~\ref{tab:regime_termination} compares the four regimes on common instances (Part~4 of \ttt{exp5\_regimes.py};
 $p = 1$ \ttt{RW} with uniform steps, alternated with non-wrapping \ttt{win=256} steps for $n \ge 500$, i.e., on
-\ttt{bb\_72\_simp} and the mitten model only; $200$ bootstrap resamples of the step sequence). Five observations follow.
+\ttt{bb\_72\_simp} and the mitten model only; the hybrid windows of the binary wrap around the last column; $200$
+bootstrap resamples of the step sequence). Five observations follow.
 \begin{enumerate}[label=(\arabic*)]
   \item \emph{Concentration tracks realized short circuits.} $\kappa$ is $1.7$--$4.2$ nats on static codes with
     $w_{\deg} \ge 4$, except $6.1$ on \ttt{2bga\_288\_8} and $12.4$ on \ttt{2bga\_288\_4}, whose $13$ and $23$ realized
@@ -3150,7 +3204,9 @@ apply in each regime, and the results that justify each entry.
 \centering
 \caption{Applicability of the pipeline stages by input regime (R1: multi-round DEMs; R2: $T = 1$ DEMs; R3: extended
 CSS matrices and code-sized models; R4: static CSS codes, split by the degeneracy weight $w_{\deg}$). ``On'': run by
-default; ``gate'': run only if the stated test passes; ``off'': skip.}\label{tab:stage_matrix}
+default; ``gate'': run only if the stated test passes; ``off'': skip; ``expl.'': only on request in \ttt{dist-m4ri}
+(\ttt{rw\_opt} bits 2 and 4), which departs from the proposals here as described in
+Section~\ref{sec:roadmap}.}\label{tab:stage_matrix}
 \smallskip
 \scriptsize
 \setlength{\tabcolsep}{3.0pt}
@@ -3162,9 +3218,11 @@ default; ``gate'': run only if the stated test passes; ``off'': skip.}\label{tab
 Stage & R1 ($T \ge 2$) & R2 ($T = 1$) & R3 (extended) & R4, $w_{\deg} = 3$ & R4, $w_{\deg} \ge 4$ \\
 \midrule
 1: $\Tc$ enumeration & on & on & on (matrix input) & on & on (returns $\emptyset$) \\
-2: contraction + filter & on & on & on & on & vacuous; $\Gc$-shortening (Thm.~\ref{thm:known_gen}) \\
-3: row-slab windows & gate ($m \ge 600$) & off ($m = 2 m_{\mathrm{meas}}$) & off (no time axis) & off & off \\
-4: sparse-dual RREF & gate (L2 spill, $n/m \ge 20$) & off (cache) & off (cache, $n/m \le 9$) & off & off \\
+2: contraction + filter & on & on & on & on & vacuous; $\Gc$-shortening (Thm.~\ref{thm:known_gen}; expl.) \\
+3: row-slab windows & gate ($m \ge 600$) proposed; expl.\ (fewer hits/s in C) & off ($m = 2 m_{\mathrm{meas}}$);
+  expl.\ (can help) & off (no time axis) & off & off \\
+4: sparse-dual RREF & gate ($m \times n > 512$~KiB, $n/m \ge 20$ or $m \ge 1{,}400$) & off (cache) & off (cache,
+  $n/m \le 9$) & off & off \\
 5: canonical stopping & on ($\mathrm{canon}_{\Tc}$) & on ($\mathrm{canon}_{\Tc}$) & on ($\mathrm{canon}_{\Tc}$) &
   on ($\mathrm{canon}_{\Tc}$) & $\mathrm{canon}_{\mathcal{E}}$ (Prop.~\ref{prop:even_swaps}) \\
 \ttt{win=256} windows & on (hybrid) & on for $n \gtrsim 10^3$ (circuit column order) & off (ext.); DEM-ordered models
@@ -3201,12 +3259,16 @@ and the dispatch rules after the list select the stages for each input regime of
     Stages~\ref{stage:contract}, \ref{stage:slab}, and~\ref{stage:conv}.
   \item\label{stage:contract} \textbf{Post-elimination greedy $2 \to 1$ / $3 \to 0$ contraction + Stern $w_x \le 2$
     Bucket-0 pruning:} Hoist 64-bit reduced-logical syndrome evaluation (\ttt{srows}) ahead of the $p = 1$ scan so
-    $\mathrm{sig}(y) \neq 0$ is tested in $O(1)$ before unpacking support bits; run \ttt{greedy\_shorten\_cw} on $p
+    $\mathrm{sig}(y) \neq 0$ is tested in $O(1)$ before unpacking support bits; run the greedy contraction (the
+    prototype's \ttt{greedy\_shorten\_cw}) on $p
     = 1$ candidates with $|C_P(y)| \le d_{\max} + 8$ and omit all $\mathrm{sig}(x) = 0, w_x \le 2$ columns from
     Stern $p = 2$ buckets (Theorem~\ref{thm:contraction_dominance}), yielding a $2.8\times$--$20.2\times$ wall-clock
-    \ttt{hits/s} speedup over windowed \ttt{RW}. In CSS runs, where the generators $G$ are given, the same step can
-    use the list $\Gc$ of Theorem~\ref{thm:known_gen}: steepest-descent shortening up to $d_{\max} + w_{\Gc} - 2$, and
-    filtering of realized generators only. \emph{Justification:} Theorem~\ref{thm:ambush} identifies the pivot-pair
+    \ttt{hits/s} speedup over windowed \ttt{RW} in the prototypes. In CSS runs, where the generators $G$ are given, the
+    same step can use the list $\Gc$ of Theorem~\ref{thm:known_gen}: steepest-descent shortening up to $d_{\max} +
+    w_{\Gc} - 2$, and filtering of realized generators only. The C implementation caps both weights at $64$, as early
+    candidates on wide DEMs are heavy, and therefore enables the filters only while $d_{\max} + 8$ (respectively
+    $d_{\max} + w_{\Gc} - 2$) is at most $64$; with both lists it runs the descent over $\Gc$ before the contraction
+    (Theorem~\ref{thm:known_gen}(c)). \emph{Justification:} Theorem~\ref{thm:ambush} identifies the pivot-pair
     ambushes that the contraction repairs (Theorem~\ref{thm:contraction_dominance}(a)), and
     Theorem~\ref{thm:mis_push}(b) quantifies the Bucket-0 condensate that the filter removes without loss of
     weight-$d$ hits (Theorem~\ref{thm:contraction_dominance}(b), valid only with contraction enabled);
@@ -3222,22 +3284,35 @@ and the dispatch rules after the list select the stages for each input regime of
     \emph{Justification:} Theorem~\ref{thm:mis_push}(a) makes slab steps free of the ambushes of
     Theorem~\ref{thm:ambush} whenever the MIS spans the slab, and the survival-versus-speed accounting of
     Proposition~\ref{prop:mis_drop}(b) explains why restricting the candidates to a slab pays off on deep DEMs
-    whereas MIS Drop does not.
+    whereas MIS Drop does not. \emph{In \ttt{dist-m4ri}} (\ttt{rw\_opt} bit 4) the slabs (of $\min(320, m/2)$
+    detectors, boundary slabs with probability $15\%$ each) are explicit only: on the window steps of deep circuit
+    DEMs they found fewer minimum-weight codewords per second than the index windows with Stage~\ref{stage:contract}
+    ($0.43\times$ on \ttt{shyps\_225}, $0.6\times$ on \ttt{gross\_144}); on the single-round double-gross DEM they
+    found weight $16$ in all of $10$ runs, where the automatic mask found $17$--$18$, but slab steps often re-find
+    the same few codewords (e.g., $4$ codewords hit $942$ times on \ttt{mitten\_150} at $T = 1$), which inflates the
+    vector statistic $\langle n \rangle$ (the canonical rule of Stage~\ref{stage:conv} ignores window steps).
   \item\label{stage:dual} \textbf{Sparse-Dual $m \times m$ Inverse RREF (when $m \times n$ spills L2 cache and $n/m
     \ge 20$ or $m \ge 1{,}400$):} Across $m \ge 420$, \ttt{V2\_dual} / \ttt{V2\_push} step rate spans
     $0.83\times$--$2.66\times$ ($0.83\times$--$0.96\times$ at $m \le 600, n/m < 15$, versus $1.16\times$ on
     \ttt{bidir\_sNESENn}, $1.36\times$ on \ttt{bb\_72\_full}, and $2.66\times$ on \ttt{dgross\_288}); an empirical
     heuristic gate requiring L2 cache spill together with $n/m \ge 20$ or $m \ge 1{,}400$ captures the
-    $1.16\times$--$2.66\times$ speedups on our benchmark set while avoiding cache-resident overhead.
+    $1.16\times$--$2.66\times$ speedups on our benchmark set while avoiding cache-resident overhead (in
+    \ttt{dist-m4ri}, \ttt{rw\_opt} bit 8, ``L2 spill'' is the fixed test $m \lceil n/64 \rceil \cdot 8 > 512$~KiB for
+    the dense matrix, for quantum inputs with at most $64$ rows of $L$, also when the bit is given explicitly).
     \emph{Justification:} Proposition~\ref{prop:sparse_dual} guarantees identical pivots, fundamental circuits,
     $\mathrm{sig}$, and $\mathrm{bkey}$, so the dispatch is invisible to all other stages and leaves $\Pr(J)$
     unchanged.
   \item\label{stage:conv} \textbf{Calibrated $\Tc$-canonical Good--Turing / Chao1--Chao2 convergence reporting:} Key
-    the uncapped codeword hash table by $\bar{c} = \mathrm{canon}_{\Tc}(c)$ (by $\mathrm{canon}_{\mathcal{E}}(c)$ of
+    a coverage table by $\bar{c} = \mathrm{canon}_{\Tc}(c)$ (by $\mathrm{canon}_{\mathcal{E}}(c)$ of
     Proposition~\ref{prop:even_swaps} when $\Tc = \emptyset$ and $G$ is given), accumulate stopping counts from
-    uniform-step incidences (\ttt{cnt\_u}), gate \ttt{min\_hits} convergence on~\eqref{eq:stopping_rule}, and
+    uniform-step incidences (each class at most once per uniform step), gate \ttt{min\_hits} convergence
+    on~\eqref{eq:stopping_rule}, and
     optionally log the zero-cost Harris--FKG Score $\LFKG(J)$~\eqref{eq:LFKG_def} over uniform steps as a correlate
-    of $\ln \Pr(J)$. \emph{Justification:} Propositions~\ref{prop:plaquette_swap} and~\ref{prop:even_swaps} make the
+    of $\ln \Pr(J)$. (In \ttt{dist-m4ri}, \ttt{rw\_opt} bit 16: a separate table of at most $2^{24}$ classes and raw
+    codewords of the minimum weight, beyond which the vector rule is used; the thresholds and the missing fallback of
+    Section~\ref{subsec:gt_chao_gauge}; the Harris--FKG line is printed with any stage, over the dense full-matrix
+    steps with Stern pairs, uniform and window steps separately, not with Stage~\ref{stage:dual} and not on slab
+    steps.) \emph{Justification:} Propositions~\ref{prop:plaquette_swap} and~\ref{prop:even_swaps} make the
     keys class-preserving; Theorem~\ref{thm:infoset_likelihood} shows that only uniform steps are i.i.d.\ draws from
     one fixed law, and Corollary~\ref{cor:kl_concentration} that this law differs from the uniform-subset model behind
     \ttt{rw\_infoset\_find\_prob} for every binary matrix of rank $2 \le r \le n - 2$; and
@@ -3259,7 +3334,8 @@ quantities that are known after the input is loaded and Stage~\ref{stage:enum} h
     prototypes, shortening supplies most of the weight-$d$ hits on several static codes ($272$ of $296$ on
     \ttt{2bga\_288\_4}) but few on others ($240$ of $4{,}534$ on mitten; Table~\ref{tab:static_css}), at a cost of
     $\sum_{u \in C} |\{g \ni u\}|$ overlap increments per candidate; make it the default for CSS runs once a C
-    implementation confirms the wall-clock gain. Never filter columns with $\mathrm{sig}(x) = 0$ and $w_x \ge 3$ whose
+    implementation confirms the wall-clock gain (the C implementation, \ttt{rw\_opt} bit 2, measured none, so it stays
+    explicit). Never filter columns with $\mathrm{sig}(x) = 0$ and $w_x \ge 3$ whose
     fundamental circuits are not in $\Gc$.
   \item\label{disp:windows} \textbf{Windows only where the column order is local.} Keep the hybrid \ttt{win=256} steps
     for DEMs whose columns are in circuit order: for $T \ge 2$ (where they exploit temporal locality) and for $T = 1$
@@ -3271,13 +3347,53 @@ quantities that are known after the input is loaded and Stage~\ref{stage:enum} h
     Stage~\ref{stage:slab} on a DEM with $m \ge 600$ and $T \ge 2$, and Stage~\ref{stage:dual} on an L2 spill of the
     dense $m \times n$ matrix together with $n/m \ge 20$ or $m \ge 1{,}400$. Both gates fail for $T = 1$ DEMs,
     extended matrices, and static codes of the sizes considered here (Lemma~\ref{lem:single_cycle},
-    Proposition~\ref{prop:hook_chain}(d)).
+    Proposition~\ref{prop:hook_chain}(d)). (The C implementation keeps the slabs explicit only, as their gain was not
+    confirmed on deep DEMs but appeared on a $T = 1$ DEM; see Stage~\ref{stage:slab}.)
   \item\label{disp:stop} \textbf{One stopping rule, regime-specific keys.} Key the coverage table by
     $\mathrm{canon}_{\Tc}$ when $\Tc \neq \emptyset$, by $\mathrm{canon}_{\mathcal{E}}$ when $\Tc = \emptyset$ and $G$
     is given, and by raw vectors otherwise; accumulate counts from uniform steps only; and report
     \ttt{rw\_infoset\_find\_prob} as a model-based diagnostic, never as a stopping rule
     (Corollary~\ref{cor:kl_concentration}(c)).
 \end{enumerate}
+
+\paragraph{Implementation in \texorpdfstring{\ttt{dist-m4ri}}{dist-m4ri} 0.17.x.}
+The stages are selected by the bitmask \ttt{rw\_opt} of the binary (default $-1$: automatic; $0$: none, the search of
+version 0.16.1), only for full-matrix \ttt{RW} (\ttt{ksub=0}, \ttt{steps} $> 0$; the automatic mask needs \ttt{steps}
+$> 2$), and for quantum inputs (a matrix $L$) except bit 4. The automatic mask follows D1--D5 except where noted.
+\begin{itemize}
+  \item Bit 1 (Stages~\ref{stage:enum} and~\ref{stage:contract} with $\Tc$; D1, automatic): the enumeration of
+    Lemma~\ref{lem:min_det_bucket} runs once before the \ttt{RW} threads start, and its time counts in the timeout
+    (since version 0.17.2; before, the clock started after it); it is
+    skipped above a budget of $5 \cdot 10^7$ hash probes (about one second) or if $6|\Tc| > 2^{30}$, and it also
+    builds the triplet graph $G_3$ (about $0.75$~MiB more on \ttt{dgross\_288}). The contraction is capped at
+    $\min(d_{\max} + 8, 64)$ for single candidates and $\min(d_{\max} + 1, 64)$ for pairs ($+\,dW$ when collecting),
+    and the Stern filter is on only while $d_{\max} + 8 \le 64$ (Theorem~\ref{thm:contraction_dominance}); a
+    shortened candidate which is reducible is replaced by an irreducible part.
+  \item Bit 2 (the $\Gc$-shortening and filter of Theorem~\ref{thm:known_gen}, D2): explicit only, since no
+    wall-clock gain was measured in C; $\Gc$ is the rows of $G$ (no search of $\operatorname{rowspan}(G)$ for lighter
+    elements), the descent runs before the contraction, and the filter is off when codewords are collected. The key
+    $\mathrm{canon}_{\mathcal{E}}$ uses the even rows of $G$ automatically with bit 16.
+  \item Bit 4 (Stage~\ref{stage:slab}, D4): explicit only (see Stage~\ref{stage:slab}); DEMs in time order with
+    \ttt{kwin=0}, not with sorted rows.
+  \item Bit 8 (Stage~\ref{stage:dual}, D4): automatic with the 512~KiB test above and $n \ge 20 m$ or $m \ge 1{,}400$,
+    for at most $64$ rows of $L$; it changes no information set, but needs less memory per thread, so that the memory
+    throttling allows more \ttt{RW} threads; the binary polls its stop flags in the column loops (since 0.17.1).
+  \item Bit 16 (Stage~\ref{stage:conv}, D5): automatic for quantum codes with \ttt{min\_hits} $> 0$ and no fixed window
+    (\ttt{kwin} $\le 0$); also explicit only with \ttt{min\_hits} $> 0$. The codewords of a step are recorded once at
+    its end. The rule as implemented and its inactivity without uniform-step codewords of the minimum weight are
+    described in Section~\ref{subsec:gt_chao_gauge}.
+  \item Bit 32 (no stage here): with codewords collected (\ttt{outC}, \ttt{maxC}), the codewords found are expanded
+    by $\Tc$ before the export ($2 \leftrightarrow 2$ exchanges across two triplets with a common column and $1 \to 2$
+    splits, up to the weight $w_{\min} + dW$, at most $2^{22}$ codewords); the Stern filter of bit 1 is used when
+    collecting only together with this expansion, meant to restore the codewords which the filter skips. The notes
+    prove the filter loss-free for the weight only (Theorem~\ref{thm:contraction_dominance}(b)); a proof that the
+    expansion restores every skipped codeword is not given.
+  \item Windows (D3): the hybrid index windows of \ttt{win\_hyb} columns ($256$ for a DEM, $512$ for matrices) on
+    every other step, for \ttt{kwin=0} and $n \ge 500$, wrap around the last column (unlike the non-wrapping windows
+    of the prototypes); with \ttt{rw\_opt} $\neq 0$ they are used only for DEMs (\ttt{fdem}) or with
+    \ttt{win\_hyb} $> 0$, not for matrices, also when no stage applies; code-sized models given as matrices thus get
+    no windows by default.
+\end{itemize}
 
 \appendix
 

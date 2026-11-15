@@ -29,7 +29,7 @@ dist_m4ri_old: dist_rw.c dist_m4ri.h dist_cc.h util_io.o util_m4ri.o mmio.o dist
 distfork: dist_m4ri
 	ln -sf dist_m4ri distfork
 
-util_m4ri.o: util_m4ri.c util_m4ri.h mmio.h util_hash.h makefile 
+util_m4ri.o: util_m4ri.c util_m4ri.h mmio.h makefile 
 	${CC} ${CFLAGS} -c -o util_m4ri.o $<  
 
 util_io.o: util_io.c util_io.h util_m4ri.h mmio.h util_hash.h makefile 
@@ -56,7 +56,7 @@ tags:
 
 
 veryclean: clean
-	rm -f dist_m4ri dist_m4ri_old distfork *.exe 
+	rm -f dist_m4ri dist_m4ri_old distfork *.exe dist_m4ri.zip
 
 src = dist_m4ri.c dist_rw.c dist_cc.c util_io.c util_m4ri.c mmio.c rw_triplet.c dist_m4ri.h dist_cc.h util_io.h \
       util_m4ri.h rw_triplet.h util_hash.h mmio.h sort.h uthash.h makefile

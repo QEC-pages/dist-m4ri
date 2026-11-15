@@ -373,6 +373,26 @@ int main(int argc, char **argv){
             p->rw_opt);
     p->rw_opt = 0;
   }
+  { /* the other options of dist_m4ri which this single-threaded legacy binary ignores (given non-default values) */
+    char buf[256] = "";
+    size_t len = 0;
+#define OLD_IGNORED(cond, ...) \
+    if ((cond) && len < sizeof(buf)) len += (size_t)snprintf(buf + len, sizeof(buf) - len, __VA_ARGS__)
+    OLD_IGNORED(p->threads != 0, " threads=%d", p->threads);
+    OLD_IGNORED(p->timeout != 60.0, " timeout=%g", p->timeout);
+    OLD_IGNORED(p->nothrottle != 0, " nothrottle=%d", p->nothrottle);
+    OLD_IGNORED(p->chunk_size != 0, " chunk_size=%d", p->chunk_size);
+    OLD_IGNORED(p->dexp != 0, " dexp=%d", p->dexp);
+    OLD_IGNORED(p->dstop != 0, " dstop=%d", p->dstop);
+    OLD_IGNORED(p->cc_prune != 1, " cc_prune=%d", p->cc_prune);
+    OLD_IGNORED(p->pairs != -1, " pairs=%d", p->pairs);
+#undef OLD_IGNORED
+    if (len > 0)
+      fprintf(stderr, "# WARNING: ignored by dist_m4ri_old (options of dist_m4ri only):%s\n", buf);
+    if ((p->method & 2) && (p->wmax == MAX_W - 1) && (p->dmax <= 0))
+      fprintf(stderr, "# WARNING: dist_m4ri_old has no timeout: CC runs up to the weight %d unless a codeword is "
+              "found (give wmax or dmax)\n", MAX_W - 1);
+  }
 
   if (p->finC) {
     nzlist_read(p->finC, p);
