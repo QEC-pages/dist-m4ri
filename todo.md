@@ -272,9 +272,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     candidate is formed; greedy $2 \to 1$ / $3 \to 0$ contraction of the $p = 1$ candidates of weight at most
     $\min(d_{\max} + 8, 64)$ and of the pair candidates up to $\min(d_{\max} + 1, 64)$ (0.17.1 caps shortening at
     `RW_SHORTEN_WMAX = 64` so heavy initial candidates do not incur $O(w^3)$ scans); and skip the columns with
-    $\mathrm{sig}(x) = 0$, $w_x \le 2$ in the buckets of `rw_pairs_step()` (Stern Bucket-0 filter, loss-free only
-    together with the contraction: Thms. 1–3, Secs. 4.1–4.3; since 0.17.2 only while $d_{\max} + 8 \le 64$, below the
-    cap). Prototypes: $2.8\times$–$20.2\times$ the minimum-weight hits per second of windowed RW (Sec. 5). With `finG`
+    $\mathrm{sig}(x) = 0$, $w_x \le 2$ in the buckets of `rw_pairs_step()` (Stern Bucket-0 filter, loss-free for the
+    distance only together with the contraction: Thms. 1–3, Secs. 4.1–4.3; since 0.17.2 only while
+    $d_{\max} + 8 \le 64$, plus $\mathrm{dW}$ when collecting, below the cap; when collecting codewords, active only
+    with bit `0x20`, which restores the codewords removed through $2 \leftrightarrow 2$ exchanges and $1 \to 2$ splits,
+    but not those using a column identical to a pivot column in matrices with identical columns, C1-14). Prototypes:
+    $2.8\times$–$20.2\times$ the minimum-weight hits per second of windowed RW (Sec. 5). With `finG`
     (D2): steepest-descent shortening by the rows of $G$ up to weight $\min(d_{\max} + w_G - 2, 64)$, since 0.17.2
     before the $\mathcal{T}_3$ contraction (with `0x03`, contracting first lost about 5% of the minimum-weight hits on a
     constructed $[[8,1,3]]$ code, against the loss-free $G$ filter: TEX2-11 of the 0.17.1 review), and filtering of
@@ -351,9 +354,19 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
        to $d + \mathrm{dW}$ (recovers all $1 \to 2$ triplet expansions omitted by Stern Bucket-0 pruning).
     3. *Caveat and scope*: $\mathcal{T}_3$-BFS enumerates the entire $\mathcal{T}_3$-connected equivalence neighborhood
        of the recorded representatives up to $d + \mathrm{dW}$; logical cosets (or weight-bounded components) not yet
-       seeded by RW still require RW steps (or CC in `method=3`) to hit at least one representative. Optionally also
-       support exporting compact canonical representatives (`outC` option or companion `.nz`) for downstream decoders
-       (`vecdec`).
+       seeded by RW still require RW steps (or CC in `method=3`) to hit at least one representative. Moreover, while
+       $2 \leftrightarrow 2$ exchanges and $1 \to 2$ splits restore the $\mathcal{T}_3$ moves removed by the Stern
+       filter, they do not restore codewords that use a column identical to a pivot column ($w_x = 1$, possible only in
+       matrices with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`; DEMs are
+       merged by default), which may be missing from the `method=1` export (`method=3` adds them through CC; C1-14).
+       Optionally also support exporting compact canonical representatives (`outC` option or companion `.nz`) for
+       downstream decoders (`vecdec`).
+- [ ] **Efficient generation of full codeword lists from a compressed one** (for `outC` / `maxC`, refs: C1-14,
+  `rw_opt` `32`, the canonical classes of Stage 5): keep one representative per class during the search and expand on
+  export using the symmetries of the code (e.g., the translations of BB codes), the $2 \leftrightarrow 2$ swaps (and
+  $1 \to 2$ splits) of $\mathcal{T}_3$, identical (merged) columns, the rows of $G$, etc., so that `outC` / `maxC` with
+  RW are complete without the "only with `32`" (and duplicate-column, C1-14) restrictions, while also allowing optional
+  export of the compressed representative list itself (e.g., for `vecdec`).
 - [ ] **Efficient generation of low-weight full-DEM codewords from a simplified-DEM or $T = 1$ (folded-circuit)
   sample** (up to $d + \mathrm{dW}$, for `outC` / `vecdec`):
   - **1. Multi-round simplified (`drop=auto`) DEM $\to$ full multi-round DEM**: currently `drop=auto` maps each kept
@@ -502,7 +515,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     `rw_opt=3` with `finG` and triplets; `drop=FILE` with $A \ne 0$ on a large DEM; the `ksub` fallback on a DEM; the
     README numbers of the double-gross CC (0.15.x, with the odd rounds) and the hit rates with `cov_cws=0`.
   - [ ] Open: a fallback of the canonical rule where only the window steps find the minimum weight (deep DEMs; since
-    0.17.2 reported, not changed); C1-14 (the Stern filter with duplicate columns when collecting; not reproduced);
+    0.17.2 reported, not changed); C1-14 (the Stern filter with identical columns when collecting: claim qualified in
+    the docs, full expansion from compressed representatives open above);
     `engine="cert"` on an input without logical codewords gives `[0, 0, 0]`, the binary a vacuous `[dmin, 0, 0]` with
     `dmin > n`; the Python CLI rejects `steps=1.5`, which the binary reads as 1 (with a warning).
 

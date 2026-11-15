@@ -2741,13 +2741,18 @@ def run_dist_m4ri(
             regression and ablation runs).  A bitmask 1..63: only the stages listed whose input is there: 1, the
             weight-3 relations T3 of the columns (found after merge and drop) with the contraction of the candidates of
             a RW step (the single-column candidates up to the weight min(dmax + 8, 64), the pairs up to
-            min(dmax + 1, 64), + dW when collecting) and the Stern filter of its pairs (only while dmax + 8 <= 64, and
-            when collecting codewords only with 32); 2, the shortening of the candidates by the rows of G (finG; before
-            the contraction of 1); 4, row-slab windows of a multi-round DEM (kwin=0, not with sort_rows=1); 8, the
-            sparse-dual elimination (an m x m inverse instead of the m x n matrix; at most 64 rows of L); 16, the
-            canonical classes of the minimum-weight codewords found by the uniform RW steps, which the min_hits stopping
-            rule then counts (Good-Turing and Chao2, see min_hits; only with min_hits > 0, not with kwin > 0; tables of
-            up to 2^24 classes, about 640 MiB); 32, the codewords collected (outC, maxC) expanded by the T3 relations.
+            min(dmax + 1, 64), + dW when collecting) and the Stern filter of its pairs (loss-free for the distance,
+            i.e., the minimum weight, with the contraction, hence only while dmax + 8 <= 64, + dW when collecting; when
+            collecting codewords, only with 32: 32 restores the codewords the filter removes through 2 <-> 2 exchanges
+            and 1 -> 2 splits, but not those that use a column identical to a pivot column — possible only in matrices
+            with identical columns, e.g., finH/finL exported from a DEM without merging, or merge=0, as DEMs are merged
+            by default — which may be missing from the method=1 export; method=3 adds them through CC); 2, the
+            shortening of the candidates by the rows of G (finG; before the contraction of 1); 4, row-slab windows of a
+            multi-round DEM (kwin=0, not with sort_rows=1); 8, the sparse-dual elimination (an m x m inverse instead of
+            the m x n matrix; at most 64 rows of L); 16, the canonical classes of the minimum-weight codewords found by
+            the uniform RW steps, which the min_hits stopping rule then counts (Good-Turing and Chao2, see min_hits;
+            only with min_hits > 0, not with kwin > 0; tables of up to 2^24 classes, about 640 MiB); 32, the codewords
+            collected (outC, maxC) expanded by the T3 2 <-> 2 exchanges and 1 -> 2 splits (see 1).
             Only with full-matrix RW (ksub=0) and steps > 0.  With rw_opt != 0 (also if no stage applies, e.g., for a
             classical code), the automatic hybrid windows (kwin=0) are used only for a DEM (matrices: uniform
             permutations, unless kwin > 0 or win_hyb > 0).  The distance found is valid with any rw_opt, and the cache
@@ -5539,7 +5544,7 @@ def compute_classical_distance(
             delegated to qec_cert, whose import alone takes longer than most runs of the binary).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
-            see run_dist_m4ri()).  The result and the cache key do not depend on it.
+            see run_dist_m4ri()).  The distance and the cache key do not depend on it.
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
@@ -5790,7 +5795,8 @@ def compute_quantum_distance(
             qec_cert).  The details are in _last_run_stats["engine_auto"].
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
-            see run_dist_m4ri()).  The result and the cache key do not depend on it.
+            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection with
+            method=1 on matrices with identical columns, see run_dist_m4ri()).
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
@@ -6114,7 +6120,8 @@ def compute_css_distance(
             the other engines.
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
-            see run_dist_m4ri()).  The result and the cache key do not depend on it.
+            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection with
+            method=1 on matrices with identical columns, see run_dist_m4ri()).
 
     Returns:
         tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
@@ -6762,7 +6769,8 @@ def compute_dem_distance(
             left); the binary only, with the whole timeout, if qec_cert is not installed or not usable (a warning).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
-            see run_dist_m4ri()).  The result and the cache key do not depend on it.
+            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection with
+            method=1 on matrices with identical columns, see run_dist_m4ri()).
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -8536,10 +8544,16 @@ Multithreading & throttling:
                            min(dmax+8, 64), the pairs up to min(dmax+1, 64) (+dW when collecting); in
                            the pairs, skip the columns whose circuit (the column and its pivot
                            columns) has a zero L syndrome and at most 3 columns (the Stern filter:
-                           only while dmax+8 <= 64, as it needs the contraction; when collecting
-                           codewords with --cws, outC, or maxC, only with 32); a zero column of H
-                           with a nonzero column of L gives d=1 at once (automatic: quantum codes,
-                           steps > 2);
+                           loss-free for the distance, i.e., the minimum weight, with the
+                           contraction, hence only while dmax+8 <= 64, +dW when collecting; when
+                           collecting codewords with --cws, outC, or maxC, only with 32: 32 restores
+                           the codewords the filter removes through 2 <-> 2 exchanges and 1 -> 2
+                           splits, but not those that use a column identical to a pivot column,
+                           possible only in matrices with identical columns, e.g., finH/finL exported
+                           from a DEM without merging, or merge=0, as DEMs are merged by default,
+                           which may be missing from the method=1 export; method=3 adds them through
+                           CC); a zero column of H with a nonzero column of L gives d=1 at once
+                           (automatic: quantum codes, steps > 2);
                         2: with G (finG, fin, or Hx/Hz without Lx/Lz), shorten the candidates by the
                            rows of G (steepest descent, before the contraction of 1; the
                            single-column candidates up to min(dmax+w_G-2, 64), with 1 up to
@@ -8570,7 +8584,7 @@ Multithreading & throttling:
                            each at most once (with an active 1 or 2 as well);
                         32: when collecting codewords (--cws, outC, or maxC), add the codewords
                            obtained from the codewords found by T3 before the export: 2 <-> 2
-                           exchanges and 1 -> 2 splits, up to the weight min_w+dW (see irred and
+                           exchanges and 1 -> 2 splits, up to the weight min_w+dW (see 1, irred, and
                            maxC; automatic: quantum codes when collecting: --cws, outC, or maxC).
                         With rw_opt != 0, matrices (finH, Hx/Hz) use uniform random permutations in
                         all RW steps unless kwin > 0 or win_hyb > 0 (the hybrid windows are for DEMs,

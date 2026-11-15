@@ -2293,8 +2293,9 @@ static int rw_dual_entries(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_t
  * With the stages of rw_opt (`th` not NULL): the L syndromes `srows` may be computed before (`srows_ready`, see
  * rw_srows()); the columns with a zero L syndrome and w_x <= 2 pivot rows (rw_filter_t3) and those whose circuits are
  * rows of G (rw_filter_g) are not used (the Stern Bucket-0 filter of Theorems 3(b) and 5(c) of the notes, loss-free
- * with the shortening of the single candidates, hence only while it is not capped by RW_SHORTEN_WMAX, see
- * rw_filters_exact()); the pairs up to the weight min(limit + rw_ext2, RW_SHORTEN_WMAX + 1) - 1 are formed and those
+ * for the distance with the shortening of the single candidates, hence only while it is not capped by RW_SHORTEN_WMAX,
+ * see rw_filters_exact()); the pairs up to the weight min(limit + rw_ext2, RW_SHORTEN_WMAX + 1) - 1 are formed and
+ * those
  * up to min(dmax + rw_ext2 (+ dW), RW_SHORTEN_WMAX) shortened (see rw_candidate(), rw_lim_ext()); and for a full
  * dense step, `*fkg` (if not NULL) is set to the Harris-FKG sum of ln(1 + w_x) over the non-pivot columns x (NAN if the
  * columns were not scanned; not with the sparse dual `dl`, which does not form the columns of a zero L syndrome
@@ -4826,10 +4827,11 @@ int main(int argc, char **argv) {
   ctx.rw_ext = ctx.rw_contract ? 8 : 0;
   if (ctx.rw_gshort && gdb->wmax - 2 > ctx.rw_ext) ctx.rw_ext = gdb->wmax - 2;
   ctx.rw_ext2 = ctx.rw_contract ? 1 : 0;
-  /* the Stern filter (Theorems 3(b), 5(c)): with all triplets known; when collecting codewords, only with the expansion
-   * by T_3 (bit 32), meant to restore the codewords which the filter skips (2 <-> 2 exchanges and 1 -> 2 splits; the
-   * notes prove this for the weight only, and on the surf_d5 matrices, with duplicate columns, outC lost none); and in
-   * a step only while the shortening is not capped (rw_filters_exact()) */
+  /* the Stern filter (Theorems 3(b), 5(c)): with all triplets known, loss-free for the distance while the shortening is
+   * not capped (rw_filters_exact()); when collecting codewords, only with the expansion by T_3 (bit 32), which restores
+   * the codewords the filter removes through 2 <-> 2 exchanges and 1 -> 2 splits, but not those using a column
+   * identical to a pivot column in matrices with identical columns (e.g., unmerged finH/finL or merge=0; method=3 adds
+   * them through CC) */
   ctx.rw_filter_t3 = (p->rw_active & RW_OPT_T3) && t3 && t3->complete &&
                      (!ctx.collecting || (p->rw_active & RW_OPT_EXPAND));
   ctx.rw_filter_g = ctx.rw_gshort && !ctx.collecting;

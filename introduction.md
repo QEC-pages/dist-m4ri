@@ -80,14 +80,19 @@ syndromes of `H` and `L` (e.g., the CNOT hook triangles of a circuit; `doc/rw_tr
 the expert option `rw_opt` (default `-1`: automatic; `0`: the RW of version 0.16.1; or a sum of stages). The triplets
 are enumerated exactly after merging and `drop=auto` (milliseconds); the candidates are contracted (2 -> 1 and 3 -> 0
 columns) before they are recorded, those of single columns up to the weight `min(dmax + 8, 64)` and those of the pairs
-up to `min(dmax + 1, 64)`, and while `dmax + 8 <= 64`, the pairs skip the columns whose short circuits the contraction
-already covers (stage 1). With `min_hits`, the minimum-weight codewords of the uniform steps are counted by canonical
-classes (exchanges across two triplets with a common column), and RW stops by a Good-Turing / Chao2 rule (stage 16):
-much sooner when the classes are large (degenerate DEMs and code-sized models), later when there are many classes;
-while no uniform step has found a codeword of the minimum weight (e.g., on deep circuit DEMs, where the window steps
-find them), this stop is inactive, and RW runs until `steps` or the `timeout` end. On wide DEMs, the elimination works
-with an `m x m` inverse (sparse dual, stage 8: the same information sets, less memory per thread, so that more RW
-threads are allowed); with `outC` or `maxC`, the exported codewords are completed by the triplet exchanges (stage 32).
+up to `min(dmax + 1, 64)` (plus `dW` when collecting), and while `dmax + 8 <= 64` (plus `dW`), the pairs skip the
+columns with zero `L` syndrome and at most 3 circuit columns (the Stern filter of stage 1, loss-free for the distance
+together with the contraction; when collecting codewords with `outC` or `maxC`, active only with stage 32). With
+`min_hits`, the minimum-weight codewords of the uniform steps are counted by canonical classes (exchanges across two
+triplets with a common column), and RW stops by a Good-Turing / Chao2 rule (stage 16): much sooner when the classes are
+large (degenerate DEMs and code-sized models), later when there are many classes; while no uniform step has found a
+codeword of the minimum weight (e.g., on deep circuit DEMs, where the window steps find them), this stop is inactive,
+and RW runs until `steps` or the `timeout` end. On wide DEMs, the elimination works with an `m x m` inverse (sparse
+dual, stage 8: the same information sets, less memory per thread, so that more RW threads are allowed); with `outC` or
+`maxC`, stage 32 expands the exported codewords by the triplet `2 <-> 2` exchanges and `1 -> 2` splits, which restores
+the codewords removed by the Stern filter except those that use a column identical to a pivot column (possible only in
+matrices with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`; DEMs are merged
+by default), which may be missing from the `method=1` export (`method=3` adds them through CC).
 Shortening by the rows of `G` (stage 2, before the contraction) and row-slab windows (stage 4) are explicit only. On
 the benchmark of version 0.17.0 (Section 11 of `benchmark/BENCHMARK.md`), the automatic mode records 1.1 to 8 times
 more minimum-weight hits per second (of the at most 100 codewords kept) on 13 of 15 circuit DEMs and code-sized models,

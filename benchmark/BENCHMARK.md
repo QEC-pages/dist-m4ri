@@ -1427,8 +1427,8 @@ and `drop=auto`; "auto" is the mask chosen by `-1`.
   0.01–0.06 ms on the static codes). Candidate contraction is capped at weight
   $\min(d_{\max} + \mathrm{ext} (+ \mathrm{dW}), 64)$ ($\mathrm{ext} = 8$ for single-column candidates with `0x01`, $1$
   for pairs; Section 11.2), and the binary now keeps the Stern pair filter active only while
-  $d_{\max} + \mathrm{ext} (+ \mathrm{dW}) \le 64$, when contraction is uncapped and the filter is loss-free (rates
-  while $d_{\max} > 56$ not re-measured).
+  $d_{\max} + \mathrm{ext} (+ \mathrm{dW}) \le 64$, when contraction is uncapped and the filter is loss-free for the
+  distance (rates while $d_{\max} > 56$ not re-measured).
 - **Bit `0x10`** (automatic, a stopping rule): with `min_hits=5`, against `rw_opt=0` (table), `-1` stops 2.5–8.9 times
   sooner on the 5 degenerate inputs (surface, color, and the 3 models; 2.3–9.0x for explicit `0x11` vs `0`, and
   1.5–3.2x for `0x11` vs `0x01` alone) with the same bounds, and 1.3–7.1 times later where many logical classes
@@ -1463,10 +1463,14 @@ and `drop=auto`; "auto" is the mask chosen by `-1`.
   the median/mean than `rw_opt=0` (double gross, 3 seeds: 0.25, 0.54, 1.58 s vs 1.14, 1.15, 3.91 s, while a separate
   3-seed series of explicit `0x09`, the same active mask, gave 0.19, 0.31, 0.70 s; `bb_360`, 2 seeds: 1.24, 4.58 s vs
   5.76, 14.5 s).
-- **Bit `0x20`** (automatic with `outC`/`maxC`): in 4000 steps, every mask exports the complete sets (CC) of
-  minimum-weight codewords of `surf_d5` (620), `color_xyz_d5` (65), `bb_72` at $T = 1$ (324), the `bb_72` model
-  (252), and `bb_72_12_6` (84); for `mitten_150` at $T = 1$, `0` exports 74 of the 100, `0x01` 90, and `0x21` all 100
-  (`min_hits=0` turns off `0x10`).
+- **Bit `0x20`** (automatic with `outC`/`maxC`): when collecting codewords, the Stern filter of `0x01` is active only
+  with `0x20`, whose $\mathcal{T}_3$ expansion ($2 \leftrightarrow 2$ exchanges and $1 \to 2$ splits) restores the
+  codewords the filter removes, except those that use a column identical to a pivot column (possible only in matrices
+  with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`; DEMs are merged by
+  default), which may be missing from the `method=1` export (`method=3` adds them through CC). In 4000 steps, every
+  mask exports the complete sets (CC) of minimum-weight codewords of `surf_d5` (620), `color_xyz_d5` (65), `bb_72` at
+  $T = 1$ (324), the `bb_72` model (252), and `bb_72_12_6` (84); for `mitten_150` at $T = 1$, `0` exports 74 of the
+  100, `0x01` 90, and `0x21` all 100 (`min_hits=0` turns off `0x10`).
 - `rw_opt=0` runs within 5% of the 0.16.1 binary on the three checked inputs (0.96–0.97x the steps and
   0.96–0.98x the hits per second).
 

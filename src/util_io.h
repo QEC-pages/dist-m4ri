@@ -1011,11 +1011,19 @@ void print_short_help(const char *prog);
   "                        up to min(dmax+1, 64) (+dW when collecting); in the\n" \
   "                        pairs, skip the columns whose circuit (the column and\n" \
   "                        its pivot columns) has a zero L syndrome and at most 3\n" \
-  "                        columns (the Stern filter: only while dmax+8 <= 64, as\n" \
-  "                        it needs the contraction; when collecting codewords with\n" \
-  "                        outC or maxC, only with 32); a zero column of H with a\n" \
-  "                        nonzero column of L gives d=1 at once (automatic:\n" \
-  "                        quantum codes, steps > 2);\n" \
+  "                        columns (the Stern filter: loss-free for the distance,\n" \
+  "                        i.e., the minimum weight, with the contraction, hence\n" \
+  "                        only while dmax+8 <= 64, +dW when collecting; when\n" \
+  "                        collecting codewords with outC or maxC, only with 32:\n" \
+  "                        32 restores the codewords the filter removes through\n" \
+  "                        2 <-> 2 exchanges and 1 -> 2 splits, but not those that\n" \
+  "                        use a column identical to a pivot column, possible only\n" \
+  "                        in matrices with identical columns, e.g., finH/finL\n" \
+  "                        exported from a DEM without merging, or merge=0, as\n" \
+  "                        DEMs are merged by default, which may be missing from\n" \
+  "                        the method=1 export; method=3 adds them through CC); a\n" \
+  "                        zero column of H with a nonzero column of L gives d=1\n" \
+  "                        at once (automatic: quantum codes, steps > 2);\n" \
   "                     2: with finG, also shorten the candidates by the rows of\n" \
   "                        G (steepest descent, before the contraction of 1; the\n" \
   "                        single-column candidates up to min(dmax+w_G-2, 64),\n" \
@@ -1055,8 +1063,8 @@ void print_short_help(const char *prog);
   "                     32: with outC or maxC, add the codewords obtained from the\n" \
   "                        codewords found by T3 before the export: 2 <-> 2\n" \
   "                        exchanges and 1 -> 2 splits, up to the weight min_w+dW\n" \
-  "                        (see irred and maxC; automatic: quantum codes with outC\n" \
-  "                        or maxC).\n" \
+  "                        (see 1, irred, and maxC; automatic: quantum codes with\n" \
+  "                        outC or maxC).\n" \
   "                     With rw_opt != 0, matrices (finH) use uniform random\n" \
   "                     permutations in all RW steps unless kwin > 0 or win_hyb\n" \
   "                     > 0 (the hybrid windows are for DEMs, see kwin), also if\n" \

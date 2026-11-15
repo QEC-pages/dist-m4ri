@@ -207,10 +207,14 @@ Relevant parameters:
     columns): those of single columns up to the weight $\min(d_{\max} + 8, 64)$, those of the pairs up to
     $\min(d_{\max} + 1, 64)$ (plus `dW` when collecting codewords); their $L$ syndromes are computed before their
     supports are formed; and the pairs skip the columns whose circuit (the column and its pivot columns) has a zero $L$
-    syndrome and at most 3 columns (the Stern filter, loss-free together with the contraction, hence, since 0.17.2,
-    only while $d_{\max} + 8 \le 64$; when collecting codewords with `outC` or `maxC`, only with `32`); a zero column
-    of $H$ with a non-zero column of $L$ gives $d = 1$ at once (automatic: quantum codes; nothing is kept if there are
-    no triplets, e.g., for codes with checks of weight $\ge 4$);
+    syndrome and at most 3 columns (the Stern filter: loss-free for the distance, i.e., the minimum weight, together
+    with the contraction, hence, since 0.17.2, only while $d_{\max} + 8 \le 64$, plus `dW` when collecting; when
+    collecting codewords with `outC` or `maxC`, only with `32`, which restores the codewords the filter removes through
+    $2 \leftrightarrow 2$ exchanges and $1 \to 2$ splits, but not those that use a column identical to a pivot column —
+    possible only in matrices with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or
+    `merge=0`, as DEMs are merged by default — which may be missing from the `method=1` export; `method=3` adds them
+    through CC); a zero column of $H$ with a non-zero column of $L$ gives $d = 1$ at once (automatic: quantum codes;
+    nothing is kept if there are no triplets, e.g., for codes with checks of weight $\ge 4$);
   - `2`: with `finG`, the candidates are also shortened by the rows of $G$ (steepest descent, since 0.17.2 before the
     contraction of `1`; the single-column candidates up to the weight $\min(d_{\max} + w_G - 2, 64)$, with `1` up to
     $\min(d_{\max} + \max(8, w_G - 2), 64)$), and the pairs skip the columns whose circuits are rows of $G$ (only while
@@ -231,9 +235,9 @@ Relevant parameters:
     $2^{24}$ classes and codewords, about 640 MiB, and then the rule of $\langle n\rangle$ is used); with `16`, or with
     an active `1` or `2` (triplets found, or `finG`), the codewords of a RW step are recorded at its end (lighter ones
     at once), each at most once;
-  - `32`: with `outC` or `maxC`, the codewords found are completed before the export by the $\mathcal{T}_3$ exchanges
-    ($2 \leftrightarrow 2$) and splits ($1 \to 2$), up to the weight $w_{\min} + \text{dW}$ (automatic: quantum codes
-    with `outC` or `maxC`).
+  - `32`: with `outC` or `maxC`, the codewords found are expanded before the export by the $\mathcal{T}_3$ exchanges
+    ($2 \leftrightarrow 2$) and splits ($1 \to 2$), up to the weight $w_{\min} + \text{dW}$ (see `1` for matrices with
+    identical columns; automatic: quantum codes with `outC` or `maxC`).
 
   All stages need full-matrix RW (`ksub=0`) and `steps > 0` (the automatic ones `steps > 2`). With `rw_opt != 0`,
   matrices (`finH`) use uniform random permutations in every RW step unless `kwin > 0` or `win_hyb > 0` (the hybrid
