@@ -244,15 +244,17 @@ int rw_canon_tab_raw(rw_canon_tab_t * const tab, const uint64_t key);
  *        weight up to min_w + max(dW, 0) in the hash, a breadth-first search adds the equal-weight 2 <-> 2 exchanges
  *        across two triplets with a common column (Proposition 4) and the 1 -> 2 splits c - {z} + {u, v} for the
  *        triplets {u, v, z} with z in c and u, v not in c (weight + 1), up to the weight min_w + max(dW, 0), with the
- *        irreducibility test (irred=1) and maxC (see codeword_add_maybe()).
+ *        irreducibility test (irred=1) and maxC (see codeword_add_maybe()); and the equal-weight 1 <-> 1 swaps of the
+ *        identical columns of [H; L] (the Stern filter skips a column identical to a pivot column), also without T_3.
  * @param p The parameters (the codeword hash).
- * @param t The triplets (ntrip > 0).
+ * @param t The triplets (NULL or none: only the 1 <-> 1 swaps).
  * @param HT The transpose of H.
  * @param ws The workspace (with `irr`).
  * @param limit The largest number of codewords to add.
+ * @param ntwin If not NULL: the number of columns identical to another column of [H; L].
  * @return The number of codewords added (negative: -1 - added if stopped by `limit`).
  */
 long long rw_t3_expand(params_t * const p, const rw_t3_t * const t, const csr_t * const HT, rw_tws_t * const ws,
-                       const long long limit);
+                       const long long limit, int * const ntwin);
 
 #endif /* RW_TRIPLET_H */

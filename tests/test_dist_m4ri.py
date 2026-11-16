@@ -4133,7 +4133,7 @@ def test_timeout_none_is_the_default_60s(monkeypatch):
         dist_m4ri.enable_distance_cache()
 
 
-def test_codes_without_columns_or_codewords(tmp_path):
+def test_codes_without_columns_or_codewords(tmp_path, capsys):
     # PY-A15: a matrix without columns (n = 0) is a ValueError (the binary stopped with an M4RI error); a code without
     # codewords (k = 0) gives the lower bound dmin > n of the binary and no upper bound
     import numpy as np
@@ -4156,9 +4156,18 @@ def test_codes_without_columns_or_codewords(tmp_path):
         with pytest.raises(ValueError, match=re.escape("invalid CSS input: a matrix without columns")):
             dist_m4ri.compute_css_distance(z20, z20, engine=engine, cache_file=None)
     assert dist_m4ri.main([f"finH={n0}", "engine=cert", "--no-cache"]) == 1
-    dist, d_info = dist_m4ri.compute_classical_distance(np.eye(3, dtype=int), num_steps=20, timeout=10,
-                                                        return_info=True, cache_file=str(tmp_path / "c.json"))
-    assert dist > 3 and d_info == [dist, 0, 0]
+    # k = 0 with the binary (since 0.17.2): 0 0 0 and its note, forwarded once at debug=0
+    capsys.readouterr()
+    cache = str(tmp_path / "c.json")
+    assert dist_m4ri.compute_classical_distance(np.eye(3, dtype=int), num_steps=20, timeout=10, return_info=True,
+                                                cache_file=cache) == (0, [0, 0, 0])
+    assert capsys.readouterr().err.count("# Note: k=0: no logical codeword (classical code with rank H = n") == 1
+    one = np.array([[1, 1]])
+    assert dist_m4ri.compute_quantum_distance(one, G=one, timeout=10, cache_file=cache) == 0
+    dem = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    assert dist_m4ri.compute_dem_distance(dem, pmin=0.015, timeout=10, cache_file=cache) == (0, [0, 0, 0])
+    err = capsys.readouterr().err
+    assert err.count("# Note: k=0: no logical codeword") == 2 and "every row of L is in the row space of H" in err
 
 
 def test_cert_warns_on_the_options_it_ignores(monkeypatch, capsys):
@@ -4176,6 +4185,79 @@ def test_cert_warns_on_the_options_it_ignores(monkeypatch, capsys):
         assert "engine='cert'" not in capsys.readouterr().err
     finally:
         dist_m4ri.enable_distance_cache()
+
+
+_K0_LINE = "# Note: k=0: no logical codeword (rank H = n); the result is 0 0 0\n"
+
+
+def test_k0_gives_000_with_every_engine(monkeypatch, capsys, tmp_path):
+    # k = 0 (no logical codeword, since 0.17.2): [0, 0, 0] with every engine and solver, exactly one note on stderr
+    # (none in silent mode), nothing cached (an old vacuous record is removed), and explain_bounds() says so
+    from types import SimpleNamespace
+    cache = str(tmp_path / "k0.json")
+    fake = _FakeBinary(["0 0 0"], stderr=_K0_LINE)
+    monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake.popen)
+    key = dist_m4ri._matrix_cache_key(HAMMING_H, None, None, True)
+    dist_m4ri.load_distance_cache(cache)
+    dist_m4ri._distance_cache[key] = dist_m4ri._sector_record(8, 0, 10, [])  # (a vacuous bound of 0.17.1)
+    capsys.readouterr()
+    for _ in range(2):  # (the same result again: nothing cached)
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, cache_file=cache, return_info=True) == (0, [0, 0, 0])
+        assert capsys.readouterr().err.count("# Note: k=0") == 1 and key not in dist_m4ri._distance_cache
+    text = dist_m4ri.explain_bounds([0, 0, 0], method=3, stats=dist_m4ri._last_run_stats)
+    assert "No logical codeword (k = 0)" in text
+    dist_m4ri.set_silent(True)
+    try:
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, cache_file=cache) == 0
+        assert "k=0" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.set_silent(False)
+    # CSS: one sector run and one note for both sectors
+    n_runs = len(fake.cmds)
+    assert dist_m4ri.compute_css_distance(HAMMING_H, HAMMING_H, cache_file=cache) == (0, [0, 0, 0], [0, 0, 0])
+    assert len(fake.cmds) == n_runs + 1 and capsys.readouterr().err.count("# Note: k=0") == 1
+    # engine='auto': Stage A (the binary) finds k = 0: no qec_cert run
+    calls = _fake_qec_cert(monkeypatch, certify=None)
+    assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", cache_file=cache) == 0
+    assert calls == [] and dist_m4ri._last_run_stats["engine_auto"]["reason"] == "no logical codeword (k = 0)"
+    capsys.readouterr()
+    # engine='cert': qec_cert certifies k = 0 (status 'infeasible'): the note of the wrapper
+    _fake_qec_cert(monkeypatch, certify=lambda *a, **kw: _FakeCert(status="infeasible", lower_bound=-1,
+                                                                    upper_bound=None, witness_verified=None,
+                                                                    instance={}, stages=[], reductions=[]))
+    assert dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="cert", cache_file=cache,
+                                              return_info=True) == (0, [0, 0, 0])
+    err = capsys.readouterr().err
+    assert err.count("# Note: k=0: no logical codeword (certified by qec_cert); the result is 0 0 0") == 1
+    # solver='codedistance': the rank check of the wrapper, before codedistance runs
+    monkeypatch.setattr(dist_m4ri, "_get_codedistance", lambda: SimpleNamespace())
+    assert dist_m4ri.compute_classical_distance(np.eye(3, dtype=int), solver="codedistance", return_info=True) == \
+        (0, [0, 0, 0])
+    assert dist_m4ri.compute_quantum_distance(np.array([[1, 1]]), G=np.array([[1, 1]]), solver="codedistance") == 0
+    assert capsys.readouterr().err.count("# Note: k=0") == 2
+    assert dist_m4ri._gf2_rank([[1, 1, 0], [0, 1, 1], [1, 0, 1]]) == 2
+    assert "k0" not in dist_m4ri._parse_stderr_stats("# Note: k=0 is not checked (method=2 and H with m*n > 2^32 "
+                                                     "entries)\n")
+    assert dist_m4ri._k0_of_matrices(np.array([[1, 1, 0]]), L=np.zeros((0, 3)))
+    assert not dist_m4ri._k0_of_matrices(HAMMING_H, classical=True)
+    # checker #226: the statistics of the codedistance paths, files as input, and engine='auto' with qec_cert first
+    assert dist_m4ri._last_run_stats == {"k0": "rank H + rank G = n"}
+    eye3 = tmp_path / "eye3.mtx"
+    eye3.write_text("%%MatrixMarket matrix coordinate integer general\n3 3 3\n1 1 1\n2 2 1\n3 3 1\n")
+    assert dist_m4ri.compute_classical_distance(str(eye3), solver="codedistance") == 0
+    assert "(rank H = n)" in dist_m4ri.explain_bounds([0, 0, 0], stats=dist_m4ri._last_run_stats)
+    one = np.array([[1, 1]])
+    assert dist_m4ri.compute_css_distance(one, one, solver="codedistance") == (0, [0, 0, 0], [0, 0, 0])
+    assert dist_m4ri._last_css_stats["X"] == {"k0": "rank Hx + rank Hz = n"}
+    capsys.readouterr()
+    _fake_qec_cert(monkeypatch, certify_dem=lambda *a, **kw: _FakeCert(status="infeasible", lower_bound=-1,
+                                                                        upper_bound=None, witness_verified=None,
+                                                                        instance={}, stages=[], reductions=[]))
+    monkeypatch.setattr(dist_m4ri, "_AUTO_DEM_FAST_PATH_ERRORS", 0)
+    dem = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    assert dist_m4ri.compute_dem_distance(dem, engine="auto", cache_file=cache) == (0, [0, 0, 0])
+    assert dist_m4ri._last_run_stats["k0"] == "certified by qec_cert"
+    assert capsys.readouterr().err.count("# Note: k=0") == 1
 
 
 def test_qec_cert_without_its_library(monkeypatch, capsys, fake_qec_cert_package):

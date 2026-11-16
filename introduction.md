@@ -89,10 +89,9 @@ large (degenerate DEMs and code-sized models), later when there are many classes
 codeword of the minimum weight (e.g., on deep circuit DEMs, where the window steps find them), this stop is inactive,
 and RW runs until `steps` or the `timeout` end. On wide DEMs, the elimination works with an `m x m` inverse (sparse
 dual, stage 8: the same information sets, less memory per thread, so that more RW threads are allowed); with `outC` or
-`maxC`, stage 32 expands the exported codewords by the triplet `2 <-> 2` exchanges and `1 -> 2` splits, which restores
-the codewords removed by the Stern filter except those that use a column identical to a pivot column (possible only in
-matrices with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`; DEMs are merged
-by default), which may be missing from the `method=1` export (`method=3` adds them through CC).
+`maxC`, stage 32 expands the exported codewords by the triplet `2 <-> 2` exchanges and `1 -> 2` splits, and by the
+`1 <-> 1` swaps of identical columns, which restores the codewords removed by the Stern filter, also in matrices with
+identical columns (e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`; since 0.17.2).
 Shortening by the rows of `G` (stage 2, before the contraction) and row-slab windows (stage 4) are explicit only. On
 the benchmark of version 0.17.0 (Section 11 of `benchmark/BENCHMARK.md`), the automatic mode records 1.1 to 8 times
 more minimum-weight hits per second (of the at most 100 codewords kept) on 13 of 15 circuit DEMs and code-sized models,

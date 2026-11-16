@@ -157,6 +157,8 @@ typedef struct{
   csr_t *spaG;
   csr_t *spaL;
   colmask_t *maskL; /* column masks of L for fast checks L c != 0 (NULL for a classical code), see var_init() */
+  int k_zero;       /* 1: k = 0, no codeword at all (see var_init()): no search, the result is 0 0 0 */
+  char k0_reason[64]; /* why k = 0, for the note of k_zero_note() */
   int threads; /* number of threads to use (0 for auto) */
   int dexp;    /* expected distance value (0 for auto/none) */
   int dstop;   /* stop target for the lower bound: the run ends once CC certifies dmin >= dstop (0: off); unlike dmax,
@@ -198,7 +200,10 @@ extern params_t prm;
  * 
  * Parses command line arguments, sets up the parameter structure,
  * loads matrices from specified files (Matrix Market or DEM), 
- * constructs logical matrices if needed, and performs consistency checks.
+ * constructs logical matrices if needed, and performs consistency checks.  If k = 0, i.e., there is no codeword
+ * (rank H = n for a classical code; for a quantum code or a DEM, every row of L is in the row space of H, also if L
+ * has no rows, e.g., a DEM with no L left after the pmin cut, merge, and drop), it sets p->k_zero and returns before
+ * the warnings for the search options: the binaries then print the note of k_zero_note() and the result 0 0 0.
  *
  * @param argc Number of command line arguments.
  * @param argv Array of command line argument strings.
@@ -214,6 +219,15 @@ void var_init(int argc, char **argv, params_t * const p);
  * @param p Pointer to the params_t structure to clean up.
  */
 void var_kill(params_t * const p);
+
+/**
+ * @brief The note on stderr (at any debug level) for k = 0 (p->k_zero, see var_init()): "# Note: k=0: no logical
+ * codeword (<reason>); the result is <result>".
+ *
+ * @param p Pointer to the params_t structure (p->k0_reason).
+ * @param result The result line of the binary ("0 0 0" for dist_m4ri, "0" for dist_m4ri_old).
+ */
+void k_zero_note(const params_t * const p, const char * const result);
 
 /**
  * @brief Read a Detector Error Model (DEM) file and construct H and L matrices.
@@ -1016,12 +1030,9 @@ void print_short_help(const char *prog);
   "                        only while dmax+8 <= 64, +dW when collecting; when\n" \
   "                        collecting codewords with outC or maxC, only with 32:\n" \
   "                        32 restores the codewords the filter removes through\n" \
-  "                        2 <-> 2 exchanges and 1 -> 2 splits, but not those that\n" \
-  "                        use a column identical to a pivot column, possible only\n" \
-  "                        in matrices with identical columns, e.g., finH/finL\n" \
-  "                        exported from a DEM without merging, or merge=0, as\n" \
-  "                        DEMs are merged by default, which may be missing from\n" \
-  "                        the method=1 export; method=3 adds them through CC); a\n" \
+  "                        2 <-> 2 exchanges, 1 -> 2 splits, and 1 <-> 1 swaps of\n" \
+  "                        identical columns, e.g., in finH/finL exported from a\n" \
+  "                        DEM without merging, or with merge=0); a\n" \
   "                        zero column of H with a nonzero column of L gives d=1\n" \
   "                        at once (automatic: quantum codes, steps > 2);\n" \
   "                     2: with finG, also shorten the candidates by the rows of\n" \
@@ -1062,9 +1073,10 @@ void print_short_help(const char *prog);
   "                        most once (also with an active 1 or 2);\n" \
   "                     32: with outC or maxC, add the codewords obtained from the\n" \
   "                        codewords found by T3 before the export: 2 <-> 2\n" \
-  "                        exchanges and 1 -> 2 splits, up to the weight min_w+dW\n" \
-  "                        (see 1, irred, and maxC; automatic: quantum codes with\n" \
-  "                        outC or maxC).\n" \
+  "                        exchanges and 1 -> 2 splits, up to the weight min_w+dW;\n" \
+  "                        and by 1 <-> 1 swaps of the identical columns of H and\n" \
+  "                        L, also without T3 (see 1, irred, and maxC; automatic:\n" \
+  "                        quantum codes with outC or maxC).\n" \
   "                     With rw_opt != 0, matrices (finH) use uniform random\n" \
   "                     permutations in all RW steps unless kwin > 0 or win_hyb\n" \
   "                     > 0 (the hybrid windows are for DEMs, see kwin), also if\n" \
@@ -1169,6 +1181,9 @@ void print_short_help(const char *prog);
   "    dmax     : Smallest weight of a codeword found (by RW or CC, or read with\n" \
   "               finC), or the supplied dmax if smaller (0 if none).\n" \
   "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n" \
+  "  If k = 0, i.e., there is no codeword (rank H = n for a classical code; every\n" \
+  "  row of L in the row space of H, e.g., a DEM with no L left after the pmin\n" \
+  "  cut), nothing is searched: the result is 0 0 0, with a note on stderr.\n" \
   "  The legacy single-threaded dist_m4ri_old (the same options) prints one number\n" \
   "  and also its own progress and codeword lines to stdout, and ignores threads,\n" \
   "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, and rw_opt\n" \

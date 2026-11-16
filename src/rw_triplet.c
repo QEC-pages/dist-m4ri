@@ -893,9 +893,81 @@ static int bfs_try(params_t * const p, const csr_t * const HT, rw_tws_t * const 
   return 1;
 }
 
+/* The identical columns of [H; L] (the same nonzero column of H and the same column of L), for the 1 <-> 1 swaps of the
+ * expansion: twin[j] is the next column of the class of j (a cycle, in increasing order; j itself without an identical
+ * column), NULL if no two columns are identical; *pcnt: the number of columns in the classes of two or more */
+typedef struct {
+  uint64_t h;
+  int j;
+} t2_key_t;
+
+static int t2_key_cmp(const void *a, const void *b) {
+  const t2_key_t *x = a, *y = b;
+  if (x->h != y->h) return (x->h < y->h) ? -1 : 1;
+  return (x->j > y->j) - (x->j < y->j);
+}
+
+static int t2_cols_equal(const csr_t * const HT, const colmask_t * const mL, const int i, const int j) {
+  const int li = HT->p[i + 1] - HT->p[i];
+  if (li != HT->p[j + 1] - HT->p[j] || memcmp(HT->i + HT->p[i], HT->i + HT->p[j], (size_t)li * sizeof(int)))
+    return 0;
+  return !mL || !memcmp(mL->mask + (size_t)i * mL->kw, mL->mask + (size_t)j * mL->kw, (size_t)mL->kw * sizeof(word));
+}
+
+static int *t2_twins(const params_t * const p, const csr_t * const HT, int * const pcnt) {
+  const int n = HT->rows;
+  const colmask_t * const mL = p->maskL;
+  *pcnt = 0;
+  t2_key_t * const key = rw_xmalloc((size_t)(n > 0 ? n : 1) * sizeof(t2_key_t));
+  int nz = 0;
+  for (int j = 0; j < n; j++) {
+    if (HT->p[j + 1] == HT->p[j]) continue; /* (a zero column of H: a codeword of weight 1, or a zero column) */
+    uint64_t h = (uint64_t)(HT->p[j + 1] - HT->p[j]);
+    for (int k = HT->p[j]; k < HT->p[j + 1]; k++) h = rw_mix64(h ^ (uint64_t)HT->i[k]);
+    for (int k = 0; mL && k < mL->kw; k++) h = rw_mix64(h ^ (uint64_t)mL->mask[(size_t)j * mL->kw + k]);
+    key[nz].h = h;
+    key[nz++].j = j;
+  }
+  qsort(key, nz, sizeof(t2_key_t), t2_key_cmp);
+  int *twin = NULL;
+  for (int a = 0; a < nz;) {
+    int b = a + 1;
+    while (b < nz && key[b].h == key[a].h) b++;
+    for (int s = a; s < b && b - a > 1; s++) { /* the classes in a run of equal hashes (the columns in order) */
+      const int j = key[s].j;
+      if (j < 0) continue; /* (already in a class) */
+      int last = j;
+      for (int u = s + 1; u < b; u++) {
+        if (key[u].j < 0 || !t2_cols_equal(HT, mL, j, key[u].j)) continue;
+        if (!twin) {
+          twin = rw_xmalloc((size_t)n * sizeof(int));
+          for (int v = 0; v < n; v++) twin[v] = v;
+        }
+        twin[last] = key[u].j;
+        last = key[u].j;
+        key[u].j = -1;
+        (*pcnt)++;
+      }
+      if (last != j) {
+        twin[last] = j;
+        (*pcnt)++;
+      }
+    }
+    a = b;
+  }
+  free(key);
+  return twin;
+}
+
 long long rw_t3_expand(params_t * const p, const rw_t3_t * const t, const csr_t * const HT, rw_tws_t * const ws,
-                       const long long limit) {
-  if (!t || t->ntrip <= 0 || p->min_w == INT_MAX || !p->codewords) return 0;
+                       const long long limit, int * const ntwin) {
+  if (ntwin) *ntwin = 0;
+  if (p->min_w == INT_MAX || !p->codewords) return 0;
+  const int have_t3 = t && t->ntrip > 0;
+  int nt = 0;
+  int * const twin = t2_twins(p, HT, &nt);
+  if (ntwin) *ntwin = nt;
+  if (!have_t3 && !twin) return 0;
   const int wtop = p->min_w + (p->dW > 0 ? p->dW : 0);
   rw_bfs_t q = {NULL, 0, 0, 0};
   for (cw_vec_t *cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next))
@@ -911,7 +983,7 @@ long long rw_t3_expand(params_t * const p, const rw_t3_t * const t, const csr_t 
     const uint32_t gen = tws_gen(ws);
     for (int a = 0; a < w; a++) ws->mark[c[a]] = gen;
     /* the equal-weight 2 <-> 2 exchanges (the triples are kept in ws->ent until the next generation) */
-    const size_t ne = t3_exchanges(t, ws, c, w, gen);
+    const size_t ne = have_t3 ? t3_exchanges(t, ws, c, w, gen) : 0;
     for (size_t g0 = 0; g0 < ne && !stop;) {
       size_t g1 = g0 + 1;
       while (g1 < ne && ws->ent[3 * g1] == ws->ent[3 * g0]) g1++;
@@ -928,8 +1000,20 @@ long long rw_t3_expand(params_t * const p, const rw_t3_t * const t, const csr_t 
       }
       g0 = g1;
     }
+    /* the equal-weight 1 <-> 1 swaps of identical columns (the Stern filter skips a column identical to a pivot
+     * column); all combinations through the search */
+    for (int a = 0; twin && a < w && !stop; a++) {
+      for (int z = twin[c[a]]; z != c[a] && !stop; z = twin[z]) {
+        if (ws->mark[z] == gen) continue;
+        for (int b = 0; b < w; b++) nb[b] = c[b];
+        nb[a] = z;
+        const int r = bfs_try(p, HT, ws, &q, nb, w);
+        if (r < 0) stop = 1;
+        else if (r > 0 && ++added >= limit) stop = 2;
+      }
+    }
     /* the 1 -> 2 splits (weight w + 1); the marks of c are still valid (bfs_try() does not change them) */
-    if (w + 1 > wtop) continue;
+    if (!have_t3 || w + 1 > wtop) continue;
     for (int a = 0; a < w && !stop; a++) {
       const int z = c[a];
       for (int k = t->tp[z]; k < t->tp[z + 1] && !stop; k++) {
@@ -947,5 +1031,6 @@ long long rw_t3_expand(params_t * const p, const rw_t3_t * const t, const csr_t 
   free(c);
   free(nb);
   free(q.pool);
+  free(twin);
   return (stop == 2) ? -1 - added : added;
 }

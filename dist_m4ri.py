@@ -372,6 +372,8 @@ def format_bounds_list(dmin: int, dmax: int, num_rw: int) -> List[int]:
     Returns [dmin, dmax, num_rw] according to:
     - [d, d, 0] if known exactly; also [1, 1, 0] for dmax == 1 (every nonzero codeword has weight >= 1: a codeword of
       weight 1 gives d = 1; since version 0.17.2, [0, 1, num_rw] before)
+    - [0, 0, 0] for an input without logical codewords (k = 0; the compute_*() functions return it, since version
+      0.17.2, see _k0_result())
     - [dmin, 0, 0] if there is no upper bound (dmax == 0)
     - [0, dmax, num_rw] if there is no lower bound (dmin <= 1)
     - [dmin, dmax, num_rw] otherwise
@@ -623,6 +625,9 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
         if line_s.startswith("# Note: more than") and "canonical classes" in line_s:  # (rw_opt 16: tables full)
             stats["canon_full"] = True
             continue
+        if line_s.startswith(_K0_NOTE_PREFIX):  # (no logical codeword: the result 0 0 0, since version 0.17.2)
+            body = line_s[len(_K0_NOTE_PREFIX):].strip()  # ('(<reason>); the result is 0 0 0')
+            stats["k0"] = body[1:body.rfind(")")] if body.startswith("(") and ")" in body else body
         if line_s.startswith("# Note: the min_hits stop was inactive"):  # (rw_opt 16: no uniform-step data)
             stats["min_hits_inactive"] = line_s[len("# Note: "):]
             continue
@@ -800,6 +805,9 @@ def explain_bounds(
     dmin, dmax, num_rw = bounds[0], bounds[1], bounds[2]
     lines = []
     prefix = f"{label} " if label else ""
+    if stats and stats.get("k0") and dmin == 0 and dmax == 0:  # (since version 0.17.2)
+        return (f"  {prefix}No logical codeword (k = 0): the distance is not defined, and the result is 0 0 0 "
+                f"({stats['k0']}).")
     stopped = dstop > 0 and dmin >= dstop and not (dmin > 0 and dmin == dmax)
 
     # Lower bound explanation
@@ -1534,6 +1542,111 @@ def _warn_ignored(msg: str) -> None:
         sys.stderr.write(f"# Warning: {msg}\n")
 
 
+# The note on an input without logical codewords (k = 0), whose result is 0 0 0 since version 0.17.2 (with every
+# engine and solver): the binary writes it at any debug level, and the wrapper on the paths without the binary
+_K0_NOTE_PREFIX = "# Note: k=0: no logical codeword"  # (not the note 'k=0 is not checked' of the binary)
+
+
+def _note_k0(reason: str) -> None:
+    """
+    The one stderr line for an input without logical codewords (k = 0), written by the wrapper on the paths without
+    the binary (qec_cert, codedistance), unless set_silent() is on (the binary writes its own, which run_dist_m4ri()
+    forwards on the same terms, see _binary_stderr_forwarded()).
+    """
+    if _report_ignored:
+        sys.stderr.write(f"{_K0_NOTE_PREFIX} ({reason}); the result is 0 0 0\n")
+
+
+def _k0_found(reason: str, css: bool = False) -> None:
+    """
+    k = 0 found by the wrapper on a path without the binary (solver='codedistance'): the note (see _note_k0()) and the
+    statistics of the call for explain_bounds(): _last_run_stats, and _last_css_stats for a CSS code.
+    """
+    global _last_run_stats, _last_css_stats
+    _note_k0(reason)
+    _last_run_stats = {"k0": reason}
+    if css:
+        _last_css_stats = {"X": {"k0": reason}, "Z": {"k0": reason}}
+
+
+def _k0_result(cache_keys: Sequence[Optional[str]] = (), eff_cache_file: Optional[str] = None) -> Dict[str, Any]:
+    """
+    The result for an input without logical codewords (k = 0): the bounds [0, 0, 0] (since version 0.17.2; the
+    binary printed a vacuous lower bound above n before), which are not cached: the records of cache_keys (e.g., such
+    a lower bound of an earlier version) are removed, so that every later call gives the same result.
+    """
+    dropped = False
+    for key in cache_keys:
+        if _use_distance_cache and key is not None and key in _distance_cache:
+            del _distance_cache[key]
+            dropped = True
+    if dropped and eff_cache_file:
+        save_distance_cache(eff_cache_file)
+    return {"dist": 0, "dmin": 0, "dmax": 0, "rw_steps": 0, "d_info": [0, 0, 0], "cws": [], "cached": False,
+            "k0": True}
+
+
+def _gf2_rank(matrix: Any) -> int:
+    """The rank over GF(2) of a matrix (a numpy array, an array-like, or a scipy sparse matrix; odd entries are 1)."""
+    import numpy as np
+    a = np.asarray(matrix.toarray() if hasattr(matrix, "toarray") else matrix)
+    if a.ndim != 2 or a.size == 0:
+        return 0
+    a = (a.astype(np.int64) % 2).astype(bool)
+    rank, (m, n) = 0, a.shape
+    for c in range(n):
+        if rank == m:
+            break
+        piv = np.nonzero(a[rank:, c])[0]
+        if piv.size == 0:
+            continue
+        p = rank + int(piv[0])
+        if p != rank:
+            a[[rank, p]] = a[[p, rank]]
+        rows = np.nonzero(a[:, c])[0]
+        rows = rows[rows != rank]
+        a[rows] ^= a[rank]
+        rank += 1
+    return rank
+
+
+def _k0_of_matrices(H: Any, G: Any = None, L: Any = None, classical: bool = False) -> bool:
+    """
+    Whether a code given by matrices (not files) has no logical codeword (k = 0): a classical code with rank H = n, a
+    quantum code with n = rank H + rank G, or with no row of L independent of the rows of H (also an empty L).  Used
+    on the codedistance paths (the binary and qec_cert find it themselves, since version 0.17.2).
+    """
+    import numpy as np
+
+    def dense(M: Any) -> Any:  # (a MatrixMarket file is read with scipy)
+        if isinstance(M, (str, Path)):
+            import scipy.io
+            try:
+                M = scipy.io.mmread(str(M), spmatrix=False)  # (scipy >= 1.12: a sparse array)
+            except TypeError:
+                M = scipy.io.mmread(str(M))
+        return np.asarray(M.toarray() if hasattr(M, "toarray") else M)
+
+    if H is None:
+        return False
+    try:
+        h = dense(H)
+        g, l_m = (dense(G) if G is not None else None), (dense(L) if L is not None else None)
+    except Exception:  # (an unreadable input: left to the solver)
+        return False
+    n = h.shape[1] if h.ndim == 2 else 0
+    if n <= 0:
+        return False
+    r_h = _gf2_rank(h)
+    if classical:
+        return r_h == n
+    if g is not None:
+        return r_h + _gf2_rank(g) == n
+    if l_m is not None:
+        return l_m.size == 0 or _gf2_rank(np.vstack([h, l_m.reshape(-1, n)])) == r_h
+    return False
+
+
 # The options of the dist_m4ri binary in the compute_*() functions, with their defaults there, which
 # solver="codedistance" does not use (it uses the matrices or the DEM, num_steps, seed, codedistance_method, and
 # codedistance_params): see _warn_codedistance_ignored().  (start, ortho, noscan, cbeg, cend, outD, and out_reduced
@@ -2090,6 +2203,13 @@ def _cert_code_distance(
     t_cert = time.monotonic()
     cert = run_cert_fn(w_lo, max(w_lo, w_hi))
     t_cert = time.monotonic() - t_cert
+    c_get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
+    if str(c_get("status", "") or "") == "infeasible":  # (qec_cert certified k = 0: no logical codeword)
+        _note_k0("certified by qec_cert")
+        _last_run_stats["k0"] = "certified by qec_cert"
+        if not keep_stats:
+            _last_run_stats["engine_cert"] = {"cached": False, "k0": True, "wmin": w_lo, "time": t_cert}
+        return _k0_result((code_key,), eff_cache_file)
     c_lb, c_ub = _cert_extract_bounds(cert, max(p_dmin, certified_dmin))
     if not keep_stats:
         _last_run_stats["engine_cert"] = {"cached": False, "lb": c_lb, "ub": c_ub, "wmin": w_lo,
@@ -2263,6 +2383,8 @@ def _auto_done_reason(res: Dict[str, Any], stage: str, dstop: int, wmax: int, t_
     limit (t_all <= 0), a run of the binary (binary=True) ends only with the result, while qec_cert (binary=False) may
     end early with an open bracket: then the binary runs (since version 0.17.2).
     """
+    if res.get("k0"):
+        return "no logical codeword (k = 0)"
     r_dmin, r_dmax = res["dmin"], res["dmax"]
     if r_dmin > 0 and r_dmin == r_dmax:
         return f"exact after {stage}"
@@ -2503,7 +2625,7 @@ def _auto_cert_first(
         res = run_native(max(rem, _AUTO_STAGE_B_MIN_TIME) if t_all > 0 else 0.0, dmin, dmax)
         _last_run_stats["engine_auto"] = info
         return res
-    _last_run_stats = {}  # (no run of the binary)
+    _last_run_stats = {"k0": "certified by qec_cert"} if res.get("k0") else {}  # (no run of the binary)
     info.update(stage_b=[res["dmin"], res["dmax"]], stage_b_time=time.monotonic() - t0)
     reason = _auto_done_reason(res, "qec_cert", dstop, wmax, t_all, t_all - (time.monotonic() - t0), binary=False)
     if reason:
@@ -2743,16 +2865,16 @@ def run_dist_m4ri(
             a RW step (the single-column candidates up to the weight min(dmax + 8, 64), the pairs up to
             min(dmax + 1, 64), + dW when collecting) and the Stern filter of its pairs (loss-free for the distance,
             i.e., the minimum weight, with the contraction, hence only while dmax + 8 <= 64, + dW when collecting; when
-            collecting codewords, only with 32: 32 restores the codewords the filter removes through 2 <-> 2 exchanges
-            and 1 -> 2 splits, but not those that use a column identical to a pivot column — possible only in matrices
-            with identical columns, e.g., finH/finL exported from a DEM without merging, or merge=0, as DEMs are merged
-            by default — which may be missing from the method=1 export; method=3 adds them through CC); 2, the
+            collecting codewords, only with 32: 32 restores the codewords the filter removes through 2 <-> 2 exchanges,
+            1 -> 2 splits, and 1 <-> 1 swaps of identical columns, e.g., in finH/finL exported from a DEM without
+            merging, or with merge=0, since version 0.17.2); 2, the
             shortening of the candidates by the rows of G (finG; before the contraction of 1); 4, row-slab windows of a
             multi-round DEM (kwin=0, not with sort_rows=1); 8, the sparse-dual elimination (an m x m inverse instead of
             the m x n matrix; at most 64 rows of L); 16, the canonical classes of the minimum-weight codewords found by
             the uniform RW steps, which the min_hits stopping rule then counts (Good-Turing and Chao2, see min_hits;
             only with min_hits > 0, not with kwin > 0; tables of up to 2^24 classes, about 640 MiB); 32, the codewords
-            collected (outC, maxC) expanded by the T3 2 <-> 2 exchanges and 1 -> 2 splits (see 1).
+            collected (outC, maxC) expanded by the T3 2 <-> 2 exchanges and 1 -> 2 splits, and by the 1 <-> 1 swaps of
+            the identical columns of H and L, also without T3 (see 1).
             Only with full-matrix RW (ksub=0) and steps > 0.  With rw_opt != 0 (also if no stage applies, e.g., for a
             classical code), the automatic hybrid windows (kwin=0) are used only for a DEM (matrices: uniform
             permutations, unless kwin > 0 or win_hyb > 0).  The distance found is valid with any rw_opt, and the cache
@@ -2982,7 +3104,7 @@ def _binary_stderr_forwarded(stderr: str) -> str:
     for line in stderr.splitlines():
         if skip and line.startswith("#   "):
             continue
-        skip = line.startswith(_BIN_STDERR_OWN)
+        skip = line.startswith(_BIN_STDERR_OWN) or (line.startswith(_K0_NOTE_PREFIX) and not _report_ignored)
         if not skip and line.strip():
             out.append(line + "\n")
     return "".join(out)
@@ -5374,6 +5496,9 @@ def _cached_code_distance(
             rw_opt=rw_opt
         )
 
+        if _last_run_stats.get("k0"):  # (no logical codeword: [0, 0, 0], not cached, see _k0_result())
+            return _k0_result((code_key, plain_key), eff_cache_file)
+
         cws: List[List[int]] = []
         if need_cws and outC_file and os.path.exists(outC_file):
             cws = read_sparse_vectors(outC_file)
@@ -5548,8 +5673,8 @@ def compute_classical_distance(
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
-        without nonzero codewords (k = 0, e.g., a full-rank H) has no codeword to find: dist is then the lower bound
-        dmin > n of the binary, with d_info [dmin, 0, 0].
+        without nonzero codewords (k = 0, e.g., a full-rank H) gives dist 0 and d_info [0, 0, 0] (since version 0.17.2,
+        with every engine and solver, and one note on stderr unless silent; not cached).
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
@@ -5584,6 +5709,9 @@ def compute_classical_distance(
         H_mat = H.toarray() if hasattr(H, 'toarray') else (
             np.asarray(H, dtype=np.int8) if isinstance(H, (np.ndarray, list)) else None
         )
+        if _k0_of_matrices(H if H_mat is None else H_mat, classical=True):  # (since version 0.17.2)
+            _k0_found("rank H = n")
+            return (0, [0, 0, 0]) if return_info else 0
         res = codedistance.codeDistance(
             H_mat, None, tB=1, method=codedistance_method, params=params,
             seed=seed if seed != 0 else None
@@ -5780,8 +5908,9 @@ def compute_quantum_distance(
             extraction; finC, smax, dW, maxC, and start are ignored with a warning, since version 0.17.2; a lower bound
             of qec_cert is cached only if it is unconditional, and an upper bound only with a verified witness;
             ImportError if qec_cert is not usable; a code without logical operators, which qec_cert certifies with the
-            status 'infeasible', gives [0, 0, 0]).  It searches the weights from the certified lower bound of the cache
-            record (not from the caller's dmin, since version 0.17.2: its lower bound would be conditional on it and
+            status 'infeasible', gives [0, 0, 0], as with every engine).  It searches the weights from the certified
+            lower bound of the cache record (not from the caller's dmin, since version 0.17.2: its lower bound would be
+            conditional on it and
             could not be cached; dmin only tightens the returned bounds) up to dmax - 1 (or wmax, or dstop - 1; 40
             without any of them, where its stages which do not depend on the weight, e.g., the graphlike or rank-DP
             bounds, may still certify a larger distance), see _cert_code_distance().  "auto" (since version 0.17.0, a
@@ -5795,13 +5924,13 @@ def compute_quantum_distance(
             qec_cert).  The details are in _last_run_stats["engine_auto"].
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
-            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection with
-            method=1 on matrices with identical columns, see run_dist_m4ri()).
+            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
+            run_dist_m4ri()).
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
-        without logical operators (k = 0) has no codeword: dist is then the lower bound dmin > n of the binary, with
-        d_info [dmin, 0, 0].
+        without logical operators (k = 0) gives dist 0 and d_info [0, 0, 0] (since version 0.17.2, with every engine and
+        solver, and one note on stderr unless silent; not cached).
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
@@ -5856,6 +5985,9 @@ def compute_quantum_distance(
         dual_arr = dual_mat.toarray() if hasattr(dual_mat, 'toarray') else (
             np.asarray(dual_mat, dtype=np.int8) if isinstance(dual_mat, (np.ndarray, list)) else None
         )
+        if _k0_of_matrices(H if H_mat is None else H_mat, G=G):  # (since version 0.17.2)
+            _k0_found("rank H + rank G = n")
+            return (0, [0, 0, 0]) if return_info else 0
 
         res = codedistance.codeDistance(
             H_mat, dual_arr, tB=1, method=codedistance_method, params=params,
@@ -6120,14 +6252,15 @@ def compute_css_distance(
             the other engines.
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
-            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection with
-            method=1 on matrices with identical columns, see run_dist_m4ri()).
+            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
+            run_dist_m4ri()).
 
     Returns:
         tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
         else (dist, dX_info, dZ_info)
-        A sector without logical operators (k = 0) has no codeword: its bounds are [dmin, 0, 0] with the lower bound
-        dmin > n of the binary.
+        A code without logical operators (k = 0, the same in both sectors) gives (0, [0, 0, 0], [0, 0, 0]) (since
+        version 0.17.2, with every engine and solver, one note on stderr unless silent, a single sector run; not
+        cached).
 
     Raises:
         ValueError: if Hx or Hz is missing or empty (use compute_quantum_distance() for one sector, or
@@ -6186,6 +6319,9 @@ def compute_css_distance(
         Hz_mat = Hz.toarray() if hasattr(Hz, 'toarray') else (
             np.asarray(Hz, dtype=np.int8) if isinstance(Hz, (np.ndarray, list)) else None
         )
+        if _k0_of_matrices(Hx if Hx_mat is None else Hx_mat, G=Hz if Hz_mat is None else Hz_mat):  # (since 0.17.2)
+            _k0_found("rank Hx + rank Hz = n", css=True)
+            return (0, [0, 0, 0], [0, 0, 0])
         sector_d: Dict[str, int] = {}
         sector_info: Dict[str, List[int]] = {}
         for s in ("Z", "X"):
@@ -6291,10 +6427,16 @@ def compute_css_distance(
         else:
             res[s] = run_native(timeout, eff_dmin, 0)
         _last_css_stats[s] = dict(_last_run_stats)
+        if res[s].get("k0"):  # (no logical codeword: the same in the other sector; one note, no second run)
+            other = "X" if s == "Z" else "Z"
+            res[other], _last_css_stats[other] = dict(res[s]), dict(_last_run_stats)
+            break
 
     rx, rz = res["X"], res["Z"]
     dist, d_lo, d_hi, _ = _css_combine((rx["dmin"], rx["dmax"], rx["rw_steps"]),
                                        (rz["dmin"], rz["dmax"], rz["rw_steps"]), eff_dmax)
+    if rx.get("k0") or rz.get("k0"):
+        dist = 0
     if rx["cached"] and rz["cached"] and (debug & PY_DBG_CACHE) and not verbose:
         found = ("exact distance" if (d_lo > 0 and d_lo == d_hi) else
                  f"dmin={d_lo} >= dstop={sector_stop}" if (sector_stop > 0 and d_lo >= sector_stop) else
@@ -6769,8 +6911,8 @@ def compute_dem_distance(
             left); the binary only, with the whole timeout, if qec_cert is not installed or not usable (a warning).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
-            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection with
-            method=1 on matrices with identical columns, see run_dist_m4ri()).
+            see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
+            run_dist_m4ri()).
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -6833,12 +6975,24 @@ def compute_dem_distance(
             params["iterCount"] = num_steps
 
         if circuit is not None:
+            try:  # (k = 0: the DEM of the circuit, since version 0.17.2)
+                c_obj = _get_stim().Circuit.from_file(str(circuit)) if isinstance(circuit, (str, Path)) else circuit
+                H_c, L_c, _ = codedistance.StimDEM2HL(_circuit_dem(c_obj)[0])
+                k0_c = _k0_of_matrices(H_c, L=L_c)
+            except Exception:  # (left to codedistance)
+                k0_c = False
+            if k0_c:
+                _k0_found("no observable independent of the detectors")
+                return 0, [0, 0, 0]
             res = codedistance.circuitDistance(
                 circuit, method=codedistance_method, params=params,
                 seed=seed if seed != 0 else None
             )
         else:
             H, L, priors = codedistance.StimDEM2HL(dem)
+            if _k0_of_matrices(H, L=L):  # (since version 0.17.2)
+                _k0_found("no observable independent of the detectors")
+                return 0, [0, 0, 0]
             if "priors" not in params and len(priors) > 0:
                 params["priors"] = priors
             res = codedistance.codeDistance(
@@ -8432,7 +8586,9 @@ Distance bounds and guidance:
                         CC search begins at weight w = max(1, dmin).  In the output 'dmin dmax
                         rw_steps', dmin - 1 is the largest weight w certified to have no codeword
                         of weight <= w (0: none above 1; odd weights are skipped if all codewords
-                        have even weight; when exact, dmin = dmax = d, including d = 1).
+                        have even weight; when exact, dmin = dmax = d, including d = 1).  An input
+                        without logical codewords (k = 0) gives 0 0 0 with every engine, with one
+                        note on stderr (not with --silent), not cached (since version 0.17.2).
   dmax=N                Known upper bound on distance (default: 0).
                         CC ends once dmin = dmax (with outC, after the rounds w = dmax..dmax+dW);
                         RW ignores candidate codewords of weight >= dmax unless collecting codewords
@@ -8547,12 +8703,10 @@ Multithreading & throttling:
                            loss-free for the distance, i.e., the minimum weight, with the
                            contraction, hence only while dmax+8 <= 64, +dW when collecting; when
                            collecting codewords with --cws, outC, or maxC, only with 32: 32 restores
-                           the codewords the filter removes through 2 <-> 2 exchanges and 1 -> 2
-                           splits, but not those that use a column identical to a pivot column,
-                           possible only in matrices with identical columns, e.g., finH/finL exported
-                           from a DEM without merging, or merge=0, as DEMs are merged by default,
-                           which may be missing from the method=1 export; method=3 adds them through
-                           CC); a zero column of H with a nonzero column of L gives d=1 at once
+                           the codewords the filter removes through 2 <-> 2 exchanges, 1 -> 2 splits,
+                           and 1 <-> 1 swaps of identical columns, e.g., in finH/finL exported from a
+                           DEM without merging, or with merge=0); a zero column of H with a nonzero
+                           column of L gives d=1 at once
                            (automatic: quantum codes, steps > 2);
                         2: with G (finG, fin, or Hx/Hz without Lx/Lz), shorten the candidates by the
                            rows of G (steepest descent, before the contraction of 1; the
@@ -8584,8 +8738,9 @@ Multithreading & throttling:
                            each at most once (with an active 1 or 2 as well);
                         32: when collecting codewords (--cws, outC, or maxC), add the codewords
                            obtained from the codewords found by T3 before the export: 2 <-> 2
-                           exchanges and 1 -> 2 splits, up to the weight min_w+dW (see 1, irred, and
-                           maxC; automatic: quantum codes when collecting: --cws, outC, or maxC).
+                           exchanges and 1 -> 2 splits, up to the weight min_w+dW; and by 1 <-> 1
+                           swaps of the identical columns of H and L, also without T3 (see 1, irred,
+                           and maxC; automatic: quantum codes when collecting: --cws, outC, or maxC).
                         With rw_opt != 0, matrices (finH, Hx/Hz) use uniform random permutations in
                         all RW steps unless kwin > 0 or win_hyb > 0 (the hybrid windows are for DEMs,
                         see kwin), even if no stage applies (rw_opt=0x0 in the run plan, e.g., for a
@@ -8761,9 +8916,10 @@ General options:
                         --out-reduced, finC, smax, dW, maxC, and start are ignored with a warning; with
                         pmin > 0, certifies the DEM without errors of probability < pmin; method=1 runs
                         its upper-bound mode 'ub'; '0 0 0' for an input without logical codewords,
-                        which qec_cert certifies as 'infeasible').  qec_cert gets wmin from a cached
-                        certified lower bound (dmin=N only tightens the returned bounds, not passed as
-                        wmin) and wmax from dmax-1, wmax, or dstop-1 (40 if none); only unconditional
+                        which qec_cert certifies as 'infeasible', as with every engine: see dmin).
+                        qec_cert gets wmin from a cached certified lower bound (dmin=N only tightens
+                        the returned bounds, not passed as wmin) and wmax from dmax-1, wmax, or
+                        dstop-1 (40 if none); only unconditional
                         lower bounds (including those conditioned solely on that cached certified
                         wmin) and upper bounds with a verified witness are cached.
                         'auto' (since version 0.17.0): two-stage portfolio for distance-only method=3

@@ -850,6 +850,73 @@ static int help_option(const char * const arg, const char ** const topic) {
   return 0;
 }
 
+/**
+ * k = 0, i.e., no codeword (H c = 0, c != 0, and L c != 0 for a quantum code or a DEM): rank H = n for a classical
+ * code; otherwise, every row of L is in the row space of H (also if L has no rows or L = 0).  Sets p->k_zero and
+ * p->k0_reason, and returns p->k_zero.  One dense elimination of H (as in a RW step), not done with method=2 (no dense
+ * RW matrices) for H with more than 2^32 entries.
+ */
+static int var_k_zero(params_t * const p) {
+  const csr_t * const H = p->spaH;
+  const csr_t * const L = p->classical ? NULL : p->spaL;
+  const int m = H->rows, n = H->cols;
+  p->k_zero = 0;
+  if (L && (L->rows == 0 || ((L->nz == -1) ? L->p[L->rows] : L->nz) == 0)) {
+    snprintf(p->k0_reason, sizeof(p->k0_reason), (L->rows == 0) ? "L has no rows" : "L = 0");
+    return p->k_zero = 1;
+  }
+  if ((!L && m < n) || (L && m == 0)) /* rank H <= m < n, or every column (one with L c != 0) is in ker(H) */
+    return 0;
+  if (!(p->method & 1) && (double)m * (double)n > 4294967296.0) {
+    if (p->debug & DBG_SUMMARY)
+      fprintf(stderr, "# Note: k=0 is not checked (method=2 and H with m*n > 2^32 entries)\n");
+    return 0;
+  }
+  mzd_t * const E = mzd_from_csr(NULL, H);
+  rci_t rank = mzd_echelonize(E, 1); /* the reduced row echelon form of H */
+  if (!L) {
+    mzd_free(E);
+    if (rank < n)
+      return 0;
+    snprintf(p->k0_reason, sizeof(p->k0_reason), "classical code with rank H = n = %d", n);
+    return p->k_zero = 1;
+  }
+  /* the pivot columns of the rows of E (increasing); a row of L is in the row space of H iff it is reduced to 0 by
+   * adding, for i = 0, 1, ..., the row i of E if the row of L (as reduced so far) has a 1 in the pivot column i */
+  rci_t * const piv = malloc((size_t)(rank > 0 ? rank : 1) * sizeof(rci_t));
+  if (!piv)
+    ERROR("memory allocation");
+  for (rci_t i = 0, c = 0; i < rank; i++) {
+    while (c < n && !mzd_read_bit(E, i, c)) c++;
+    if (c >= n)
+      ERROR("unexpected row echelon form: row %d of rank %d is zero", i, rank);
+    piv[i] = c++;
+  }
+  mzd_t * const D = mzd_from_csr(NULL, L);
+  int indep = 0; /* a row of L not in the row space of H was found */
+  for (rci_t j = 0; (j < D->nrows) && !indep; j++) {
+    word * const v = mzd_row(D, j);
+    for (rci_t i = 0; i < rank; i++) {
+      if (mzd_read_bit(D, j, piv[i])) {
+        const word * const e = mzd_row(E, i);
+        for (wi_t w = piv[i] / m4ri_radix; w < D->width; w++) v[w] ^= e[w];
+      }
+    }
+    for (wi_t w = 0; w < D->width; w++) indep |= (v[w] != 0);
+  }
+  free(piv);
+  mzd_free(D);
+  mzd_free(E);
+  if (indep)
+    return 0;
+  snprintf(p->k0_reason, sizeof(p->k0_reason), "every row of L is in the row space of H");
+  return p->k_zero = 1;
+}
+
+void k_zero_note(const params_t * const p, const char * const result) {
+  fprintf(stderr, "# Note: k=0: no logical codeword (%s); the result is %s\n", p->k0_reason, result);
+}
+
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
@@ -1344,7 +1411,7 @@ void var_init(int argc, char **argv, params_t * const p){
     read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
     if (p->merge)
       dem_merge_columns(p);
-    if ((p->drop_mode != 0) && (p->classical != 1))
+    if ((p->drop_mode != 0) && (p->classical != 1) && (p->spaL->rows > 0)) /* (not without L: k = 0, no codeword) */
       dem_drop_detectors(p);
     if (p->outD)
       dem_write_drop_list(p);
@@ -1396,11 +1463,16 @@ void var_init(int argc, char **argv, params_t * const p){
 
   /* degenerate inputs (the dense RW matrices of M4RI need rows and columns): no columns is an error; without rows of H,
    * every column is in ker(H), so that CC at the weight 1 finds a codeword (a column with L c != 0) if there is one */
-  if (p->spaH->cols <= 0)
-    ERROR("invalid input: H has no columns (n=0)");
-  if ((p->spaH->rows <= 0) && (p->method & 1)) {
-    fprintf(stderr, "# WARNING: H has no rows (m=0): every column is in ker(H); running CC only (method=2 instead of "
-            "method=%d)\n", p->method);
+  if (p->spaH->cols <= 0) {
+    if (!p->fdem)
+      ERROR("invalid input: H has no columns (n=0)");
+    /* (read_dem_file() requires a column) a DEM whose columns were all removed by merge and drop: k = 0 */
+    p->k_zero = 1;
+    snprintf(p->k0_reason, sizeof(p->k0_reason), "no column left after merge and drop");
+    return;
+  }
+  const int method_m0 = ((p->spaH->rows <= 0) && (p->method & 1)) ? p->method : 0; /* (the warning: after k = 0) */
+  if (method_m0) {
     p->method = 2;
     if (p->wmax <= 0) p->wmax = 1;
   }
@@ -1517,6 +1589,14 @@ void var_init(int argc, char **argv, params_t * const p){
     print_input_summary(stderr, p);
   if (p->debug & DBG_PARAMS)
     print_code_params(stderr, p);
+
+  /* k = 0 (no codeword, also after the pmin cut, merge, and drop of a DEM): no search, and none of the warnings below;
+   * the binaries print the note (k_zero_note()) and the result 0 0 0 */
+  if (var_k_zero(p))
+    return;
+  if (method_m0)
+    fprintf(stderr, "# WARNING: H has no rows (m=0): every column is in ker(H); running CC only (method=2 instead of "
+            "method=%d)\n", method_m0);
 
   if ((p->debug & DBG_SUMMARY) && !p->fdem && (p->method & 2) && p->smax == 0) {
     fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
@@ -1872,7 +1952,10 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
 
   if (debug & DBG_ARGS)
     fprintf(stderr, "# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
-  if((r<=0)||(k<=0)||(n<=0))
+  /* no L tag in the error lines kept (e.g., all removed by the pmin cut): L without rows, i.e., k = 0 (var_init()) */
+  if (k < 0)
+    k = 0;
+  if((r<=0)||(n<=0))
     ERROR("invalid DEM file %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
 	  fnam,r,k,n,iD,iL);
   

@@ -210,11 +210,10 @@ Relevant parameters:
     syndrome and at most 3 columns (the Stern filter: loss-free for the distance, i.e., the minimum weight, together
     with the contraction, hence, since 0.17.2, only while $d_{\max} + 8 \le 64$, plus `dW` when collecting; when
     collecting codewords with `outC` or `maxC`, only with `32`, which restores the codewords the filter removes through
-    $2 \leftrightarrow 2$ exchanges and $1 \to 2$ splits, but not those that use a column identical to a pivot column —
-    possible only in matrices with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or
-    `merge=0`, as DEMs are merged by default — which may be missing from the `method=1` export; `method=3` adds them
-    through CC); a zero column of $H$ with a non-zero column of $L$ gives $d = 1$ at once (automatic: quantum codes;
-    nothing is kept if there are no triplets, e.g., for codes with checks of weight $\ge 4$);
+    $2 \leftrightarrow 2$ exchanges, $1 \to 2$ splits, and $1 \leftrightarrow 1$ swaps of identical columns, so that
+    matrices with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`, are no
+    longer an exception since 0.17.2); a zero column of $H$ with a non-zero column of $L$ gives $d = 1$ at once
+    (automatic: quantum codes; nothing is kept if there are no triplets, e.g., for codes with checks of weight $\ge 4$);
   - `2`: with `finG`, the candidates are also shortened by the rows of $G$ (steepest descent, since 0.17.2 before the
     contraction of `1`; the single-column candidates up to the weight $\min(d_{\max} + w_G - 2, 64)$, with `1` up to
     $\min(d_{\max} + \max(8, w_G - 2), 64)$), and the pairs skip the columns whose circuits are rows of $G$ (only while
@@ -236,8 +235,9 @@ Relevant parameters:
     an active `1` or `2` (triplets found, or `finG`), the codewords of a RW step are recorded at its end (lighter ones
     at once), each at most once;
   - `32`: with `outC` or `maxC`, the codewords found are expanded before the export by the $\mathcal{T}_3$ exchanges
-    ($2 \leftrightarrow 2$) and splits ($1 \to 2$), up to the weight $w_{\min} + \text{dW}$ (see `1` for matrices with
-    identical columns; automatic: quantum codes with `outC` or `maxC`).
+    ($2 \leftrightarrow 2$) and splits ($1 \to 2$), up to the weight $w_{\min} + \text{dW}$, and (since 0.17.2) by the
+    $1 \leftrightarrow 1$ swaps of the identical columns of $H$ and $L$, also without $\mathcal{T}_3$ (see `1`;
+    automatic: quantum codes with `outC` or `maxC`).
 
   All stages need full-matrix RW (`ksub=0`) and `steps > 0` (the automatic ones `steps > 2`). With `rw_opt != 0`,
   matrices (`finH`) use uniform random permutations in every RW step unless `kwin > 0` or `win_hyb > 0` (the hybrid
@@ -1144,8 +1144,11 @@ interoperability without manual threading overhead.
   output of the binary: `dmin` is reported as `0` if it is at most 1 (no lower bound; e.g., `0 6 50` where the binary
   prints `1 6 50`), except for $d = 1$, which is exact (`[1, 1, 0]` since 0.17.2; `[0, 1, rw_steps]` before), `rw_steps`
   as `0` if the distance is exact or there is no upper bound, and with the cache, `rw_steps` adds up the RW steps of
-  all runs with the same cache key; a code without codewords ($k = 0$) gives `[dmin, 0, 0]` with `dmin` larger than
-  $n$. The CLI prints these numbers (and `(exact)` if `dmin = dmax`), and for a CSS code (`Hx=`, `Hz=`) the line
+  all runs with the same cache key; an input without logical codewords ($k = 0$, e.g., a full-rank `H`, or a DEM
+  whose `pmin` cut leaves no error which flips an observable) gives `[0, 0, 0]` (`0 0 0` in the CLI) with every engine
+  and solver, with one note on `stderr` (`# Note: k=0: no logical codeword (...); the result is 0 0 0`, not with
+  `--silent`), and nothing is cached (since 0.17.2; before, the binary printed a vacuous lower bound above $n$). The
+  CLI prints these numbers (and `(exact)` if `dmin = dmax`), and for a CSS code (`Hx=`, `Hz=`) the line
   `dX: dmin dmax rw_steps  dZ: dmin dmax rw_steps  (d = N)`.
 - `DistanceResult(dmin, dmax, rw_steps=0, cws=None, ...)`: an optional container of the bounds (and codewords) with
   `is_exact`, `dist`, conversion to `int`, and comparison with an integer or with a tuple `(dmin, dmax, rw_steps)`; the
@@ -1377,9 +1380,8 @@ interoperability without manual threading overhead.
     distance under the key with `pmin`), and it does not pass a `dmin` of the caller to `qec_cert`, which searches from
     the certified `dmin` of the cache (or 1) up to `dmax - 1`, `wmax`, or `dstop - 1`, or up to the weight 40 without
     them (its stages which do not depend on the weight may still certify more). An input without logical codewords
-    (e.g., a DEM whose `pmin` cut leaves no error which flips an observable) gives `[0, 0, 0]` with `'cert'`, and a
-    vacuous `[dmin, 0, 0]` with `dmin` above $n$ with the binary. `--model-lb` always runs the native binary (`solver=`
-    and `engine=` are ignored with a warning).
+    (qec_cert status `infeasible`) gives `[0, 0, 0]`, as with the binary (see above). `--model-lb` always runs the
+    native binary (`solver=` and `engine=` are ignored with a warning).
   - Cache rules for `qec_cert` hand-off: only unconditional lower bounds (`status` in `('exact', 'bounds', 'timeout')`
     without `lb_conditional`) and verified upper-bound witnesses (`witness_verified=True`) are written to the distance
     cache. When the cache already holds a certified lower bound `dmin > 1`, that bound is passed to `qec_cert` as

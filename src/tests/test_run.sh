@@ -80,8 +80,9 @@ assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 debug=0" 0 "^
 # Test 4: CC fdem with pmin
 assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 pmin=0.01 debug=0" 0 "^3$" ""
 
-# Test 5: CC fdem with high pmin
-assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 pmin=0.02 debug=0" 0 "^-3$" ""
+# Test 5: CC fdem with high pmin: no logical codeword is left (k = 0: the result 0 with a note, formerly -3)
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 pmin=0.02 debug=0" 0 "^0$" \
+    "^# Note: k=0: no logical codeword \(every row of L is in the row space of H\); the result is 0$"
 
 # Test 6: RW fdem baseline
 assert_output "$BIN method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=100 debug=0" 0 "^3$" ""
@@ -1499,7 +1500,8 @@ for o in 1 17 33 49 -1; do
         0 "^1 3 1$" "^# read [1-9][0-9]* codewords from" "invalid codewords|reducible codewords replaced"
 done
 assert_output "$BIN_FORK method=1 $D3DEM steps=400 dW=1 outC=$CWS120R seed=3 threads=2 rw_opt=33 debug=1" 0 "" \
-    "^# RW triplets: the codewords found expanded by T3 \(2 <-> 2 exchanges, 1 -> 2 splits up to weight 4\): [0-9]+"
+    "^# RW triplets: the codewords found expanded by T3 \(2 <-> 2 exchanges, 1 -> 2 splits up to weight 4\) \
+and by 1 <-> 1 swaps of identical columns \([0-9]+ columns with a twin\): [0-9]+"
 rm -f "$CWS120C" "$CWS120R"
 
 # Test 121: Stage 5 (16): the canonical classes of the minimum weight in the uniform steps, counted once per step,
@@ -1779,6 +1781,68 @@ rm -f "$UNV131" "$OUTD131" "$TWN131"
 # stays active without a spurious 'ignored with ksub' warning (C1-03)
 assert_output "$BIN_FORK method=1 $D3DEM ksub=8 rw_opt=1 steps=100 threads=2 debug=3" 0 "^1 3 [0-9]+$" \
     "^# run plan: .* ksub=0, rw_opt=0x1," "is ignored with ksub"
+
+# Test 133: k = 0 (no codeword): a classical code with rank H = n (H = eye(3)) gives the result 0 0 0 with every method
+# and the note at debug=0 (dist_m4ri_old: 0); outC exports no codewords
+EYE133=$(mktemp --suffix=.mtx)
+OUTC133=$(mktemp --suffix=.nz)
+printf '%%%%MatrixMarket matrix coordinate integer general\n3 3 3\n1 1 1\n2 2 1\n3 3 1\n' > "$EYE133"
+for m in 1 2 3; do
+    assert_output "$BIN_FORK method=$m finH=$EYE133 wmax=3 steps=10 threads=1 debug=0" 0 "^0 0 0$" \
+        "^# Note: k=0: no logical codeword \(classical code with rank H = n = 3\); the result is 0 0 0$"
+done
+assert_output "$BIN method=3 finH=$EYE133 wmax=3 steps=10 debug=0" 0 "^0$" \
+    "^# Note: k=0: no logical codeword \(classical code with rank H = n = 3\); the result is 0$"
+assert_output "$BIN_FORK method=1 finH=$EYE133 steps=10 outC=$OUTC133 threads=1 debug=1" 0 "^0 0 0$" \
+    "exported 0 codewords"
+rm -f "$EYE133" "$OUTC133"
+
+# Test 134: k = 0 for a quantum code: n=2, H = G = [1 1] (L from H and G has no rows), and an explicit L = [1 1] in the
+# row space of H; with L = [1 0], d = 2 (no false k = 0)
+H134=$(mktemp --suffix=.mtx)
+L134=$(mktemp --suffix=.mtx)
+printf '%%%%MatrixMarket matrix coordinate integer general\n1 2 2\n1 1 1\n1 2 1\n' > "$H134"
+printf '%%%%MatrixMarket matrix coordinate integer general\n1 2 1\n1 1 1\n' > "$L134"
+for m in 1 2 3; do
+    assert_output "$BIN_FORK method=$m finH=$H134 finG=$H134 wmax=2 steps=10 threads=1 debug=0" 0 "^0 0 0$" \
+        "^# Note: k=0: no logical codeword \(L has no rows\); the result is 0 0 0$"
+done
+assert_output "$BIN_FORK method=3 finH=$H134 finL=$H134 wmax=2 steps=10 threads=1 debug=0" 0 "^0 0 0$" \
+    "^# Note: k=0: no logical codeword \(every row of L is in the row space of H\); the result is 0 0 0$"
+assert_output "$BIN_FORK method=3 finH=$H134 finL=$L134 wmax=2 steps=10 threads=1 debug=0" 0 "^2 2 [0-9]+$" "" \
+    "k=0"
+rm -f "$H134" "$L134"
+
+# Test 135: k = 0 for a DEM: no L left after the pmin cut (formerly an error), and an L in the row space of H;
+# without the cut, d = 2
+DEM135=$(mktemp --suffix=.dem)
+ROW135=$(mktemp --suffix=.dem)
+printf 'error(0.1) D0 D1\nerror(0.01) D0 L0\nerror(0.01) D1 L0\nerror(0.1) D1\n' > "$DEM135"
+printf 'error(0.1) D0 L0\nerror(0.1) D1 L0\n' > "$ROW135"
+for m in 1 2 3; do
+    assert_output "$BIN_FORK method=$m fdem=$DEM135 pmin=0.05 wmax=2 steps=10 threads=1 debug=0" 0 "^0 0 0$" \
+        "^# Note: k=0: no logical codeword \(L has no rows\); the result is 0 0 0$"
+    assert_output "$BIN_FORK method=$m fdem=$ROW135 wmax=2 steps=10 threads=1 debug=0" 0 "^0 0 0$" \
+        "^# Note: k=0: no logical codeword \(every row of L is in the row space of H\); the result is 0 0 0$"
+done
+assert_output "$BIN_FORK method=3 fdem=$DEM135 wmax=2 steps=10 threads=1 debug=0" 0 "^2 2 [0-9]+$" "" "k=0"
+rm -f "$DEM135" "$ROW135"
+
+# Test 136: rw_opt bit 32 also adds the 1 <-> 1 swaps of identical columns (C1-14: the Stern filter skips a column
+# identical to a pivot column): bb_72 (X) with every column of [H; L] duplicated has 5376 codewords of weight 6 (84
+# classes x 2^6) and no triplets; the rw_opt=33 export equals the CC list (before: about 50 of them missing)
+DUPH136="$SCRIPT_DIR/bb72_dup_H.mtx"
+DUPL136="$SCRIPT_DIR/bb72_dup_L.mtx"
+CC136=$(mktemp --suffix=.nz)
+RW136=$(mktemp --suffix=.nz)
+assert_output "$BIN_FORK method=2 finH=$DUPH136 finL=$DUPL136 wmax=6 outC=$CC136 threads=2 debug=0" 0 "^6 6 0$" ""
+CMD136="$BIN_FORK method=1 finH=$DUPH136 finL=$DUPL136 rw_opt=33 steps=500 min_hits=0 seed=1 outC=$RW136 threads=2"
+assert_output "$CMD136 debug=1" 0 "^1 6 500$" "and by 1 <-> 1 swaps of identical columns \(144 columns with a twin\)"
+if ! diff <(grep -v '^%' "$CC136" | sort) <(grep -v '^%' "$RW136" | sort) > /dev/null; then
+    echo "  [FAIL] Test 136: the rw_opt=33 export differs from the CC list"
+    FAILED=1
+fi
+rm -f "$CC136" "$RW136"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

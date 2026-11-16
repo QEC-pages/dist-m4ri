@@ -21,12 +21,15 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 > are from the branch-and-bound CC search of 0.15.0 (Section 9; those up to $d = 18$ confirmed with the walk of the
 > earlier versions, Section 10.1). The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were only
 > checked in short RW runs of 0.15.2: the distances in their prefixes are the exact values of their source database.
+> The high-rate 2BGA code `2bga_270_38_23_C45xC3` added on 2026-11-16 (Origins, item 6) was certified at $d = 23$ with
+> `qec_cert` on 2026-11-14 and checked here in short runs.
 
 ## Directory Structure
 
-- `css/`: MatrixMarket (`.mtx`) CSS parity-check matrices (`_Hx.mtx`, `_Hz.mtx`) and canonical logical operators
+- `css/`: MatrixMarket (`.mtx`) CSS parity-check matrices (`_Hx.mtx`, `_Hz.mtx`) and logical operator bases
   (`_Lx.mtx`, `_Lz.mtx` for the Mitten codes, including the `yarn_*` codes of arXiv:2607.28795, and for the `2bga_*`
-  codes, which also have logical operators of the minimum weight in `.nz` files, `_wX.nz` and `_wZ.nz`).
+  codes; the seven Bicycle Race codes of Origins, item 5, also have logical operators of the minimum weight in `.nz`
+  files, `_wX.nz` and `_wZ.nz`).
 - `stim_bb/`: Unmodified Bivariate Bicycle (BB), Gross, and Double-Gross `.stim` circuits from external repositories.
 - `stim_mitten/`: Mitten code `.stim` circuits generated via `quits` with `CircuitBuildOptions(get_all_detectors=True)`
   (`mitten_*`), and from the published hook-free schedules of arXiv:2607.28795 with `make_yarn_mitten_circuits.py`
@@ -124,6 +127,26 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
      preparations and before the measurements, `DEPOLARIZE2` after the CX gates, no idle noise). The header of each
      file describes the circuit and gives the circuit-level distance 8.
 
+6. **High-Rate Weight-12 Two-Block Group-Algebra (2BGA) Code (`2bga_270_38_23_C45xC3`)**
+   - **Provenance and construction**: from L. P. Pryadko's `hr-2bga` search over odd-order groups (`tab6_6`: check
+     weights $w_a = w_b = 6$, $g_6 = 0$; candidate `c5_n270_k38_Naa4e2cc`, key `Naa4e2cc0f5e32000`, the confirmed
+     maximum-distance code among 12,587 `(270, 38, g6=0)` candidates), following H.-K. Lin and L. P. Pryadko, *Quantum
+     two-block group algebra codes*, Phys. Rev. A **109**, 022407 (2024), arXiv:2306.16400.
+   - Defined as $H_X = (L(a) \mid R(b))$, $H_Z = (R(b)^T \mid L(a)^T)$ over the abelian group
+     $G = \text{SmallGroup}(135, 2) \cong C_{45} \times C_3$ ($\ell = 135$, $n = 270$, $k = 38$, $\mathrm{rank}\,H_X =
+     \mathrm{rank}\,H_Z = 116$, $R = 38/270 \approx 0.141$, $k d^2 / n = 74.5$). In bivariate bicycle form over
+     $\mathbb{F}_2[x, y]/(x^{45} - 1, y^3 - 1)$ ($x = \text{Elements}(G)[8]$ of order 45, $y = \text{Elements}(G)[3]$
+     of order 3), $a(x, y) = 1 + x^5 y + x^8 y^2 + x^{30} + x^{30} y^2 + x^{44} y$ and
+     $b(x, y) = 1 + x^8 + x^{18} + x^{26} y + x^{29} y + x^{39}$, with rows and columns ordered by GAP's
+     `Elements(SmallGroup(135, 2))` (`a=1,5,26,35,132,133`, `b=1,30,79,86,107,111`; full Pcgs ordering in the `.mtx`
+     headers). The files `_Lx.mtx` and `_Lz.mtx` give echelon-reduced logical bases ($\mathrm{rank}(L_X L_Z^T) = 38$).
+   - **Certification method and date**: certified exact $d = d_X = d_Z = 23$ on **2026-11-14** by
+     `campaign_2bga.py confirm` (driving `search_2bga.py refine --engine cert`, i.e., `qec_cert` with `k_table=3`) in
+     `hr2bga_search/runs/conf_cert`: an 8-thread, 18,000 s pass on 2026-11-11 narrowed $[15, 23]$ to $[22, 23]$ (job
+     `000002_conf_refine`), and a 48-thread pass (`--t2 86400 --min-d 23`, job `000033_conf_refine`) certified
+     $d_Z = 23$ (`wmax=22`) in 19,671 s; $d_X = d_Z = 23$ holds identically by the abelian $X \leftrightarrow Z$
+     duality (block swap with group inversion $g \mapsto g^{-1}$).
+
 ---
 
 ## 1. CSS Parity-Check and Logical Matrices (`benchmark/css/`)
@@ -164,6 +187,7 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 | `2bga_288_8_22_C18xD8` | $[[288, 8, 22]]$ | $144 \times 288$ | 2BGA, $G = C_{18} \times D_8$, weight 6 = 3 + 3 |
 | `2bga_292_22_23_C146` | $[[292, 22, 23]]$ | $146 \times 292$ | 2BGA, $G = C_{146}$, weight 8 = 4 + 4 |
 | `2bga_294_24_21_SG147_5` | $[[294, 24, 21]]$ | $147 \times 294$ | 2BGA, $G = C_7^2 \rtimes C_3$, weight 9 = 6 + 3 |
+| `2bga_270_38_23_C45xC3` | $[[270, 38, 23]]$ | $135 \times 270$ | 2BGA, $G = C_{45} \times C_3$, weight 12 = 6 + 6 |
 
 Distances computed with `dist_m4ri`:
 
@@ -203,6 +227,7 @@ Distances computed with `dist_m4ri`:
 | `2bga_288_8_22_C18xD8` | $\le 22$ | $\le 22$ |
 | `2bga_292_22_23_C146` | $\le 23$ | $\le 23$ |
 | `2bga_294_24_21_SG147_5` | $\le 21$ | $\le 21$ |
+| `2bga_270_38_23_C45xC3` | [14, 23] | [14, 23] |
 
 - $d_X$ ($d_Z$) is the minimum weight of an $X$-type ($Z$-type) logical operator, i.e., of a vector $c$ with
   $H_Z c = 0$ ($H_X c = 0$) which is not in the row space of $H_X$ ($H_Z$); $d = \min(d_X, d_Z)$. "–": not computed
@@ -226,11 +251,15 @@ Distances computed with `dist_m4ri`:
     `dist_m4ri_old method=2 wmax=9`: no codeword of weight at most 9).
   - `yarn_smitten_840_168_18` has distance **17**, not 18: RW found 7 distinct $X$-type logical operators of weight 17,
     valid in an independent check over GF(2), and 0.15.0 certified $d_X = 17$ and $d_Z = 18$.
-- The `2bga_*` codes (2026-11-05): $\le w$ is the weight of the lightest logical operator found by RW of 0.15.2
-  (20,000 steps on 16 threads, under 0.1 s per sector), not certified by CC here. In both sectors of every code it is
-  the exact distance of the source database (Origins, item 5; $d_X = d_Z = d$ in the prefix). The `.nz` files of these
-  codes give the same upper bounds through `finC`, and the logical bases `_Lx.mtx`, `_Lz.mtx` (`finL`) the same RW
-  results as `finG`.
+- The seven Bicycle Race `2bga_*` codes (2026-11-05, Origins, item 5): $\le w$ is the weight of the lightest logical
+  operator found by RW of 0.15.2 (20,000 steps on 16 threads, under 0.1 s per sector), not certified by CC here. In
+  both sectors of every code it is the exact distance of the source database ($d_X = d_Z = d$ in the prefix). The `.nz`
+  files of these codes give the same upper bounds through `finC`, and the logical bases `_Lx.mtx`, `_Lz.mtx` (`finL`)
+  the same RW results as `finG`.
+- `2bga_270_38_23_C45xC3` (2026-11-16, Origins, item 6): certified at $d_X = d_Z = 23$ by `qec_cert` on 2026-11-14
+  (48 threads, 19,671 s). Here, fixed-work runs of `dist_m4ri` (`method=3 wmax=13 steps=50000` on 8 threads, `finG`)
+  certify $d_{\min} = 14$ by CC and find valid weight-23 logical operators in both sectors (`[14, 23]`, verified over
+  GF(2)), and `_Lx.mtx`, `_Lz.mtx` (`finL`) give the same RW upper bound 23.
 
 ---
 
@@ -1463,14 +1492,13 @@ and `drop=auto`; "auto" is the mask chosen by `-1`.
   the median/mean than `rw_opt=0` (double gross, 3 seeds: 0.25, 0.54, 1.58 s vs 1.14, 1.15, 3.91 s, while a separate
   3-seed series of explicit `0x09`, the same active mask, gave 0.19, 0.31, 0.70 s; `bb_360`, 2 seeds: 1.24, 4.58 s vs
   5.76, 14.5 s).
-- **Bit `0x20`** (automatic with `outC`/`maxC`): when collecting codewords, the Stern filter of `0x01` is active only
-  with `0x20`, whose $\mathcal{T}_3$ expansion ($2 \leftrightarrow 2$ exchanges and $1 \to 2$ splits) restores the
-  codewords the filter removes, except those that use a column identical to a pivot column (possible only in matrices
-  with identical columns, e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`; DEMs are merged by
-  default), which may be missing from the `method=1` export (`method=3` adds them through CC). In 4000 steps, every
-  mask exports the complete sets (CC) of minimum-weight codewords of `surf_d5` (620), `color_xyz_d5` (65), `bb_72` at
-  $T = 1$ (324), the `bb_72` model (252), and `bb_72_12_6` (84); for `mitten_150` at $T = 1$, `0` exports 74 of the
-  100, `0x01` 90, and `0x21` all 100 (`min_hits=0` turns off `0x10`).
+- **Bit `0x20`** (automatic with `outC`/`maxC`): when collecting codewords (`outC` or `maxC`), the Stern filter of
+  `0x01` is active only with `0x20`, which now restores the codewords the filter removes through $2 \leftrightarrow 2$
+  exchanges, $1 \to 2$ splits, and $1 \leftrightarrow 1$ swaps of identical columns, so matrices with identical columns
+  (e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`) are no longer an exception. In 4000 steps,
+  every mask exports the complete sets (CC) of minimum-weight codewords of `surf_d5` (620), `color_xyz_d5` (65),
+  `bb_72` at $T = 1$ (324), the `bb_72` model (252), and `bb_72_12_6` (84); for `mitten_150` at $T = 1$, `0` exports
+  74 of the 100, `0x01` 90, and `0x21` all 100 (`min_hits=0` turns off `0x10`).
 - `rw_opt=0` runs within 5% of the 0.16.1 binary on the three checked inputs (0.96–0.97x the steps and
   0.96–0.98x the hits per second).
 
