@@ -529,6 +529,49 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - [x] k = 0 (no logical codeword): `0 0 0` / `[0, 0, 0]` with every engine and solver (binary, `qec_cert` status
     `infeasible`, `codedistance`, `engine="auto"`, both CSS sectors), one note on `stderr` (not with `--silent`), not
     cached (0.17.2; before, the binary printed a vacuous lower bound above $n$ and `'cert'` gave `[0, 0, 0]`).
+- [ ] **Row-slab correlation and coverage study (`rw_opt` `4`)**: examine not only benchmark speedups and hit rates of
+  Stage 3 row slabs (`rw_slab_step()`, currently a contiguous block of $m_{\rm sub} = \min(320, m/2)$ detectors on
+  every other RW step when `kwin=0` and `sort_rows=0`, with 15% weight on each boundary slab
+  $r_0 \in \{0, m - m_{\rm sub}\}$ and 70% uniform), but the correlations among the codewords found:
+  - **Starting points and data**: in the 2026-11-16 re-measurement (`scratch/fix_0.17.2/bench_post/REPORT.md`, B6),
+    `0x05` on `dgross_288_T1` ($T = 1$, $m = 288$, $m_{\rm sub} = 144$) found weight 16 in 11 of 11 seeds (median
+    0.081 s, range 0.024–0.553 s), against 0 of 5 seeds each in 12 s for `0`, `0x01`, and `-1` (weights 17–18; cf.
+    C1-17 in `scratch/review_0.17.1/c1_dist_m4ri_c.md`, where `0x15` and `-1` tied on the folded `dem_T1_X.dem`). At
+    the same time, the hit counts show that slabs find the same few codewords over and over (e.g., `mitten_150_T1`:
+    942 slab hits on 4 codewords vs. 17,443 index-window hits on 99; `shyps_225_T1`: 716,121 on 96 vs. 77,363 on 100;
+    fewer distinct codewords on `2bga_102_X`, `mitten_150_simp`, and `gross_144_full`; see **A rule for the row slabs**
+    above).
+  - **Questions to measure**:
+    1. *Repeat structure*: distributions of hits per distinct codeword and per $\mathcal{T}_3$-canonical class, split
+       by step type (uniform, window, slab).
+    2. *Discovery curves*: cumulative new distinct codewords and new canonical classes per step (and per second) by
+       step type and step mixture.
+    3. *Within-step and nearby-step correlations*: pairwise support overlap, shared columns, and detector-time position
+       along the DEM for codewords found in the same step ($p = 1$ circuits and $p = 2$ pairs of one elimination) and
+       in consecutive or nearby steps.
+    4. *Slab parameters and number of rounds $T$*: dependence on the slab height $m_{\rm sub}$ (rows), slab position
+       $r_0$ (boundary weights vs. uniform vs. jittered ranges), randomization, and the circuit round count $T$
+       ($T = 1$ vs. shallow and deep multi-round DEMs).
+    5. *Coverage*: which logical cosets and $\mathcal{T}_3$-canonical classes are reached by slabs, by `kwin` index/BFS
+       windows, and only by full-matrix uniform steps (e.g., time-like or multi-round codewords).
+    6. *Effective sample size and stopping estimators*: effective sample size $N_{\rm eff}$ of correlated slab and
+       window hits, and its implications for the `min_hits` vector rule ($\langle n\rangle$ over `cnt`, inflated by
+       repeats) and for the Stage-5 canonical Good–Turing / Chao1–Chao2 estimators (currently `cnt_u` uniform-only,
+       C1-01): whether to exclude, down-weight by $N_{\rm eff}$, or explicitly model slab and window hits.
+    7. *Consequences for defaults*: whether to enable slabs automatically on single-round ($T = 1$) DEMs, what fraction
+       of RW steps should be slabs (or a short initial slab pass), and how slab positions and sizes should be
+       randomized.
+  - **Method**: add a `debug` option in `src/dist_m4ri.c` that logs for each RW step its step type (uniform, window,
+    slab, and slab row range) and the codeword and canonical-class keys hit in that step; run multi-seed sweeps on the
+    benchmark DEMs; compute the repeat, correlation, coverage, and $N_{\rm eff}$ statistics in Python.
+- [ ] **Long final benchmark, default optimization, and `BENCHMARK.md` update**: run a long idle-server benchmark after
+  all planned changes are in place (the `k = 0` rank-check thread removing the single-threaded pre-search
+  `var_k_zero()` delay on large inputs such as `bb_756` and `double_gross` in `3f189b3`, the benchmark-suite additions
+  chosen from `scratch/fix_0.17.2/suite/PROPOSAL.md`, and the row-slab study above), use it to jointly optimize the
+  defaults (the automatic `rw_opt` dispatch rules D1–D5, the Stage-A budget $\tau_1$, the Stage-B `use_ub` bracket-gap
+  threshold, `min_hits`, and the slab step fraction), and only then update the numbers in `benchmark/BENCHMARK.md`
+  currently marked "not re-measured" (using the 2026-11-16 run in `scratch/fix_0.17.2/bench_post/REPORT.md` and
+  `results.jsonl` as the reference).
 
 ---
 
