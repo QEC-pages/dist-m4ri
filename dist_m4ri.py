@@ -15,6 +15,7 @@ no Python-level threading or subprocess-per-core logic is necessary.
 """
 
 import os
+import re
 import sys
 import json
 import math
@@ -34,7 +35,7 @@ _codedistance_mod = None
 _stim_mod = None
 _qec_cert_mod = None
 
-__version__ = "0.17.2"
+__version__ = "0.17.3"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -1529,8 +1530,8 @@ _report_ignored = True  # warnings on stderr for the inputs which are ignored (o
 def set_silent(silent: bool = True) -> None:
     """
     Turns off (silent=True) or on again (silent=False) the warnings written to stderr for the inputs which are
-    ignored (the CLI option --silent).  The warnings on the validity of a result (e.g., for ksub, ortho=0, or start)
-    are always written.
+    ignored (the CLI option --silent).  The warnings for disabled options and on the validity of a result (e.g., for
+    ksub, ortho=0, or start) are always written.
     """
     global _report_ignored
     _report_ignored = not silent
@@ -1540,6 +1541,11 @@ def _warn_ignored(msg: str) -> None:
     """Writes the warning '# Warning: msg' on an input which is ignored to stderr, unless set_silent() is on."""
     if _report_ignored:
         sys.stderr.write(f"# Warning: {msg}\n")
+
+
+def _warn_disabled(msg: str) -> None:
+    """Writes the warning '# Warning: msg' for a disabled option to stderr (also when set_silent() is on)."""
+    sys.stderr.write(f"# Warning: {msg}\n")
 
 
 # The note on an input without logical codewords (k = 0), whose result is 0 0 0 since version 0.17.2 (with every
@@ -1586,64 +1592,244 @@ def _k0_result(cache_keys: Sequence[Optional[str]] = (), eff_cache_file: Optiona
             "k0": True}
 
 
-def _gf2_rank(matrix: Any) -> int:
-    """The rank over GF(2) of a matrix (a numpy array, an array-like, or a scipy sparse matrix; odd entries are 1)."""
+def _pack_gf2_rows(matrix: Any) -> Tuple[Any, int]:
+    """
+    Packs a 2D binary matrix (scipy sparse, numpy array, array-like, or MatrixMarket file path; odd entries are 1,
+    duplicate sparse entries summed mod 2) into a row-major np.uint64 array of shape (m, (n + 63) // 64), without
+    allocating unpacked int64 copies (memory ~ m * n / 8 bytes).  Returns (packed, n).
+    """
     import numpy as np
-    a = np.asarray(matrix.toarray() if hasattr(matrix, "toarray") else matrix)
-    if a.ndim != 2 or a.size == 0:
-        return 0
-    a = (a.astype(np.int64) % 2).astype(bool)
-    rank, (m, n) = 0, a.shape
-    for c in range(n):
-        if rank == m:
-            break
-        piv = np.nonzero(a[rank:, c])[0]
-        if piv.size == 0:
+    if isinstance(matrix, (str, Path)):
+        if _qec_cert_mod is not None:
+            from qec_cert import _lib as _qec_lib
+            matrix = _qec_lib.mtx_read(str(matrix))
+        else:
+            import scipy.io
+            try:
+                matrix = scipy.io.mmread(str(matrix), spmatrix=False)
+            except TypeError:
+                matrix = scipy.io.mmread(str(matrix))
+    if hasattr(matrix, "tocoo"):
+        coo = matrix.tocoo(copy=False)
+        m, n = int(coo.shape[0]), int(coo.shape[1])
+        nw = (n + 63) >> 6
+        packed = np.zeros((m, nw), dtype=np.uint64)
+        if m == 0 or n == 0 or coo.nnz == 0:
+            return packed, n
+        data = np.asarray(coo.data)
+        if data.dtype == np.bool_:
+            mask = data
+        elif np.issubdtype(data.dtype, np.integer):
+            mask = (data & 1) != 0
+        else:
+            mask = np.fmod(np.trunc(data), 2.0) != 0
+        r = np.asarray(coo.row[mask], dtype=np.intp)
+        c = np.asarray(coo.col[mask], dtype=np.intp)
+        if r.size:
+            np.bitwise_xor.at(packed, (r, c >> 6), np.uint64(1) << np.uint64(c & 63))
+        return packed, n
+    a = matrix if isinstance(matrix, np.ndarray) else np.asarray(matrix)
+    if a.ndim != 2:
+        return np.zeros((0, 0), dtype=np.uint64), 0
+    m, n = int(a.shape[0]), int(a.shape[1])
+    nw = (n + 63) >> 6
+    packed = np.zeros((m, nw), dtype=np.uint64)
+    if m == 0 or n == 0:
+        return packed, n
+    for r0 in range(0, m, 1024):
+        sub = a[r0:min(r0 + 1024, m)]
+        if sub.dtype == np.bool_:
+            bits = sub.view(np.uint8)
+        elif np.issubdtype(sub.dtype, np.integer):
+            bits = (sub & 1).astype(np.uint8, copy=False)
+        else:
+            bits = (np.fmod(np.trunc(sub), 2.0) != 0).astype(np.uint8)
+        pb = np.packbits(bits, axis=1, bitorder="little")
+        rem_b = pb.shape[1] & 7
+        if rem_b:
+            pb = np.pad(pb, ((0, 0), (0, 8 - rem_b)))
+        packed[r0:r0 + pb.shape[0]] = np.ascontiguousarray(pb).view(np.uint64)
+    return packed, n
+
+
+def _gf2_echelon(packed: Any) -> Tuple[int, List[int]]:
+    """
+    In-place upper-triangular GF(2) row elimination over bit-packed np.uint64 words using sparse-aware 8-bit
+    Four-Russians panels.  Returns (rank, pivots), where packed[i] (0 <= i < rank) has 1 in column pivots[i] and 0 in
+    pivots[0..i-1], and rows rank..m-1 are zero.
+    """
+    import numpy as np
+    m, nw = packed.shape
+    rank = 0
+    pivots: List[int] = []
+    w = 0
+    while w < nw and rank < m:
+        cw = packed[rank:, w].copy()
+        if not np.any(cw):
+            w += 1
             continue
-        p = rank + int(piv[0])
-        if p != rank:
-            a[[rank, p]] = a[[p, rank]]
-        rows = np.nonzero(a[:, c])[0]
-        rows = rows[rows != rank]
-        a[rows] ^= a[rank]
-        rank += 1
-    return rank
+        p_bits: List[int] = []
+        while len(p_bits) < 8 and rank + len(p_bits) < m:
+            j = len(p_bits)
+            nz = np.flatnonzero(cw[j:])
+            if nz.size == 0:
+                break
+            rel = j + int(nz[0])
+            if rel != j:
+                cw[j], cw[rel] = cw[rel], cw[j]
+                tmp = packed[rank + j, w:].copy()
+                packed[rank + j, w:] = packed[rank + rel, w:]
+                packed[rank + rel, w:] = tmp
+            orig_w = int(packed[rank + j, w])
+            for i in range(j):
+                if (orig_w >> p_bits[i]) & 1:
+                    packed[rank + j, w:] ^= packed[rank + i, w:]
+            v = int(packed[rank + j, w])
+            b = (v & -v).bit_length() - 1
+            for i in range(j):
+                if (int(packed[rank + i, w]) >> b) & 1:
+                    packed[rank + i, w:] ^= packed[rank + j, w:]
+            p_bits.append(b)
+            pivots.append((w << 6) + b)
+            if j + 1 < cw.size:
+                cw[j + 1:] ^= ((cw[j + 1:] >> np.uint64(b)) & np.uint64(1)) * np.uint64(v)
+        k = len(p_bits)
+        rem = rank + k
+        if rem < m:
+            sub_w = packed[rem:, w]
+            idx = ((sub_w >> np.uint64(p_bits[0])) & np.uint64(1)).astype(np.intp)
+            for i in range(1, k):
+                idx |= (((sub_w >> np.uint64(p_bits[i])) & np.uint64(1)).astype(np.intp)) << i
+            nz_rows = np.flatnonzero(idx)
+            if nz_rows.size:
+                if nz_rows.size <= 4 or k == 1:
+                    for i in range(k):
+                        hit = nz_rows[((idx[nz_rows] >> i) & 1) != 0]
+                        if hit.size:
+                            packed[rem + hit, w:] ^= packed[rank + i, w:]
+                else:
+                    table = np.zeros((1 << k, nw - w), dtype=np.uint64)
+                    for i in range(k):
+                        step = 1 << i
+                        table[step:2 * step] = table[:step] ^ packed[rank + i, w:]
+                    for c0 in range(0, nz_rows.size, 1024):
+                        rows_c = nz_rows[c0:c0 + 1024]
+                        packed[rem + rows_c, w:] ^= table[idx[rows_c]]
+        rank += k
+    return rank, pivots
+
+
+def _gf2_rank(matrix: Any) -> int:
+    """The rank over GF(2) of a matrix (a numpy array, array-like, scipy sparse matrix, or MatrixMarket file; odd
+    entries are 1), computed over bit-packed uint64 rows (or qec_cert._lib.rank on small inputs when loaded)."""
+    if _qec_cert_mod is not None and hasattr(matrix, "shape") and len(matrix.shape) == 2:
+        m, n = int(matrix.shape[0]), int(matrix.shape[1])
+        if m == 0 or n == 0:
+            return 0
+        if m * n <= 4_000_000:
+            try:
+                from qec_cert import _lib as _qec_lib
+                return int(_qec_lib.rank(matrix))
+            except Exception:
+                pass
+    packed, n = _pack_gf2_rows(matrix)
+    if packed.shape[0] == 0 or n <= 0:
+        return 0
+    return _gf2_echelon(packed)[0]
+
+
+def _matrix_shape_2d(M: Any) -> Optional[Tuple[int, int]]:
+    """Returns (rows, cols) of a matrix or MatrixMarket header without reading all entries, or None if unknown."""
+    if isinstance(M, (str, Path)):
+        try:
+            with open(str(M), "r") as f:
+                first = f.readline().strip().lower().split()
+                if len(first) < 5 or first[0] != "%%matrixmarket":
+                    return None
+                for ln in f:
+                    s = ln.strip()
+                    if s and not s.startswith("%"):
+                        parts = s.split()
+                        return (int(parts[0]), int(parts[1])) if len(parts) >= 2 else None
+        except Exception:
+            return None
+        return None
+    if hasattr(M, "shape"):
+        sh = M.shape
+        return (int(sh[0]), int(sh[1])) if len(sh) == 2 else (0, 0)
+    return None
 
 
 def _k0_of_matrices(H: Any, G: Any = None, L: Any = None, classical: bool = False) -> bool:
     """
-    Whether a code given by matrices (not files) has no logical codeword (k = 0): a classical code with rank H = n, a
-    quantum code with n = rank H + rank G, or with no row of L independent of the rows of H (also an empty L).  Used
-    on the codedistance paths (the binary and qec_cert find it themselves, since version 0.17.2).
+    Whether a code given by matrices (or MatrixMarket files) has no logical codeword (k = 0): a classical code with
+    rank H = n (false immediately when m < n), a quantum code with n = rank H + rank G, or with no row of L independent
+    of the rows of H (k = rank([H; L]) - rank(H) == 0, reduced in a single bit-packed elimination; also an empty or
+    zero L).  Used on the codedistance paths (the binary and qec_cert find it themselves, since version 0.17.2).
     """
     import numpy as np
-
-    def dense(M: Any) -> Any:  # (a MatrixMarket file is read with scipy)
-        if isinstance(M, (str, Path)):
-            import scipy.io
-            try:
-                M = scipy.io.mmread(str(M), spmatrix=False)  # (scipy >= 1.12: a sparse array)
-            except TypeError:
-                M = scipy.io.mmread(str(M))
-        return np.asarray(M.toarray() if hasattr(M, "toarray") else M)
-
     if H is None:
         return False
     try:
-        h = dense(H)
-        g, l_m = (dense(G) if G is not None else None), (dense(L) if L is not None else None)
+        sh_h = _matrix_shape_2d(H)
+        if sh_h is not None:
+            m_h, n = sh_h
+            if n <= 0:
+                return False
+            if classical and m_h < n:
+                return False
+            if not classical and G is not None:
+                sh_g = _matrix_shape_2d(G)
+                if sh_g is not None and m_h + sh_g[0] < n:
+                    return False
+        if not classical and G is None and L is not None:
+            # Pack L first: empty or zero L gives k = 0 immediately without packing H.
+            l_packed, n_l = _pack_gf2_rows(L)
+            if l_packed.shape[0] == 0 or not np.any(l_packed):
+                if sh_h is None:
+                    _, n = _pack_gf2_rows(H)
+                return n > 0
+            h_packed, n = _pack_gf2_rows(H)
+            if n <= 0:
+                return False
+            if l_packed.shape[1] != h_packed.shape[1]:
+                if l_packed.size == 0:
+                    return True
+                l_arr = np.asarray(L.toarray() if hasattr(L, "toarray") else L).reshape(-1, n)
+                l_packed, _ = _pack_gf2_rows(l_arr)
+                if not np.any(l_packed):
+                    return True
+            if h_packed.shape[0] == 0:
+                return False
+            r_h, pivots = _gf2_echelon(h_packed)
+            if r_h == n:
+                return True
+            for j in range(l_packed.shape[0]):
+                v = l_packed[j]
+                for i in range(r_h):
+                    c = pivots[i]
+                    w = c >> 6
+                    if (int(v[w]) >> (c & 63)) & 1:
+                        v[w:] ^= h_packed[i, w:]
+                if np.any(v):
+                    return False
+            return True
+        h_packed, n = _pack_gf2_rows(H)
+        if n <= 0:
+            return False
+        m_h = h_packed.shape[0]
+        if classical:
+            return False if m_h < n else (_gf2_echelon(h_packed)[0] == n)
+        if G is not None:
+            g_packed, n_g = _pack_gf2_rows(G)
+            if n_g != n or m_h + g_packed.shape[0] < n:
+                return False
+            r_h = _gf2_echelon(h_packed)[0]
+            if r_h + g_packed.shape[0] < n:
+                return False
+            return r_h + _gf2_echelon(g_packed)[0] == n
     except Exception:  # (an unreadable input: left to the solver)
         return False
-    n = h.shape[1] if h.ndim == 2 else 0
-    if n <= 0:
-        return False
-    r_h = _gf2_rank(h)
-    if classical:
-        return r_h == n
-    if g is not None:
-        return r_h + _gf2_rank(g) == n
-    if l_m is not None:
-        return l_m.size == 0 or _gf2_rank(np.vstack([h, l_m.reshape(-1, n)])) == r_h
     return False
 
 
@@ -1700,8 +1886,8 @@ def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) 
         except (TypeError, ValueError):
             active = True
         if active:
-            _warn_ignored(f"{name}={val} is disabled in the Python interface (ignored); use the dist_m4ri binary "
-                          f"directly")
+            _warn_disabled(f"{name}={val} is disabled in the Python interface (ignored); use the dist_m4ri binary "
+                           f"directly")
 
 
 def _start_warning_text(start_list: List[int]) -> str:
@@ -2830,9 +3016,10 @@ def run_dist_m4ri(
     RW windows:
         kwin / win_mode: A window of kwin columns in every RW step (win_mode=0: a Tanner graph ball, 1: an index
             window).  kwin=0 (default): the automatic hybrid for n >= 500, an index window of win_hyb columns in every
-            other step and uniform random permutations in the others; with rw_opt != 0 (also the default rw_opt=None,
-            i.e., -1), only for a DEM or with win_hyb > 0 (matrices: uniform random permutations in every step, see
-            rw_opt).  kwin=-1 (any negative value): no windows, uniform random permutations in every step.
+            other step and uniform random permutations in the others; with a nonzero resolved rw_opt (the run plan;
+            e.g., the default rw_opt=None on a quantum code), only for a DEM or with win_hyb > 0 (matrices: uniform
+            random permutations in every step, see rw_opt).  kwin=-1 (any negative value): no windows, uniform random
+            permutations in every step.
         win_hyb: Window size of the hybrid RW steps, passed as win_hyb=N if nonzero; 0 (default): 256 columns for a
             DEM, 512 for matrices (at most 3n/4).  The windows of 192-256 columns find the minimum-weight codewords of
             circuit DEMs 2-10 times faster than 512, and windows of one round of columns are much slower.  With
@@ -2875,10 +3062,11 @@ def run_dist_m4ri(
             only with min_hits > 0, not with kwin > 0; tables of up to 2^24 classes, about 640 MiB); 32, the codewords
             collected (outC, maxC) expanded by the T3 2 <-> 2 exchanges and 1 -> 2 splits, and by the 1 <-> 1 swaps of
             the identical columns of H and L, also without T3 (see 1).
-            Only with full-matrix RW (ksub=0) and steps > 0.  With rw_opt != 0 (also if no stage applies, e.g., for a
-            classical code), the automatic hybrid windows (kwin=0) are used only for a DEM (matrices: uniform
-            permutations, unless kwin > 0 or win_hyb > 0).  The distance found is valid with any rw_opt, and the cache
-            key does not depend on it.  With debug & 1 (or verbose=True), the binary prints the stages used, |T3|, the
+            Only with full-matrix RW (ksub=0) and steps > 0.  When the resolved rw_opt is not 0 (see the run plan), the
+            automatic hybrid windows (kwin=0) are used only for a DEM (matrices: uniform permutations, unless kwin > 0
+            or win_hyb > 0); an automatic rw_opt which resolves to 0 (rw_opt=0x0 in the run plan, e.g., for a classical
+            code) keeps the hybrid windows of rw_opt=0.  The distance found is valid with any rw_opt, and the cache key
+            does not depend on it.  With debug & 1 (or verbose=True), the binary prints the stages used, |T3|, the
             canonical classes, and the Harris-FKG score of the dense full-matrix steps with pairs (with any stage, not
             with 8, not on the slab steps; all in _last_run_stats, see _parse_stderr_stats()).
 
@@ -4904,7 +5092,9 @@ def _dem_error_columns(dem: Any, pmin: float = 0.0, with_prob: bool = False) -> 
     of a decomposed error (separated by '^') are summed mod 2, so that a target listed twice cancels.  With
     with_prob=True, each column also has the probability of the error, as written: (detectors, observables, p).
     """
-    if isinstance(dem, (str, Path)):
+    if isinstance(dem, str) and ("\n" in dem or "(" in dem) and not os.path.isfile(dem):
+        lines = dem.splitlines()
+    elif isinstance(dem, (str, Path)):
         with open(str(dem)) as f:
             lines = f.read().splitlines()
     else:
@@ -4951,6 +5141,84 @@ def _dem_error_columns(dem: Any, pmin: float = 0.0, with_prob: bool = False) -> 
 
     block(0, 0)
     return cols
+
+
+def _dem_k0(dem: Any, pmin: float = 0.0) -> bool:
+    """
+    Whether a DEM (a stim.DetectorErrorModel, a .dem file, or DEM text) has no logical codeword (k = 0) after the
+    probability cutoff pmin, checked on the reduced (merged equal columns, zero columns dropped) matrices (H, L),
+    which have the same k as the raw DEM.  Uses qec_cert's C DEM parser when available and pmin <= 0.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+    if pmin <= 0.0 and _qec_cert_available():
+        try:
+            _get_qec_cert()
+            from qec_cert import prep as _qc_prep
+            if hasattr(dem, "flattened"):
+                raw_bytes = str(dem.flattened()).encode("utf-8")
+            elif isinstance(dem, (str, Path)) and os.path.isfile(str(dem)):
+                with open(str(dem), "rb") as f:
+                    raw_bytes = f.read()
+            else:
+                raw_bytes = str(dem).encode("utf-8")
+            if b"repeat" in raw_bytes:
+                raise ValueError("unflattened repeat block")
+            parsed = _qc_prep.parse_dem_text(raw_bytes, merge_parallel=True, strip_zero=True)
+            num_det = int(parsed["num_detectors"])
+            num_obs = int(parsed["num_observables"])
+            indptr = parsed["col_indptr"]
+            indices = parsed["col_indices"]
+            col_obs = parsed["col_obs"]
+            n_cols = len(indptr) - 1
+            if num_obs == 0 or n_cols == 0 or not np.any(col_obs):
+                return True
+            if np.any((np.diff(indptr) == 0) & (col_obs != 0)):
+                return False
+            H = sp.csc_matrix((np.ones(len(indices), dtype=np.uint8), indices, indptr), shape=(num_det, n_cols)).tocsr()
+            obs_r, obs_c = [], []
+            for b in range(num_obs):
+                cs = np.flatnonzero((col_obs >> b) & 1)
+                if cs.size:
+                    obs_r.extend([b] * int(cs.size))
+                    obs_c.extend(cs.tolist())
+            L = sp.csr_matrix((np.ones(len(obs_r), dtype=np.uint8), (obs_r, obs_c)), shape=(num_obs, n_cols))
+            return _k0_of_matrices(H, L=L)
+        except Exception:
+            pass
+    cols = _dem_error_columns(dem, pmin=pmin)
+    seen: Set[Tuple[frozenset, frozenset]] = set()
+    h_r: List[int] = []
+    h_c: List[int] = []
+    l_r: List[int] = []
+    l_c: List[int] = []
+    max_d = max_o = -1
+    out_c = 0
+    for dets, obs in cols:
+        if not dets and not obs:
+            continue
+        if not dets and obs:
+            return False
+        key = (dets, obs)
+        if key in seen:
+            continue
+        seen.add(key)
+        for d in dets:
+            if d > max_d:
+                max_d = d
+            h_r.append(d)
+            h_c.append(out_c)
+        for o in obs:
+            if o > max_o:
+                max_o = o
+            l_r.append(o)
+            l_c.append(out_c)
+        out_c += 1
+    if not l_r or out_c == 0:
+        return True
+    H = sp.csr_matrix((np.ones(len(h_r), dtype=np.uint8), (h_r, h_c)), shape=(max_d + 1, out_c))
+    L = sp.csr_matrix((np.ones(len(l_r), dtype=np.uint8), (l_r, l_c)), shape=(max_o + 1, out_c))
+    return _k0_of_matrices(H, L=L)
 
 
 def _drop_mode(drop: Any) -> str:
@@ -5604,9 +5872,10 @@ def compute_classical_distance(
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
-            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
-            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with a
+            nonzero resolved rw_opt, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations;
+            an automatic rw_opt which resolves to 0, e.g., on classical codes, keeps the hybrid windows), see win_hyb
+            and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -5644,8 +5913,8 @@ def compute_classical_distance(
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
-            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
-            for matrices.  The cache key does not depend on it.
+            matrices only when the resolved rw_opt is 0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns
+            for a DEM, 512 for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -5706,12 +5975,12 @@ def compute_classical_distance(
         if num_steps is not None and "iterCount" not in params:
             params["iterCount"] = num_steps
 
+        if _k0_of_matrices(H, classical=True):  # (since version 0.17.2)
+            _k0_found("rank H = n")
+            return (0, [0, 0, 0]) if return_info else 0
         H_mat = H.toarray() if hasattr(H, 'toarray') else (
             np.asarray(H, dtype=np.int8) if isinstance(H, (np.ndarray, list)) else None
         )
-        if _k0_of_matrices(H if H_mat is None else H_mat, classical=True):  # (since version 0.17.2)
-            _k0_found("rank H = n")
-            return (0, [0, 0, 0]) if return_info else 0
         res = codedistance.codeDistance(
             H_mat, None, tB=1, method=codedistance_method, params=params,
             seed=seed if seed != 0 else None
@@ -5844,9 +6113,10 @@ def compute_quantum_distance(
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
-            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
-            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with a
+            nonzero resolved rw_opt, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations;
+            an automatic rw_opt which resolves to 0, e.g., on classical codes, keeps the hybrid windows), see win_hyb
+            and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -5884,8 +6154,8 @@ def compute_quantum_distance(
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
-            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
-            for matrices.  The cache key does not depend on it.
+            matrices only when the resolved rw_opt is 0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns
+            for a DEM, 512 for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -5973,21 +6243,21 @@ def compute_quantum_distance(
         if num_steps is not None and "iterCount" not in params:
             params["iterCount"] = num_steps
 
-        H_mat = H.toarray() if hasattr(H, 'toarray') else (
-            np.asarray(H, dtype=np.int8) if isinstance(H, (np.ndarray, list)) else None
-        )
         if G is None and L is not None:
             raise ValueError(
                 "The 'codedistance' solver requires the stabilizer generator matrix G, "
                 "not the logical operator matrix L. Use solver='dist_m4ri' with L."
             )
+        if _k0_of_matrices(H, G=G):  # (since version 0.17.2)
+            _k0_found("rank H + rank G = n")
+            return (0, [0, 0, 0]) if return_info else 0
+        H_mat = H.toarray() if hasattr(H, 'toarray') else (
+            np.asarray(H, dtype=np.int8) if isinstance(H, (np.ndarray, list)) else None
+        )
         dual_mat = G if G is not None else L
         dual_arr = dual_mat.toarray() if hasattr(dual_mat, 'toarray') else (
             np.asarray(dual_mat, dtype=np.int8) if isinstance(dual_mat, (np.ndarray, list)) else None
         )
-        if _k0_of_matrices(H if H_mat is None else H_mat, G=G):  # (since version 0.17.2)
-            _k0_found("rank H + rank G = n")
-            return (0, [0, 0, 0]) if return_info else 0
 
         res = codedistance.codeDistance(
             H_mat, dual_arr, tB=1, method=codedistance_method, params=params,
@@ -6183,9 +6453,10 @@ def compute_css_distance(
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
-            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
-            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with a
+            nonzero resolved rw_opt, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations;
+            an automatic rw_opt which resolves to 0, e.g., on classical codes, keeps the hybrid windows), see win_hyb
+            and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -6222,8 +6493,8 @@ def compute_css_distance(
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
-            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
-            for matrices.  The cache key does not depend on it.
+            matrices only when the resolved rw_opt is 0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns
+            for a DEM, 512 for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -6313,15 +6584,15 @@ def compute_css_distance(
         if num_steps is not None and "iterCount" not in params:
             params["iterCount"] = num_steps
 
+        if _k0_of_matrices(Hx, G=Hz):  # (since 0.17.2)
+            _k0_found("rank Hx + rank Hz = n", css=True)
+            return (0, [0, 0, 0], [0, 0, 0])
         Hx_mat = Hx.toarray() if hasattr(Hx, 'toarray') else (
             np.asarray(Hx, dtype=np.int8) if isinstance(Hx, (np.ndarray, list)) else None
         )
         Hz_mat = Hz.toarray() if hasattr(Hz, 'toarray') else (
             np.asarray(Hz, dtype=np.int8) if isinstance(Hz, (np.ndarray, list)) else None
         )
-        if _k0_of_matrices(Hx if Hx_mat is None else Hx_mat, G=Hz if Hz_mat is None else Hz_mat):  # (since 0.17.2)
-            _k0_found("rank Hx + rank Hz = n", css=True)
-            return (0, [0, 0, 0], [0, 0, 0])
         sector_d: Dict[str, int] = {}
         sector_info: Dict[str, List[int]] = {}
         for s in ("Z", "X"):
@@ -6532,9 +6803,9 @@ def _warn_disabled_simple_full(simple: Optional[bool] = None, full: Optional[boo
     """
     names = [f"--{n}" if cli else f"{n}=" for n, v in (("simple", simple), ("full", full)) if v is not None]
     if names:
-        _warn_ignored(f"{', '.join(names)}: disabled since version 0.13.0, ignored: the DEM of a Stim circuit has all "
-                      f"detectors, and the binary drops detectors if this is exact (drop=auto, the default, e.g., the "
-                      f"minority-basis detectors of a CSS circuit; drop=0 keeps them)")
+        _warn_disabled(f"{', '.join(names)}: disabled since version 0.13.0, ignored: the DEM of a Stim circuit has all "
+                       f"detectors, and the binary drops detectors if this is exact (drop=auto, the default, e.g., the "
+                       f"minority-basis detectors of a CSS circuit; drop=0 keeps them)")
 
 
 def _dem_from_input(
@@ -6790,9 +7061,10 @@ def compute_dem_distance(
         cov_cws: Size of the representative set of lowest-weight codewords for min_hits (default: 100; 0: only the
             minimum weight).
         kwin / win_mode: A window of kwin columns in every RW step (alias: win; win_mode=0, the default: a Tanner
-            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with rw_opt
-            != 0, the default, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations), see
-            win_hyb and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
+            graph ball, 1: an index window); kwin=0 (default): the automatic hybrid windows for n >= 500 (with a
+            nonzero resolved rw_opt, only for a DEM or with win_hyb > 0: matrices then use uniform random permutations;
+            an automatic rw_opt which resolves to 0, e.g., on classical codes, keeps the hybrid windows), see win_hyb
+            and run_dist_m4ri(); kwin=-1: no windows (uniform random permutations in every step).
         refresh: RW steps between the basis refreshes of the experimental ksub RW (passed if not None; None,
             the default: the binary's 5000 with ksub > 0; 0: no refresh).
         d_exp: Expected distance estimate.
@@ -6826,8 +7098,8 @@ def compute_dem_distance(
             the branch and bound (each codeword found once); 2, also the coverage and fractional cover bounds; None
             (default): the binary's default 1.  The result and the cache key do not depend on it.
         win_hyb: Window size of the automatic hybrid RW steps (kwin=0, n >= 500: a window on every other step, for
-            matrices only with rw_opt=0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns for a DEM, 512
-            for matrices.  The cache key does not depend on it.
+            matrices only when the resolved rw_opt is 0 or win_hyb > 0; see run_dist_m4ri()); 0 (default): 256 columns
+            for a DEM, 512 for matrices.  The cache key does not depend on it.
         pairs: The RW pairs of non-pivot columns (p=2, see run_dist_m4ri()): the number of random pivot rows of
             their buckets (0: off; -1, the default: auto).  The cache key does not depend on it.
         ksub: Experimental, should not be used (a warning is printed to stderr for ksub > 0 with method=1 or 3):
@@ -6974,25 +7246,34 @@ def compute_dem_distance(
         if num_steps is not None and "iterCount" not in params:
             params["iterCount"] = num_steps
 
+        try:  # (k = 0: checked on the reduced DEM, merged equal columns and zero columns dropped)
+            is_k0 = _dem_k0(dem, pmin=pmin)
+        except Exception:
+            is_k0 = False
+            if hasattr(codedistance, "StimDEM2HL"):
+                try:
+                    H_tmp, L_tmp, _ = codedistance.StimDEM2HL(dem)
+                    is_k0 = _k0_of_matrices(H_tmp, L=L_tmp)
+                except Exception:
+                    is_k0 = False
+        if is_k0:
+            _k0_found("no observable independent of the detectors")
+            return 0, [0, 0, 0]
+
         if circuit is not None:
-            try:  # (k = 0: the DEM of the circuit, since version 0.17.2)
-                c_obj = _get_stim().Circuit.from_file(str(circuit)) if isinstance(circuit, (str, Path)) else circuit
-                H_c, L_c, _ = codedistance.StimDEM2HL(_circuit_dem(c_obj)[0])
-                k0_c = _k0_of_matrices(H_c, L=L_c)
-            except Exception:  # (left to codedistance)
-                k0_c = False
-            if k0_c:
-                _k0_found("no observable independent of the detectors")
-                return 0, [0, 0, 0]
             res = codedistance.circuitDistance(
                 circuit, method=codedistance_method, params=params,
                 seed=seed if seed != 0 else None
             )
         else:
-            H, L, priors = codedistance.StimDEM2HL(dem)
-            if _k0_of_matrices(H, L=L):  # (since version 0.17.2)
-                _k0_found("no observable independent of the detectors")
-                return 0, [0, 0, 0]
+            dem_obj = (
+                _get_stim().DetectorErrorModel.from_file(str(dem))
+                if isinstance(dem, (str, Path)) and os.path.isfile(str(dem))
+                else (_get_stim().DetectorErrorModel(str(dem)) if not hasattr(dem, "flattened") else dem)
+            )
+            if pmin > 0.0:
+                dem_obj = _dem_pmin_cut(dem_obj, pmin)
+            H, L, priors = codedistance.StimDEM2HL(dem_obj)
             if "priors" not in params and len(priors) > 0:
                 params["priors"] = priors
             res = codedistance.codeDistance(
@@ -7664,23 +7945,40 @@ def _cli_arg_text(key: str, val: str, arg: str) -> str:
     return arg if "=" in arg else f"{key}={val}"
 
 
-def _cli_int(val: str, arg: str) -> int:
+_LLONG_MIN, _LLONG_MAX = -(1 << 63), (1 << 63) - 1
+_INT_MIN, _INT_MAX = -(1 << 31), (1 << 31) - 1
+
+
+def _cli_int(val: str, arg: str, ll: bool = False) -> int:
     """
-    The integer value of a CLI argument arg (e.g., 'steps=1000'), also written as a number with an integer value (e.g.,
-    steps=1e5, as the dist_m4ri binary accepts since version 0.17.2); ValueError naming the argument otherwise.
+    The integer value of a CLI argument arg (e.g., 'steps=1000'), as parse_ll_value() / int_arg() of the dist_m4ri
+    binary: a decimal integer, an integer written as a floating-point number (e.g., steps=1e5 or 100000.0), or the
+    signed decimal integer prefix with a warning to stderr (e.g., 'steps=1.5' -> 1, 'threads=4x' -> 4); ValueError
+    naming the argument without a numeric prefix (e.g., steps=, steps=abc, steps=nan, steps=inf) or out of range.
     """
-    s = str(val).strip()
-    try:
-        return int(s, 10)
-    except ValueError:
-        pass
-    try:
-        f = float(s)
-    except ValueError:
-        f = None
-    if f is None or not f.is_integer():
+    import math
+    import re
+    s = str(val).lstrip()
+    m = re.match(r"^[+-]?\d+", s)
+    if m is None:
         raise ValueError(f"invalid '{arg}': expected an integer")
-    return int(f)
+    x = int(m.group(0), 10)
+    if not _LLONG_MIN <= x <= _LLONG_MAX:
+        raise ValueError(f"invalid '{arg}': expected an integer")
+    rest = s[m.end():]
+    if rest:
+        try:
+            f = float(s) if not rest[-1:].isspace() else math.nan
+        except ValueError:
+            f = math.nan
+        if math.isfinite(f) and f.is_integer() and abs(f) <= 9.0e18:
+            x = int(f)
+        else:
+            sys.stderr.write(f"# WARNING: '{arg}' read as {x} (the rest of the value, '{rest}', is ignored)\n")
+    lo, hi = (_LLONG_MIN, _LLONG_MAX) if ll else (_INT_MIN, _INT_MAX)
+    if not lo <= x <= hi:
+        raise ValueError(f"invalid '{arg}': the value is out of range")
+    return x
 
 
 def _cli_float(val: str, arg: str) -> float:
@@ -7711,8 +8009,10 @@ def _cli_flag(val: str) -> bool:
 
 
 def _cli_is_number(tok: str) -> bool:
-    """Whether the CLI token is a finite number (e.g., the negative value in '--kwin -1')."""
+    """Whether a CLI token is a numeric value (e.g., '--kwin -1' or '--kwin -4x'), rather than a flag."""
     import math
+    if len(tok) >= 2 and tok[0] in "+-" and (tok[1].isdigit() or (tok[1] == "." and tok[2:3].isdigit())):
+        return True
     try:
         return math.isfinite(float(tok))
     except ValueError:
@@ -7924,12 +8224,14 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             continue
 
         if arg in ("--rounds", "-rounds", "rounds"):
+            nxt_r = argv[i + 1] if i + 1 < len(argv) else None
             if (
-                i + 1 < len(argv)
-                and "=" not in argv[i + 1]
-                and argv[i + 1].lstrip("-").isdigit()
+                nxt_r is not None
+                and "=" not in nxt_r
+                and not (nxt_r.endswith((".stim", ".dem", ".mtx", ".mmx")) and os.path.exists(nxt_r))
+                and re.match(r"^[+-]?\d", nxt_r.lstrip())
             ):
-                args["rounds"] = int(argv[i + 1])
+                args["rounds"] = _cli_int(nxt_r, f"{arg.lstrip('-')}={nxt_r}")
                 i += 2
             else:
                 args["rounds"] = 2
@@ -8098,9 +8400,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                     bool(int(val)) if val.isdigit() else (val.lower() not in ("0", "false", "no", "off"))
                 )
             elif key_lower in ("start_scan", "start-scan", "startscan"):
-                if val not in ("0", "1"):
+                sc = _cli_int(val, num_arg)
+                if sc not in (0, 1):
                     raise ValueError(f"invalid '{num_arg}': start_scan should be 0 or 1")
-                args["start_scan"] = val == "1"
+                args["start_scan"] = sc == 1
             elif key_lower == "cbeg":
                 args["cbeg"] = _cli_int_or_text(val)
             elif key_lower == "cend":
@@ -8121,33 +8424,41 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
             elif key_lower == "dw":
                 args["dW"] = _cli_int(val, num_arg)
             elif key_lower in ("maxc", "max_c"):
-                args["maxC"] = _cli_int(val, num_arg)
+                args["maxC"] = _cli_int(val, num_arg, ll=True)
             elif key_lower == "pmin":
                 args["pmin"] = _cli_float(val, num_arg)
             elif key_lower in ("merge", "expand"):
-                if val.lower() in ("1", "true", "yes", "on"):
-                    args[key_lower] = True
-                elif val.lower() in ("0", "false", "no", "off"):
-                    args[key_lower] = False
+                if val.lower() in ("true", "yes", "on"):
+                    b_val = 1
+                elif val.lower() in ("false", "no", "off"):
+                    b_val = 0
                 else:
+                    b_val = _cli_int(val, num_arg)
+                if b_val not in (0, 1):
                     raise ValueError(f"invalid '{num_arg}': {key_lower} should be 0 or 1")
+                args[key_lower] = b_val == 1
             elif key_lower in ("sort_rows", "sort-rows", "sortrows"):
-                if val.lower() in ("1", "true", "yes", "on"):
-                    args["sort_rows"] = True
-                elif val.lower() in ("0", "false", "no", "off"):
-                    args["sort_rows"] = False
+                if val.lower() in ("true", "yes", "on"):
+                    sr_val = 1
+                elif val.lower() in ("false", "no", "off"):
+                    sr_val = 0
                 else:
+                    sr_val = _cli_int(val, num_arg)
+                if sr_val not in (0, 1):
                     raise ValueError(f"invalid '{num_arg}': sort_rows should be 0 or 1")
+                args["sort_rows"] = sr_val == 1
             elif key_lower in ("cc_prune", "cc-prune", "ccprune"):
-                if val not in ("0", "1", "2"):
+                cp = _cli_int(val, num_arg)
+                if cp not in (0, 1, 2):
                     raise ValueError(f"invalid '{num_arg}': cc_prune should be 0, 1, or 2")
-                args["cc_prune"] = int(val)
+                args["cc_prune"] = cp
             elif key_lower in ("rw_opt", "rw-opt", "rwopt"):
                 args["rw_opt"] = _parse_rw_opt(val, num_arg)
             elif key_lower == "ortho":
-                if val not in ("0", "1"):
+                ort = _cli_int(val, num_arg)
+                if ort not in (0, 1):
                     raise ValueError(f"invalid '{num_arg}': ortho should be 0 or 1")
-                args["ortho"] = val == "1"
+                args["ortho"] = ort == 1
             elif key_lower == "drop":  # (the values take precedence over files with these names, as in the binary)
                 if val.lower() in ("1", "true", "yes", "on", "auto"):
                     args["drop"] = True  # drop=auto
@@ -8368,7 +8679,7 @@ Codeword collection & caching:
   expand=0|1            DEM codewords: list all choices among equal columns (merge) (default: 0)
   cache=FILE, --no-cache  Persistent JSON cache (default: tmp_dist_cache.json; alias: cache_file; nocache/0: off)
   --verbose / -v        Explain bounds, steps, cache status, and miss probability estimates
-  --silent / -q         No warnings on stderr for ignored inputs or disabled options (also --quiet)
+  --silent / -q         No warnings on stderr for ignored inputs (disabled options still warn; also --quiet)
 
 Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
@@ -8381,9 +8692,9 @@ Extra parameters (see --morehelp for details):
   nothrottle=1 (0)      Disable automatic thread throttling (also --no-throttle)
   chunk_size=N (0)      Max RW batch per claim (default: 0 for adaptive 25-500; aliases: batch, chunk)
   ksub=N (0)            EXPERIMENTAL, do not use: RW subspace sketch dimension (0: full matrix)
-  kwin=N (0)            RW window size (0: hybrid for n>=500, DEM only if rw_opt!=0 unless win_hyb>0; -1: none; win)
+  kwin=N (0)            RW window size (0: hybrid, n>=500, DEM only if active rw_opt!=0 unless win_hyb>0; -1: off; win)
   win_mode=0|1 (0)      RW window metric: 0=Tanner graph BFS, 1=index proximity
-  win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM; 512 for matrices with rw_opt=0, uniform otherwise)
+  win_hyb=N (0)         Hybrid RW window size (0: 256 for a DEM; 512 for matrices with resolved rw_opt=0, uniform else)
   pairs=N (-1)          RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
   rw_opt=N (-1)         RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63 (also --rw-opt N)
   cov_cws=N (100)       Number of lowest-weight cws used for the min_hits statistic
@@ -8656,19 +8967,19 @@ Multithreading & throttling:
                         column j0, used in every RW step (alias: win=N).  Default: 0 = automatic
                         hybrid for n>=500: every other step uses an index window (win_mode=1) of
                         win_hyb columns, and the other steps uniform random permutations (also
-                        for codewords which are not local in the column order); with rw_opt != 0
-                        (including the default -1), used only for a DEM (matrices use uniform
-                        permutations unless rw_opt=0 or win_hyb > 0).  kwin=-1 (any negative
-                        value): no windows, uniform random permutations in every step.
+                        for codewords which are not local in the column order); with a nonzero
+                        resolved rw_opt (the run plan), used only for a DEM (matrices use uniform
+                        permutations unless the resolved rw_opt is 0 or win_hyb > 0).  kwin=-1 (any
+                        negative value): no windows, uniform random permutations in every step.
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
   win_hyb=N             Window size of the hybrid RW steps (kwin=0, n>=500; at most 3n/4).
-                        Default: 0 = 256 columns for a DEM, 512 for matrices with rw_opt=0 (with
-                        rw_opt != 0, including the default -1, matrices use uniform permutations
-                        unless win_hyb > 0 or kwin > 0).  The window columns come first in the
-                        elimination order; in a DEM, they are errors close in time, which touch few
-                        detectors: windows of 192-256 columns find circuit codewords 2-10 times
-                        faster than 512, and windows of one round of columns much slower.  With
+                        Default: 0 = 256 columns for a DEM, 512 for matrices with rw_opt=0 or
+                        resolved rw_opt=0x0 (when the resolved rw_opt is not 0, matrices use uniform
+                        permutations unless win_hyb > 0 or kwin > 0).  The window columns come first
+                        in the elimination order; in a DEM, they are errors close in time, which
+                        touch few detectors: windows of 192-256 columns find circuit codewords 2-10
+                        times faster than 512, and windows of one round of columns much slower.  With
                         --verbose (or debug&1), the binary prints the rounds of a DEM (estimated
                         from the time translation of its errors: D detectors and L columns per
                         round; printed only, the search does not use it, and a folded schedule,
@@ -8741,16 +9052,17 @@ Multithreading & throttling:
                            exchanges and 1 -> 2 splits, up to the weight min_w+dW; and by 1 <-> 1
                            swaps of the identical columns of H and L, also without T3 (see 1, irred,
                            and maxC; automatic: quantum codes when collecting: --cws, outC, or maxC).
-                        With rw_opt != 0, matrices (finH, Hx/Hz) use uniform random permutations in
-                        all RW steps unless kwin > 0 or win_hyb > 0 (the hybrid windows are for DEMs,
-                        see kwin), even if no stage applies (rw_opt=0x0 in the run plan, e.g., for a
-                        classical code).  Only with full-matrix RW (ksub=0) and steps > 0 (automatic:
-                        steps > 2).  The distance is valid with any rw_opt, and the cache key does not
-                        depend on it.  With --verbose (or debug&1), the binary prints the stages used
-                        and their statistics (lines '# RW triplets', '# RW canonical', and '# RW FKG
-                        score': the mean Harris-FKG bound -sum ln(1 + |S_a|) on ln Pr(J) of the dense
-                        full-matrix steps with pairs, with any stage but not with 8 or on the slab
-                        steps, and -ln C(n, r)).
+                        When the resolved rw_opt is not 0 (see the run plan), matrices (finH, Hx/Hz)
+                        use uniform random permutations in all RW steps unless kwin > 0 or
+                        win_hyb > 0 (the hybrid windows are for DEMs, see kwin); an automatic rw_opt
+                        which resolves to 0 (rw_opt=0x0 in the run plan, e.g., for a classical code)
+                        keeps the hybrid windows of rw_opt=0.  Only with full-matrix RW (ksub=0) and
+                        steps > 0 (automatic: steps > 2).  The distance is valid with any rw_opt, and
+                        the cache key does not depend on it.  With --verbose (or debug&1), the binary
+                        prints the stages used and their statistics (lines '# RW triplets',
+                        '# RW canonical', and '# RW FKG score': the mean Harris-FKG bound
+                        -sum ln(1 + |S_a|) on ln Pr(J) of the dense full-matrix steps with pairs, with
+                        any stage but not with 8 or on the slab steps, and -ln C(n, r)).
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = off; alias: max_hits).
                         Stops RW when the average number of hits <n> per codeword (by all RW steps,
                         with or without windows, and by CC or finC) reaches min_hits, both for the
@@ -8956,9 +9268,10 @@ General options:
                         with n, rank(H), and the RW steps, with the steps and time for 1%).
   --silent / -q         No warnings on stderr for the inputs which are ignored (e.g., matrices with
                         fdem, the options of the binary with solver=codedistance, or the options
-                        not used with --model-lb) or for the disabled options (--simple, --full,
-                        noscan, cbeg, cend, irred=0, css=); the warnings on the validity of a result
-                        are still written (also --quiet, silent=0|1).  In Python: set_silent().
+                        not used with --model-lb; also the k = 0 note); the warnings for the
+                        disabled options (--simple, --full, noscan, cbeg, cend, irred=0, css=) and
+                        on the validity of a result are still written (also --quiet, silent=0|1).
+                        In Python: set_silent().
   seed=N                Random number generator seed (default: 0; the binary replaces seed<=0 by
                         time(NULL) + 10*pid - 1000*seed).
   debug=N               Debug bitmap (default: 0; alias: dbg), a decimal or hexadecimal (0x...)
@@ -9149,8 +9462,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
 
     _warn_disabled_simple_full(args.get("simple"), args.get("full"), cli=True)  # (not passed on)
     if args.get("irred") is not None and args["irred"] != 1:  # (not passed on: the binary's default irred=1)
-        _warn_ignored(f"irred={args['irred']} is disabled in the Python interface (ignored: only irreducible "
-                      f"codewords are recorded); use the dist_m4ri binary directly")
+        _warn_disabled(f"irred={args['irred']} is disabled in the Python interface (ignored: only irreducible "
+                       f"codewords are recorded); use the dist_m4ri binary directly")
     stim_opts = [opt for opt, on in (("basis=", args.get("basis") is not None),
                                      ("--out-stim", args.get("out_stim") is not None),
                                      ("--p-noise", args.get("p_noise") is not None),
@@ -9207,7 +9520,7 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
         if args.get("fdem") or not quantum:
             warns.append("ortho=0: only used for a quantum code with G (finG=, fin=, or Hx= and Hz=); ignored")
     if args.get("css") is not None:
-        warns.append(f"css={args['css']}: not used by the Python interface (CSS codes only); ignored")
+        _warn_disabled(f"css={args['css']} is disabled in the Python interface (CSS codes only; ignored)")
     for f in args.get("ignored_files") or []:
         warns.append(f"{f}: a positional file which is not used (not a .dem, .stim, .mtx, or .mmx file, or a third "
                      f"matrix file); ignored")

@@ -2687,20 +2687,26 @@ def test_codedistance_unused_defaults():
 
 
 def test_ignored_inputs_warnings(tmp_path, capsys, monkeypatch):
-    # the inputs which are ignored give a warning on stderr, unless --silent (in Python: set_silent())
+    # the inputs which are ignored give a warning on stderr, unless --silent (in Python: set_silent());
+    # PY-C17: the disabled options (--simple, --full, noscan, cbeg, cend, irred=0, css=) still warn with --silent
     other = tmp_path / "notes.txt"
     other.write_text("x")
     args = dist_m4ri.parse_cli_args(["fdem=c.stim", "--model-lb", "kwin=5", "min_hits=0", "css=1", str(other)])
     dist_m4ri._warn_cli_conflicts(args)
     err = capsys.readouterr().err
     assert "kwin=, min_hits=: not used with --model-lb; ignored" in err
-    assert "css=1: not used by the Python interface" in err and f"{other}: a positional file" in err
+    assert "css=1 is disabled in the Python interface" in err and f"{other}: a positional file" in err
     H = os.path.join(EXAMPLES_DIR, "c96H.mmx")
     try:
         for silent in (False, True):
-            argv = [f"finH={H}", "css=1", "method=1", "steps=10", "--no-cache"] + (["--silent"] if silent else [])
+            argv = ([f"finH={H}", "--simple", "--full", "noscan=1", "cbeg=0", "cend=1", "irred=0", "css=1", str(other),
+                     "method=1", "steps=10", "--no-cache"] + (["--silent"] if silent else []))
             assert dist_m4ri.main(argv) == 0
-            assert ("css=1" in capsys.readouterr().err) == (not silent)
+            err = capsys.readouterr().err
+            assert (f"{other}: a positional file" in err) == (not silent)
+            for frag in ("--simple, --full: disabled since version 0.13.0", "noscan=1 is disabled",
+                         "cbeg=0 is disabled", "cend=1 is disabled", "irred=0 is disabled", "css=1 is disabled"):
+                assert frag in err, (silent, frag, err)
     finally:
         dist_m4ri.enable_distance_cache()
     # solver="codedistance" does not use the options of the binary (the solver itself is not run here)
@@ -2713,8 +2719,12 @@ def test_ignored_inputs_warnings(tmp_path, capsys, monkeypatch):
     dist_m4ri.set_silent(True)
     try:
         with pytest.raises(RuntimeError, match="not run"):
-            dist_m4ri.compute_classical_distance(H, solver="codedistance", threads=4)
-        assert "not used" not in capsys.readouterr().err
+            dist_m4ri.compute_classical_distance(H, solver="codedistance", threads=4, noscan=1, cbeg=0, cend=2)
+        err = capsys.readouterr().err
+        assert "not used" not in err
+        assert "noscan=1 is disabled" in err and "cbeg=0 is disabled" in err and "cend=2 is disabled" in err
+        dist_m4ri._warn_disabled_simple_full(True, True)
+        assert "simple=, full=: disabled since version 0.13.0" in capsys.readouterr().err
     finally:
         dist_m4ri.set_silent(False)
 
@@ -4469,12 +4479,18 @@ def test_binary_error_line_and_ansi():
 def test_cli_values_and_flags(monkeypatch, capsys):
     # PY-C02: non-numeric values name the option; the disabled options are ignored with a warning (not an error);
     # PY-C03: '--key VALUE' takes a negative number; PY-C04: cws=off, do_cws=0; PY-C11: 'finH= FILE' (as the binary);
-    # PY-C14: the flags also as key=value; numbers as the binary reads them (steps=1e5, timeout=10s)
+    # PY-C14: the flags also as key=value; numbers as the binary reads them (steps=1e5, steps=1.5 -> 1 with warning,
+    # threads=4x -> 4 with warning, NaN/inf rejected, timeout=10s and timeout=inf accepted)
     c96 = os.path.join(EXAMPLES_DIR, "c96H.mmx")
     parse = dist_m4ri.parse_cli_args
     for argv, msg in ((["dmin=abc"], "invalid 'dmin=abc': expected an integer"),
+                      (["steps="], "invalid 'steps=': expected an integer"),
+                      (["steps=.5"], "invalid 'steps=.5': expected an integer"),
+                      (["steps=nan"], "invalid 'steps=nan': expected an integer"),
+                      (["steps=inf"], "invalid 'steps=inf': expected an integer"),
+                      (["steps=-inf"], "invalid 'steps=-inf': expected an integer"),
+                      (["steps=1e12"], "invalid 'steps=1e12': the value is out of range"),
                       (["timeout=x"], "invalid 'timeout=x': expected a number"),
-                      (["steps=1.5"], "invalid 'steps=1.5': expected an integer"),
                       (["--dstop", "-1"], "invalid 'dstop=-1': dstop must be non-negative"),
                       (["finH="], "'finH=': missing file name")):
         with pytest.raises(ValueError, match=re.escape(msg)):
@@ -4490,17 +4506,35 @@ def test_cli_values_and_flags(monkeypatch, capsys):
     assert a["nothrottle"] and a["silent"] and not a["use_cache"] and a["cache_file"] is None
     a = parse(["--no-throttle=0", "--silent=0", "--no-cache=0"])
     assert not a["nothrottle"] and not a["silent"] and a["use_cache"]
-    assert parse(["steps=1e5"])["steps"] == 100000 and parse(["timeout=10s"])["timeout"] == 10.0
+    capsys.readouterr()
+    a = parse(["steps=1e5", "threads=4.0", "maxC=1e12"])  # (integer float values: no warning; maxC is 64-bit)
+    assert (a["steps"], a["threads"], a["maxC"]) == (100000, 4, 10**12) and capsys.readouterr().err == ""
+    for argv, key, exp, warn in (
+        (["steps=1.5"], "steps", 1, "# WARNING: 'steps=1.5' read as 1 (the rest of the value, '.5', is ignored)\n"),
+        (["threads=4x"], "threads", 4, "# WARNING: 'threads=4x' read as 4 (the rest of the value, 'x', is ignored)\n"),
+        (["kwin=-1.5"], "kwin", -1, "# WARNING: 'kwin=-1.5' read as -1 (the rest of the value, '.5', is ignored)\n"),
+        (["--kwin", "-4x"], "kwin", -4, "# WARNING: 'kwin=-4x' read as -4 (the rest of the value, 'x', is ignored)\n"),
+        (["--rounds", "2.5"], "rounds", 2,
+         "# WARNING: 'rounds=2.5' read as 2 (the rest of the value, '.5', is ignored)\n"),
+    ):
+        assert parse(argv)[key] == exp and capsys.readouterr().err == warn
+    a = parse(["merge=1x", "cc_prune=2y", "ortho=0z", "start_scan=1w"])
+    assert (a["merge"], a["cc_prune"], a["ortho"], a["start_scan"]) == (True, 2, False, True)
+    assert capsys.readouterr().err.count("# WARNING: ") == 4
+    assert parse(["timeout=10s"])["timeout"] == 10.0
     assert parse(["timeout=inf"])["timeout"] == 0.0 and parse(["time=+Infinity"])["timeout"] == 0.0  # (no limit)
     for bad in ("timeout=nan", "timeout=-inf", "pmin=inf"):
         with pytest.raises(ValueError, match=re.escape(f"invalid '{bad}': expected a number")):
             parse([bad])
-    # the disabled options with a value which is not a number: a warning, and the run goes on
+    # the disabled options with a non-numeric value, and integer prefixes in main() under --silent: warn and run on
     capsys.readouterr()
     assert dist_m4ri.main([f"finH={c96}", "method=2", "wmax=2", "irred=abc", "noscan=abc", "cbeg=abc",
                            "--no-cache"]) == 0
     err = capsys.readouterr().err
     assert "irred=abc is disabled" in err and "noscan=abc is disabled" in err and "cbeg=abc is disabled" in err
+    assert dist_m4ri.main([f"finH={c96}", "method=1", "steps=10.5", "threads=1x", "--silent", "--no-cache"]) == 0
+    err = capsys.readouterr().err
+    assert "# WARNING: 'steps=10.5' read as 10" in err and "# WARNING: 'threads=1x' read as 1" in err
 
 
 def test_cli_lx_lz_without_css_and_model_lb_warnings(capsys, tmp_path):
@@ -4670,9 +4704,11 @@ def test_cli_help_sync_0_17_2(capsys):
         assert dist_m4ri.main([f"--morehelp={alias}"]) == 0
         capsys.readouterr()
 
-    # PY-04: hybrid windows rule D3 and rw_opt in the 'windows' group
+    # PY-04 & C1-04: hybrid windows rule D3 (keyed on resolved rw_opt) and rw_opt in the 'windows' group
     win_out = " ".join(topic_out("windows").split())
-    assert "rw_opt=N" in win_out and "used only for a DEM" in win_out and "512 for matrices with rw_opt=0" in win_out
+    assert "rw_opt=N" in win_out and "used only for a DEM" in win_out
+    assert "with a nonzero resolved rw_opt" in win_out and "512 for matrices with rw_opt=0 or resolved rw_opt=0x0" in \
+        win_out
 
     # PY-05: min_hits canonical class rule (rw_opt 16) in help and morehelp
     assert "canonical classes" in help_out
@@ -4686,6 +4722,7 @@ def test_cli_help_sync_0_17_2(capsys):
     for frag in ("m x n above 512 KiB, and n >= 20 m or m >= 1400", "up to 64 rows of L", "no '# RW FKG score'",
                  "only with min_hits > 0, not with kwin > 0", "2^24",
                  "quantum codes when collecting: --cws, outC, or maxC",
+                 "When the resolved rw_opt is not 0", "keeps the hybrid windows of rw_opt=0",
                  "Only with full-matrix RW (ksub=0) and steps > 0 (automatic: steps > 2)",
                  "dense full-matrix steps with pairs, with any stage"):
         assert frag in " ".join(rw_out.split()), frag
@@ -4701,12 +4738,125 @@ def test_cli_help_sync_0_17_2(capsys):
     assert "fdem=FILE.stim or fdem=FILE.dem" in mlb and "debug," in mlb and "and rw_opt apply to each run" in mlb
     assert "error if the input is not a .stim circuit" in " ".join(topic_out("rounds").split())
     assert "0; 5000 with ksub>0" in help_out and "above the minimum weight found" in help_out
-    assert "dW=N (-1, unset)" in help_out
+    assert "dW=N (-1, unset)" in help_out and "disabled options still warn" in help_out
     assert "default: -1 = unset, i.e., 0 in the binary" in " ".join(topic_out("dW").split())
-    assert "disabled options" in " ".join(topic_out("silent").split())
+    silent_out = " ".join(topic_out("silent").split())
+    assert "warnings for the disabled options" in silent_out and "are still written" in silent_out
     eng = " ".join(topic_out("engine").split())
     for frag in ("Stage C", "wmin = max(1, dmin_A)", "0 < dmax_A - max(1, dmin_A) < 3", "'cert':", "'codedistance':"):
         assert frag in eng, frag
+
+
+def test_bitpacked_gf2_k0_and_medium_dem(monkeypatch, capsys, tmp_path):
+    # Bit-packed GF(2) elimination (_pack_gf2_rows, _gf2_echelon, _gf2_rank), single-elimination _k0_of_matrices with
+    # classical m < n shortcut, and reduced-DEM _dem_k0 on codedistance paths (#253).
+    from types import SimpleNamespace
+    rng = np.random.default_rng(20261117)
+
+    # 1. Multi-word rank across sparse (including duplicate entries mod 2), dense, float/int, and file inputs
+    base = rng.integers(0, 2, size=(18, 210), dtype=np.uint8)
+    comb = rng.integers(0, 2, size=(40, 18), dtype=np.uint8)
+    dense = (comb @ base) & 1  # rank <= 18 across 4 uint64 words
+    packed, n_cols = dist_m4ri._pack_gf2_rows(dense)
+    assert packed.dtype == np.uint64 and packed.shape == (40, 4) and n_cols == 210
+    ech = packed.copy()
+    r_ech, pivs = dist_m4ri._gf2_echelon(ech)
+    assert len(pivs) == len(set(pivs)) == r_ech <= 18
+    assert [p >> 6 for p in pivs] == sorted(p >> 6 for p in pivs)
+    for i, c in enumerate(pivs):
+        assert (int(ech[i, c >> 6]) >> (c & 63)) & 1 == 1
+        assert all(((int(ech[i, c0 >> 6]) >> (c0 & 63)) & 1) == 0 for c0 in pivs[:i])
+    # Multi-panel within a single 64-bit word (rank ~ 20 > 2 panels of 8 bits in word 0)
+    b1 = rng.integers(0, 2, size=(20, 64), dtype=np.uint8)
+    h1 = (rng.integers(0, 2, size=(35, 20), dtype=np.uint8) @ b1) & 1
+    l1 = (rng.integers(0, 2, size=(15, 35), dtype=np.uint8) @ h1) & 1
+    assert dist_m4ri._k0_of_matrices(h1, L=l1)
+    # Force pure-Python _gf2_echelon path even if qec_cert is loaded, and compare
+    r_ref = dist_m4ri._gf2_rank(dense)
+    monkeypatch.setattr(dist_m4ri, "_qec_cert_mod", None)
+    assert dist_m4ri._gf2_rank(dense) == r_ech == r_ref
+    assert dist_m4ri._gf2_rank(dense.astype(np.float64) * 3.0) == r_ech  # odd floats -> 1
+    assert dist_m4ri._gf2_rank(sp.csr_matrix(dense)) == r_ech
+    # Duplicate sparse COO entries sum mod 2 (two 1s at (0, 0) cancel)
+    coo_dup = sp.coo_matrix(([1, 1, 1], ([0, 0, 1], [0, 0, 130])), shape=(3, 210))
+    assert dist_m4ri._gf2_rank(coo_dup) == 1
+
+    # 2. Classical m < n shortcut avoids unpacking or touching matrix entries
+    class _NoTouchSparse:
+        shape = (50, 130)
+
+        def tocoo(self, copy=False):
+            raise AssertionError("m < n shortcut should return False without packing")
+
+    assert not dist_m4ri._k0_of_matrices(_NoTouchSparse(), classical=True)
+    assert not dist_m4ri._k0_of_matrices(_NoTouchSparse(), G=_NoTouchSparse(), classical=False)
+
+    # Classical m >= n: k = 0 vs k > 0 across >1 uint64 word
+    eye70 = sp.eye(70, format="csr", dtype=np.uint8)
+    h_full = sp.vstack([eye70, eye70[:10]], format="csr")
+    h_def = sp.csr_matrix(np.eye(70, dtype=np.uint8)[:-1])  # 69 x 70 -> m < n -> k > 0
+    h_sing = sp.vstack([h_def, h_def[:5]], format="csr")    # 74 x 70, rank 69 < 70 -> k > 0
+    assert dist_m4ri._k0_of_matrices(h_full, classical=True)
+    assert not dist_m4ri._k0_of_matrices(h_def, classical=True)
+    assert not dist_m4ri._k0_of_matrices(h_sing, classical=True)
+
+    # Quantum (H, G) and (H, L): k = 0 vs k > 0
+    assert dist_m4ri._k0_of_matrices(eye70[:35], G=eye70[35:])
+    assert not dist_m4ri._k0_of_matrices(eye70[:34], G=eye70[35:])
+    l_dep = (rng.integers(0, 2, size=(4, 40), dtype=np.uint8) @ dense) & 1  # in rowspace(dense) -> k = 0
+    assert dist_m4ri._k0_of_matrices(sp.csr_matrix(dense), L=sp.csr_matrix(l_dep))
+    assert dist_m4ri._k0_of_matrices(sp.csr_matrix(dense), L=sp.csr_matrix((2, 210), dtype=np.uint8))  # zero L -> k = 0
+    l_indep = np.zeros((2, 210), dtype=np.uint8)
+    non_piv = next(c for c in range(210) if c not in set(pivs))
+    l_indep[1, non_piv] = 1  # outside rowspace(dense) -> k > 0
+    assert not dist_m4ri._k0_of_matrices(sp.csr_matrix(dense), L=sp.csr_matrix(l_indep))
+
+    # 3. _dem_k0 merges equal columns and drops zero columns, including on a medium DEM
+    dem_dup = ("error(0.1) D0 D1 L0\nerror(0.2) D0 D1 L0\nerror(0.1) D0 D1\nerror(0.1)\n"
+               "error(0.01) D1 L0\n")
+    assert not dist_m4ri._dem_k0(dem_dup)  # D0 D1 L0 + D0 D1 gives L0 -> k > 0
+    dep_dem = "error(0.1) D0 L0\nerror(0.2) D0 L0\nerror(0.1) D1\nerror(0.001) D1 L0\n"
+    assert not dist_m4ri._dem_k0(dep_dem, pmin=0.0)
+    assert dist_m4ri._dem_k0(dep_dem, pmin=0.01)  # pmin drops D1 L0, leaving L0 == D0 -> k = 0
+
+    surf_d5_dem = os.path.join(EXAMPLES_DIR, "surf_d5.dem")
+    if dist_m4ri._HAS_STIM:
+        import stim
+        med_circ = stim.Circuit.generated(
+            "surface_code:rotated_memory_z", distance=7, rounds=7,
+            after_clifford_depolarization=0.001, before_measure_flip_probability=0.001
+        )
+        med_dem_text = str(med_circ.detector_error_model(decompose_errors=True))
+    else:
+        med_dem_text = Path(surf_d5_dem).read_text()
+    med_dem_k0_text = re.sub(r"\bL\d+\b", "", med_dem_text)  # strip observables -> k = 0 on medium DEM
+    for use_qec in (True, False):
+        monkeypatch.setattr(dist_m4ri, "_qec_cert_available", (lambda: True) if (use_qec and dist_m4ri._HAS_QEC_CERT)
+                            else (lambda: False))
+        assert not dist_m4ri._dem_k0(med_dem_text)
+        assert dist_m4ri._dem_k0(med_dem_k0_text)
+
+    # 4. End-to-end solver='codedistance' paths on k = 0 (never calls codeDistance) and k > 0
+    cd_calls = []
+    fake_cd = SimpleNamespace(
+        codeDistance=lambda H, G, **kw: (cd_calls.append("code"), {"d": 5, "numIter": 12})[1],
+        circuitDistance=lambda c, **kw: (cd_calls.append("circ"), {"d": 5, "numIter": 12})[1],
+        StimDEM2HL=lambda d: (np.array([[1, 0], [0, 1]], dtype=np.int8), np.array([[1, 1]], dtype=np.int8), [0.1, 0.1]),
+    )
+    monkeypatch.setattr(dist_m4ri, "_get_codedistance", lambda: fake_cd)
+    capsys.readouterr()
+    assert dist_m4ri.compute_classical_distance(h_full, solver="codedistance", return_info=True) == (0, [0, 0, 0])
+    assert dist_m4ri.compute_quantum_distance(eye70[:35], G=eye70[35:], solver="codedistance") == 0
+    assert dist_m4ri.compute_css_distance(eye70[:35], eye70[35:], solver="codedistance") == (0, [0, 0, 0], [0, 0, 0])
+    med_k0_file = tmp_path / "med_k0.dem"
+    med_k0_file.write_text(med_dem_k0_text)
+    assert dist_m4ri.compute_dem_distance(str(med_k0_file), solver="codedistance") == (0, [0, 0, 0])
+    assert cd_calls == [] and capsys.readouterr().err.count("# Note: k=0:") == 4
+    if dist_m4ri._HAS_STIM:
+        med_ok_file = tmp_path / "med_ok.dem"
+        med_ok_file.write_text(med_dem_text)
+        assert dist_m4ri.compute_dem_distance(str(med_ok_file), solver="codedistance", cache_file=None)[0] == 5
+        assert cd_calls == ["code"]
 
 
 if __name__ == "__main__":

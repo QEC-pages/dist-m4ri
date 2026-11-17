@@ -356,10 +356,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.17.2" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.17.3" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.17.2" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.17.3" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -1843,6 +1843,26 @@ if ! diff <(grep -v '^%' "$CC136" | sort) <(grep -v '^%' "$RW136" | sort) > /dev
     FAILED=1
 fi
 rm -f "$CC136" "$RW136"
+
+# Test 137: the rank check of k = 0 (k not known at once: an explicit L) runs in its own thread during the search, also
+# with threads=1, and stops a long run at once (not at the timeout); with k > 0 the result is unchanged
+for t in 1 4; do
+    assert_output "timeout 20 $BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem pmin=0.015 steps=1000000000 \
+timeout=60 threads=$t debug=1" 0 "^0 0 0$" "^# stopped after [0-9.]+s: the rank check found k=0"
+done
+assert_output "timeout 20 $BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem pmin=0.015 steps=1000000000 timeout=60 \
+threads=2 debug=0" 0 "^0 0 0$" "^# Note: k=0: no logical codeword \(every row of L is in the row space of H\)"
+assert_output "$BIN_FORK method=3 fdem=$EXAMPLES_DIR/surf_d3.dem steps=100 threads=2 debug=9" 0 "^3 3 [0-9]+$" \
+    "^# the rank check of k=0 runs in its own thread" "k=0: no logical"
+
+# Test 138: Rule D3 is keyed on the resolved rw_opt (C1-04): on a classical code (c1920H, n=1920), the automatic and an
+# explicit rw_opt resolve to 0x0 and keep the hybrid windows of rw_opt=0 (half of the steps uniform)
+for o in 0 -1 1; do
+    assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx steps=20 rw_opt=$o seed=1 threads=2 debug=1" 0 \
+        "^1 [0-9]+ 20$" "^# RW information sets: n=1920, rank\(H\)=1279, steps=20 \(uniform permutations: 10\)"
+done
+assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx steps=20 rw_opt=1 seed=1 threads=2 debug=1" 0 "" \
+    "^#   RW windows: 512 columns on every other step"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

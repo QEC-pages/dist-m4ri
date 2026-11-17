@@ -319,7 +319,8 @@ enum {
   STOP_WMIN,         /* a codeword of weight <= wmin found */
   STOP_MAXC,         /* maxC codewords collected */
   STOP_COLLECTED,    /* the CC rounds w = d..d+dW enumerated all codewords to collect (outC, maxC) */
-  STOP_DSTOP         /* the lower bound reached the stop target: dmin >= dstop */
+  STOP_DSTOP,        /* the lower bound reached the stop target: dmin >= dstop */
+  STOP_K0            /* the rank check found k = 0: no codeword (see k0_check_start()) */
 };
 
 /* Stop all threads, recording the `reason` unless one is already recorded */
@@ -2189,7 +2190,7 @@ static word *dual_form(const distfork_ctx_t * const ctx, rw_dual_t * const d, co
 /* The entries of the pairs (see rw_pairs_step()) of a sparse-dual step: the formed columns with a nonzero L syndrome,
  * and the columns with a zero L syndrome in their buckets (formed now, with the Stern filters of rw_pairs_step()), in
  * increasing order of the columns in each group, so that the sort and the pairs are those of the dense step.  Returns
- * the number of entries (0 also at a stop: then rw_pairs_step() checks no pair, and its step counts as completed). */
+ * the number of entries (-1 at a stop: then rw_pairs_step() returns -1, and its step does not count as completed). */
 static int rw_dual_entries(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_thr_t * const th,
                            const word * const piv_mask, const int rank, const int nk, const int * const kword,
                            const word * const kmask, const int kb, const int sh_key, const int sh_grp, const int ib,
@@ -2233,7 +2234,7 @@ static int rw_dual_entries(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_t
   for (int col = 0; col < nvar; col++) {
     if ((col & 255) == 255 && (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
                                atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)))
-      return 0;
+      return -1;
     if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
     const int k0 = ctx->dcp[col], k1 = ctx->dcp[col + 1];
     uint64_t sig = lmask[col];
@@ -2287,7 +2288,8 @@ static int rw_dual_entries(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_t
  * v->full, the reduced matrix `mH`: Gauss-Jordan, `rank` pivot rows, whose pivot columns are `pivs`, and its transpose
  * v->ht, row c: the column c in the pivot rows), `l` pivot rows of the buckets, the workspace `ws`, and the support
  * `ee`; `src` as in rw_record_codeword().  Adds the number of the pairs checked to `*checked`, and of the hits to
- * `*hits` (see rw_is_hit()); returns l (0: no pairs; also l after a stop in the pairs, which only end early).  The
+ * `*hits` (see rw_is_hit()); returns l (0: no pairs), or -1 after a stop in the pairs (the step is not completed, see
+ * run_rw_steps(); an upper bound which leaves no pair only ends them early).  The
  * bucket of a column is a hash of its l bits (64 bits; the sort uses its top bits: the buckets with different bits are
  * merged rarely, which only adds pairs).
  * With the stages of rw_opt (`th` not NULL): the L syndromes `srows` may be computed before (`srows_ready`, see
@@ -2354,9 +2356,11 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
   double fsum = 0.0;
   const double * const ltab = (th && fkg && v->full) ? th->ltab : NULL;
   int K = 0;
-  if (dl) /* Stage 4: the formed columns of the sparse-dual step (no Harris-FKG score) */
+  if (dl) { /* Stage 4: the formed columns of the sparse-dual step (no Harris-FKG score) */
     K = rw_dual_entries(ctx, dl, th, piv_mask, rank, nk, kword, kmask, kb, sh_key, sh_grp, ib, ent, srt, ee, pivs,
                         filt_t3, filt_g);
+    if (K < 0) return -1; /* (stopped) */
+  }
   for (int col = 0; col < ncols && !dl; col++) {
     if ((piv_mask[col >> 6] >> (col & 63)) & 1) continue;
     const word * const row = view_row(v, col);
@@ -2420,13 +2424,17 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
   const int ext2 = (th && ctx->rw_shorten) ? ctx->rw_ext2 : 0; /* rw_opt: the pairs to shorten */
   long long int nchk = 0, nhits = 0, nvis = 0, next_poll = RW_PAIRS_POLL; /* nvis: the pairs visited, also skipped */
   long long int nred = 0; /* irred=1: the pairs of disjoint circuits skipped (reducible sums) */
+  bool stopped = false;   /* a stop flag ended the pairs */
   for (int b0 = 0; b0 < K;) {
     const uint64_t bkey = srt[b0] >> sh_key;
     int b1 = b0 + 1;
     while (b1 < K && (srt[b1] >> sh_key) == bkey) b1++;
     if (b1 - b0 >= 2) {
       if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
-          atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) break;
+          atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+        stopped = true;
+        break;
+      }
       lim = rw_pairs_limit(ctx); /* (the upper bound may have decreased) */
       if (lim < 3) break;
       int lx = rw_lim_ext(lim, ext2) - 3; /* the largest weight of the sum of the two columns */
@@ -2438,7 +2446,10 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
         if (nvis >= next_poll) { /* a bucket can be large (few rows l): the stop flags and the upper bound, also here */
           next_poll = nvis + RW_PAIRS_POLL;
           if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
-              atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) goto done;
+              atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+            stopped = true;
+            goto done;
+          }
           lim = rw_pairs_limit(ctx);
           if (lim < 3) goto done;
           lx = rw_lim_ext(lim, ext2) - 3;
@@ -2499,7 +2510,7 @@ done:
   *checked += nchk;
   *hits += nhits;
   if (nred > 0) atomic_fetch_add_explicit(&ctx->cw_red_rw, nred, memory_order_relaxed);
-  return l;
+  return stopped ? -1 : l;
 }
 
 /* A new generation of the slab marks of a thread (see rw_slab_step(); cleared when the counter wraps around) */
@@ -2517,7 +2528,7 @@ static inline uint32_t slab_gen(rw_thr_t * const th, const int nvar) {
  * set of the triplet graph G_3 first, then the others (MIS push-back, Theorem 2(a) of the notes), each part in random
  * order; the slab matrix (msub rows) is reduced (Gauss-Jordan), and its single columns and pairs give codewords of H
  * (the slab columns touch no other row), mapped back to the columns of H.  Returns the rank of the slab matrix (-1:
- * stopped in its elimination; a stop in the pairs returns the rank). */
+ * stopped in its elimination or in the pairs; then the step does not count as completed). */
 static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pairs_ws_t * const pws, rci_t * const ee,
                         uint64_t * const rng, const int tid, long long * const hits1, long long * const hits2,
                         long long * const n_pairs) {
@@ -2628,8 +2639,9 @@ static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pair
     const int l = rw_pairs_bits(p, ns, rank, atomic_load_explicit(&ctx->dmax, memory_order_relaxed));
     if (l > 0) {
       const rw_view_t v = {NULL, th->T, (size_t)rw, ns, th->cols, 0};
-      rw_pairs_step(ctx, &v, NULL, th->spivs, th->spmask, rank, l, pws, ee, rng, tid, CW_SRC_RW_WINDOW, n_pairs, hits2,
-                    th, false, NULL, NULL);
+      if (rw_pairs_step(ctx, &v, NULL, th->spivs, th->spmask, rank, l, pws, ee, rng, tid, CW_SRC_RW_WINDOW, n_pairs,
+                        hits2, th, false, NULL, NULL) < 0)
+        return -1; /* (stopped in the pairs: the step is not completed) */
     }
   }
   return rank;
@@ -2637,8 +2649,8 @@ static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pair
 
 /* Stage 4 (rw_opt, RW_OPT_DUAL): a full-matrix RW step with the sparse-dual elimination (see rw_dual_t) of the columns
  * order[0], order[1], ... in the rows 0..nrows_eff-1 of M: the single columns with a nonzero L syndrome, formed in
- * increasing order, and the pairs (see rw_dual_entries()).  Returns the rank (-1: stopped in the elimination or in the
- * single columns; a stop in the pairs returns the rank, and the step counts as completed, as in the dense step). */
+ * increasing order, and the pairs (see rw_dual_entries()).  Returns the rank (-1: stopped in the elimination, in the
+ * single columns, or in the pairs; then the step does not count as completed). */
 static int rw_dual_step(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_thr_t * const th, rw_pairs_ws_t * const pws,
                         const int nrows_eff, const rci_t * const order, rci_t * const pivs, word * const piv_mask,
                         rci_t * const ee, uint64_t * const rng, const int tid, const int src, long long * const hits1,
@@ -2702,6 +2714,7 @@ static int rw_dual_step(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_thr_
       const rw_view_t v = {NULL, NULL, 0, nvar, NULL, 1};
       const int lu = rw_pairs_step(ctx, &v, NULL, pivs, piv_mask, rank, l, pws, ee, rng, tid, src, n_pairs, hits2, th,
                                    true, NULL, d);
+      if (lu < 0) return -1; /* (stopped in the pairs) */
       if (lu > 0 && atomic_load_explicit(&ctx->rw_pairs_l, memory_order_relaxed) != lu)
         atomic_store_explicit(&ctx->rw_pairs_l, lu, memory_order_relaxed);
     }
@@ -2898,6 +2911,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
         double fkg = NAN;
         l = rw_pairs_step(ctx, &v, mH, pivs->values, piv_mask, rank, l, pws, ee, rng_state, tid, src, &n_pairs, &hits2,
                           th, srows_ready, th ? &fkg : NULL, NULL);
+        if (l < 0) break; /* stopped in the pairs: the step does not count as completed */
         if (th && !isnan(fkg)) { /* the Harris-FKG score -sum ln(1 + w_x) of the step */
           warg->fkg_sum[uniform ? 0 : 1] -= fkg;
           warg->fkg_steps[uniform ? 0 : 1]++;
@@ -4426,8 +4440,8 @@ static void print_run_plan(const distfork_ctx_t * const ctx, const int init_dmax
   if ((p->method & 1) && ctx->rw_threads > 0) {
     fprintf(stderr, ", steps=%ld, min_hits=%d, ksub=%d", ctx->total_rw_steps, p->min_hits, p->ksub);
     if (p->rw_opt != 0) fprintf(stderr, ", rw_opt=0x%x", (unsigned int)ctx->rw_active);
-    if (p->rw_opt != 0 && p->ksub <= 0 && p->kwin == 0 && p->nvar >= 500 && !rw_hybrid_on(p, p->nvar))
-      fprintf(stderr, " (matrices with rw_opt != 0: no hybrid windows)"); /* (Rule D3, also with no stage) */
+    if (p->rw_active != 0 && p->ksub <= 0 && p->kwin == 0 && p->nvar >= 500 && !rw_hybrid_on(p, p->nvar))
+      fprintf(stderr, " (matrices with rw_opt != 0: no hybrid windows)"); /* (Rule D3, on the resolved mask) */
   }
   if (p->method & 2) {
     fprintf(stderr, ", CC from w=%d", p->noscan ? p->wmax : (p->dmin > 1 ? p->dmin : 1));
@@ -4512,10 +4526,112 @@ static void print_stop_reason(distfork_ctx_t * const ctx, const int final_dmax, 
   case STOP_DSTOP:
     fprintf(stderr, "lower bound dmin=%d reached dstop=%d", atomic_load(&ctx->dmin), p->dstop);
     break;
+  case STOP_K0:
+    fprintf(stderr, "the rank check found k=0 (no logical codeword)");
+    break;
   default:
     fprintf(stderr, "search ended");
   }
   fprintf(stderr, "\n");
+}
+
+/* ---------------------------------------------------------------------------------------------------------------- *
+ * The rank check of k = 0 when not known at once (p->k_zero = -1 after var_init()): one extra thread does the
+ * elimination (k_zero_rank(), malloc only) on its own copies of H and L during the search.  A codeword found proves
+ * k > 0: the check is not waited for (it is stopped at the end, see k0_check_exit()); if it finds k = 0, it stops the
+ * run (STOP_K0); a search which ends without a codeword waits for it (k0_check_finish()).
+ * ---------------------------------------------------------------------------------------------------------------- */
+enum { K0_RUNNING = 0, K0_POSITIVE, K0_ZERO };
+
+typedef struct {
+  pthread_t tid;
+  bool started, joined;
+  csr_t *H, *L;                  /* the copies of H and L (L: NULL for a classical code), freed by the thread */
+  atomic_int result;             /* K0_RUNNING, K0_POSITIVE (k > 0), or K0_ZERO (k = 0) */
+  atomic_int stop;               /* nonzero: the thread ends without a result */
+  _Atomic(distfork_ctx_t *) ctx; /* the run to stop on k = 0 (NULL until its stop flags are initialized) */
+  char reason[sizeof(prm.k0_reason)]; /* why k = 0 (written before `result`) */
+} k0_check_t;
+
+static k0_check_t k0c;
+
+static csr_t *k0_csr_copy(const csr_t * const a) {
+  const int nz = (a->nz == -1) ? a->p[a->rows] : a->nz;
+  csr_t * const b = csr_init(NULL, a->rows, a->cols, nz > 0 ? nz : 1);
+  memcpy(b->p, a->p, (size_t)((a->nz == -1) ? a->rows + 1 : nz) * sizeof(int));
+  memcpy(b->i, a->i, (size_t)nz * sizeof(int));
+  b->nz = a->nz;
+  return b;
+}
+
+static void *k0_check_thread(void *arg) {
+  (void)arg;
+  const int zero = k_zero_rank(k0c.H, k0c.L, k0c.reason, sizeof(k0c.reason), &k0c.stop);
+  k0c.H = csr_free(k0c.H);
+  if (k0c.L) k0c.L = csr_free(k0c.L);
+  if (zero < 0) return NULL; /* (stopped) */
+  atomic_store(&k0c.result, zero ? K0_ZERO : K0_POSITIVE);
+  if (zero) { /* (with k = 0 no codeword is found, so that main() is still in the run or waits for this thread) */
+    distfork_ctx_t * const ctx = atomic_load(&k0c.ctx);
+    if (ctx) ctx_stop(ctx, STOP_K0);
+  }
+  return NULL;
+}
+
+/* Start the rank check of k = 0 in its own thread (without a thread: before the search) */
+static void k0_check_start(params_t * const p) {
+  k0c.H = k0_csr_copy(p->spaH);
+  k0c.L = p->classical ? NULL : k0_csr_copy(p->spaL);
+  atomic_init(&k0c.result, K0_RUNNING);
+  atomic_init(&k0c.stop, 0);
+  atomic_init(&k0c.ctx, NULL);
+  k0c.started = (pthread_create(&k0c.tid, NULL, k0_check_thread, NULL) == 0);
+  if (!k0c.started)
+    k0_check_thread(NULL);
+  if (p->debug & DBG_TIMING)
+    fprintf(stderr, "# the rank check of k=0 runs %s\n", k0c.started ? "in its own thread" : "before the search");
+}
+
+/* The run whose stop flags are initialized: stopped at once if the rank check has already found k = 0 (with the store
+ * of k0_check_thread() before its load, at least one of the two sees the other) */
+static void k0_check_publish(distfork_ctx_t * const ctx) {
+  atomic_store(&k0c.ctx, ctx);
+  if (atomic_load(&k0c.result) == K0_ZERO) ctx_stop(ctx, STOP_K0);
+}
+
+/* After a search (or none): returns 1 if the rank check found k = 0 (then sets p->k_zero and p->k0_reason), waiting
+ * for it only if no codeword proves k > 0 */
+static int k0_check_finish(params_t * const p) {
+  if (p->k_zero >= 0 || p->num_cws > 0 || p->min_w < INT_MAX)
+    return p->k_zero == 1;
+  if (k0c.started && !k0c.joined) {
+    pthread_join(k0c.tid, NULL);
+    k0c.joined = true;
+  }
+  if (atomic_load(&k0c.result) != K0_ZERO) {
+    p->k_zero = 0;
+    return 0;
+  }
+  p->k_zero = 1;
+  memcpy(p->k0_reason, k0c.reason, sizeof(p->k0_reason));
+  return 1;
+}
+
+/* The result of a run with k = 0 found by the rank check */
+static void k0_print_result(const params_t * const p) {
+  k_zero_note(p, "0 0 0");
+  printf("0 0 0\n");
+}
+
+/* The end of main(): the rank check, if it still runs (a codeword proved k > 0), is stopped (it polls k0c.stop every
+ * 256 columns) and joined; returns 0 */
+static int k0_check_exit(void) {
+  if (k0c.started && !k0c.joined) {
+    atomic_store(&k0c.stop, 1);
+    pthread_join(k0c.tid, NULL);
+    k0c.joined = true;
+  }
+  return 0;
 }
 
 typedef struct {
@@ -4605,8 +4721,8 @@ int main(int argc, char **argv) {
 
   var_init(argc, argv, p);
 
-  /* k = 0 (no codeword, see var_init()): no search, the result 0 0 0 (with outC, no codewords are exported) */
-  if (p->k_zero) {
+  /* k = 0 known at once (no codeword, see var_init()): no search, the result 0 0 0 (with outC, none exported) */
+  if (p->k_zero == 1) {
     k_zero_note(p, "0 0 0");
     printf("0 0 0\n");
     fflush(stdout);
@@ -4622,6 +4738,10 @@ int main(int argc, char **argv) {
   if (p->finC) {
     nzlist_read(p->finC, p);
   }
+
+  /* k not known at once: the rank check in its own thread during the search (a codeword of finC proves k > 0) */
+  if (p->k_zero < 0 && p->num_cws == 0)
+    k0_check_start(p);
 
   /* Check ksub feasibility before the RW stages and the thread throttling (require m >= nu >= n - m): otherwise
    * full-matrix RW (ksub=0), with the RW stages, the thread limits, and the L hashes of the pairs of ksub=0 */
@@ -4671,6 +4791,7 @@ int main(int argc, char **argv) {
   /* The RW stages of rw_opt (see rw_stages_plan()), before the thread throttling (Stage 4 needs less memory per RW
    * thread) */
   p->rw_active = rw_stages_plan(p);
+  p->rw_planned = 1; /* (Rule D3, see rw_hybrid_on(): keyed on the resolved mask from now on) */
 
   /* Determine number of threads (default: all logical CPUs available to the process) */
   int requested_threads = p->threads;
@@ -4720,6 +4841,10 @@ int main(int argc, char **argv) {
     rw_threads = 0; /* no RW steps: pure CC through the bracketing coordinator, no RW matrices needed */
   }
   if (rw_threads == 0) p->rw_active = 0;
+  /* the line of the hybrid windows of the input summary, if an rw_opt != 0 resolved to 0 (see rw_hybrid_on()) */
+  if ((p->debug & DBG_SUMMARY) && rw_threads > 0 && p->rw_opt != 0 && !p->fdem && p->win_hyb <= 0 &&
+      rw_hybrid_on(p, p->nvar))
+    print_window_summary(stderr, p);
   if (p->method == 3 && rw_threads < num_threads && (p->debug & DBG_TIMING)) {
     if (rw_threads == 0) {
       fprintf(stderr, "# Note: steps=0, no RW; CC rounds use all %d threads\n", num_threads);
@@ -4765,47 +4890,56 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.dmax, init_dmax);
 
   if (init_dmax > 0 && p->wmin > 0 && init_dmax <= p->wmin && !p->outC && p->maxC == 0) {
-    if (p->debug & DBG_SUMMARY) {
-      fprintf(stderr, "# stopped: known upper bound dmax=%d <= wmin=%d (no search)\n", init_dmax, p->wmin);
+    if (k0_check_finish(p)) { /* (no codeword: the rank check is waited for) */
+      k0_print_result(p);
+    } else {
+      if (p->debug & DBG_SUMMARY)
+        fprintf(stderr, "# stopped: known upper bound dmax=%d <= wmin=%d (no search)\n", init_dmax, p->wmin);
+      printf("%d %d 0\n", p->dmin > 1 ? p->dmin : 1, init_dmax);
     }
-    printf("%d %d 0\n", p->dmin > 1 ? p->dmin : 1, init_dmax);
     csr_free(mHT);
     rw_t3_free(t3);
     rw_gdb_free(gdb);
     free(zcol);
     safe_mzd_free(ksub_N);
     var_kill(p);
-    return 0;
+    return k0_check_exit();
   }
 
   if (p->method == 3 && init_dmax > 0 && p->dmin > 1 && p->dmin >= init_dmax && !p->outC) {
-    if (p->debug & DBG_SUMMARY) {
-      fprintf(stderr, "# stopped: bounds coincide: dmin = dmax = %d (supplied, no search)\n", init_dmax);
+    if (k0_check_finish(p)) {
+      k0_print_result(p);
+    } else {
+      if (p->debug & DBG_SUMMARY)
+        fprintf(stderr, "# stopped: bounds coincide: dmin = dmax = %d (supplied, no search)\n", init_dmax);
+      printf("%d %d 0\n", p->dmin, init_dmax);
     }
-    printf("%d %d 0\n", p->dmin, init_dmax);
     csr_free(mHT);
     rw_t3_free(t3);
     rw_gdb_free(gdb);
     free(zcol);
     safe_mzd_free(ksub_N);
     var_kill(p);
-    return 0;
+    return k0_check_exit();
   }
 
   /* the supplied dmin already reaches the stop target dstop (any method; with outC or maxC, the CC rounds which collect
    * codewords still run) */
   if (p->dstop > 0 && p->dmin >= p->dstop && !p->outC && p->maxC == 0) {
-    if (p->debug & DBG_SUMMARY) {
-      fprintf(stderr, "# stopped: lower bound dmin=%d >= dstop=%d (supplied, no search)\n", p->dmin, p->dstop);
+    if (k0_check_finish(p)) {
+      k0_print_result(p);
+    } else {
+      if (p->debug & DBG_SUMMARY)
+        fprintf(stderr, "# stopped: lower bound dmin=%d >= dstop=%d (supplied, no search)\n", p->dmin, p->dstop);
+      printf("%d %d 0\n", (init_dmax > 0 && p->dmin >= init_dmax) ? init_dmax : p->dmin, init_dmax);
     }
-    printf("%d %d 0\n", (init_dmax > 0 && p->dmin >= init_dmax) ? init_dmax : p->dmin, init_dmax);
     csr_free(mHT);
     rw_t3_free(t3);
     rw_gdb_free(gdb);
     free(zcol);
     safe_mzd_free(ksub_N);
     var_kill(p);
-    return 0;
+    return k0_check_exit();
   }
 
   atomic_init(&ctx.cc_found_weight, 0);
@@ -4813,6 +4947,7 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.stop_flag, false);
   atomic_init(&ctx.rw_stop_flag, false);
   atomic_init(&ctx.stop_reason, STOP_NONE);
+  k0_check_publish(&ctx); /* (the rank check of k = 0 may now stop the run) */
   ctx.status_next = 1.0; /* DBG_STATUS: after 1, 2, 4, ... s, then every 60 s */
   ctx.status_dt = 1.0;
   atomic_init(&ctx.cw_feed_limit, codeword_feed_limit(p));
@@ -4989,6 +5124,8 @@ int main(int argc, char **argv) {
   for (int i = 0; i < ctx.spawned; i++) {
     pthread_join(ctx.threads[i], NULL);
   }
+  /* k = 0 found by the rank check (waited for if no codeword was found): the result 0 0 0 */
+  const int k0 = k0_check_finish(p);
 
   int final_dmin = atomic_load(&ctx.dmin);
   int final_dmax = atomic_load(&ctx.dmax);
@@ -4998,7 +5135,9 @@ int main(int argc, char **argv) {
   const bool cc_exact = (cc_found > 0) && atomic_load(&ctx.cc_exact) &&
                         (final_dmax == 0 || cc_found <= final_dmax);
 
-  if (cc_exact) {
+  if (k0) {
+    final_dmin = final_dmax = 0;
+  } else if (cc_exact) {
     final_dmin = cc_found;
     final_dmax = cc_found;
   } else if (final_dmax > 0 && final_dmin >= final_dmax) {
@@ -5008,8 +5147,8 @@ int main(int argc, char **argv) {
   /* why the run ended (e.g., RW ends the run on wmin, unless codewords are collected with outC or maxC) */
   if (p->debug & DBG_SUMMARY) print_stop_reason(&ctx, final_dmax, cc_exact);
 
-  /* Confinement profile output (if smax > 0 and CC was run) */
-  if (p->smax && p->method >= 2) {
+  /* Confinement profile output (if smax > 0 and CC was run; not for k = 0) */
+  if (p->smax && p->method >= 2 && !k0) {
     int max_w_analyzed = (final_dmin > 1) ? (final_dmin - 1) : ((p->wmax > 0) ? p->wmax : 0);
     if (cc_exact) max_w_analyzed = cc_found;
     if (max_w_analyzed > 0) {
@@ -5052,7 +5191,7 @@ int main(int argc, char **argv) {
   }
 
   long reported_rw_steps = 0;
-  if (p->method != 2 && !cc_exact) {
+  if (p->method != 2 && !cc_exact && !k0) {
     reported_rw_steps = atomic_load(&ctx.rw_steps_completed);
   }
 
@@ -5133,7 +5272,9 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* Output to stdout: dmin dmax rw_steps */
+  /* Output to stdout: dmin dmax rw_steps (0 0 0 for k = 0, after the note) */
+  if (k0)
+    k_zero_note(p, "0 0 0");
   printf("%d %d %ld\n", final_dmin, final_dmax, reported_rw_steps);
   fflush(stdout);
 
@@ -5196,5 +5337,5 @@ int main(int argc, char **argv) {
 
   var_kill(p);
 
-  return 0;
+  return k0_check_exit();
 }

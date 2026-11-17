@@ -523,12 +523,16 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     `rw_opt=3` with `finG` and triplets; `drop=FILE` with $A \ne 0$ on a large DEM; the `ksub` fallback on a DEM; the
     README numbers of the double-gross CC (0.15.x, with the odd rounds) and the hit rates with `cov_cws=0`.
   - [ ] Open: a fallback of the canonical rule where only the window steps find the minimum weight (deep DEMs; since
-    0.17.2 reported, not changed); the Python CLI rejects `steps=1.5`, which the binary reads as 1 (with a warning).
+    0.17.2 reported, not changed).
   - [x] C1-14: the Stern filter with identical columns when collecting: bit `0x20` also applies the
     $1 \leftrightarrow 1$ swaps of identical columns (0.17.2).
   - [x] k = 0 (no logical codeword): `0 0 0` / `[0, 0, 0]` with every engine and solver (binary, `qec_cert` status
     `infeasible`, `codedistance`, `engine="auto"`, both CSS sectors), one note on `stderr` (not with `--silent`), not
-    cached (0.17.2; before, the binary printed a vacuous lower bound above $n$ and `'cert'` gave `[0, 0, 0]`).
+    cached (0.17.2; before, the binary printed a vacuous lower bound above $n$ and `'cert'` gave `[0, 0, 0]`); Python
+    `solver="codedistance"` rank check uses bit-packed GF(2) elimination on reduced matrices (and `m < n` shortcut).
+  - [x] Python CLI: disabled-option warnings (`--simple`, `--full`, `noscan`, `cbeg`, `cend`, `irred=0`, `css=`)
+    printed to `stderr` even with `--silent` (PY-C17); integer options keep their numeric prefix with a warning (as in
+    the binary, e.g., `steps=1.5` $\to 1$, `threads=4x` $\to 4$).
 - [ ] **Row-slab correlation and coverage study (`rw_opt` `4`)**: examine not only benchmark speedups and hit rates of
   Stage 3 row slabs (`rw_slab_step()`, currently a contiguous block of $m_{\rm sub} = \min(320, m/2)$ detectors on
   every other RW step when `kwin=0` and `sort_rows=0`, with 15% weight on each boundary slab
@@ -564,6 +568,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - **Method**: add a `debug` option in `src/dist_m4ri.c` that logs for each RW step its step type (uniform, window,
     slab, and slab row range) and the codeword and canonical-class keys hit in that step; run multi-seed sweeps on the
     benchmark DEMs; compute the repeat, correlation, coverage, and $N_{\rm eff}$ statistics in Python.
+- [ ] **$\mathcal{T}_3$ static CSS benchmark codes ($\{3, 7\}$ / $\{3, 8\}$ hyperbolic surface codes and $(3, 6)$
+  triangular-lattice toric codes)**: qubits on edges, weight-3 face checks ($H_Z$), and weight-$q$ vertex checks
+  ($H_X$, $q \in \{6, 7, 8\}$) make $\mathcal{T}_3$ non-empty ($|\mathcal{T}_3| = 2n/3$) on the $Z$-logical sector
+  (`finH=Hx`, `finG=Hz`, $w_G = 3$; being added to the benchmark suite from `scratch/fix_0.17.2/suite/PROPOSAL.md`, C3,
+  where all 35 existing static CSS codes had check weights $w \ge 5$ and $\mathcal{T}_3 = \emptyset$): use them to tune
+  Stage 1 (`0x01`, contraction and Stern pair filter), `rw_opt` `2` (`0x02` and `0x03`, $G$-shortening and
+  realized-generator filter with $w_G = 3$), and bit `32` (`0x20`, $2 \leftrightarrow 2$ and $1 \to 2$ codeword
+  expansion).
 - [ ] **Long final benchmark, default optimization, and `BENCHMARK.md` update**: run a long idle-server benchmark after
   all planned changes are in place (the `k = 0` rank-check thread removing the single-threaded pre-search
   `var_k_zero()` delay on large inputs such as `bb_756` and `double_gross` in `3f189b3`, the benchmark-suite additions
@@ -572,6 +584,14 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   threshold, `min_hits`, and the slab step fraction), and only then update the numbers in `benchmark/BENCHMARK.md`
   currently marked "not re-measured" (using the 2026-11-16 run in `scratch/fix_0.17.2/bench_post/REPORT.md` and
   `results.jsonl` as the reference).
+- [ ] **For `vecdec` (DEM Matrix Market export and `^` components)**: `vecdec`'s DEM export does not cancel decomposed
+  `^` components mod 2, so a logical observable listed in two components of one `error(...)` line appears twice in $L$
+  (`examples/surf_d3_L.mmx` and `examples/surf_d5_L.mmx` were cleaned in 0.17.2, and `dist_m4ri` now sums duplicate
+  Matrix Market entries mod 2 with a warning, C2-01).
+- [ ] **For `qec-cert` (ship `libqeccert.so` in the wheel)**: `qec-cert`'s wheel should ship `libqeccert.so` (currently
+  `Makefile` builds `build/libqeccert.so` while `pyproject.toml` packages `qec_cert/*.so`, so a non-editable install
+  without it cannot load the library unless `QEC_CERT_LIB` is set; `dist_m4ri` reports this with one clear error or
+  warning since 0.17.2, PY-14 / PY-C01).
 
 ---
 

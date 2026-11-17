@@ -1,0 +1,46 @@
+# Compact tagged DEM with repeat + shift_detectors, ^ cancellation, and 3 pmin regimes:
+#   pmin=0     -> exact d = 3 (via p=0.002 hook shortcuts)
+#   pmin=0.005 -> exact d = 5 (via p=0.012 chain errors)
+#   pmin=0.02  -> k = 0 ('0 0 0': all L0-flipping errors cut)
+detector[Z](0, 0, 0) D0
+detector[Z](1, 0, 0) D1
+detector[Z](2, 0, 0) D2
+detector[Z](3, 0, 0) D3
+detector[Z](4, 0, 0) D4
+detector[Z](5, 0, 0) D5
+# Self-cancelling decomposed ^ mechanism (cancels mod 2 to zero detector/logical column):
+error[cancel](0.025) D0 D1 ^ D1 D0
+# High-probability p=0.012 chain of length 5 (d = 5 when pmin=0.005):
+error[data](0.012) D0 L0
+error[data](0.012) D0 D1
+error[data](0.012) D1 D2
+error[data](0.012) D2 D3
+error[data](0.012) D3
+# Low-probability p=0.002 hook shortcuts (d = 3 when pmin=0):
+error[hook](0.002) D0 D2
+error[hook](0.002) D2
+# Ultra-high-prob stabilizer-only noise (kept at pmin=0.02, no L0 -> k=0 at pmin=0.02):
+error[meas](0.03) D4 D5
+error[meas](0.03) D5
+repeat 3 {
+    error[meas](0.012) D0 D6
+    error[meas](0.012) D1 D7
+    error[meas](0.012) D2 D8
+    error[meas](0.012) D3 D9
+    error[meas](0.03) D4 D10
+    error[meas](0.03) D5 D11
+    shift_detectors(0, 0, 1) 6
+    detector[Z](0, 0, 0) D0
+    detector[Z](1, 0, 0) D1
+    detector[Z](2, 0, 0) D2
+    detector[Z](3, 0, 0) D3
+    detector[Z](4, 0, 0) D4
+    detector[Z](5, 0, 0) D5
+    error[data](0.012) D0 L0
+    error[data](0.012) D0 D1
+    error[data](0.012) D1 D2
+    error[data](0.012) D2 D3
+    error[data](0.012) D3
+    error[hook](0.002) D0 D2
+    error[hook](0.002) D2
+}

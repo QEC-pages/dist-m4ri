@@ -1,0 +1,27 @@
+%%MatrixMarket matrix coordinate integer general
+% Euclidean (3, 6) triangular-lattice toric CSS code L=6, d_Z=6, d_X=12: Lx
+2 108 24
+1 17 1
+1 18 1
+1 35 1
+1 36 1
+1 53 1
+1 54 1
+1 71 1
+1 72 1
+1 89 1
+1 90 1
+1 107 1
+1 108 1
+2 91 1
+2 93 1
+2 94 1
+2 96 1
+2 97 1
+2 99 1
+2 100 1
+2 102 1
+2 103 1
+2 105 1
+2 106 1
+2 108 1

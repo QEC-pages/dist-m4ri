@@ -308,7 +308,7 @@ static void print_round_summary(FILE *stream, const params_t * const p){
 }
 
 /** @brief DBG_SUMMARY: the index windows of the hybrid RW steps (kwin=0, n >= 500: every other step; see win_hyb) */
-static void print_window_summary(FILE *stream, const params_t * const p){
+void print_window_summary(FILE *stream, const params_t * const p){
   fprintf(stream, "#   RW windows: %d columns on every other step, uniform permutations on the others (",
           rw_hybrid_window(p, p->nvar));
   if (p->win_hyb > 0)
@@ -850,67 +850,150 @@ static int help_option(const char * const arg, const char ** const topic) {
   return 0;
 }
 
+/* The largest dense copy of H for the rank check of k = 0: m*n bits (2^33 bits, i.e., 1 GiB), see var_k_zero() */
+#define K0_DENSE_MAX 8589934592.0
+
 /**
- * k = 0, i.e., no codeword (H c = 0, c != 0, and L c != 0 for a quantum code or a DEM): rank H = n for a classical
- * code; otherwise, every row of L is in the row space of H (also if L has no rows or L = 0).  Sets p->k_zero and
- * p->k0_reason, and returns p->k_zero.  One dense elimination of H (as in a RW step), not done with method=2 (no dense
- * RW matrices) for H with more than 2^32 entries.
+ * k = 0, i.e., no codeword (H c = 0, c != 0, and L c != 0 for a quantum code or a DEM), when known at once: k = 0 if L
+ * has no rows (also the rows of L computed from H and G: k is their number) or L = 0; k > 0 if L was computed from G
+ * with rows, for a classical code with m < n (rank H <= m < n), with m = 0, or with a zero column of H whose column
+ * of L is not zero (a codeword of weight 1).  Sets and returns p->k_zero: 1 (k = 0, with p->k0_reason), 0 (k > 0, or
+ * not checked: a dense copy of H of more than K0_DENSE_MAX bits, with a note), or -1 (the rank check of k_zero_rank()
+ * is needed: in its own thread in dist_m4ri, before the search in dist_m4ri_old).
  */
-static int var_k_zero(params_t * const p) {
+static int var_k_zero(params_t * const p, const int L_from_G) {
   const csr_t * const H = p->spaH;
   const csr_t * const L = p->classical ? NULL : p->spaL;
   const int m = H->rows, n = H->cols;
-  p->k_zero = 0;
-  if (L && (L->rows == 0 || ((L->nz == -1) ? L->p[L->rows] : L->nz) == 0)) {
+  const int nzL = L ? ((L->nz == -1) ? L->p[L->rows] : L->nz) : 0;
+  if (L && (L->rows == 0 || nzL == 0)) {
     snprintf(p->k0_reason, sizeof(p->k0_reason), (L->rows == 0) ? "L has no rows" : "L = 0");
     return p->k_zero = 1;
   }
-  if ((!L && m < n) || (L && m == 0)) /* rank H <= m < n, or every column (one with L c != 0) is in ker(H) */
-    return 0;
-  if (!(p->method & 1) && (double)m * (double)n > 4294967296.0) {
+  if ((L && L_from_G) || (!L && m < n) || (L && m == 0)) /* k = rows of L; rank H <= m < n; a column with L c != 0 */
+    return p->k_zero = 0;
+  if (L) { /* a zero column of H with a nonzero column of L (the column indices of both forms of csr_t are in `i`) */
+    const int nzH = (H->nz == -1) ? H->p[H->rows] : H->nz;
+    char * const hcol = calloc((size_t)n, 1);
+    if (!hcol)
+      ERROR("memory allocation");
+    for (int k = 0; k < nzH; k++) hcol[H->i[k]] = 1;
+    int found = 0;
+    for (int k = 0; k < nzL && !found; k++) found = !hcol[L->i[k]];
+    free(hcol);
+    if (found)
+      return p->k_zero = 0;
+  }
+  if ((double)m * (double)n > K0_DENSE_MAX) {
     if (p->debug & DBG_SUMMARY)
-      fprintf(stderr, "# Note: k=0 is not checked (method=2 and H with m*n > 2^32 entries)\n");
-    return 0;
+      fprintf(stderr, "# Note: k=0 is not checked (H with m*n > 2^33 entries: a dense copy of more than 1 GiB)\n");
+    return p->k_zero = 0;
   }
-  mzd_t * const E = mzd_from_csr(NULL, H);
-  rci_t rank = mzd_echelonize(E, 1); /* the reduced row echelon form of H */
-  if (!L) {
-    mzd_free(E);
-    if (rank < n)
-      return 0;
-    snprintf(p->k0_reason, sizeof(p->k0_reason), "classical code with rank H = n = %d", n);
-    return p->k_zero = 1;
+  return p->k_zero = -1;
+}
+
+/* The rows of a csr_t (either form) as dense rows of W words (or-ed: the entries are distinct); lo[r] and hi[r] give
+ * the range of words of row r which may be nonzero (lo > hi: none) */
+static void k0_dense_rows(const csr_t * const A, uint64_t ** const row, const size_t W, int * const lo,
+                          int * const hi) {
+  for (int r = 0; r < A->rows; r++) {
+    lo[r] = (int)W;
+    hi[r] = -1;
   }
-  /* the pivot columns of the rows of E (increasing); a row of L is in the row space of H iff it is reduced to 0 by
-   * adding, for i = 0, 1, ..., the row i of E if the row of L (as reduced so far) has a 1 in the pivot column i */
-  rci_t * const piv = malloc((size_t)(rank > 0 ? rank : 1) * sizeof(rci_t));
-  if (!piv)
-    ERROR("memory allocation");
-  for (rci_t i = 0, c = 0; i < rank; i++) {
-    while (c < n && !mzd_read_bit(E, i, c)) c++;
-    if (c >= n)
-      ERROR("unexpected row echelon form: row %d of rank %d is zero", i, rank);
-    piv[i] = c++;
+  const int nz = (A->nz == -1) ? A->p[A->rows] : A->nz;
+  for (int r = 0, k = 0; k < nz; k++) {
+    if (A->nz == -1) {
+      while (k >= A->p[r + 1]) r++; /* (the row of the entry k) */
+    } else {
+      r = A->p[k];
+    }
+    const int w = A->i[k] >> 6;
+    row[r][w] |= (uint64_t)1 << (A->i[k] & 63);
+    if (w < lo[r]) lo[r] = w;
+    if (w > hi[r]) hi[r] = w;
   }
-  mzd_t * const D = mzd_from_csr(NULL, L);
-  int indep = 0; /* a row of L not in the row space of H was found */
-  for (rci_t j = 0; (j < D->nrows) && !indep; j++) {
-    word * const v = mzd_row(D, j);
-    for (rci_t i = 0; i < rank; i++) {
-      if (mzd_read_bit(D, j, piv[i])) {
-        const word * const e = mzd_row(E, i);
-        for (wi_t w = piv[i] / m4ri_radix; w < D->width; w++) v[w] ^= e[w];
+}
+
+int k_zero_rank(const csr_t * const H, const csr_t * const L, char * const reason, const size_t len,
+                atomic_int * const stop) {
+  const int m = H->rows, n = H->cols, k = L ? L->rows : 0;
+  if (m <= 0 || n <= 0)
+    return 0; /* (see var_k_zero()) */
+  /* the rows of H, then those of L, as dense rows (malloc only: M4RI's memory cache is not thread-safe) */
+  const size_t W = ((size_t)n + 63) / 64;
+  uint64_t * const buf = calloc((size_t)(m + k) * W, sizeof(uint64_t));
+  uint64_t ** const row = malloc((size_t)(m + k) * sizeof(uint64_t *));
+  int * const lo = malloc((size_t)(m + k) * sizeof(int));
+  int * const hi = malloc((size_t)(m + k) * sizeof(int));
+  int * const pivc = malloc((size_t)m * sizeof(int));
+  if (!buf || !row || !lo || !hi || !pivc)
+    ERROR("memory allocation (the rank check of k=0: %d x %d)", m + k, n);
+  for (int r = 0; r < m + k; r++) row[r] = buf + (size_t)r * W;
+  k0_dense_rows(H, row, W, lo, hi);
+  if (L)
+    k0_dense_rows(L, row + m, W, lo + m, hi + m);
+  /* the row echelon form of H, column by column: the rows below `rank` have no 1 in the columns done; row i has its
+   * leading 1 in the column pivc[i]; the ranges [lo, hi] (only extended to the right) skip the zero words */
+  int rank = 0, ret = 1;
+  for (int c = 0; c < n && rank < m && ret >= 0; c++) {
+    if (stop && !(c & 255) && atomic_load(stop)) {
+      ret = -1;
+      break;
+    }
+    const int w = c >> 6;
+    const uint64_t b = (uint64_t)1 << (c & 63);
+    int piv = -1;
+    for (int r = rank; r < m && piv < 0; r++)
+      if (lo[r] <= w && w <= hi[r] && (row[r][w] & b)) piv = r;
+    if (piv < 0)
+      continue;
+    uint64_t * const t = row[piv];
+    row[piv] = row[rank];
+    row[rank] = t;
+    const int tl = lo[piv], th = hi[piv];
+    lo[piv] = lo[rank];
+    hi[piv] = hi[rank];
+    lo[rank] = tl;
+    hi[rank] = th;
+    const uint64_t * const pr = row[rank];
+    for (int r = piv + 1; r < m; r++) { /* (the rows rank+1..piv have no 1 in the column c) */
+      if (lo[r] <= w && w <= hi[r] && (row[r][w] & b)) {
+        uint64_t * const x = row[r];
+        for (int q = w; q <= th; q++) x[q] ^= pr[q];
+        if (th > hi[r]) hi[r] = th;
+        if (lo[r] < w) lo[r] = w;
       }
     }
-    for (wi_t w = 0; w < D->width; w++) indep |= (v[w] != 0);
+    pivc[rank++] = c;
   }
-  free(piv);
-  mzd_free(D);
-  mzd_free(E);
-  if (indep)
-    return 0;
-  snprintf(p->k0_reason, sizeof(p->k0_reason), "every row of L is in the row space of H");
-  return p->k_zero = 1;
+  if (ret >= 0 && !L) {
+    ret = (rank == n);
+    if (ret)
+      snprintf(reason, len, "classical code with rank H = n = %d", n);
+  } else if (ret >= 0) { /* a row of L is in the row space of H iff the rows i = 0, 1, ... of the echelon form reduce it
+                          * to 0, each added if the row (as reduced so far) has a 1 in the column pivc[i] */
+    for (int j = m; j < m + k && ret == 1; j++) {
+      uint64_t * const v = row[j];
+      for (int i = 0; i < rank; i++) {
+        const int w = pivc[i] >> 6;
+        if (w <= hi[j] && (v[w] & ((uint64_t)1 << (pivc[i] & 63)))) {
+          for (int q = w; q <= hi[i]; q++) v[q] ^= row[i][q];
+          if (hi[i] > hi[j]) hi[j] = hi[i];
+        }
+      }
+      for (size_t q = 0; q < W && ret == 1; q++)
+        if (v[q]) ret = 0;
+      if (stop && atomic_load(stop)) ret = -1;
+    }
+    if (ret == 1)
+      snprintf(reason, len, "every row of L is in the row space of H");
+  }
+  free(pivc);
+  free(hi);
+  free(lo);
+  free(row);
+  free(buf);
+  return ret;
 }
 
 void k_zero_note(const params_t * const p, const char * const result) {
@@ -1540,7 +1623,8 @@ void var_init(int argc, char **argv, params_t * const p){
     p->start_num = num;
   }
   
-  if((p->spaG) && (p->spaL==NULL)){
+  const int L_from_G = (p->spaG) && (p->spaL==NULL); /* (then k is the number of rows of L, see var_k_zero()) */
+  if(L_from_G){
     /** create `Lx` */
     /** WARNING: this does not necessarily have minimal row weights */
     p->spaL = Lx_for_CSS_code(p->spaH,p->spaG);
@@ -1590,9 +1674,10 @@ void var_init(int argc, char **argv, params_t * const p){
   if (p->debug & DBG_PARAMS)
     print_code_params(stderr, p);
 
-  /* k = 0 (no codeword, also after the pmin cut, merge, and drop of a DEM): no search, and none of the warnings below;
-   * the binaries print the note (k_zero_note()) and the result 0 0 0 */
-  if (var_k_zero(p))
+  /* k = 0 when known at once (no codeword, also after the pmin cut, merge, and drop of a DEM): no search, and none of
+   * the warnings below; the binaries print the note (k_zero_note()) and the result 0 0 0.  Otherwise, if k is not known
+   * (p->k_zero = -1), the rank check of k_zero_rank() follows (dist_m4ri: in its own thread during the search) */
+  if (var_k_zero(p, L_from_G) == 1)
     return;
   if (method_m0)
     fprintf(stderr, "# WARNING: H has no rows (m=0): every column is in ker(H); running CC only (method=2 instead of "

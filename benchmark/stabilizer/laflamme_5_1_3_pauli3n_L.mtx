@@ -1,0 +1,15 @@
+%%MatrixMarket matrix coordinate integer general
+% Laflamme et al. [[5, 1, 3]] non-CSS code, length-3n Pauli form (n_bin=15, d=3): L
+2 15 12
+1 1 1
+1 2 1
+1 5 1
+1 7 1
+1 10 1
+1 11 1
+2 3 1
+2 4 1
+2 6 1
+2 8 1
+2 9 1
+2 11 1

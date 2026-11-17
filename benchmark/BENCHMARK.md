@@ -26,10 +26,22 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 
 ## Directory Structure
 
+- `classical/`: MatrixMarket (`.mtx`) parity-check matrices (`_H.mtx`) of classical linear, Reed–Muller, BCH, and
+  quasi-cyclic LDPC codes (including a full-rank $k = 0$ check matrix).
 - `css/`: MatrixMarket (`.mtx`) CSS parity-check matrices (`_Hx.mtx`, `_Hz.mtx`) and logical operator bases
   (`_Lx.mtx`, `_Lz.mtx` for the Mitten codes, including the `yarn_*` codes of arXiv:2607.28795, and for the `2bga_*`
   codes; the seven Bicycle Race codes of Origins, item 5, also have logical operators of the minimum weight in `.nz`
   files, `_wX.nz` and `_wZ.nz`).
+- `subsystem/`: MatrixMarket (`.mtx`) static subsystem gauge sectors, hook-extended CSS matrices, unmerged
+  identical-column matrices, and duplicate-entry coordinate test matrices (`_H.mtx`, `_G.mtx`, `_L.mtx`).
+- `stabilizer/`: MatrixMarket (`.mtx`) non-CSS quantum stabilizer codes in length-$3n$ Pauli-expanded form
+  (`_H.mtx`, `_G.mtx`, `_L.mtx`, with exact quantum Pauli weight and $|\mathcal{T}_3| \ge n$).
+- `dem/`: Standalone Detector Error Models (`.dem`), detector-drop lists (`.drop`), and `make_large_drop_dems.py` for
+  large $A \neq 0$ drop benchmarks.
+- `stim_surface/`: Rotated planar surface-code `.stim` memory circuits ($d = 3, 5, 7, 9, 11, 13$).
+- `stim_color/`: Color-code `memory_xyz` `.stim` circuits ($d = 3, 5, 7, 9$, cycling $X \to Y \to Z$ detectors).
+- `stim_noise/`: Specialized noise-model, gate-set, and high-$k$ ($k = 125 > 64$) `.stim` circuits (`PAULI_CHANNEL_1/2`,
+  XZZX rotated basis, `HERALDED_ERASE`, `MPP`/`MZZ`).
 - `stim_bb/`: Unmodified Bivariate Bicycle (BB), Gross, and Double-Gross `.stim` circuits from external repositories.
 - `stim_mitten/`: Mitten code `.stim` circuits generated via `quits` with `CircuitBuildOptions(get_all_detectors=True)`
   (`mitten_*`), and from the published hook-free schedules of arXiv:2607.28795 with `make_yarn_mitten_circuits.py`
@@ -147,6 +159,144 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
      $d_Z = 23$ (`wmax=22`) in 19,671 s; $d_X = d_Z = 23$ holds identically by the abelian $X \leftrightarrow Z$
      duality (block swap with group inversion $g \mapsto g^{-1}$).
 
+7. **Classical Linear Codes (`benchmark/classical/`) and Boundary / Small CSS Codes (`benchmark/css/`)**
+   - **Classical codes (`classical/`)**: standard algebraic constructions — Hamming $[7, 4, 3]$, extended binary Golay
+     $[24, 12, 8]$, narrow-sense primitive binary BCH $[63, 36, 11]$ and $[127, 64, 21]$, and second-order Reed–Muller
+     $\mathrm{RM}(2, 7)$ $[128, 29, 32]$ ($H = G(\mathrm{RM}(4, 7))$, F. J. MacWilliams and N. J. A. Sloane, *The
+     Theory of Error-Correcting Codes*, North-Holland, 1977) — together with Tanner's $[155, 64, 20]$ $(3, 5)$-regular
+     quasi-cyclic LDPC code ($3 \times 5$ array of $31 \times 31$ circulants with shifts $5^b \cdot 2^a \bmod 31$,
+     $\mathrm{rank}\,H = 91$, R. M. Tanner, D. Sridhara, A. Sridharan, T. E. Fuja, and D. J. Costello, *IEEE Trans.
+     Inf. Theory* **50**, 2966–2984 (2004)) and the full-rank $8 \times 8$ identity matrix `k0_classical_eye8_H.mtx`
+     ($[8, 0]$, $k = 0$).
+   - **Boundary and small CSS codes (`css/`)**: the 5-qubit GHZ CSS stabilizer state `k0_graph_ghz5` ($[[5, 0]]$,
+     $k = 0$), `tiny_d1_4_1_1` ($[[4, 1, 1]]$, 3-qubit stabilizer state plus unchecked qubit 4, $d_X = d_Z = 1$),
+     Steane's $[[7, 1, 3]]$ code (A. M. Steane, *Proc. R. Soc. Lond. A* **452**, 2551 (1996)), Shor's $[[9, 1, 3]]$
+     code (P. W. Shor, *Phys. Rev. A* **52**, R2493 (1995)), and the $\{5, 5\}$ hyperbolic surface code
+     `hyp_5_5_40_10_4` ($[[40, 10, 4]]$, N. P. Breuckmann and B. M. Terhal, *IEEE Trans. Inf. Theory* **62**, 3700
+     (2016), arXiv:1506.04029, Table III; `examples/QX40.mtx`, `QZ40.mtx` paired with echelon logical bases `_Lx.mtx`,
+     `_Lz.mtx`).
+
+8. **$(3, q)$ Hyperbolic Surface and Triangular Toric CSS Codes (`css/`) and Subsystem / Hook-Extended Matrices
+   (`subsystem/`)**
+   - **Hyperbolic $\{3, 7\}$ and $\{3, 8\}$ surface codes (`css/hyp_3_*`)**: qubits on edges, weight-3 triangular face
+     checks ($H_Z$, $2n/3$ rows) and weight-$q$ vertex checks ($H_X$, $2n/q$ rows), built from smooth finite quotients
+     of the orientation-preserving triangle group $\Delta^+(2, 3, q) = \langle x, y \mid x^2 = y^3 = (xy)^q = 1 \rangle$
+     via GAP's `LINS` package (`LowIndexNormalSubs`), following N. P. Breuckmann and B. M. Terhal, *IEEE Trans. Inf.
+     Theory* **62**, 3700 (2016), arXiv:1506.04029, and C. Vuillot et al., *New J. Phys.* **21**, 033028 (2019). For
+     $\{3, 7\}$ ($k = n/21 + 2$): Klein quartic ($\mathrm{PSL}(2, 7)$, $|Q| = 168$, $[[84, 6, 4]]$), Macbeath surface
+     ($\mathrm{PSL}(2, 8)$, $|Q| = 504$, $[[252, 14, 6]]$), and a genus-14 Hurwitz quotient ($\mathrm{PSL}(2, 13)$,
+     $|Q| = 1092$, $[[546, 28, 7]]$). For $\{3, 8\}$ ($k = n/12 + 2$): quotients of orders $|Q| = 192, 432, 1296$ giving
+     $[[96, 10, 4]]$, $[[216, 20, 5]]$, and $[[648, 56, 6]]$. On the $Z$-logical sector (`finH=Hx`, `finG=Hz`), the
+     weight-3 face checks give $|\mathcal{T}_3| = 2n/3$ ($w_G = 3$).
+   - **Euclidean $(3, 6)$ triangular-lattice toric codes (`css/toric_3_6_*`)**: $L \times L$ periodic triangulation for
+     $L \in \{6, 8, 12\}$ ($n = 3L^2$, $k = 2$, $L^2$ weight-6 vertex checks $H_X$, $2L^2$ weight-3 face checks $H_Z$,
+     $d_Z = L$, $d_X = 2L$, $|\mathcal{T}_3| = 2L^2$; K. Fujii and Y. Tokunaga, *Phys. Rev. A* **86**, 020303 (2012)).
+   - **Subsystem gauge sectors and hook-extended CSS matrices (`subsystem/`)**: the static $X$-error gauge sector of
+     the $[[225, 16, 8]]$ SHYPS subsystem code (`shyps_225_16_8_gauge`, $44 \times 225$ weight-24 stabilizers $H$,
+     $225 \times 225$ weight-3 gauge generators $G$, $|\mathcal{T}_3| = 525$, extracted from
+     `stim_shyps/shyps_225_16_8_r9_Z.stim`, Origins, item 4); $L \times L$ Bacon–Shor gauge sectors for $L \in \{5, 9\}$
+     (`bacon_shor_25_1_5_gauge` and `bacon_shor_81_1_9_gauge`, weight-$2L$ $H$, weight-2 $G$, D. Bacon, *Phys. Rev. A*
+     **73**, 012340 (2006)); single-frame hook-extended CSS matrices from `bb_72` and `gross_144` $X$-memory circuits
+     (`bb_72_hookext`, $36 \times 180$, $d = 5$; `gross_144_hookext`, $72 \times 360$, $d = 8$; $w_G = 6$ with weight-3
+     hook triangles); and the minimal $[[8, 1, 3]]$ witness `t11_8_1_3` ($w_G = 5$, $|\mathcal{T}_3| = 1$).
+
+9. **Topological $k = 1$ Surface and Color Codes, Planar Directional Rectangle, and High-Distance ($d > 64$) Instances**
+   - **Rotated planar surface codes and circuits (`css/surface_rot_*`, `stim_surface/surface_rot_*`)**: planar
+     $[[L^2, 1, L]]$ CSS codes (weight-4 bulk and weight-2 boundary checks; H. Bombin and M. A. Martin-Delgado, *Phys.
+     Rev. A* **76**, 012305 (2007); C. Horsman et al., *New J. Phys.* **14**, 123011 (2012)) and $L$-round depolarizing
+     $Z$-memory Stim circuits (`stim.Circuit.generated("surface_code:rotated_memory_z", ...)`, $p = 0.001$; C. Gidney,
+     *Quantum* **5**, 497 (2021)) for odd $L \in \{3, 5, 7, 9, 11, 13\}$ (matching `qec-cert/bench/compare3`).
+   - **Planar $(6.6.6)$ 2D color CSS codes (`css/color_271_1_19`, `css/color_721_1_31`) and planar directional
+     rectangle (`css/bidir_rect_261_16_9`)**: self-dual triangular honeycomb-lattice CSS codes $[[271, 1, 19]]$ and
+     $[[721, 1, 31]]$ ($n = (3d^2 + 1)/4$, $w \le 6$; H. Bombin and M. A. Martin-Delgado, *Phys. Rev. Lett.* **97**,
+     180501 (2006); Track A `color_cc_d31` of `qec-cert/bench`), certified at $d = 19$ and $d = 31$ by `qec_cert`
+     rank-DP, and the open-boundary directional planar rectangle CSS code `bidir_rect_261_16_9` ($[[261, 16, 9]]$,
+     `NNENWWSWWNENN` on an $L_1$ $10 \times 14$ open-boundary lattice, extracted from one syndrome-extraction round).
+   - **High-distance instances above the $w = 64$ shortening / canonical-table cap (`d > 64`)**: `dem/rep_d71_r6.dem`
+     (6-round repetition-code DEM, $420 \times 1{,}121$, $|\mathcal{T}_3| = 700$, exact $d = 71$);
+     `css/rep_css_68_1_1` ($66 \times 68$ weight-2 $H_X$ and $1 \times 68$ $H_Z$, $d_Z = 67, d_X = 1$, certified exact
+     by CC at $w = 67$); `css/surface_strip_333_1_3` ($3 \times 67$ planar strip $\mathrm{HGP}(\mathrm{rep}_{67},
+     \mathrm{rep}_3)$, $[[333, 1, 3]]$ with $d_Z = 67, d_X = 3$); and `classical/bch_255_45_87_H.mtx` (narrow-sense
+     primitive binary BCH $[255, 45, 87]$, $210 \times 255$, exact $d = 87$).
+
+10. **Unmerged Identical-Column / Duplicate-Entry Matrices (`subsystem/`) and Standalone DEM / Drop Suite (`dem/`)**
+    - **Identical-column and duplicate-entry `.mtx` matrices (`subsystem/`)**: `bb_72_dup2x_{H,L}.mtx` ($H = (H_X \mid
+      H_X)$, $36 \times 144$, $L = (L_X \mid L_X)$, $12 \times 144$, $|\mathcal{T}_3| = 0$, 72 duplicated column pairs,
+      5,376 weight-6 codewords across 84 canonical classes under `rw_opt=33`); `bb_72_r3_X_unmerged_{H,L}.mtx`
+      (unmerged 3-round minority-stripped DEM of `bb_72_12_6_si1000_r6_X.stim`, $180 \times 9{,}180$ with 1,512
+      distinct columns, $|\mathcal{T}_3| = 653{,}688$, exact $d = 6$); and `dup_entries_xor_H.mtx` ($12 \times 24$
+      extended binary Golay `[24, 12, 8]` matrix with odd- and even-multiplicity duplicate `(row, col)` coordinate
+      entries summed mod 2 on read).
+    - **Standalone `.dem` and `.drop` files (`dem/`)**: `tagged_repeat_pmin.dem` (24 detectors, 49 raw errors, 1
+      observable; exercises `[tag]` annotations, `repeat 3 { ... shift_detectors ... }`, self-cancelling `^`
+      components, and probability cuts `pmin=0` $\to d = 3$, `pmin=0.005` $\to d = 5$, `pmin=0.02` $\to k = 0$);
+      `bb_72_dropA.{dem,drop}` ($432 \times 16{,}200$ DEM of `bb_72_12_6_si1000_r6_X.stim` with observables perturbed
+      by $L_j \leftarrow L_j \oplus A H_{M,j}$ on the $|M| = 180$ minority-basis detectors using `seed=12345`, so
+      `drop=auto` keeps all 432 detectors while `drop=bb_72_dropA.drop` verifies exactness with $A \neq 0$ and drops
+      180 detectors to $252 \times 2{,}232$, exact $d = 6$); `bb_72_bad.drop` (non-exact $|M| + 1 = 181$ list
+      triggering fallback to the full DEM); and `make_large_drop_dems.py` (deterministic `seed=12345` generator for the
+      large $> 2\text{ MB}$ `dgross_288_dropA` and `bb_756_dropA` instances).
+
+11. **Non-CSS Stabilizer Codes (`stabilizer/`), HGP / CPM-PP / Balanced-Product Codes, Torus Static Matrices, and
+    Non-Abelian $w = 12$ 2BGA Codes (`css/`)**
+    - **Non-CSS stabilizer codes in length-$3n$ Pauli-expanded form (`stabilizer/*_pauli3n_{H,G,L}.mtx`)**: for an
+      $[[n, k, d]]$ code with $m = n - k$ symplectic generators $(S_X \mid S_Z)$, $H = (S_Z \mid S_X \mid S_Z \oplus
+      S_X)$ ($m \times 3n$), $G$ ($(m + n) \times 3n$) stacks the $m$ stabilizer supports and the $n$ single-qubit
+      Pauli identities $(I_n \mid I_n \mid I_n)$ ($|\mathcal{T}_3| \ge n$, making Hamming weight equal to exact Pauli
+      weight), and $L$ ($2k \times 3n$) spans $\ker G / \mathrm{im}\,H$. Includes the perfect $[[5, 1, 3]]$ cyclic code
+      (`laflamme_5_1_3_pauli3n`; R. Laflamme, C. Miquel, J. P. Paz, and W. H. Zurek, *Phys. Rev. Lett.* **77**, 198
+      (1996)), Gottesman's $[[8, 3, 3]]$ code (`gottesman_8_3_3_pauli3n`; D. Gottesman, *Phys. Rev. A* **54**, 1862
+      (1996)), and the high-rate symplectic-halved non-CSS pair-partition qLDPC code `halved_92_25_8_pauli3n`
+      ($[[92, 25, 8]]$, $R \approx 0.272$, reverse-folded from `kasai_cpm_184_50_10` via Prop. 4 & App. D.4 of J. Y.
+      Lee, K. Okada, N. Maskara, K. Kasai, and H. Zhou, arXiv:2609.30069).
+    - **Hypergraph-product, CPM pair-partition, and ZSZ balanced-product CSS codes (`css/`)**: `hgp_585_112_5`
+      ($\mathrm{HGP}(H_{[15,7,5]}, H_{[31,16,7]})$, $[[585, 112, 5]]$ with $k = 112 > 64$ and $d_X = 7, d_Z = 5$;
+      J.-P. Tillich and G. Zémor, *IEEE Trans. Inf. Theory* **60**, 1193 (2014)); `kasai_cpm_184_50_10` ($[[184, 50,
+      10]]$, $69 \times 184$, $w = 8$, $\mathrm{rank} = 67$, Lee et al., arXiv:2609.30069, App. D.2, Track A of
+      `qec-cert/bench`); and two rate-$1/5$ balanced-product CSS codes over non-abelian metacyclic ZSZ groups
+      $C_\ell \rtimes C_5$ ($w = 9$; N. P. Breuckmann and J. N. Eberhardt, *IEEE Trans. Inf. Theory* **67**, 6653
+      (2021), arXiv:2012.09271; Y. Hong, arXiv:2607.27644): `bp_zsz_275_55_10` ($[[275, 55, 10]]$ over $C_{11} \rtimes
+      C_5$, $d_X = 12, d_Z = 10$) and `bp_zsz_625_125_14` ($[[625, 125, \le 14]]$ over $C_{25} \rtimes C_5$,
+      $k = 125 > 64$).
+    - **Small BB anchors, 2D torus static check matrices, and non-abelian $w = 12$ 2BGA codes (`css/`)**: `bb_18_4_4`
+      ($[[18, 4, 4]]$, $\ell = 3, m = 3$) and `bb_30_4_6` ($[[30, 4, 6]]$, $\ell = 3, m = 5$) from
+      `qec-cert/tests/integration/build_corpus.py`; static check matrices `torus_60_8_6`, `torus_120_8_6`,
+      `torus_200_16_10`, and `torus_200_8_10` extracted from the four `stim_torus/` circuits (Origins, item 3),
+      certifying their exact code distances $d = 6, 6, 10, 10$; and two non-abelian $w = 12$ 2BGA codes from L. P.
+      Pryadko's `hr-2bga` project (`AsSSortedList(SmallGroup(o, i))` GAP ordering): `2bga_270_38_21_SG135_4`
+      ($[[270, 38, 21]]$ over $\text{SmallGroup}(135, 4) \cong C_5 \times (C_9 \rtimes C_3)$, `tna6_6` key
+      `Nab35efc9222302d6`, certified exact $d_X = d_Z = 21$ by `qec_cert` in `hr2bga_search/runs/conf_cert`) and
+      `2bga_310_36_21_SG155_1` (`sg155_1_n310_k36_a`, $[[310, 36, \le 21]]$ over $\text{SmallGroup}(155, 1) \cong
+      C_{31} \rtimes C_5$ with trivial Tanner automorphism group, $d_X \in [18, 21]$, $d_Z \in [18, 27]$, Track A
+      `css_hr2bga_310_36_w12_X` of `qec-cert/bench`).
+
+12. **Color-Code `memory_xyz` (`stim_color/`), Biased / Heralded / XZZX / `MPP` / High-$k$ Circuits (`stim_noise/`),
+    and Folded Shaw–Terhal 2BGA Circuits (`stim_2bga/`)**
+    - **Color-code `memory_xyz` circuits (`stim_color/color_d{3,5,7,9}_r{d}_xyz.stim`)**: generated via
+      `stim.Circuit.generated("color_code:memory_xyz", distance=d, rounds=d, ...)` at $p = 0.001$ (matching
+      `qec-cert/bench/compare3`; C. Gidney and C. Jones, *Quantum* **7**, 1141 (2023)); cycling $X \to Y \to Z$
+      detectors couple all bases (`drop=auto` keeps all detectors) with hook-reduced exact $d_{\mathrm{circ}} = 2, 3, 4,
+      5$ (`color_d5_r5_xyz.stim` corresponds to `color_xyz_d5` in Section 11.1).
+    - **Biased Pauli, XZZX, heralded erasure, `MPP`, and high-$k$ circuits (`stim_noise/`)**:
+      `surface_rect_23_1_3_yz_biased_r5_Z.stim` ($3 \times 5$ planar surface code $[[23, 1, 3]]$, $d_X = 3, d_Z = 5$,
+      under $Y/Z$-biased `PAULI_CHANNEL_1` noise, exercising `approximate_disjoint_errors=True` and raising
+      `compute_model_lower_bound` from $3$ with `minority=False` to exact $5$ with `minority=True`);
+      `surface_xzzx_d5_biased_r5.stim` ($[[25, 1, 5]]$ XZZX rotated surface code, J. P. Bonilla Ataides et al., *Nat.
+      Commun.* **12**, 2172 (2021), under $Z$-biased `PAULI_CHANNEL_1/2` noise, exercising `is_rotated_css=True` in
+      `classify_qubits_thorough`); `surface_rot_d5_heralded_erase_r5_Z.stim` (`HERALDED_ERASE` and
+      `HERALDED_PAULI_CHANNEL_1`, replaced by `MPAD` on `strip_noise()` without shifting `rec[-k]` offsets);
+      `color_d5_mpp_r5_Z.stim` (ancilla-free $[[19, 1, 5]]$ color code using multi-target `MPP` and `MZZ`); and
+      `bp_zsz_625_125_14_r2_Z.stim` (2-round CSS $Z$-memory circuit with $k = 125 > 64$ observables, `maskL->kw = 2`,
+      gating off Stage 4 sparse-dual on a circuit DEM).
+    - **Folded Shaw–Terhal 2BGA circuits (`stim_2bga/2bga_162_*_folded_*` and `make_folded_2bga_circuits.py`)**:
+      noiseless sequential syndrome-extraction templates with alternating forward and mirror-backward rounds ($T = 1$
+      and $T = d$ have identical circuit-level distance; M. H. Shaw and B. M. Terhal, arXiv:2604.09797) from L. P.
+      Pryadko's `hr-2bga` `optcirc` campaign: `2bga_162_24_16_C9xC9_folded_T{1,16}_{X,Z}.stim` ($[[162, 24, 16]]$ over
+      $C_9 \times C_9$, $w = 10$, model lower bound 8, $d_{\mathrm{circ}} \in [8, 9]$), and
+      `make_folded_2bga_circuits.py`, which deterministically generates both `2bga_162` and the $w = 12$
+      `2bga_254_44_19_C127_folded_T{1,19}_{X,Z}.stim` circuits ($[[254, 44, 19]]$ over $C_{127}$, Track B
+      `circ_hr2bga_254_w12_T19_X` of `qec-cert/bench`, $d_{\mathrm{circ}} \in [9, 17]$).
+
 ---
 
 ## 1. CSS Parity-Check and Logical Matrices (`benchmark/css/`)
@@ -188,6 +338,43 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 | `2bga_292_22_23_C146` | $[[292, 22, 23]]$ | $146 \times 292$ | 2BGA, $G = C_{146}$, weight 8 = 4 + 4 |
 | `2bga_294_24_21_SG147_5` | $[[294, 24, 21]]$ | $147 \times 294$ | 2BGA, $G = C_7^2 \rtimes C_3$, weight 9 = 6 + 3 |
 | `2bga_270_38_23_C45xC3` | $[[270, 38, 23]]$ | $135 \times 270$ | 2BGA, $G = C_{45} \times C_3$, weight 12 = 6 + 6 |
+| `k0_graph_ghz5` | $[[5, 0, \text{–}]]$ | $1 \times 5, 4 \times 5$ | 5-qubit GHZ stabilizer state ($k = 0$) |
+| `tiny_d1_4_1_1` | $[[4, 1, 1]]$ | $1 \times 4, 2 \times 4$ | 3-qubit state + unchecked qubit 4 ($d = 1$) |
+| `steane_7_1_3` | $[[7, 1, 3]]$ | $3 \times 7$ | Steane CSS Hamming code, weight 4 |
+| `shor_9_1_3` | $[[9, 1, 3]]$ | $2 \times 9, 6 \times 9$ | Shor 9-qubit code ($w_X = 6, w_Z = 2$) |
+| `hyp_5_5_40_10_4` | $[[40, 10, 4]]$ | $16 \times 40$ | $\{5, 5\}$ hyperbolic surface (`QX40`/`QZ40`), $w = 5$ |
+| `hyp_3_7_84_6_4` | $[[84, 6, 4]]$ | $24, 56 \times 84$ | $\{3, 7\}$ Klein quartic ($\mathrm{PSL}(2,7)$, $w=7,3$) |
+| `hyp_3_7_252_14_6` | $[[252, 14, 6]]$ | $72, 168 \times 252$ | $\{3, 7\}$ Macbeath ($\mathrm{PSL}(2,8)$, $w=7,3$) |
+| `hyp_3_7_546_28_7` | $[[546, 28, 7]]$ | $156, 364 \times 546$ | $\{3, 7\}$ Hurwitz ($\mathrm{PSL}(2,13)$, $w=7,3$) |
+| `hyp_3_8_96_10_4` | $[[96, 10, 4]]$ | $24, 64 \times 96$ | $\{3, 8\}$ quotient ($|Q|=192$, $w=8,3$) |
+| `hyp_3_8_216_20_5` | $[[216, 20, 5]]$ | $54, 144 \times 216$ | $\{3, 8\}$ quotient ($|Q|=432$, $w=8,3$) |
+| `hyp_3_8_648_56_6` | $[[648, 56, 6]]$ | $162, 432 \times 648$ | $\{3, 8\}$ quotient ($|Q|=1296$, $w=8,3$) |
+| `toric_3_6_108_2_6` | $[[108, 2, 6]]$ | $36, 72 \times 108$ | $(3, 6)$ triangular toric, $L = 6$ ($w = 6, 3$) |
+| `toric_3_6_192_2_8` | $[[192, 2, 8]]$ | $64, 128 \times 192$ | $(3, 6)$ triangular toric, $L = 8$ ($w = 6, 3$) |
+| `toric_3_6_432_2_12` | $[[432, 2, 12]]$ | $144, 288 \times 432$ | $(3, 6)$ triangular toric, $L = 12$ ($w = 6, 3$) |
+| `surface_rot_9_1_3` | $[[9, 1, 3]]$ | $4 \times 9$ | Rotated planar surface, $L = 3$ ($w \le 4$) |
+| `surface_rot_25_1_5` | $[[25, 1, 5]]$ | $12 \times 25$ | Rotated planar surface, $L = 5$ ($w \le 4$) |
+| `surface_rot_49_1_7` | $[[49, 1, 7]]$ | $24 \times 49$ | Rotated planar surface, $L = 7$ ($w \le 4$) |
+| `surface_rot_81_1_9` | $[[81, 1, 9]]$ | $40 \times 81$ | Rotated planar surface, $L = 9$ ($w \le 4$) |
+| `surface_rot_121_1_11` | $[[121, 1, 11]]$ | $60 \times 121$ | Rotated planar surface, $L = 11$ ($w \le 4$) |
+| `surface_rot_169_1_13` | $[[169, 1, 13]]$ | $84 \times 169$ | Rotated planar surface, $L = 13$ ($w \le 4$) |
+| `color_271_1_19` | $[[271, 1, 19]]$ | $135 \times 271$ | $(6.6.6)$ triangular color code, $d = 19$ ($w \le 6$) |
+| `color_721_1_31` | $[[721, 1, 31]]$ | $360 \times 721$ | $(6.6.6)$ triangular color code, $d = 31$ ($w \le 6$) |
+| `bidir_rect_261_16_9` | $[[261, 16, 9]]$ | $105, 140 \times 261$ | Directional rectangle (`NNENWWSWWNENN`, $w\le13$) |
+| `rep_css_68_1_1` | $[[68, 1, 1]]$ | $66, 1 \times 68$ | Asymmetric CSS repetition ($d_Z = 67 > 64, d_X = 1$) |
+| `surface_strip_333_1_3` | $[[333, 1, 3]]$ | $198, 134 \times 333$ | $3 \times 67$ surface strip ($d_Z=67, d_X=3$) |
+| `hgp_585_112_5` | $[[585, 112, 5]]$ | $248, 225 \times 585$ | $\mathrm{HGP}([15,7,5], [31,16,7])$ BCH |
+| `kasai_cpm_184_50_10` | $[[184, 50, 10]]$ | $69 \times 184$ | CPM pair-partition ($P = 23, w = 8$, rank 67) |
+| `bp_zsz_275_55_10` | $[[275, 55, 10]]$ | $110 \times 275$ | ZSZ balanced product, $C_{11} \rtimes C_5$ ($w=9$) |
+| `bp_zsz_625_125_14` | $[[625, 125, \le 14]]$ | $250 \times 625$ | ZSZ balanced product, $C_{25} \rtimes C_5$ ($w=9$) |
+| `bb_18_4_4` | $[[18, 4, 4]]$ | $9 \times 18$ | $\ell=3, m=3, A=x^2+x^2y^2+x, B=x^2+x^2y^2+y^2$ |
+| `bb_30_4_6` | $[[30, 4, 6]]$ | $15 \times 30$ | $\ell=3, m=5, A=y^2+xy^3+x^2y, B=xy+y+x^2y^4$ |
+| `torus_60_8_6` | $[[60, 8, 6]]$ | $30 \times 60$ | 2D local torus (`NNEESEEESEENN ... n60_k8_d14`) |
+| `torus_120_8_6` | $[[120, 8, 6]]$ | $60 \times 120$ | 2D local torus (`NEENNWNWNNEEN ... n120_k8_d15`) |
+| `torus_200_16_10` | $[[200, 16, 10]]$ | $100 \times 200$ | 2D local torus (`NEENNWNWNNEEN ... n200_k16_d16`) |
+| `torus_200_8_10` | $[[200, 8, 10]]$ | $100 \times 200$ | 2D local torus (`ENENESESENENE ... n200_k8_d17`) |
+| `2bga_270_38_21_SG135_4` | $[[270, 38, 21]]$ | $135 \times 270$ | 2BGA, $G = C_5 \times (C_9 \rtimes C_3)$, $w = 12$ |
+| `2bga_310_36_21_SG155_1` | $[[310, 36, \le 21]]$ | $155 \times 310$ | 2BGA, $G = C_{31} \rtimes C_5$, $w = 12$ |
 
 Distances computed with `dist_m4ri`:
 
@@ -228,6 +415,43 @@ Distances computed with `dist_m4ri`:
 | `2bga_292_22_23_C146` | $\le 23$ | $\le 23$ |
 | `2bga_294_24_21_SG147_5` | $\le 21$ | $\le 21$ |
 | `2bga_270_38_23_C45xC3` | [14, 23] | [14, 23] |
+| `k0_graph_ghz5` | 0 ($k=0$) | 0 ($k=0$) |
+| `tiny_d1_4_1_1` | 1 | 1 |
+| `steane_7_1_3` | 3 | 3 |
+| `shor_9_1_3` | 3 | 3 |
+| `hyp_5_5_40_10_4` | 4 | 4 |
+| `hyp_3_7_84_6_4` | 8 | 4 |
+| `hyp_3_7_252_14_6` | 14 | 6 |
+| `hyp_3_7_546_28_7` | 14 | 7 |
+| `hyp_3_8_96_10_4` | 10 | 4 |
+| `hyp_3_8_216_20_5` | 12 | 5 |
+| `hyp_3_8_648_56_6` | 14 | 6 |
+| `toric_3_6_108_2_6` | 12 | 6 |
+| `toric_3_6_192_2_8` | 16 | 8 |
+| `toric_3_6_432_2_12` | [18, 24] | 12 |
+| `surface_rot_9_1_3` | 3 | 3 |
+| `surface_rot_25_1_5` | 5 | 5 |
+| `surface_rot_49_1_7` | 7 | 7 |
+| `surface_rot_81_1_9` | 9 | 9 |
+| `surface_rot_121_1_11` | 11 | 11 |
+| `surface_rot_169_1_13` | 13 | 13 |
+| `color_271_1_19` | [13, 19] | [13, 19] |
+| `color_721_1_31` | [13, 31] | [13, 31] |
+| `bidir_rect_261_16_9` | 9 | 9 |
+| `rep_css_68_1_1` | 1 | 67 |
+| `surface_strip_333_1_3` | 3 | [11, 78] |
+| `hgp_585_112_5` | 7 | 5 |
+| `kasai_cpm_184_50_10` | 10 | 10 |
+| `bp_zsz_275_55_10` | 12 | 10 |
+| `bp_zsz_625_125_14` | [12, 14] | [12, 18] |
+| `bb_18_4_4` | 4 | 4 |
+| `bb_30_4_6` | 6 | 6 |
+| `torus_60_8_6` | 6 | 6 |
+| `torus_120_8_6` | 6 | 6 |
+| `torus_200_16_10` | 10 | 10 |
+| `torus_200_8_10` | 10 | 10 |
+| `2bga_270_38_21_SG135_4` | [13, 21] | [13, 21] |
+| `2bga_310_36_21_SG155_1` | [13, 21] | [13, 25] |
 
 - $d_X$ ($d_Z$) is the minimum weight of an $X$-type ($Z$-type) logical operator, i.e., of a vector $c$ with
   $H_Z c = 0$ ($H_X c = 0$) which is not in the row space of $H_X$ ($H_Z$); $d = \min(d_X, d_Z)$. "–": not computed
@@ -260,6 +484,83 @@ Distances computed with `dist_m4ri`:
   (48 threads, 19,671 s). Here, fixed-work runs of `dist_m4ri` (`method=3 wmax=13 steps=50000` on 8 threads, `finG`)
   certify $d_{\min} = 14$ by CC and find valid weight-23 logical operators in both sectors (`[14, 23]`, verified over
   GF(2)), and `_Lx.mtx`, `_Lz.mtx` (`finL`) give the same RW upper bound 23.
+- Boundary and small CSS codes (Origins, item 7): `k0_graph_ghz5` returns `0 0 0` (`k = 0`) in both sectors;
+  `tiny_d1_4_1_1` triggers the zero-column $d = 1$ fast path (`1 1 0`); `steane_7_1_3`, `shor_9_1_3`, and
+  `hyp_5_5_40_10_4` are certified by CC in both sectors (`finG` and `finL`).
+- $(3, q)$ hyperbolic surface and $(3, 6)$ triangular-lattice toric codes (Origins, item 8): on the $Z$-logical sector
+  (`finH=Hx`, `finG=Hz`), the weight-3 triangular face checks give $|\mathcal{T}_3| = 2n/3$ ($w_G = 3$), exercising
+  Stage 1 (`0x01`), `rw_opt=2` ($w_G = 3$), and bit-32 (`0x20`) codeword expansion. All sectors above are certified by
+  CC ($\le 8$ threads), except $d_X$ of `toric_3_6_432_2_12` (`[18, 24]` at `wmax=16`, certified exact 24 by
+  `qec_cert`).
+- Topological $k = 1$, planar rectangle, and $d > 64$ CSS codes (Origins, item 9): `surface_rot_*` ($d = 3..13$),
+  `bidir_rect_261_16_9` ($d_X = d_Z = 9$), and `rep_css_68_1_1` ($d_Z = 67 > 64$, $d_X = 1$) are certified by native CC
+  ($\le 8$ threads); `color_271_1_19` ($d = 19$), `color_721_1_31` ($d = 31$), and $d_Z$ of `surface_strip_333_1_3`
+  ($d_Z = 67 > 64$) are certified exact by `qec_cert` rank-DP (with short native `wmax=10..12` brackets above).
+- HGP, CPM pair-partition, ZSZ balanced-product, small BB, 2D torus, and non-abelian $w = 12$ 2BGA CSS codes (Origins,
+  item 11): `hgp_585_112_5` ($k = 112 > 64$, $d_X = 7, d_Z = 5$), `kasai_cpm_184_50_10` ($d = 10$), `bp_zsz_275_55_10`
+  ($d_X = 12, d_Z = 10$), `bb_18_4_4` ($d = 4$), `bb_30_4_6` ($d = 6$), and the four `torus_*` static codes ($d = 6, 6,
+  10, 10$) are certified exact by native CC ($\le 8$ threads). `2bga_270_38_21_SG135_4` is certified exact at
+  $d_X = d_Z = 21$ by `qec_cert` in `hr-2bga` (short `wmax=12` brackets above), while `bp_zsz_625_125_14` ($k = 125 >
+  64$) and `2bga_310_36_21_SG155_1` ($d_X \in [18, 21]$, $d_Z \in [18, 27]$ in 64-thread baselines) report short
+  8-thread brackets.
+
+### 1.1 Classical Linear Codes (`benchmark/classical/`)
+
+| File (`benchmark/classical/`) | $[n, k, d]$ | Size ($m \times n$) | `dist_m4ri` ($d$) | Construction / Source |
+| :--- | :--- | :--- | :--- | :--- |
+| `k0_classical_eye8_H.mtx` | $[8, 0, \text{–}]$ | $8 \times 8$ | 0 ($k=0$) | $I_8$, full-rank check ($k = 0$) |
+| `hamming_7_4_3_H.mtx` | $[7, 4, 3]$ | $3 \times 7$ | 3 | Binary Hamming code |
+| `golay_24_12_8_H.mtx` | $[24, 12, 8]$ | $12 \times 24$ | 8 | Extended binary Golay ($[I_{12} \mid B_{12}]$, even-wt) |
+| `bch_63_36_11_H.mtx` | $[63, 36, 11]$ | $27 \times 63$ | 11 | Narrow-sense primitive BCH ($x^6 + x + 1$) |
+| `bch_127_64_21_H.mtx` | $[127, 64, 21]$ | $63 \times 127$ | [8, 21] | Narrow-sense primitive BCH ($x^7 + x + 1$) |
+| `rm_2_7_128_29_32_H.mtx` | $[128, 29, 32]$ | $99 \times 128$ | [16, 32] | Reed–Muller $\mathrm{RM}(2, 7)$ |
+| `tanner_155_64_20_H.mtx` | $[155, 64, 20]$ | $93 \times 155$ | 20 | $(3, 5)$ QC-LDPC ($\ell = 31$, rank 91) |
+| `bch_255_45_87_H.mtx` | $[255, 45, 87]$ | $210 \times 255$ | [10, 87] | Narrow-sense BCH ($n=255$, $d=87>64$) |
+
+Checked with `classical=1 method=3` ($\le 8$ threads, Origins, item 7): exact CC certificates for Hamming, Golay
+(even-weight CC skip), BCH $[63, 36, 11]$, and Tanner $[155, 64, 20]$ (also with `start=0,31,62,93,124 start_scan=1`),
+and short-run brackets (`wmax=12` and `wmax=14`, `steps=5000`) matching the exact algebraic distances 21 and 32 for
+`bch_127_64_21` and `rm_2_7_128_29_32`.
+
+### 1.2 Subsystem Gauge and Hook-Extended Matrices (`benchmark/subsystem/`)
+
+| Prefix (`subsystem/`) | $[[n, k, d]]$ | $H$ ($m \times n$) | $G$ ($m_G \times n, w_G$) | $\|\mathcal{T}_3\|$ | $d$ |
+| :--- | :--- | :--- | :--- | ---: | :--- |
+| `shyps_225_16_8_gauge` | $[[225, 16, 8]]$ | $44 \times 225$ | $225 \times 225$, $w_G=3$ | 525 | 8 |
+| `bacon_shor_25_1_5_gauge` | $[[25, 1, 5]]$ | $4 \times 25$ | $20 \times 25$, $w_G=2$ | 0 | 5 |
+| `bacon_shor_81_1_9_gauge` | $[[81, 1, 9]]$ | $8 \times 81$ | $72 \times 81$, $w_G=2$ | 0 | 9 |
+| `bb_72_hookext` | $[[180, 12, 5]]$ | $36 \times 180$ | $144 \times 180$, $w_G=6$ | 144 | 5 |
+| `gross_144_hookext` | $[[360, 12, 8]]$ | $72 \times 360$ | $288 \times 360$, $w_G=6$ | 288 | 8 |
+| `t11_8_1_3` | $[[8, 1, 3]]$ | $5 \times 8$ | $2 \times 8$, $w_G=5$ | 1 | 3 |
+
+All six instances include `_H.mtx`, `_G.mtx`, and `_L.mtx` (Origins, item 8) and are certified exact by CC (`method=3`,
+$\le 8$ threads, with `finG` and `finL`, and under `rw_opt=3`). Note: on Bacon–Shor, the weight-2 gauge rows of $G$ make
+columns within each column of the $L \times L$ grid identical in $(H, L)$.
+
+### 1.3 Unmerged Identical-Column and Duplicate-Entry Matrices (`benchmark/subsystem/`)
+
+| Files (`subsystem/`) | Mode | $H$ ($m \times n$) | $L$ ($k \times n$) | Unique | $\|\mathcal{T}_3\|$ | $d$ |
+| :--- | :--- | :--- | :--- | ---: | ---: | :--- |
+| `bb_72_dup2x_{H,L}.mtx` | `finH`, `finL` | $36 \times 144$ | $12 \times 144$ | 72 | 0 | 6 |
+| `bb_72_r3_X_unmerged_{H,L}.mtx` | `finH`, `finL` | $180 \times 9{,}180$ | $12 \times 9{,}180$ | 1,512 | 653,688 | 6 |
+| `dup_entries_xor_H.mtx` | `classical=1` | $12 \times 24$ | – ($k = 12$) | 24 | – | 8 |
+
+Checked on $\le 8$ threads (Origins, item 10): `bb_72_dup2x` exports all 5,376 weight-6 codewords across 84 canonical
+classes via $1 \leftrightarrow 1$ identical-column swaps (`rw_opt=33`, `steps=600`); `bb_72_r3_X_unmerged` is certified
+at $d = 6$ by CC (`method=3 wmax=6`); and `dup_entries_xor_H.mtx` logs `# WARNING: ... summed mod 2` and certifies the
+extended Golay distance $d = 8$.
+
+### 1.4 Non-CSS Stabilizer Codes in Length-$3n$ Pauli Form (`benchmark/stabilizer/`)
+
+| Prefix (`stabilizer/`) | $[[n, k, d]]$ | $H$ | $G$ | $L$ | $\|\mathcal{T}_3\|$ | $d$ |
+| :--- | :--- | :--- | :--- | :--- | ---: | :--- |
+| `laflamme_5_1_3_pauli3n` | $[[5, 1, 3]]$ | $4 \times 15$ | $9 \times 15$ | $2 \times 15$ | 5 | 3 |
+| `gottesman_8_3_3_pauli3n` | $[[8, 3, 3]]$ | $5 \times 24$ | $13 \times 24$ | $6 \times 24$ | 8 | 3 |
+| `halved_92_25_8_pauli3n` | $[[92, 25, 8]]$ | $69 \times 276$ | $161 \times 276$ | $50 \times 276$ | 92 | 8 |
+
+All three non-CSS stabilizer codes (Origins, item 11) include `_H.mtx`, `_G.mtx`, and `_L.mtx` ($L G^\top = 0$) and are
+certified at their exact quantum Pauli distances $d = 3, 3, 8$ by CC (`method=3`, $\le 8$ threads) with both `finG` and
+`finL`.
 
 ---
 
@@ -351,6 +652,10 @@ The code parameters are the nominal ones (Section 1 for the distances); the code
 The nominal code parameters are taken from the file names; the code distances of the torus codes have not been
 verified yet (no check matrices are included).
 
+Static check matrices extracted from these four circuits are now included in `css/torus_*` (Origins, item 11, and
+Section 1), certifying their exact static CSS distances as $d_X = d_Z = 6, 6, 10, 10$ (matching the `d_code` header
+entries of the `.stim` files, whereas `d14`–`d17` in the file names reflect the routing-schedule parameter).
+
 ### 2.4 SHYPS Codes (`benchmark/stim_shyps/`)
 
 | File (`benchmark/stim_shyps/`) | Code | $r$ | Rounds | Basis | Source file |
@@ -369,6 +674,10 @@ detectors of the $Z$ type only (Origins, item 4).
 | `2bga_102_20_10_C51_idlefree_r10_Z.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `Z` |
 | `2bga_120_24_10_C30xC2_idlefree_r10_X.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `X` |
 | `2bga_120_24_10_C30xC2_idlefree_r10_Z.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `Z` |
+| `2bga_162_24_16_C9xC9_folded_T1_X.stim` | $[[162, 24, 16]]$ | 1 | 324 | 162 | 24 | `X` |
+| `2bga_162_24_16_C9xC9_folded_T1_Z.stim` | $[[162, 24, 16]]$ | 1 | 324 | 162 | 24 | `Z` |
+| `2bga_162_24_16_C9xC9_folded_T16_X.stim` | $[[162, 24, 16]]$ | 16 | 324 | 2,592 | 24 | `X` |
+| `2bga_162_24_16_C9xC9_folded_T16_Z.stim` | $[[162, 24, 16]]$ | 16 | 324 | 2,592 | 24 | `Z` |
 
 The source files are `w9_102_20_10_g51_1_2859_memory_{x,z}basis_r10_idlefree_p0.001.stim` and
 `w9t_120_24_10_g60_13_48f7b6_memory_{x,z}basis_r10_idlefree_p0.001.stim` in `data/circuits/` of the database (Origins,
@@ -377,6 +686,13 @@ block, and the ancilla of check $i$ (row $i$ of `_Hx.mtx` or `_Hz.mtx` in `css/`
 $n + |G| + i$ for a $Z$ check; in the first round, the CX gates of every ancilla address exactly the support of its
 check. Each circuit has the detectors of its own basis only; the full DEM has 8,262 (`2bga_102`) or 9,720
 (`2bga_120`) error mechanisms.
+
+The noiseless Shaw–Terhal folded templates `2bga_162_24_16_C9xC9_folded_T{1,16}_{X,Z}.stim` (source prefix
+`n162_k24_d16_w55_C9xC9_T*`, Origins, item 12; wrapped to $\le 120$ columns with identical DEMs) have 1,620 ($T = 1$)
+and 186,219 / 196,911 ($T = 16$, `X` / `Z`) raw error mechanisms under `add_noise(p=0.001)`, certified model lower bound
+8, and short 8-thread brackets `[6, 9]` ($T = 1$) and `[4, 9]` ($T = 16$). The script
+`stim_2bga/make_folded_2bga_circuits.py` reproduces both `2bga_162` and `2bga_254_44_19_C127_folded_T{1,19}_{X,Z}.stim`
+($[[254, 44, 19]]$, $w = 12$, 508 qubits, 254 / 4,826 detectors, 44 observables, 3,048 / 440,055 raw errors).
 
 ### 2.6 Circuit-Level Distances
 
@@ -449,6 +765,47 @@ item 2) has the same error mechanisms, and RW finds 117 distinct logical errors 
 error of the $X$-basis circuit consists of four hook errors on $Z$-check ancillas in the last cycle ($Z$ errors which
 spread to the data qubits of the later CX gates of their checks) and four single data-qubit $Z$ errors. The SHYPS
 circuit `shyps_225_16_8_r9_Z` keeps the code distance 8.
+
+### 2.7 Rotated Surface Circuits (`benchmark/stim_surface/`) and Standalone DEM Suite (`benchmark/dem/`)
+
+| File | Parameters / Mode | Qubits | Detectors | Raw errs | `dist_m4ri` ($d$) |
+| :--- | :--- | ---: | ---: | ---: | :--- |
+| `stim_surface/surface_rot_d3_r3_Z.stim` | $[[9, 1, 3]]$, $r=3$ | 26 | 24 | 219 | 3 |
+| `stim_surface/surface_rot_d5_r5_Z.stim` | $[[25, 1, 5]]$, $r=5$ | 64 | 120 | 1,677 | 5 |
+| `stim_surface/surface_rot_d7_r7_Z.stim` | $[[49, 1, 7]]$, $r=7$ | 118 | 336 | 6,023 | 7 |
+| `stim_surface/surface_rot_d9_r9_Z.stim` | $[[81, 1, 9]]$, $r=9$ | 188 | 720 | 13,937 | 9 |
+| `stim_surface/surface_rot_d11_r11_Z.stim` | $[[121, 1, 11]]$, $r=11$ | 274 | 1,320 | 26,803 | 11 (`qec_cert`) |
+| `stim_surface/surface_rot_d13_r13_Z.stim` | $[[169, 1, 13]]$, $r=13$ | 376 | 2,184 | 45,821 | 13 (`qec_cert`) |
+| `dem/rep_d71_r6.dem` | 6-round rep, $k=1$ | – | 420 | 1,121 | [7, 71] (71 via `qec_cert`) |
+| `dem/tagged_repeat_pmin.dem` | `pmin=0` / `0.005` / `0.02` | – | 24 | 49 | 3 / 5 / 0 ($k=0$) |
+| `dem/bb_72_dropA.dem` | `drop=auto` / `bb_72_dropA.drop` | – | 432 / 252 | 16,200 | 6 / 6 ($A \neq 0$) |
+
+All `surface_rot_d*` circuits use Stim's standard depolarizing noise at $p = 0.001$ (Origins, item 9; $d = 3..9$
+certified by native CC on $\le 8$ threads, $d = 11, 13$ certified by `engine="auto"` / `qec_cert`). `rep_d71_r6.dem` has
+$|\mathcal{T}_3| = 700$ and exact distance $d = 71 > 64$ (above `RW_SHORTEN_WMAX = 64`). In `dem/` (Origins, item 10),
+`tagged_repeat_pmin.dem` exercises `[tag]` annotations, `repeat` + `shift_detectors`, self-cancelling `^` components,
+and `pmin` cuts (`d = 3`, `5` via CC and `qec_cert`, and `0 0 0` at `pmin=0.02`); `bb_72_dropA.{dem,drop}` exercises
+exact detector dropping with $A \neq 0$ (`bb_72_bad.drop` tests invalid-drop fallback), and
+`dem/make_large_drop_dems.py` generates the $> 2\text{ MB}$ `dgross_288_dropA` and `bb_756_dropA` files on demand.
+
+### 2.8 Color-Code `memory_xyz` (`stim_color/`) and Specialized Noise / High-$k$ Circuits (`stim_noise/`)
+
+| File | Parameters / Feature | Qubits | Detectors | Raw errs | `dist_m4ri` ($d$) |
+| :--- | :--- | ---: | ---: | ---: | :--- |
+| `stim_color/color_d3_r3_xyz.stim` | $[[7, 1, 3]]$, $r=3$, `xyz` | 10 | 9 | 72 | 2 |
+| `stim_color/color_d5_r5_xyz.stim` | $[[19, 1, 5]]$, $r=5$, `xyz` | 28 | 45 | 1,104 | 3 |
+| `stim_color/color_d7_r7_xyz.stim` | $[[37, 1, 7]]$, $r=7$, `xyz` | 55 | 126 | 3,651 | 4 |
+| `stim_color/color_d9_r9_xyz.stim` | $[[61, 1, 9]]$, $r=9$, `xyz` | 91 | 270 | 7,683 | 5 |
+| `stim_noise/surface_rect_23_1_3_yz_biased_r5_Z.stim` | $[[23, 1, 3]]$, $Y/Z$-biased | 45 | 108 | 282 | 5 (model 3/5) |
+| `stim_noise/surface_xzzx_d5_biased_r5.stim` | $[[25, 1, 5]]$, XZZX biased | 64 | 120 | 785 | 5 (`is_rotated_css`) |
+| `stim_noise/surface_rot_d5_heralded_erase_r5_Z.stim` | $[[25, 1, 5]]$, heralded | 64 | 120 | 1,677 | 5 (`MPAD`) |
+| `stim_noise/color_d5_mpp_r5_Z.stim` | $[[19, 1, 5]]$, `MPP` + `MZZ` | 19 | 91 | 351 | 5 |
+| `stim_noise/bp_zsz_625_125_14_r2_Z.stim` | $[[625, 125]]$, $r=2, k=125$ | 1,125 | 1,000 | 46,154 | [5, 11] (`kw=2`) |
+
+Checked on $\le 8$ threads (Origins, item 12): all four `color_d*_xyz` circuits (`drop=auto` keeps all detectors) and
+the four $d = 5$ `stim_noise/` circuits are certified exact by native CC; on
+`surface_rect_23_1_3_yz_biased_r5_Z.stim`, `compute_model_lower_bound` certifies 3 with `minority=False` and 5 with
+`minority=True`.
 
 ---
 

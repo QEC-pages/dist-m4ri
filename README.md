@@ -239,9 +239,11 @@ Relevant parameters:
     $1 \leftrightarrow 1$ swaps of the identical columns of $H$ and $L$, also without $\mathcal{T}_3$ (see `1`;
     automatic: quantum codes with `outC` or `maxC`).
 
-  All stages need full-matrix RW (`ksub=0`) and `steps > 0` (the automatic ones `steps > 2`). With `rw_opt != 0`,
-  matrices (`finH`) use uniform random permutations in every RW step unless `kwin > 0` or `win_hyb > 0` (the hybrid
-  windows are for DEMs), also if no stage applies (`rw_opt=0x0` in the run plan, e.g., for a classical code). With
+  All stages need full-matrix RW (`ksub=0`) and `steps > 0` (the automatic ones `steps > 2`). When the resolved
+  `rw_opt` is not 0 (see the run plan), matrices (`finH`) use uniform random permutations in every RW step unless
+  `kwin > 0` or `win_hyb > 0` (the hybrid windows are for DEMs); an automatic `rw_opt` which resolves to 0
+  (`rw_opt=0x0` in the run plan, e.g., for a classical code, `steps <= 2`, or `ksub > 0`) keeps the hybrid windows of
+  `rw_opt=0` (since 0.17.3; before, such matrices also used uniform permutations only). With
   `debug&1`, the binary prints the stages used and their statistics (`# RW triplets: T3=..., rw_opt=0x..`,
   `# RW canonical (w=...): classes=..., p_GT=..., C0_Chao2=...`, and `# RW FKG score: ...`, the mean Harris–FKG bound
   on $\ln \Pr(J)$ of the dense full-matrix steps with pairs, with any stage, but not with `8` and not of the slab
@@ -902,7 +904,7 @@ same help options (see [Python Wrapper](#python-wrapper-dist_m4ripy)).
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.17.2): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.17.3): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -1148,6 +1150,11 @@ interoperability without manual threading overhead.
   whose `pmin` cut leaves no error which flips an observable) gives `[0, 0, 0]` (`0 0 0` in the CLI) with every engine
   and solver, with one note on `stderr` (`# Note: k=0: no logical codeword (...); the result is 0 0 0`, not with
   `--silent`), and nothing is cached (since 0.17.2; before, the binary printed a vacuous lower bound above $n$). The
+  binary knows $k = 0$ at once when `L` has no rows (also with `finG`: $k$ is the number of rows of the computed `L`)
+  or `L = 0`; otherwise (an explicit `L`, a DEM, or a classical `H` with $m \ge n$) one extra thread checks the rank
+  of a dense copy of `H` during the search (also with `threads=1`; not if $m n > 2^{33}$, i.e., over 1 GiB): the run
+  ends as soon as it finds $k = 0$, a codeword found proves $k > 0$, and a search without a codeword waits for the
+  check (`dist_m4ri_old` checks before the search). The
   CLI prints these numbers (and `(exact)` if `dmin = dmax`), and for a CSS code (`Hx=`, `Hz=`) the line
   `dX: dmin dmax rw_steps  dZ: dmin dmax rw_steps  (d = N)`.
 - `DistanceResult(dmin, dmax, rw_steps=0, cws=None, ...)`: an optional container of the bounds (and codewords) with

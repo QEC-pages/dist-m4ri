@@ -368,7 +368,9 @@ int main(int argc, char **argv){
    * n >= 500 also for matrices, as the input summary says) */
   p->rw_opt = 0;
   var_init(argc,argv,p);
-  if (p->k_zero) { /* k = 0 (no codeword, see var_init()): no search, the result 0 */
+  if (p->k_zero < 0) /* (k not known at once: the rank check before the search) */
+    p->k_zero = k_zero_rank(p->spaH, p->classical ? NULL : p->spaL, p->k0_reason, sizeof(p->k0_reason), NULL);
+  if (p->k_zero == 1) { /* k = 0 (no codeword, see var_init()): no search, the result 0 */
     k_zero_note(p, "0");
     printf("0\n");
     if (p->outC)

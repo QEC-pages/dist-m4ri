@@ -14,6 +14,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <limits.h>
+#include <stdatomic.h>
 #include <m4ri/m4ri.h>
 
 #include "mmio.h"
@@ -157,7 +158,8 @@ typedef struct{
   csr_t *spaG;
   csr_t *spaL;
   colmask_t *maskL; /* column masks of L for fast checks L c != 0 (NULL for a classical code), see var_init() */
-  int k_zero;       /* 1: k = 0, no codeword at all (see var_init()): no search, the result is 0 0 0 */
+  int k_zero;       /* k = 0 (no codeword at all): 1 yes (no search, the result is 0 0 0), 0 no (or not checked), -1 not
+                       known yet (the rank check of k_zero_rank() follows), see var_init() */
   char k0_reason[64]; /* why k = 0, for the note of k_zero_note() */
   int threads; /* number of threads to use (0 for auto) */
   int dexp;    /* expected distance value (0 for auto/none) */
@@ -178,6 +180,7 @@ typedef struct{
   int rw_opt;     /* the RW stages (bitmask of RW_OPT_T3 etc.): -1 (default) automatic, 0 none (as in version 0.16.1);
                      ignored by dist_m4ri_old */
   int rw_active;  /* the RW stages in use, resolved from rw_opt by dist_m4ri at the start of the run (0 before) */
+  int rw_planned; /* 1 once rw_active is resolved (dist_m4ri, see rw_hybrid_on()) */
   rw_canon_stats_t canon; /* Stage 5 (RW_OPT_CANON): the statistics of the canonical classes (rw_canon_converged()) */
   int round_D;    /* the rounds of a DEM (debug&1, see dem_round_estimate()): detectors per round (0: none found) */
   int round_L;    /* columns per round, n D / m (0: none found) */
@@ -202,8 +205,10 @@ extern params_t prm;
  * loads matrices from specified files (Matrix Market or DEM), 
  * constructs logical matrices if needed, and performs consistency checks.  If k = 0, i.e., there is no codeword
  * (rank H = n for a classical code; for a quantum code or a DEM, every row of L is in the row space of H, also if L
- * has no rows, e.g., a DEM with no L left after the pmin cut, merge, and drop), it sets p->k_zero and returns before
- * the warnings for the search options: the binaries then print the note of k_zero_note() and the result 0 0 0.
+ * has no rows, e.g., a DEM with no L left after the pmin cut, merge, and drop), and this is known at once (L without
+ * rows, also L computed from H and G, or L = 0), it sets p->k_zero = 1 and returns before the warnings for the search
+ * options: the binaries then print the note of k_zero_note() and the result 0 0 0.  If k is not known at once, it sets
+ * p->k_zero = -1: the binaries then run k_zero_rank() (dist_m4ri in its own thread during the search).
  *
  * @param argc Number of command line arguments.
  * @param argv Array of command line argument strings.
@@ -228,6 +233,28 @@ void var_kill(params_t * const p);
  * @param result The result line of the binary ("0 0 0" for dist_m4ri, "0" for dist_m4ri_old).
  */
 void k_zero_note(const params_t * const p, const char * const result);
+
+/**
+ * @brief DBG_SUMMARY: the line of the hybrid RW windows of the input summary (see rw_hybrid_on()); dist_m4ri prints it
+ * after resolving an automatic rw_opt to 0.
+ */
+void print_window_summary(FILE *stream, const params_t * const p);
+
+/**
+ * @brief The rank check of k = 0 (when not known at once, p->k_zero = -1 after var_init()): the row echelon form of a
+ * dense copy of H (a classical code: rank H = n), then the rows of L reduced by it (every row of L in the row space of
+ * H).  Thread-safe: it reads only H and L, writes only `reason`, and allocates with malloc() only (M4RI's memory cache
+ * is not thread-safe); the dense copy has m*n bits (see the help of the output format).
+ *
+ * @param H The matrix H (at least one row and one column).
+ * @param L The matrix L, NULL for a classical code.
+ * @param reason Why k = 0 (written only if k = 0), for p->k0_reason.
+ * @param len The size of `reason`.
+ * @param stop If not NULL: the check ends early (returns -1) once *stop is nonzero.
+ * @return 1 if k = 0, 0 if k > 0, -1 if stopped.
+ */
+int k_zero_rank(const csr_t * const H, const csr_t * const L, char * const reason, const size_t len,
+                atomic_int * const stop);
 
 /**
  * @brief Read a Detector Error Model (DEM) file and construct H and L matrices.
@@ -323,13 +350,16 @@ static inline int rw_hybrid_window(const params_t * const p, const int nvar) {
 }
 
 /**
- * @brief Whether the hybrid RW steps (kwin=0, n >= 500) use index windows on every other step: always with rw_opt=0
- *        (as in version 0.16.1); otherwise only for a DEM (columns in circuit order), or with win_hyb > 0 (Rule D3 of
- *        doc/rw_triplet_degeneracies.tex: windows do not help the matrices of codes and extended matrices, whose
- *        column order is not local).  dist_m4ri only.
+ * @brief Whether the hybrid RW steps (kwin=0, n >= 500) use index windows on every other step: always when the RW
+ *        stages in use are none (rw_opt=0, as in version 0.16.1, or an automatic rw_opt which resolves to 0, e.g., for
+ *        a classical code, steps <= 2, or ksub > 0); otherwise only for a DEM (columns in circuit order), or with
+ *        win_hyb > 0 (Rule D3 of doc/rw_triplet_degeneracies.tex: windows do not help the matrices of codes and
+ *        extended matrices, whose column order is not local).  Keyed on the resolved mask p->rw_active once
+ *        p->rw_planned is set by dist_m4ri (before: on the argument rw_opt, an automatic -1 not yet known).
  */
 static inline int rw_hybrid_on(const params_t * const p, const int nvar) {
-  return (p->kwin == 0) && (nvar >= 500) && ((p->rw_opt == 0) || (p->fdem != NULL) || (p->win_hyb > 0));
+  const int mask = p->rw_planned ? p->rw_active : p->rw_opt;
+  return (p->kwin == 0) && (nvar >= 500) && ((mask == 0) || (p->fdem != NULL) || (p->win_hyb > 0));
 }
 
 
@@ -623,7 +653,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.17.2"
+#define DIST_M4RI_VERSION "0.17.3"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -976,7 +1006,8 @@ void print_short_help(const char *prog);
   "                     n>=500: every other step uses an index window (win_mode=1)\n" \
   "                     of win_hyb columns, the other steps uniform random\n" \
   "                     permutations (also for codewords which are not local);\n" \
-  "                     with rw_opt != 0, only for a DEM or with win_hyb > 0.\n" \
+  "                     with a nonzero resolved rw_opt (the run plan), only for a\n" \
+  "                     DEM or with win_hyb > 0.\n" \
   "                     kwin=-1 (any negative value): no windows, uniform random\n" \
   "                     permutations in every step.\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
@@ -1077,11 +1108,13 @@ void print_short_help(const char *prog);
   "                        and by 1 <-> 1 swaps of the identical columns of H and\n" \
   "                        L, also without T3 (see 1, irred, and maxC; automatic:\n" \
   "                        quantum codes with outC or maxC).\n" \
-  "                     With rw_opt != 0, matrices (finH) use uniform random\n" \
-  "                     permutations in all RW steps unless kwin > 0 or win_hyb\n" \
-  "                     > 0 (the hybrid windows are for DEMs, see kwin), also if\n" \
-  "                     no stage applies (rw_opt=0x0 in the run plan, e.g., for\n" \
-  "                     a classical code).  Only with full-matrix RW (ksub=0) and\n" \
+  "                     When the resolved rw_opt is not 0 (see the run plan),\n" \
+  "                     matrices (finH) use uniform random permutations in all\n" \
+  "                     RW steps unless kwin > 0 or win_hyb > 0 (the hybrid\n" \
+  "                     windows are for DEMs, see kwin); an automatic rw_opt which\n" \
+  "                     resolves to 0 (rw_opt=0x0 in the run plan, e.g., for a\n" \
+  "                     classical code) keeps the hybrid windows of rw_opt=0.\n" \
+  "                     Only with full-matrix RW (ksub=0) and\n" \
   "                     steps > 0 (automatic: steps > 2).  With debug&1, the\n" \
   "                     binary prints the stages used and their statistics\n" \
   "                     (lines '# RW triplets', '# RW canonical', and '# RW FKG\n" \
@@ -1183,7 +1216,12 @@ void print_short_help(const char *prog);
   "    rw_steps : Number of completed RW steps (0 if CC found exact or method=2).\n" \
   "  If k = 0, i.e., there is no codeword (rank H = n for a classical code; every\n" \
   "  row of L in the row space of H, e.g., a DEM with no L left after the pmin\n" \
-  "  cut), nothing is searched: the result is 0 0 0, with a note on stderr.\n" \
+  "  cut), the result is 0 0 0, with a note on stderr.  Unless k is known at once\n" \
+  "  (e.g., L without rows; with finG, k is the number of rows of the computed\n" \
+  "  L), one extra thread (also with threads=1) checks the rank on a dense copy\n" \
+  "  of H during the search (not if m*n > 2^33, i.e., over 1 GiB): the run ends\n" \
+  "  as soon as it finds k = 0, while a codeword found proves k > 0; a search\n" \
+  "  without a codeword waits for it.  dist_m4ri_old checks before the search.\n" \
   "  The legacy single-threaded dist_m4ri_old (the same options) prints one number\n" \
   "  and also its own progress and codeword lines to stdout, and ignores threads,\n" \
   "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, and rw_opt\n" \

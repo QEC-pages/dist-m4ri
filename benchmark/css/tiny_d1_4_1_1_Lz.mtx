@@ -1,0 +1,4 @@
+%%MatrixMarket matrix coordinate integer general
+% Tiny [[4, 1, 1]] CSS code with unchecked qubit 4 (d_X = d_Z = 1): Lz
+1 4 1
+1 4 1
