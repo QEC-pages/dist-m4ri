@@ -659,7 +659,7 @@ $BIN_FORK method=1 finH=$REP86 steps=100 seed=3 threads=1 debug=0x1a0 > "$OUT86"
 if ! grep -q -E "^1 5 [0-9]+$" "$OUT86" || \
    ! grep -q "RW codeword of weight 5 (1-based columns): 1 2 3 4 5$" "$ERR86" || \
    ! grep -q "^# matrix H: 4 x 5, 8 nonzeros" "$ERR86" || ! grep -q "^# \.\.11\.$" "$ERR86" || \
-   ! grep -q -E "^# cw: \[ 1 2 3 4 5 \] cnt=([0-9]+) \(u=\1, w=0\)$" "$ERR86"; then
+   ! grep -q -E "^# cw: \[ 1 2 3 4 5 \] cnt=([0-9]+) \(u=\1, w=0, s=0\)$" "$ERR86"; then
     echo "  [FAIL] Test 86: stdout '$(cat "$OUT86")', stderr '$(cat "$ERR86")'"
     FAILED=1
 fi
@@ -1086,7 +1086,8 @@ STEP107="^# RW step types, w=[0-9]+: uniform steps: cws=[0-9]+, hits=[0-9]+; win
 assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "^1 [0-9]+ [0-9]+$" \
     "^#   rounds of the DEM: D=50 detectors and L=97 columns per round \(estimated: score 1\.000\)$"
 assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "" "^#   RW windows: 256 $WIN107 $AUTO107"
-assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "" "$STEP107 both: cws=[0-9]+ \(of [0-9]+ cws\)$"
+assert_output "$BIN_FORK fdem=$DEM107 $RW107" 0 "" \
+    "$STEP107 row slabs: cws=0, hits=0; both: cws=[0-9]+ \(of [0-9]+ cws\)$"
 assert_output "$BIN_FORK fdem=$DEM107P $RW107" 0 "" \
     "^#   rounds of the DEM: no round structure found \(best score 0\.[0-4][0-9]* < 0\.5\)$"
 assert_output "$BIN_FORK fdem=$DEM107 $RW107 win_hyb=2000" 0 "" "^#   RW windows: 871 $WIN107 \(win_hyb=2000\)$"
@@ -1520,15 +1521,16 @@ assert_output "$BIN_FORK method=1 $D3DEM steps=10000 seed=1 threads=2 kwin=20 de
 assert_output "$BIN_FORK method=1 $D3DEM steps=10000 seed=1 threads=2 kwin=20 debug=1" 0 "^1 3 [0-9]+$" \
     "" "^# RW canonical"
 
-# Test 122: Stage 3 (4, explicit only): the row-slab windows of a DEM in time order on every other step (kwin=0):
-# valid codewords (all among those enumerated by CC), the same distance; not in the automatic mode (here the
-# repetition-code DEM of Test 107 with 12 rounds, m=600, d=51, where the index windows find the distance), nor for a
-# matrix or with kwin != 0
+# Test 122: Stage 3 (4): the row-slab windows of a DEM in time order on every other step (kwin=0): valid codewords (all
+# among those enumerated by CC; the slab hits counted apart), the same distance; not in the automatic mode for a DEM
+# with round structure (here the repetition-code DEM of Test 107 with 12 rounds, m=600, d=51, where the index windows
+# find the distance), nor for a matrix or with kwin != 0
 CWS122C=$(mktemp --suffix=.nz)
 CWS122R=$(mktemp --suffix=.nz)
 assert_output "$BIN_FORK method=2 $D3DEM wmax=4 dW=1 outC=$CWS122C threads=2 debug=0" 0 "^3 3 0$" ""
 assert_output "$BIN_FORK method=1 $D3DEM steps=300 dW=1 outC=$CWS122R seed=5 threads=2 rw_opt=5 debug=1" 0 \
-    "^1 3 [0-9]+$" "^# RW step types, w=3: uniform steps: cws=[0-9]+, hits=[0-9]+; window steps: cws=[1-9]"
+    "^1 3 [0-9]+$" \
+    "^# RW step types, w=3: uniform steps: cws=[0-9]+, hits=[0-9]+; window steps: cws=0, hits=0; row slabs: cws=[1-9]"
 if [ "$(comm -23 <(grep -v '^%' "$CWS122R" | sort) <(grep -v '^%' "$CWS122C" | sort) | wc -l)" != "0" ]; then
     echo "  [FAIL] Test 122: codewords of the row slabs not enumerated by CC"
     FAILED=1
@@ -1910,9 +1912,9 @@ fi
 if ! awk '/^C /{o[$6]++} END {exit !(o[1] > 0 && o[2] > 0)}' "$SL139"; then
     echo "  [FAIL] steplog: no codewords from both single columns (o=1) and pairs (o=2)"; FAILED=1
 fi
-assert_output "$RUN139 rw_opt=0x05 slab_rows=4 slab_bnd=0 slab_var=50 slab_every=1 debug=3 steplog=$SL139" 0 \
+assert_output "$RUN139 rw_opt=0x05 slab_rows=4 slab_bnd=0 slab_var=50 debug=3 steplog=$SL139" 0 \
     "^1 3 300$" "^# RW row slabs \(study options\): 4 of 16 detectors \(slab_rows=4\), boundary slabs 0% each"
-check_steplog "$SL139" 300 s 2 4
+check_steplog "$SL139" 300 su 2 4
 assert_output "$RUN139 rw_opt=0x05 slab_every=3 debug=0 steplog=$SL139" 0 "^1 3 300$" ""
 check_steplog "$SL139" 300 su
 S3_139=$(awk '/^S .* s /{n++} END {print n + 0}' "$SL139")
@@ -1928,12 +1930,86 @@ assert_output "$RUN139 rw_opt=0x01 slab_rows=4 debug=0" 0 "^1 3 300$" \
 assert_output "$RUN139 slab_bnd=51" 255 "" "invalid 'slab_bnd=51': slab_bnd should be 0 to 50"
 assert_output "$RUN139 slab_rows=1" 255 "" "invalid 'slab_rows=1': slab_rows should be 0"
 assert_output "$RUN139 slab_var=100" 255 "" "invalid 'slab_var=100': slab_var should be 0 to 99"
-assert_output "$RUN139 slab_every=0" 255 "" "invalid 'slab_every=0': slab_every should be at least 1"
+assert_output "$RUN139 slab_every=1" 255 "" "invalid 'slab_every=1': slab_every should be at least 2"
 assert_output "$RUN139 steplog=/nonexistent_dir/x.log debug=0" 255 "" "can't open the file steplog='/nonexistent_dir"
 assert_output "$BIN method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=500 steplog=$SL139 slab_rows=4 debug=0" 0 "^3$" \
     "^# WARNING: ignored by dist_m4ri_old \(options of dist_m4ri only\):.* steplog=.* slab_rows=4"
 assert_output "$BIN_FORK --morehelp study" 0 "^  steplog=\[file\] .*Write a line for each full-matrix RW step" ""
 rm -f "$SL139"
+
+# Test 140: the automatic row slabs (rw_opt 4, Rule D4, see rw_slab_auto()): a DEM without round structure (here a
+# repetition-code DEM with a single round: two detector layers of 50 checks, m=100) gets them in the automatic rw_opt
+# (the run plan; the input summary: the boundary slabs of m/2 detectors), not with dem_rounds=2; the DEM of Test 107
+# with 12 rounds (m=600) and a single-round DEM with m=660 > 640 do not, unless dem_rounds=1; dem_rounds needs fdem.
+# The min_hits statistic <n> counts the hits of the uniform steps (with RW stages: not those of the row slabs and of
+# the hybrid index windows, shown apart in '# RW step types'), all hits with rw_opt=0 (as in version 0.16.1), and the
+# window hits with kwin > 0; without a counted hit of the minimum weight, the min_hits stop is inactive (a note)
+gen140() { # a repetition-code DEM: $1 checks measured in $2 detector layers (2: a single round and the readout)
+    awk -v k="$1" -v R="$2" 'BEGIN {
+      for (t = 0; t < R; t++) {
+        for (i = 0; i <= k; i++) {
+          s = "error(0.01)"
+          if (i > 0) s = s " D" (t * k + i - 1)
+          if (i < k) s = s " D" (t * k + i)
+          if (i == 0) s = s " L0"
+          print s
+        }
+        if (t < R - 1)
+          for (i = 0; i < k; i++)
+            print "error(0.01) D" (t * k + i) " D" ((t + 1) * k + i)
+      }
+    }'
+}
+T1_140=$(mktemp --suffix=.dem)
+DEEP140=$(mktemp --suffix=.dem)
+BIG140=$(mktemp --suffix=.dem)
+gen140 50 2 > "$T1_140"
+gen140 50 12 > "$DEEP140"
+gen140 330 2 > "$BIG140"
+RW140="method=1 steps=40 seed=1 threads=2 debug=3"
+PLAN140="^# run plan: method=1 \(RW\), 2 threads, steps=40, min_hits=5, ksub=0, rw_opt=0x"
+assert_output "$BIN_FORK fdem=$T1_140 $RW140" 0 "^1 [0-9]+ 40$" \
+    "${PLAN140}15 \(row slabs: no round structure, m <= 640\), timeout"
+assert_output "$BIN_FORK fdem=$T1_140 $RW140" 0 "" "^#   RW row slabs \(rw_opt 4\): 50 of 100 detectors on 1 of every \
+2 steps, the first or the last ones, uniform permutations on the others \(automatic: no round structure, m <= 640\)$"
+assert_output "$BIN_FORK fdem=$T1_140 $RW140 dem_rounds=2" 0 "" "${PLAN140}11, timeout" "RW row slabs"
+assert_output "$BIN_FORK fdem=$DEEP140 $RW140" 0 "" "${PLAN140}11, timeout" "RW row slabs"
+assert_output "$BIN_FORK fdem=$DEEP140 $RW140 dem_rounds=1" 0 "" "${PLAN140}15 \(row slabs: dem_rounds=1\), timeout"
+assert_output "$BIN_FORK fdem=$BIG140 $RW140" 0 "" "${PLAN140}11, timeout"
+assert_output "$BIN_FORK fdem=$BIG140 $RW140 debug=0" 0 "^1 [0-9]+ 40$" ""
+assert_output "$BIN_FORK fdem=$BIG140 $RW140 dem_rounds=1" 0 "" "${PLAN140}15 \(row slabs: dem_rounds=1\), timeout"
+assert_output "$BIN_FORK finH=$EXAMPLES_DIR/c96H.mmx $RW140 dem_rounds=1" 255 "" \
+    "dem_rounds can only be used when fdem is specified"
+assert_output "$BIN_FORK fdem=$T1_140 $RW140 dem_rounds=-1" 255 "" "invalid 'dem_rounds=-1': dem_rounds should be 0"
+assert_output "$BIN method=1 fdem=$T1_140 steps=40 dem_rounds=1 debug=0" 0 "^[0-9]+$" \
+    "^# WARNING: ignored by dist_m4ri_old \(options of dist_m4ri only\): dem_rounds=1$"
+# <n> with the row slabs (explicit 0x05: no canonical classes): the average of the uniform-step hits per codeword
+OUT140=$($BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=300 seed=5 threads=1 rw_opt=0x05 cov_cws=0 \
+    min_hits=1000000000 debug=1 2>&1)
+SED140='s/^# codewords accumulated: .*<n>=([0-9.]+) over ([0-9]+) cws of w=3\.\.3 .*, ([0-9]+) window and slab'
+N140=$(printf '%s\n' "$OUT140" | sed -n -E "$SED140 hits not counted.*/\\1 \\2 \\3/p")
+SED140='s/^# RW step types, w=3: uniform steps: cws=([0-9]+), hits=([0-9]+);.* row slabs: cws=([0-9]+), hits=([0-9]+);'
+U140=$(printf '%s\n' "$OUT140" | sed -n -E "$SED140.*/\\1 \\2 \\3 \\4/p")
+echo "Running Test 140: <n>, its cws, the hits not counted ($N140); uniform cws, hits; slab cws, hits ($U140)"
+if ! awk -v n="$N140" -v u="$U140" 'BEGIN { if (split(n, a, " ") != 3 || split(u, b, " ") != 4) exit 1
+      exit !(b[1] > 0 && b[3] > 0 && a[2] == b[1] && a[3] == b[4] && sprintf("%.2f", b[2] / b[1]) == a[1]) }'; then
+    echo "  [FAIL] Test 140: <n> is not the average of the uniform-step hits: $OUT140"
+    FAILED=1
+fi
+assert_output "$BIN_FORK method=1 fdem=$T1_140 steps=100 seed=1 threads=1 rw_opt=0x05 debug=1" 0 "^1 51 100$" \
+    "^# Note: the min_hits stop was inactive: no codeword of the minimum weight 51 was found in a uniform RW step"
+assert_output "$BIN_FORK method=1 fdem=$T1_140 steps=100 seed=1 threads=1 debug=1" 0 "^1 51 100$" \
+    "^# Note: the min_hits stop was inactive: .* \(the canonical classes of rw_opt 16 count only these; the row slabs \
+found [1-9][0-9]* codewords of weight 51 in hash, not used to stop\)$"
+# the hybrid index windows: their hits not counted with RW stages (rw_opt=1, no canonical classes), all with rw_opt=0
+assert_output "$BIN_FORK method=1 fdem=$DEEP140 steps=200 seed=1 threads=1 rw_opt=1 debug=1" 0 "" \
+    "^# codewords accumulated: .*<n>=[0-9.]+ over [0-9]+ cws of w=[0-9.]+ \(min_hits=5, cov_cws=100\), [1-9][0-9]* \
+window and slab hits not counted$"
+assert_output "$BIN_FORK method=1 fdem=$DEEP140 steps=200 seed=1 threads=1 rw_opt=0 debug=1" 0 "" \
+    "^# codewords accumulated: .*<n>=" "not counted"
+assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=10000 seed=1 threads=2 kwin=20 debug=1" 0 \
+    "^1 3 [0-9]+$" "RW convergence reached \(<n>=" "not counted"
+rm -f "$T1_140" "$DEEP140" "$BIG140"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

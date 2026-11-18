@@ -1565,7 +1565,8 @@ $m_{\mathrm{sub}} \times |C_W|$, global $\Tc$-contraction, and Stern $w_x \le 2$
 $3.5\times$ (\ttt{shyps\_225}), $45.5\times$ (\ttt{bidir\_sNESENn}), and $114.8\times$ (\ttt{dgross\_288}) over
 uniform dense \ttt{RW}. (In our benchmark prototype $r_0$ is drawn uniformly on $\{0, \dots, m - m_{\mathrm{sub}}\}$;
 for production deployment we recommend assigning positive probability mass directly to the boundary slabs $r_0 = 0$
-and $r_0 = m - m_{\mathrm{sub}}$ so boundary-localized logical faults are sampled consistently.)
+and $r_0 = m - m_{\mathrm{sub}}$ so boundary-localized logical faults are sampled consistently. The binary now uses
+only these two, with $m_{\mathrm{sub}} = m/2$, see Stage~\ref{stage:slab}.)
 
 % ============================================================================
 \section{C/OpenMP Benchmark Results Across Circuit DEMs}\label{sec:benchmarks}
@@ -2244,7 +2245,10 @@ no uniform step finds a codeword of the minimum weight (as on deep circuit DEMs,
 e.g., \ttt{dgross\_288} in Table~\ref{tab:t1}), then $C_{\mathrm{obs}} = 0$ and \ttt{min\_hits} never stops
 \ttt{RW}; since version 0.17.2 the binary says so in its status line and summary, shows the window-step codewords for
 information only, and keeps running to the step limit or the timeout (by design: no stop without uniform-step
-evidence).
+evidence). The vector rule $\langle n \rangle$ of the binary follows the same design for the row slabs of
+Stage~\ref{stage:slab} and for the hybrid index windows, whose hits it does not count with a nonzero resolved
+\ttt{rw\_opt}, and it is inactive while no codeword of the minimum weight has a counted hit
+(Section~\ref{sec:roadmap}, the implementation notes).
 
 \begin{table}[htbp]
 \centering
@@ -2943,7 +2947,10 @@ part~(b2) along every ancilla of the opposite type, and the time-like plaquettes
 before the cycle (preparation errors) and after it (errors before the final readout). $\Tc$ thus stays dense, and
 Stages~\ref{stage:enum}, \ref{stage:contract}, and~\ref{stage:conv} apply as for multi-round DEMs. The time axis,
 however, is gone. The DEM has $m = 2 m_{\mathrm{meas}}$ detectors ($72$ for \ttt{bb\_72}), far below the $m \ge 600$
-gate of Stage~\ref{stage:slab}, and a slab with $m_{\mathrm{sub}} \ge m$ is no restriction at all; $m \times n$ is
+gate of Stage~\ref{stage:slab}, and a slab with $m_{\mathrm{sub}} \ge m$ is no restriction at all. (The detectors
+still form two layers, those of the measured checks and those of the same checks with the final readout: a slab of
+$m/2$ detectors at either boundary is one layer, and it reaches the codewords confined to that layer, which the
+row-slab study found decisive on the double-gross DEM, see Stage~\ref{stage:slab}.) The dense $m \times n$ matrix is
 small enough to stay in cache, so the gate of Stage~\ref{stage:dual} is not met either. A \ttt{win=256} window places a
 block of consecutive DEM columns first. At $T = 1$ it cannot exploit temporal locality, but Stim lists the error
 mechanisms in circuit order, and within one cycle neighboring columns still belong to neighboring gates, qubits, and
@@ -2963,7 +2970,8 @@ on the three smallest DEMs (\ttt{surf\_d3}, \ttt{surf\_d5}, and the color code).
 dictates: in hits per step at equal steps, they are neutral for $n \le 256$ (identical law) and on \ttt{bb\_72}
 ($1.07\times$, $n = 432$), but help on the larger DEMs (mitten $6.5\times$, \ttt{shyps\_225} $33\times$, and
 \ttt{dgross\_288}, where only window steps found weight-18 codewords, the lightest in these runs; the row slabs of the
-binary later found weight $16$, and \ttt{qec\_cert} certifies $14 \le d \le 16$), and \ttt{V6\_cnt\_win} is the best
+binary later found weight $16$, whose codewords found lie in the first of the two detector layers, see
+Stage~\ref{stage:slab}, and \ttt{qec\_cert} certifies $14 \le d \le 16$), and \ttt{V6\_cnt\_win} is the best
 variant there
 ($23\times$ on mitten and $1{,}075\times$ on \ttt{shyps\_225} over \ttt{V0\_unif} in \ttt{hits/s}). The same DEMs with
 randomly permuted columns lose the gain (mitten $6.52\times \to 0.69\times$, SHYPS $32.95\times \to 1.37\times$,
@@ -3205,8 +3213,8 @@ apply in each regime, and the results that justify each entry.
 \caption{Applicability of the pipeline stages by input regime (R1: multi-round DEMs; R2: $T = 1$ DEMs; R3: extended
 CSS matrices and code-sized models; R4: static CSS codes, split by the degeneracy weight $w_{\deg}$). ``On'': run by
 default; ``gate'': run only if the stated test passes; ``off'': skip; ``expl.'': only on request in \ttt{dist-m4ri}
-(\ttt{rw\_opt} bits 2 and 4), which departs from the proposals here as described in
-Section~\ref{sec:roadmap}.}\label{tab:stage_matrix}
+(\ttt{rw\_opt} bit 2), and ``auto in C'': in the automatic mask of \ttt{dist-m4ri} (\ttt{rw\_opt} bit 4), both of
+which depart from the proposals here as described in Section~\ref{sec:roadmap}.}\label{tab:stage_matrix}
 \smallskip
 \scriptsize
 \setlength{\tabcolsep}{3.0pt}
@@ -3219,14 +3227,15 @@ Stage & R1 ($T \ge 2$) & R2 ($T = 1$) & R3 (extended) & R4, $w_{\deg} = 3$ & R4,
 \midrule
 1: $\Tc$ enumeration & on & on & on (matrix input) & on & on (returns $\emptyset$) \\
 2: contraction + filter & on & on & on & on & vacuous; $\Gc$-shortening (Thm.~\ref{thm:known_gen}; expl.) \\
-3: row-slab windows & gate ($m \ge 600$) proposed; expl.\ (fewer hits/s in C) & off ($m = 2 m_{\mathrm{meas}}$);
-  expl.\ (can help) & off (no time axis) & off & off \\
+3: row-slab windows & gate ($m \ge 600$) proposed; off in C (fewer hits/s), auto only without round structure and
+  $m \le 640$ & off ($m = 2 m_{\mathrm{meas}}$) proposed; auto in C (the two detector layers) & off (no time axis) &
+  off & off \\
 4: sparse-dual RREF & gate ($m \times n > 512$~KiB, $n/m \ge 20$ or $m \ge 1{,}400$) & off (cache) & off (cache,
   $n/m \le 9$) & off & off \\
 5: canonical stopping & on ($\mathrm{canon}_{\Tc}$) & on ($\mathrm{canon}_{\Tc}$) & on ($\mathrm{canon}_{\Tc}$) &
   on ($\mathrm{canon}_{\Tc}$) & $\mathrm{canon}_{\mathcal{E}}$ (Prop.~\ref{prop:even_swaps}) \\
-\ttt{win=256} windows & on (hybrid) & on for $n \gtrsim 10^3$ (circuit column order) & off (ext.); DEM-ordered models
-  only & off & off \\
+\ttt{win=256} windows & on (hybrid) & on for $n \gtrsim 10^3$ (circuit column order); in C, the slabs instead & off
+  (ext.); DEM-ordered models only & off & off \\
 MIS Drop & off & off & off & off & off \\
 Justification & Props.~\ref{prop:hook_triangulation}, \ref{prop:sparse_dual}, Thms.~\ref{thm:mis_push},
   \ref{thm:contraction_dominance} & Lem.~\ref{lem:single_cycle}, Prop.~\ref{prop:hook_triangulation} &
@@ -3284,13 +3293,27 @@ and the dispatch rules after the list select the stages for each input regime of
     \emph{Justification:} Theorem~\ref{thm:mis_push}(a) makes slab steps free of the ambushes of
     Theorem~\ref{thm:ambush} whenever the MIS spans the slab, and the survival-versus-speed accounting of
     Proposition~\ref{prop:mis_drop}(b) explains why restricting the candidates to a slab pays off on deep DEMs
-    whereas MIS Drop does not. \emph{In \ttt{dist-m4ri}} (\ttt{rw\_opt} bit 4) the slabs (of $\min(320, m/2)$
-    detectors, boundary slabs with probability $15\%$ each) are explicit only: on the window steps of deep circuit
-    DEMs they found fewer minimum-weight codewords per second than the index windows with Stage~\ref{stage:contract}
-    ($0.43\times$ on \ttt{shyps\_225}, $0.6\times$ on \ttt{gross\_144}); on the single-round double-gross DEM they
-    found weight $16$ in all of $10$ runs, where the automatic mask found $17$--$18$, but slab steps often re-find
-    the same few codewords (e.g., $4$ codewords hit $942$ times on \ttt{mitten\_150} at $T = 1$), which inflates the
-    vector statistic $\langle n \rangle$ (the canonical rule of Stage~\ref{stage:conv} ignores window steps).
+    whereas MIS Drop does not. \emph{In \ttt{dist-m4ri}} (\ttt{rw\_opt} bit 4) a slab has $m_{\mathrm{sub}} = m/2$
+    detectors and is one of the two boundary slabs, $r_0 = 0$ or $r_0 = m/2$, on every other step, the other steps
+    being uniform: on a $T = 1$ DEM, the two slabs are its two detector layers (the detectors of the measured checks
+    of the memory basis, and those of the same checks with the final readout, Section~\ref{subsec:t1}), and a slab
+    step reaches exactly the codewords whose detectors lie in one layer, which the uniform steps and the index windows
+    hardly find. In a study of the row slabs (\ttt{scratch/slab\_study/REPORT.md}: $1{,}482$ runs on four $T = 1$
+    DEMs, five deep DEMs with $T = 7$--$13$, and a static code), all $36$ codewords of weight $16$ found for the
+    $T = 1$ double-gross DEM lie in its first layer; the uniform steps reached weight $16$ in $1$ of $30$ runs and the
+    index windows in none, the slabs on every other step in every run (with the boundary slabs only in $3{,}373$
+    steps, against $9{,}092$ with the earlier $15\%$ per boundary slab and uniform starts otherwise; heights of $m/8$,
+    $m/4$, or $3m/4$, or random heights did worse). Elsewhere the slabs found only the one-layer codewords (none of the
+    $100$ of weight $7$ of \ttt{mitten\_150} at $T = 1$, whose runs with slabs only ended at weight $8$), hence the
+    uniform steps in between (never slabs only); on the deep DEMs they were slower and covered less than the uniform
+    steps and the index windows (earlier, on the window steps with Stage~\ref{stage:contract}, $0.43\times$ the
+    minimum-weight codewords per second of the index windows on \ttt{shyps\_225} and $0.6\times$ on
+    \ttt{gross\_144}). Slab steps re-find the same codewords over and over (a slab hit was worth $0.16$--$0.31$
+    uniform draws on the $T = 1$ DEMs, and nothing once the layer was exhausted): counted in the vector statistic
+    $\langle n \rangle$, their hits stopped \ttt{RW} with $41$--$86\%$ of the minimum-weight codewords found, and
+    those of the index windows with $71$--$89\%$, against $99\%$ without them, so that the binary counts neither with
+    a nonzero resolved \ttt{rw\_opt} (the canonical rule of Stage~\ref{stage:conv} counts uniform steps only); see bit
+    4 below for the automatic mask.
   \item\label{stage:dual} \textbf{Sparse-Dual $m \times m$ Inverse RREF (when $m \times n$ spills L2 cache and $n/m
     \ge 20$ or $m \ge 1{,}400$):} Across $m \ge 420$, \ttt{V2\_dual} / \ttt{V2\_push} step rate spans
     $0.83\times$--$2.66\times$ ($0.83\times$--$0.96\times$ at $m \le 600, n/m < 15$, versus $1.16\times$ on
@@ -3347,8 +3370,10 @@ quantities that are known after the input is loaded and Stage~\ref{stage:enum} h
     Stage~\ref{stage:slab} on a DEM with $m \ge 600$ and $T \ge 2$, and Stage~\ref{stage:dual} on an L2 spill of the
     dense $m \times n$ matrix together with $n/m \ge 20$ or $m \ge 1{,}400$. Both gates fail for $T = 1$ DEMs,
     extended matrices, and static codes of the sizes considered here (Lemma~\ref{lem:single_cycle},
-    Proposition~\ref{prop:hook_chain}(d)). (The C implementation keeps the slabs explicit only, as their gain was not
-    confirmed on deep DEMs but appeared on a $T = 1$ DEM; see Stage~\ref{stage:slab}.)
+    Proposition~\ref{prop:hook_chain}(d)). (The C implementation turns the slab gate around: no automatic slabs on
+    deep DEMs, where their gain was not confirmed, but automatic slabs on a DEM with a single round or without round
+    structure (and $m \le 640$), whose two boundary slabs are, at $T = 1$, its two detector layers; see
+    Stage~\ref{stage:slab} and bit 4 below.)
   \item\label{disp:stop} \textbf{One stopping rule, regime-specific keys.} Key the coverage table by
     $\mathrm{canon}_{\Tc}$ when $\Tc \neq \emptyset$, by $\mathrm{canon}_{\mathcal{E}}$ when $\Tc = \emptyset$ and $G$
     is given, and by raw vectors otherwise; accumulate counts from uniform steps only; and report
@@ -3373,8 +3398,20 @@ $> 2$), and for quantum inputs (a matrix $L$) except bit 4. The automatic mask f
     wall-clock gain was measured in C; $\Gc$ is the rows of $G$ (no search of $\operatorname{rowspan}(G)$ for lighter
     elements), the descent runs before the contraction, and the filter is off when codewords are collected. The key
     $\mathrm{canon}_{\mathcal{E}}$ uses the even rows of $G$ automatically with bit 16.
-  \item Bit 4 (Stage~\ref{stage:slab}, D4): explicit only (see Stage~\ref{stage:slab}); DEMs in time order with
-    \ttt{kwin=0}, not with sorted rows.
+  \item Bit 4 (Stage~\ref{stage:slab}, D4): DEMs in time order with \ttt{kwin=0}, not with sorted rows, and with at
+    least $4$ detectors; on every other step, a slab replaces the index window of the hybrid steps (also for $n <
+    500$), with $m_{\mathrm{sub}} = m/2$ and only the two boundary slabs (the study options \ttt{slab\_rows},
+    \ttt{slab\_bnd}, \ttt{slab\_var}, and \ttt{slab\_every} $\ge 2$ change them, but never to slabs only). Automatic
+    for a DEM whose rounds are given as $T = 1$ (\ttt{dem\_rounds=1}; \ttt{dist\_m4ri.py} passes the rounds $T$ of a
+    Stim circuit, the largest number of measurements of a qubit, $T \ge 2$ excluding the slabs) or, with $T$ not given
+    (\ttt{dem\_rounds=0}), for a DEM without round structure and with $m \le 640$: the time-translation estimate of
+    the input summary finds no shift of the
+    errors by $D$ detectors, $2 \le D \le m/3$ (at least three detector layers), which maps at least half of them to
+    other errors. A $T = 1$ DEM, with its two layers, never has one (the slabs gain where codewords are confined to
+    one layer; on the $T = 1$ DEM of a folded double-gross circuit, the earlier slabs gave no gain), nor do folded
+    schedules of several rounds, whose rounds alternate between two forms, or DEMs whose detectors are not in time
+    order; \ttt{dem\_rounds} $\ge 2$ excludes the automatic slabs. The run plan and the input summary say which rule
+    applies.
   \item Bit 8 (Stage~\ref{stage:dual}, D4): automatic with the 512~KiB test above and $n \ge 20 m$ or $m \ge 1{,}400$,
     for at most $64$ rows of $L$; it changes no information set, but needs less memory per thread, so that the memory
     throttling allows more \ttt{RW} threads; the binary polls its stop flags in the column loops (since 0.17.1).
@@ -3395,7 +3432,13 @@ $> 2$), and for quantum inputs (a matrix $L$) except bit 4. The automatic mask f
     every other step, for \ttt{kwin=0} and $n \ge 500$, wrap around the last column (unlike the non-wrapping windows
     of the prototypes); with \ttt{rw\_opt} $\neq 0$ they are used only for DEMs (\ttt{fdem}) or with
     \ttt{win\_hyb} $> 0$, not for matrices, also when no stage applies; code-sized models given as matrices thus get
-    no windows by default.
+    no windows by default. With bit 4, the slabs take their place.
+  \item The vector rule $\langle n \rangle$ (without bit 16, or beyond its tables): with a nonzero resolved mask, only
+    the hits of the uniform steps, of CC, and of \ttt{finC} count, and those of the windows of \ttt{kwin} $> 0$ (every
+    step a window), not those of the slabs of bit 4 and of the hybrid index windows, which re-find the same codewords
+    over and over (Stage~\ref{stage:slab}; the binary prints them apart); $\langle n \rangle$ is the average over the
+    codewords with a counted hit, and the rule is inactive while no codeword of the minimum weight has one. With the
+    resolved mask $0$, all hits count, as in version 0.16.1.
 \end{itemize}
 
 \appendix

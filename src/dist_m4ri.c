@@ -54,10 +54,12 @@
  * Stage 1 enumerates the weight-3 degeneracies T_3 before the run; the RW candidates are then shortened (Stage 2: the
  * T_3 contraction and the rows of G, see rw_candidate()), and a shortened candidate which is reducible is replaced by
  * an irreducible part; the pairs skip the columns of the Stern filters (rw_filters_exact()); Stage 3 adds row-slab
- * windows of a DEM, Stage 4 the sparse-dual elimination (less memory per RW thread, hence more RW threads under the
- * memory throttling, see rw_thread_cap()); the codewords of a step are recorded once at its end (rw_rec_t); and with
- * Stage 5 the `min_hits` stop counts the canonical classes of the minimum weight found in the uniform steps
- * (rw_canon_converged(); no stop without such a codeword, see min_hits_rule()) instead of the average hits <n>.
+ * windows of a DEM (the two detector layers of a single round, automatic for such a DEM, see rw_slab_auto()), Stage 4
+ * the sparse-dual elimination (less memory per RW thread, hence more RW threads under the memory throttling, see
+ * rw_thread_cap()); the codewords of a step are recorded once at its end (rw_rec_t); and with Stage 5 the `min_hits`
+ * stop counts the canonical classes of the minimum weight found in the uniform steps (rw_canon_converged(); no stop
+ * without such a codeword, see min_hits_rule()) instead of the average hits <n>, which counts neither the hits of the
+ * row slabs nor those of the hybrid index windows (rw_nhits_sources()).
  *
  * Timing model (method=2, 3): the CC work of a round is measured as the total CC thread time, and the work of the
  * next round is extrapolated with the growth factor of the last two rounds.  With a timeout, a CC round predicted not
@@ -1379,10 +1381,11 @@ static void steplog_cw(const steplog_t * const sl, steplog_thr_t * const s, cons
   s->plen += (size_t)cnt;
 }
 
-/* Record the RW codeword `ee` of weight `cnt` (sorted indices) found in a step with a uniform random permutation or
- * with a window (`src`: CW_SRC_RW_UNIFORM or CW_SRC_RW_WINDOW): add it to the hash (or count one more hit), update
- * the upper bound dmax and the stop flags (`ksub` > 0 only for the message).  rw_record_locked() is the part under
- * `cw_mutex` before the stop checks of rw_record_checks(), which can follow several codewords (see rw_rec_flush()). */
+/* Record the RW codeword `ee` of weight `cnt` (sorted indices) found in a step with a uniform random permutation, with
+ * a window, or in a row slab (`src`: CW_SRC_RW_UNIFORM, CW_SRC_RW_WINDOW, or CW_SRC_RW_SLAB): add it to the hash (or
+ * count one more hit), update the upper bound dmax and the stop flags (`ksub` > 0 only for the message).
+ * rw_record_locked() is the part under `cw_mutex` before the stop checks of rw_record_checks(), which can follow
+ * several codewords (see rw_rec_flush()). */
 static void rw_record_locked(distfork_ctx_t * const ctx, const rci_t * const ee, const int cnt, const int tid,
                              const int ksub, const int src) {
   params_t * const p = ctx->p;
@@ -1446,8 +1449,11 @@ static void rw_record_checks(distfork_ctx_t * const ctx) {
         codeword_hit_stats(p, &st);
         fprintf(stderr,
                 "# RW convergence reached: <n>=%.2f >= min_hits=%d average hits per codeword (%lld cws of weight "
-                "%d..%d; w=%d: %lld cws, %lld hits), P_fail ~ exp(-<n>) = %.2g\n",
-                st.avg, p->min_hits, st.set_cws, st.w_lo, st.w_hi, st.w_lo, st.min_cws, st.min_hits, exp(-st.avg));
+                "%d..%d; w=%d: %lld cws, %lld hits), P_fail ~ exp(-<n>) = %.2g", st.avg, p->min_hits, st.set_cws,
+                st.w_lo, st.w_hi, st.w_lo, st.min_cws, st.min_hits, exp(-st.avg));
+        if (st.excl_hits > 0) /* (see rw_nhits_sources()) */
+          fprintf(stderr, "; %lld window and slab hits not counted", st.excl_hits);
+        fprintf(stderr, "\n");
       }
     }
     if (p->method == 1) {
@@ -1746,7 +1752,7 @@ static inline int rw_pairs_limit(distfork_ctx_t * const ctx) {
 /* The codewords found in the current RW step of a thread (rw_rec_buf): their sorted supports and keys (the first
  * `nflushed` of them recorded), and the canonical classes counted in this step */
 typedef struct {
-  int src;              /* the kind of the step: CW_SRC_RW_UNIFORM or CW_SRC_RW_WINDOW */
+  int src;              /* the kind of the step: CW_SRC_RW_UNIFORM, CW_SRC_RW_WINDOW, or CW_SRC_RW_SLAB */
   int nrec, cap;        /* the codewords of the step (room for `cap`) */
   int nflushed;         /* the codewords 0..nflushed-1 are recorded */
   int *off, *wt;        /* their supports pool[off..off+wt-1] */
@@ -2796,13 +2802,14 @@ static inline uint32_t slab_gen(rw_thr_t * const th, const int nvar) {
 }
 
 /* Stage 3 (rw_opt, RW_OPT_SLAB): a row-slab window step, instead of the index window of a hybrid step.  The columns of
- * H inside a range of slab_msub consecutive rows (the detectors of a DEM in time order), from the row r0 = 0 or
- * m - msub with probability 15% each (the boundary slabs), otherwise uniform, ordered by a random maximal independent
+ * H inside a range of slab_msub consecutive rows (the detectors of a DEM in time order; default m/2), from the row
+ * r0 = 0 or m - msub with probability slab_bnd percent each (the boundary slabs: with the default 50, only these, the
+ * two detector layers of a single round), otherwise uniform, ordered by a random maximal independent
  * set of the triplet graph G_3 first, then the others (MIS push-back, Theorem 2(a) of the notes), each part in random
  * order; the slab matrix (msub rows) is reduced (Gauss-Jordan), and its single columns and pairs give codewords of H
  * (the slab columns touch no other row), mapped back to the columns of H.  The study options slab_bnd and slab_var
- * change the probability of the boundary slabs and reduce the height msub at random (with their defaults, the same
- * random numbers are drawn).  Returns the rank of the slab matrix (-1: stopped in its elimination or in the pairs;
+ * change the probability of the boundary slabs and reduce the height msub at random (slab_var=0 draws no random
+ * number for the height).  Returns the rank of the slab matrix (-1: stopped in its elimination or in the pairs;
  * then the step does not count as completed). */
 static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pairs_ws_t * const pws, rci_t * const ee,
                         uint64_t * const rng, const int tid, long long * const hits1, long long * const hits2,
@@ -2922,7 +2929,7 @@ static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pair
     const int l = rw_pairs_bits(p, ns, rank, atomic_load_explicit(&ctx->dmax, memory_order_relaxed));
     if (l > 0) {
       const rw_view_t v = {NULL, th->T, (size_t)rw, ns, th->cols, 0};
-      if (rw_pairs_step(ctx, &v, NULL, th->spivs, th->spmask, rank, l, pws, ee, rng, tid, CW_SRC_RW_WINDOW, n_pairs,
+      if (rw_pairs_step(ctx, &v, NULL, th->spivs, th->spmask, rank, l, pws, ee, rng, tid, CW_SRC_RW_SLAB, n_pairs,
                         hits2, th, false, NULL, NULL) < 0)
         return -1; /* (stopped in the pairs: the step is not completed) */
     }
@@ -3051,7 +3058,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
       }
     }
     const bool uniform = !slab && !(eff_kwin > 0 && eff_kwin < nvar);
-    const int src = uniform ? CW_SRC_RW_UNIFORM : CW_SRC_RW_WINDOW;
+    const int src = slab ? CW_SRC_RW_SLAB : (uniform ? CW_SRC_RW_UNIFORM : CW_SRC_RW_WINDOW);
     if (th) rec_step(&th->rec, src);
     if (slt) {
       steplog_step_begin(slt);
@@ -3840,7 +3847,7 @@ static void ctx_status(distfork_ctx_t * const ctx) {
   if (ctx->status_next <= t) ctx->status_next = t + ctx->status_dt;
   ctx->status_dt = (2.0 * ctx->status_dt < 60.0) ? 2.0 * ctx->status_dt : 60.0;
 
-  char cc_str[160] = "", rw_str[224] = "";
+  char cc_str[160] = "", rw_str[320] = "";
   if (p->method >= 2) {
     if (ctx->round_open) {
       int len = snprintf(cc_str, sizeof(cc_str), "; CC round w=%d: %.1f%% of start columns claimed, %.3gs",
@@ -3876,9 +3883,14 @@ static void ctx_status(distfork_ctx_t * const ctx) {
           snprintf(rw_str + len, sizeof(rw_str) - len, ", canonical classes (w=%d): %.2f step incidences per class "
                    "over %lld classes, p_GT=%.3g", cs.w, (double)cs.n_unif / (double)cs.classes, cs.classes,
                    (double)cs.f1 / (double)cs.n_unif);
-      } else if (st.set_cws > 0) {
-        snprintf(rw_str + len, sizeof(rw_str) - len, ", <n>=%.2f over %lld cws of weight %d..%d", st.avg,
-                 st.set_cws, st.w_lo, st.w_hi);
+      } else if (st.min_cws > 0 && st.set_cws > 0) {
+        len += snprintf(rw_str + len, sizeof(rw_str) - len, ", <n>=%.2f over %lld cws of weight %d..%d", st.avg,
+                        st.set_cws, st.w_lo, st.w_hi);
+        if (st.excl_hits > 0 && len > 0 && len < (int)sizeof(rw_str)) /* (see rw_nhits_sources()) */
+          snprintf(rw_str + len, sizeof(rw_str) - len, " (%lld window and slab hits not counted)", st.excl_hits);
+      } else if (st.all_cws > 0) {
+        snprintf(rw_str + len, sizeof(rw_str) - len, ", min_hits stop inactive: no codeword of weight %d in the "
+                 "uniform steps yet (%lld window and slab hits not counted)", st.w_lo, st.excl_hits);
       }
     }
   }
@@ -4704,10 +4716,14 @@ static int rw_stages_plan(const params_t * const p) {
   int act = 0;
   if ((want & RW_OPT_T3) && quantum) act |= RW_OPT_T3; /* D1: always enumerate (nothing is kept if T_3 is empty) */
   if ((want & RW_OPT_GEN) && quantum && p->spaG && expl) act |= RW_OPT_GEN; /* D2: no wall-clock gain measured */
-  /* D4, row slabs: explicit only; on the window steps of deep DEMs (m >= 600, three rounds or more), the slabs found
-   * fewer minimum-weight codewords per second than the index windows with the contraction of Stage 2 (0.43x on
-   * shyps_225, 0.6x on gross_144 circuit DEMs, and no distance on a repetition-code DEM with d=51) */
-  if ((want & RW_OPT_SLAB) && expl && p->fdem && p->kwin == 0 && !p->rows_sorted && m >= 4) act |= RW_OPT_SLAB;
+  /* D4, row slabs: explicit, or automatic for a DEM with a single round (dem_rounds=1) or without round structure
+   * (and m <= RW_SLAB_AUTO_MMAX, see rw_slab_auto()), whose boundary slabs are its two detector layers: they reach the
+   * codewords confined to one layer, e.g., the weight-16 codewords of the double-gross DEM with one round, which the
+   * uniform steps and the index windows hardly find (the row-slab study); on the window steps of deep DEMs (m >= 600,
+   * three rounds or more), the slabs found fewer minimum-weight codewords per second than the index windows with the
+   * contraction of Stage 2 (0.43x on shyps_225, 0.6x on gross_144 circuit DEMs, and no distance on a repetition-code
+   * DEM with d=51) */
+  if ((want & RW_OPT_SLAB) && rw_slab_input(p, expl)) act |= RW_OPT_SLAB;
   if ((want & RW_OPT_DUAL) && quantum && p->maskL->kw == 1) { /* D4: the dense m x n matrix spills L2 */
     const double dense = (double)m * (double)((n + 63) / 64) * 8.0;
     if (expl || (dense > 512.0 * 1024.0 && ((double)n >= 20.0 * m || m >= 1400))) act |= RW_OPT_DUAL;
@@ -4715,6 +4731,20 @@ static int rw_stages_plan(const params_t * const p) {
   if ((want & RW_OPT_CANON) && (quantum || expl) && p->kwin <= 0 && p->min_hits > 0) act |= RW_OPT_CANON; /* D5 */
   if ((want & RW_OPT_EXPAND) && quantum && (p->outC || p->maxC > 0)) act |= RW_OPT_EXPAND;
   return act;
+}
+
+/* The sources of the hits counted for the `min_hits` statistic <n> (codeword_hit_stats(); p->nhits_src, a bitmask of
+ * 1 << CW_SRC_*), once the RW stages are resolved (p->rw_active).  With RW stages (a nonzero resolved rw_opt), not the
+ * hits of the row slabs of Stage 3 and of the window steps (the hybrid index windows), which find the same codewords
+ * over and over (the row-slab study: the vector rule stopped with 41-89% of the codewords found when it counted them,
+ * 99% without), but the window hits when every RW step has a window (kwin > 0: no uniform steps, so that min_hits can
+ * stop RW); without RW stages (rw_opt=0, or an automatic rw_opt which resolves to 0, e.g., for a classical code), all
+ * hits, as in version 0.16.1.  The hits of the uniform steps, of CC, and of finC always count. */
+static int rw_nhits_sources(const params_t * const p) {
+  if (p->rw_active == 0) return CW_SRC_ALL;
+  int src = CW_SRC_ALL & ~(1 << CW_SRC_RW_SLAB);
+  if (!(p->kwin > 0 && p->kwin < p->spaH->cols)) src &= ~(1 << CW_SRC_RW_WINDOW);
+  return src;
 }
 
 /* Stage 1 of rw_opt and the tables of the RW stages, on the matrix that RW searches (after merge and drop), before the
@@ -4757,6 +4787,12 @@ static void print_run_plan(const distfork_ctx_t * const ctx, const int init_dmax
   if ((p->method & 1) && ctx->rw_threads > 0) {
     fprintf(stderr, ", steps=%ld, min_hits=%d, ksub=%d", ctx->total_rw_steps, p->min_hits, p->ksub);
     if (p->rw_opt != 0) fprintf(stderr, ", rw_opt=0x%x", (unsigned int)ctx->rw_active);
+    if ((ctx->rw_active & RW_OPT_SLAB) && p->rw_opt < 0) { /* (the automatic row slabs, see rw_slab_auto()) */
+      if (p->dem_rounds == 1)
+        fprintf(stderr, " (row slabs: dem_rounds=1)");
+      else
+        fprintf(stderr, " (row slabs: no round structure, m <= %d)", RW_SLAB_AUTO_MMAX);
+    }
     if (p->rw_active != 0 && p->ksub <= 0 && p->kwin == 0 && p->nvar >= 500 && !rw_hybrid_on(p, p->nvar))
       fprintf(stderr, " (matrices with rw_opt != 0: no hybrid windows)"); /* (Rule D3, on the resolved mask) */
   }
@@ -5238,6 +5274,7 @@ int main(int argc, char **argv) {
   rw_gdb_t *gdb = NULL;
   uint64_t *zcol = NULL;
   if (p->rw_active) rw_stages_setup(p, mHT, &t3, &gdb, &zcol);
+  p->nhits_src = rw_nhits_sources(p); /* (the hits of <n>, on the final mask; those before the search count anyway) */
 
   double timeout = (p->timeout > 0.0) ? p->timeout : 0.0;
 
@@ -5369,7 +5406,7 @@ int main(int argc, char **argv) {
   if (p->rw_active & RW_OPT_SLAB) { /* Stage 3: the columns by their smallest row, and their largest rows */
     const int m = p->spaH->rows, nv = p->spaH->cols;
     ctx.slab_on = 1;
-    ctx.slab_msub = (p->slab_rows > 0) ? minint(p->slab_rows, m) : minint(320, m / 2);
+    ctx.slab_msub = (p->slab_rows > 0) ? minint(p->slab_rows, m) : m / 2; /* (the two detector layers of T = 1) */
     ctx.slab_bnd = p->slab_bnd;
     ctx.slab_var = p->slab_var;
     ctx.slab_every = p->slab_every;
@@ -5390,10 +5427,10 @@ int main(int argc, char **argv) {
       if (mHT->p[j + 1] > mHT->p[j]) ctx.slab_order[cur[mHT->i[mHT->p[j]]]++] = j;
     free(cur);
   }
-  const bool slab_study = (p->slab_rows != 0 || p->slab_bnd != 15 || p->slab_var != 0 || p->slab_every != 2);
+  const bool slab_study = (p->slab_rows != 0 || p->slab_bnd != 50 || p->slab_var != 0 || p->slab_every != 2);
   if (slab_study && !ctx.slab_on) /* (the study options of the row slabs, see rw_slab_step()) */
     fprintf(stderr, "# WARNING: slab_rows, slab_bnd, slab_var, and slab_every are ignored: no row slabs in this run "
-            "(rw_opt 4 with a DEM, kwin=0, sort_rows=0)\n");
+            "(rw_opt 4 with a DEM, kwin=0, sort_rows=0; automatic for a single round, see rw_opt)\n");
   else if (slab_study && (p->debug & DBG_PROGRESS))
     fprintf(stderr, "# RW row slabs (study options): %d of %d detectors (slab_rows=%d), boundary slabs %d%% each, "
             "height reduced by up to %d%%, a slab on 1 of every %d RW steps\n", ctx.slab_msub, p->spaH->rows,
@@ -5585,6 +5622,14 @@ int main(int argc, char **argv) {
 
   if (p->debug & DBG_SUMMARY) {
     print_codeword_stats(stderr, p);
+    if (min_hits_rule(p) == MIN_HITS_VECTOR && atomic_load(&ctx.rw_steps_completed) > 0) { /* (rw_nhits_sources()) */
+      cw_hit_stats_t st;
+      codeword_hit_stats(p, &st);
+      if (st.all_cws > 0 && st.min_cws <= 0) /* why the min_hits stop could not fire */
+        fprintf(stderr, "# Note: the min_hits stop was inactive: no codeword of the minimum weight %d was found in a "
+                "uniform RW step (<n> does not count the %lld hits of the window and slab steps)\n", st.w_lo,
+                st.excl_hits);
+    }
     const long long red_cc = atomic_load(&ctx.cw_red_cc), red_rw = atomic_load(&ctx.cw_red_rw);
     if (red_cc > 0 || red_rw > 0) /* (see cw_irreducible(); a codeword found several times is counted each time) */
       fprintf(stderr, "# reducible codewords skipped (irred=1, a codeword plus a disjoint nonzero vector with zero "
@@ -5628,12 +5673,13 @@ int main(int argc, char **argv) {
           fprintf(stderr, "# Note: more than %zu canonical classes or codewords: the min_hits rule of the codeword "
                   "hash was used\n", (size_t)RW_CANON_MAX);
         } else if (cs->n_unif <= 0 && p->min_hits > 0) { /* why the min_hits stop could not fire (rw_opt bit 16) */
-          long long win_cws = 0; /* the codewords of the weight w in hash found by the window steps (information) */
+          long long win_cws = 0; /* the codewords of the weight w in hash found by the window or the slab steps */
           for (const cw_vec_t *cw = p->codewords; cw != NULL; cw = (const cw_vec_t *)(cw->hh.next))
-            win_cws += (cw->weight == cs->w) && (cw->cnt_w > 0);
+            win_cws += (cw->weight == cs->w) && (cw->cnt_w > 0 || cw->cnt_s > 0);
           fprintf(stderr, "# Note: the min_hits stop was inactive: no codeword of the minimum weight %d was found in "
-                  "a uniform RW step (the canonical classes of rw_opt 16 count only these; the window steps found %lld "
-                  "codewords of weight %d in hash, not used to stop)\n", cs->w, win_cws, cs->w);
+                  "a uniform RW step (the canonical classes of rw_opt 16 count only these; the %s found %lld "
+                  "codewords of weight %d in hash, not used to stop)\n", cs->w,
+                  ctx.slab_on ? "row slabs" : "window steps", win_cws, cs->w);
         }
       }
       double fsum[2] = {0.0, 0.0};
@@ -5697,11 +5743,11 @@ int main(int argc, char **argv) {
   if (p->debug & DBG_CWDUMP) {
     cw_vec_t *cw;
     fprintf(stderr, "# all %lld codewords in hash (1-based columns, cnt: number of hits, of which u in RW steps with "
-            "uniform permutations and w in RW steps with windows):\n", p->num_cws);
+            "uniform permutations, w in RW steps with windows, and s in row slabs):\n", p->num_cws);
     for (cw = p->codewords; cw != NULL; cw = (cw_vec_t *)(cw->hh.next)) {
       fprintf(stderr, "# cw: [ ");
       for (int i = 0; i < cw->weight; i++) fprintf(stderr, "%d ", 1 + col_orig_index(p, cw->arr[i]));
-      fprintf(stderr, "] cnt=%d (u=%d, w=%d)\n", cw->cnt, cw->cnt_u, cw->cnt_w);
+      fprintf(stderr, "] cnt=%d (u=%d, w=%d, s=%d)\n", cw->cnt, cw->cnt_u, cw->cnt_w, cw->cnt_s);
     }
   }
 

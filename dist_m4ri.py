@@ -535,6 +535,13 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
     - "rw_fkg" (from '# RW FKG score: ...'): the running means of the Harris-FKG score L_FKG(J) of the information
       sets, {"mean_unif", "steps_unif": over the uniform RW steps, "mean_win", "steps_win": over the window steps,
       "neg_lnC": the value printed as -lnC (the uniform-subset model, -ln C(n, r))}.
+
+    The codewords found by the step types (from '# RW step types, w=...'): "rw_step_types", {w: {"uniform_cws",
+    "uniform_hits", "window_cws", "window_hits", "slab_cws", "slab_hits" (the row slabs of rw_opt 4; 0 from binaries
+    which do not print them), "both_cws" (found by the uniform and by the other steps), "cws"}}; and with the min_hits
+    statistic <n> (avg_hits), "hits_not_counted": the hits of the row slabs and of the window steps which <n> does not
+    count (with a nonzero resolved rw_opt; absent if none), and "min_hits_inactive" also for the rule of <n> (no
+    codeword of the minimum weight with a counted hit).
     """
     import re
     stats: Dict[str, Any] = {"extra_weights": [], "rw_converged": False, "hit_warnings": []}
@@ -597,14 +604,14 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
                 stats["rw_hits_pairs"] = int(m_p.group(2))
                 stats["rw_hits_single"] = int(m_p.group(3))
             continue
-        if line_s.startswith("# RW step types, w="):  # the codewords found by the uniform and by the window steps
+        if line_s.startswith("# RW step types, w="):  # the codewords found by the uniform, window, and slab steps
             m_st = re.search(r"w=(\d+): uniform steps: cws=(\d+), hits=(\d+); window steps: cws=(\d+), hits=(\d+); "
-                             r"both: cws=(\d+) \(of (\d+) cws\)", line_s)
+                             r"(?:row slabs: cws=(\d+), hits=(\d+); )?both: cws=(\d+) \(of (\d+) cws\)", line_s)
             if m_st:
-                v = [int(x) for x in m_st.groups()]
+                v = [int(x) if x is not None else 0 for x in m_st.groups()]  # (no row slabs before the binary said so)
                 stats.setdefault("rw_step_types", {})[v[0]] = {
                     "uniform_cws": v[1], "uniform_hits": v[2], "window_cws": v[3], "window_hits": v[4],
-                    "both_cws": v[5], "cws": v[6]}
+                    "slab_cws": v[5], "slab_hits": v[6], "both_cws": v[7], "cws": v[8]}
             continue
         if line_s.startswith("# RW triplets:"):  # the RW pipeline (rw_opt != 0): Stage 1, the weight-3 relations T3
             m_t = re.search(rf"T3=(-?\d+) \({num} ms\), G_rows=(-?\d+), rw_opt=0x([0-9a-fA-F]+)", line_s)
@@ -681,6 +688,9 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
             )
             if "not used: the canonical classes decide" in line_s:  # (since version 0.17.2 of the binary)
                 stats["canon_decides"] = True
+            m_nc = re.search(r", (\d+) window and slab hits not counted", line_s)
+            if m_nc:  # (the hits of the row slabs and of the window steps, not counted for <n>)
+                stats["hits_not_counted"] = int(m_nc.group(1))
             if m_set:
                 stats["avg_hits"] = float(m_set.group(1))
                 stats["set_cws"] = int(m_set.group(2))
@@ -853,19 +863,27 @@ def explain_bounds(
             if stats.get("min_hits", 0) > 0 and "avg_hits" in stats:
                 import math
                 conv_str = "CONVERGED" if stats.get("rw_converged") else "not converged"
+                excl = stats.get("hits_not_counted", 0)
+                excl_str = (f"; the {excl} hits of the row slabs and of the window steps are counted apart, not in "
+                            f"<n>" if excl > 0 else "")
                 if _canon_rule_decides(stats):  # (rw_opt 16: the canonical classes are the stopping statistic)
                     lines.append(
                         f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}): decided by the canonical classes "
                         f"of rw_opt 16 in the uniform RW steps ({conv_str}; see the stopping rule below); the average "
                         f"<n> = {stats['avg_hits']:.2f} hits per codeword ({stats['set_cws']} codewords of weight "
                         f"{stats['set_w_lo']}..{stats['set_w_hi']}, cov_cws = {stats['cov_cws']}) is not used for the "
-                        f"stop.")
+                        f"stop{excl_str}.")
+                elif stats.get("min_hits_inactive"):  # (the rule of <n>: no codeword of the minimum weight counted)
+                    lines.append(
+                        f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}, cov_cws = {stats['cov_cws']}): "
+                        f"inactive, no codeword of the minimum weight was found in a uniform RW step (the min_hits "
+                        f"stop could not end RW){excl_str} ({conv_str}).")
                 else:
                     lines.append(
                         f"  {prefix}Hit convergence (min_hits = {stats['min_hits']}, "
                         f"cov_cws = {stats['cov_cws']}): <n> = {stats['avg_hits']:.2f} average hits per codeword "
                         f"({stats['set_cws']} codewords of weight {stats['set_w_lo']}..{stats['set_w_hi']}), "
-                        f"P_fail ~ exp(-<n>) = {math.exp(-stats['avg_hits']):.2g} ({conv_str})."
+                        f"P_fail ~ exp(-<n>) = {math.exp(-stats['avg_hits']):.2g} ({conv_str}){excl_str}."
                     )
             for ew in stats.get("extra_weights", []):
                 lines.append(
@@ -875,11 +893,17 @@ def explain_bounds(
                     f"stdev = {ew['hits_stdev']:.2f}."
                 )
             n_all, n_unif = stats.get("rw_steps", 0), stats.get("rw_steps_uniform", 0)
-            for w, st in sorted(stats.get("rw_step_types", {}).items()):
+            types = stats.get("rw_step_types", {})
+            # (a run with the row slabs, i.e., rw_opt bit 4 in the resolved mask, has no index windows)
+            slabs = bool((stats.get("rw_triplets") or {}).get("rw_opt", 0) & 0x04) or any(
+                t.get("slab_cws", 0) > 0 or t.get("slab_hits", 0) > 0 for t in types.values())
+            for w, st in sorted(types.items()):
+                other = (f"{st['slab_cws']} in the {n_all - n_unif} row-slab steps ({st['slab_hits']} hits)"
+                         if slabs else
+                         f"{st['window_cws']} in the {n_all - n_unif} window steps ({st['window_hits']} hits)")
                 lines.append(
                     f"  {prefix}Codewords (w = {w}) by RW step type: {st['uniform_cws']} found in the {n_unif} uniform "
-                    f"steps ({st['uniform_hits']} hits), {st['window_cws']} in the {n_all - n_unif} window steps "
-                    f"({st['window_hits']} hits), {st['both_cws']} in both (of {st['cws']} codewords)."
+                    f"steps ({st['uniform_hits']} hits), {other}, {st['both_cws']} in both (of {st['cws']} codewords)."
                 )
             if stats.get("rw_pairs_l", 0) > 0 and "rw_pairs_per_step" in stats:
                 lines.append(
@@ -1847,7 +1871,7 @@ _CODEDISTANCE_UNUSED: Dict[str, Any] = {
     "dstop": 0, "wmin": 1, "wmax": 0, "smax": None, "dW": -1, "maxC": 0, "finC": None, "nothrottle": False,
     "chunk_size": 0, "ksub": 0, "kwin": 0, "win_mode": 0, "win_hyb": 0, "pairs": -1, "sort_rows": None,
     "cc_prune": None, "min_hits": None, "cov_cws": 100, "refresh": None, "dist_m4ri": None, "pmin": 0.0,
-    "merge": True, "drop": None, "expand": False, "rw_opt": None,
+    "merge": True, "drop": None, "expand": False, "rw_opt": None, "dem_rounds": None,
 }
 
 
@@ -1985,6 +2009,18 @@ def _parse_rw_opt(val: str, arg: str) -> int:
         raise ValueError(f"invalid '{arg}': rw_opt should be -1 (automatic), 0 (off), or a bitmask 1 to 63 (also "
                          f"0x...)")
     return v
+
+
+def _check_dem_rounds(dem_rounds: Any, allow_none: bool = False) -> None:
+    """
+    Raises ValueError unless dem_rounds (the rounds of a DEM for the binary, see run_dist_m4ri()) is an integer >= 0
+    (or None, with allow_none: automatic, see compute_dem_distance()).
+    """
+    if dem_rounds is None and allow_none:
+        return
+    if isinstance(dem_rounds, bool) or not isinstance(dem_rounds, numbers.Integral) or int(dem_rounds) < 0:
+        raise ValueError(f"invalid dem_rounds={dem_rounds!r}: dem_rounds should be 0 (unknown), 1 (a single round), or "
+                         f"the number of rounds")
 
 
 def _check_kwargs(func: Callable[..., Any], kwargs: Dict[str, Any], aliases: Sequence[str] = ("win",)) -> None:
@@ -2977,7 +3013,8 @@ def run_dist_m4ri(
     start_scan: bool = False,
     ortho: bool = True,
     warn_ortho: bool = True,
-    rw_opt: Optional[int] = None
+    rw_opt: Optional[int] = None,
+    dem_rounds: int = 0
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
@@ -2994,6 +3031,11 @@ def run_dist_m4ri(
             and prints a note, see _parse_stderr_stats()).  Ignored without fdem.
         outD: File to which the binary writes the detectors dropped from the DEM fdem (0-based; only the comment line
             '# N of M detectors dropped ...' if none, see read_drop_file()).  Ignored without fdem.
+        dem_rounds: The rounds T of the DEM fdem, if known, passed as dem_rounds=N if positive (0, the default:
+            unknown): 1, a single round of syndrome measurements and the final readout, adds the row slabs of rw_opt
+            4 to the automatic rw_opt (see rw_opt; compute_dem_distance() passes the rounds of a Stim circuit, see
+            circuit_measurement_rounds()); 2 or more: no automatic row slabs; with 0, the binary's automatic rw_opt has
+            them for a DEM without round structure and with at most 640 detectors.  Ignored without fdem.
 
     Orthogonality check:
         ortho: If True (default), the binary checks that the rows of H and G (finG, or fin without finL) are
@@ -3028,14 +3070,17 @@ def run_dist_m4ri(
             window).  kwin=0 (default): the automatic hybrid for n >= 500, an index window of win_hyb columns in every
             other step and uniform random permutations in the others; with a nonzero resolved rw_opt (the run plan;
             e.g., the default rw_opt=None on a quantum code), only for a DEM or with win_hyb > 0 (matrices: uniform
-            random permutations in every step, see rw_opt).  kwin=-1 (any negative value): no windows, uniform random
+            random permutations in every step, see rw_opt), and with the row slabs of rw_opt 4 (e.g., automatic for a
+            single round, see dem_rounds), a slab instead.  kwin=-1 (any negative value): no windows, uniform random
             permutations in every step.
         win_hyb: Window size of the hybrid RW steps, passed as win_hyb=N if nonzero; 0 (default): 256 columns for a
             DEM, 512 for matrices (at most 3n/4).  The windows of 192-256 columns find the minimum-weight codewords of
             circuit DEMs 2-10 times faster than 512, and windows of one round of columns are much slower.  With
             debug & 1 (or verbose=True), the binary prints the rounds of a DEM (estimated from the time translation of
-            its errors: D detectors and L columns per round, also in _last_run_stats["rounds"]; for information only,
-            the search does not use them) and the codewords found by the uniform and by the window steps (see
+            its errors by D detectors, 2 <= D <= m/3, i.e., at least three detector layers: D detectors and L columns
+            per round, also in _last_run_stats["rounds"]; a single round, a folded schedule, or detectors not in time
+            order give no round structure, which the automatic row slabs of rw_opt 4 use, see dem_rounds) and the
+            codewords found by the uniform steps, by the window steps, and by the row slabs (see
             _parse_stderr_stats()).
 
     RW pairs:
@@ -3055,18 +3100,22 @@ def run_dist_m4ri(
             not None (None, the default: the binary's default -1).  -1: automatic, the stages which apply to the input
             (the rules D1-D5 of doc/rw_triplet_degeneracies.tex), for quantum inputs (codes, CSS sectors, and DEMs): 1;
             16 with min_hits > 0 and kwin <= 0; 8 with at most 64 rows of L if the dense m x n matrix exceeds 512 KiB
-            and n >= 20 m or m >= 1400; 32 when collecting codewords (outC, maxC); 2 and 4 only if listed; none for
-            classical codes, nor for runs of at most 2 steps.  0: all stages off (the RW of version 0.16.1, e.g., for
-            regression and ablation runs).  A bitmask 1..63: only the stages listed whose input is there: 1, the
-            weight-3 relations T3 of the columns (found after merge and drop) with the contraction of the candidates of
-            a RW step (the single-column candidates up to the weight min(dmax + 8, 64), the pairs up to
+            and n >= 20 m or m >= 1400; 32 when collecting codewords (outC, maxC); 4 for a DEM with a single round
+            (dem_rounds=1) or without round structure and with at most 640 detectors (see dem_rounds); 2 only if
+            listed; none for classical codes, nor for runs of at most 2 steps.  0: all stages off (the RW of version
+            0.16.1, e.g., for regression and ablation runs).  A bitmask 1..63: only the stages listed whose input is
+            there: 1, the weight-3 relations T3 of the columns (found after merge and drop) with the contraction of the
+            candidates of a RW step (the single-column candidates up to the weight min(dmax + 8, 64), the pairs up to
             min(dmax + 1, 64), + dW when collecting) and the Stern filter of its pairs (loss-free for the distance,
             i.e., the minimum weight, with the contraction, hence only while dmax + 8 <= 64, + dW when collecting; when
             collecting codewords, only with 32: 32 restores the codewords the filter removes through 2 <-> 2 exchanges,
             1 -> 2 splits, and 1 <-> 1 swaps of identical columns, e.g., in finH/finL exported from a DEM without
             merging, or with merge=0, since version 0.17.2); 2, the
             shortening of the candidates by the rows of G (finG; before the contraction of 1); 4, row-slab windows of a
-            multi-round DEM (kwin=0, not with sort_rows=1); 8, the sparse-dual elimination (an m x m inverse instead of
+            DEM in time order (kwin=0, not with sort_rows=1): on every other step (the others uniform), the columns
+            inside the first or the last m/2 detectors, i.e., the two detector layers of a single round, which reach
+            the codewords confined to one layer (e.g., weight 16 of the double-gross DEM with one round), not those
+            across the layers (hence never slabs only); 8, the sparse-dual elimination (an m x m inverse instead of
             the m x n matrix; at most 64 rows of L); 16, the canonical classes of the minimum-weight codewords found by
             the uniform RW steps, which the min_hits stopping rule then counts (Good-Turing and Chao2, see min_hits;
             only with min_hits > 0, not with kwin > 0; tables of up to 2^24 classes, about 640 MiB); 32, the codewords
@@ -3084,7 +3133,11 @@ def run_dist_m4ri(
         min_hits: Passed as min_hits=N if not None and >= 0 (None, the default, or a negative value: the binary's
             default 5): RW ends once the average number of hits <n> per codeword reaches N, both for the codewords
             of the minimum weight found and for a representative set of cov_cws lowest-weight codewords (the hits of
-            all RW steps, with or without windows, and those of CC and finC count).  With the canonical classes of
+            the uniform RW steps, of CC, and of finC count, over the codewords with such a hit; with a nonzero resolved
+            rw_opt, not those of the row slabs of rw_opt 4 and of the hybrid index windows, which find the same
+            codewords over and over, but those of the windows of kwin > 0; with a resolved rw_opt of 0, all hits, as in
+            version 0.16.1; while no codeword of the minimum weight has a counted hit, the stop is inactive, see
+            _last_run_stats["hits_not_counted"] and explain_bounds()).  With the canonical classes of
             rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0 and N > 0), RW ends instead once the
             classes of the minimum weight found by the uniform RW steps (C classes, Q1 and Q2 of them found in exactly
             one and two steps, M step incidences in all) give M >= max(15, 3 N), M / C >= N, the Good-Turing unseen
@@ -3177,6 +3230,7 @@ def run_dist_m4ri(
     if cc_prune is not None and cc_prune not in (0, 1, 2):
         raise ValueError(f"invalid cc_prune={cc_prune!r}: cc_prune should be 0, 1, or 2")
     _check_rw_opt(rw_opt)
+    _check_dem_rounds(dem_rounds)
 
     if method not in (1, 2, 3) or isinstance(method, bool):
         raise ValueError(f"invalid method={method!r}: method should be 1 (RW), 2 (CC), or 3 (both)")
@@ -3236,6 +3290,7 @@ def run_dist_m4ri(
     if cov_cws != 100: cmd.append(f"cov_cws={cov_cws}")
     if refresh is not None: cmd.append(f"refresh={refresh}")
     if rw_opt is not None: cmd.append(f"rw_opt={int(rw_opt)}")
+    if fdem and dem_rounds: cmd.append(f"dem_rounds={int(dem_rounds)}")
 
     if eff_debug & PY_DBG_COMMANDS:
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
@@ -3733,6 +3788,64 @@ def count_circuit_rounds(circuit: Any) -> int:
             "script.\n"
         )
     return sum(blocks) if blocks else 1
+
+
+def circuit_measurement_rounds(circuit: Any) -> int:
+    """
+    The rounds T of syndrome measurements of a Stim circuit, as compute_dem_distance() passes them to the binary
+    (dem_rounds=T): the largest number of measurements of one qubit, counting the repetitions of the REPEAT blocks (a
+    single-qubit measurement, with or without reset, or a qubit of a Pauli-product measurement such as MPP or MZZ;
+    MPAD and the heralded noise channels do not count).  A memory circuit measures each ancilla once per round and the
+    data qubits once at the end: T is its number of rounds, e.g., 1 with rounds=0 for a circuit with one round before
+    its REPEAT block, or with rounds=1 for a circuit whose block holds all rounds.  A circuit which measures a qubit
+    several times in one round (Pauli-product measurements, ancillas reused within a round) gives more than its rounds,
+    and one with fresh ancillas in every round fewer (not a stim convention).  For T = 1, the automatic rw_opt of the
+    binary has the row slabs of rw_opt 4 (the boundary slabs are the two detector layers of the round), for T >= 2 not
+    (see run_dist_m4ri()).
+
+    Args:
+        circuit: A stim.Circuit instance or path to a .stim file.
+
+    Returns:
+        T (0 for a circuit without measurements).
+    """
+    stim = _get_stim()
+    if isinstance(circuit, (str, Path)):
+        circuit = stim.Circuit.from_file(str(circuit))
+    if not isinstance(circuit, stim.Circuit):
+        return 0
+    counts: Dict[int, int] = {}
+
+    def walk(block: Any, mult: int) -> None:
+        for inst in block:
+            if isinstance(inst, stim.CircuitRepeatBlock):
+                if inst.repeat_count > 0:
+                    walk(inst.body_copy(), mult * inst.repeat_count)
+                continue
+            name = inst.name
+            if name == "MPAD" or name.startswith("HERALDED_") or not stim.gate_data(name).produces_measurements:
+                continue
+            for t in inst.targets_copy():
+                q = t.qubit_value  # (None for the combiners of MPP)
+                if q is not None:
+                    counts[q] = counts.get(q, 0) + mult
+    walk(circuit, 1)
+    return max(counts.values()) if counts else 0
+
+
+def circuit_single_round(circuit: Any) -> bool:
+    """
+    Whether a Stim circuit has a single round of syndrome measurements followed by the final readout: no qubit is
+    measured twice, i.e., circuit_measurement_rounds() is 1 (e.g., a memory circuit whose REPEAT block holds all rounds
+    but the first one, with rounds=0).
+
+    Args:
+        circuit: A stim.Circuit instance or path to a .stim file.
+
+    Returns:
+        True for a single round, False otherwise (also for a circuit without measurements).
+    """
+    return circuit_measurement_rounds(circuit) == 1
 
 
 def detect_basis(
@@ -5593,17 +5706,18 @@ def _cached_code_distance(
     pairs: int = -1,
     cc_prune: Optional[int] = None,
     ortho: bool = True,
-    rw_opt: Optional[int] = None
+    rw_opt: Optional[int] = None,
+    dem_rounds: int = 0
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
-    file, with the probability cutoff pmin, merge, the detectors to drop fdrop ("auto", "0", a file, or a list), and
-    the file outD for the detectors dropped: see run_dist_m4ri()) with the dist_m4ri binary, using the distance cache
-    shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of compute_css_distance(), and
-    compute_dem_distance() (the warnings for the expert options are issued by the callers).  The row order sort_rows
-    and the CC search cc_prune (see run_dist_m4ri()) do not change the result, nor the cache key; nor do the RW window
-    size win_hyb, the RW pairs (pairs), the RW stages rw_opt, and the expert option ortho (False: the binary does not
-    check H G^T = 0) change the cache key.
+    file, with the probability cutoff pmin, merge, the detectors to drop fdrop ("auto", "0", a file, or a list), the
+    file outD for the detectors dropped, and its rounds dem_rounds: see run_dist_m4ri()) with the dist_m4ri binary,
+    using the distance cache shared by compute_classical_distance(), compute_quantum_distance(), the two sectors of
+    compute_css_distance(), and compute_dem_distance() (the warnings for the expert options are issued by the callers).
+    The row order sort_rows and the CC search cc_prune (see run_dist_m4ri()) do not change the result, nor the cache
+    key; nor do the RW window size win_hyb, the RW pairs (pairs), the RW stages rw_opt, the rounds dem_rounds, and the
+    expert option ortho (False: the binary does not check H G^T = 0) change the cache key.
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -5771,7 +5885,8 @@ def _cached_code_distance(
             cov_cws=cov_cws,
             refresh=refresh,
             verbose=verbose,
-            rw_opt=rw_opt
+            rw_opt=rw_opt,
+            dem_rounds=dem_rounds if fdem is not None else 0
         )
 
         if _last_run_stats.get("k0"):  # (no logical codeword: [0, 0, 0], not cached, see _k0_result())
@@ -5872,7 +5987,8 @@ def compute_classical_distance(
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
-        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
+            rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
             the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
             canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
             the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
@@ -6113,7 +6229,8 @@ def compute_quantum_distance(
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
-        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
+            rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
             the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
             canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
             the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
@@ -6453,7 +6570,8 @@ def compute_css_distance(
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
-        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
+            rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
             the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
             canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
             the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
@@ -7044,6 +7162,7 @@ def compute_dem_distance(
     cc_prune: Optional[int] = None,
     engine: Optional[str] = None,
     rw_opt: Optional[int] = None,
+    dem_rounds: Optional[int] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -7061,7 +7180,8 @@ def compute_dem_distance(
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
         chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
         num_steps: Maximum RW steps.
-        min_hits: RW stops once the average number of hits per codeword reaches min_hits, both for the codewords of
+        min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
+            rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
             the minimum weight found and for a representative set of cov_cws lowest-weight codewords; with the
             canonical classes of rw_opt 16 (automatic for quantum codes and DEMs with kwin <= 0), once the classes of
             the minimum weight found by the uniform RW steps pass the Good-Turing and Chao2 tests instead (none found
@@ -7195,6 +7315,13 @@ def compute_dem_distance(
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
             run_dist_m4ri()).
+        dem_rounds: The rounds T of the DEM, passed to the binary (see run_dist_m4ri()): 1 adds the row slabs of
+            rw_opt 4 to its automatic rw_opt, 2 or more excludes them, and 0 leaves the choice to the binary (a DEM
+            without round structure and with at most 640 detectors).  None (default): automatic, for a Stim circuit
+            its rounds (see circuit_measurement_rounds(): the largest number of measurements of one qubit, e.g., 1 with
+            rounds=0 for a circuit with one round before its REPEAT block, so that a shallow multi-round DEM whose round
+            structure the binary does not see gets no slabs), 0 for a DEM.  The distance and the cache key do not
+            depend on it.
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -7203,8 +7330,9 @@ def compute_dem_distance(
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         ValueError: if neither dem nor circuit is given, for rounds without a Stim circuit (or rounds < 0), for
             p_noise outside [0, 0.5], for an invalid drop (e.g., a file which does not exist) or another invalid
-            option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63), for method=2 with
-            timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance".
+            option value (e.g., start, cc_prune other than 0, 1, or 2, rw_opt outside -1..63, or dem_rounds < 0), for
+            method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
+            solver="codedistance".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()), or if a DEM or circuit
             file does not exist (since version 0.17.2; before, its name was read as the text of a DEM).
         RuntimeError: if the binary exits with an error.
@@ -7216,6 +7344,7 @@ def compute_dem_distance(
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_dem_distance, kwargs)
     _check_rw_opt(rw_opt)
+    _check_dem_rounds(dem_rounds, allow_none=True)
     cert_mode = _resolve_cert_engine(solver, engine)
     if start_scan:  # (the binary merges the equal columns of a DEM, which changes the order of the columns)
         _warn_ignored("start_scan=1 is not available for a DEM (ignored)")
@@ -7239,6 +7368,12 @@ def compute_dem_distance(
         out_stim=out_stim, circ_verbose=circ_verbose,
         drop_out=css_list if (drop_mode == "css" and not is_codedist) else None, force_noise=force_noise
     )
+    eff_dem_rounds = int(dem_rounds) if dem_rounds is not None else 0  # (the rounds of the DEM for the binary)
+    if dem_rounds is None and circuit is not None and not is_codedist:  # (1: the row slabs of rw_opt 4, >= 2: none)
+        eff_dem_rounds = circuit_measurement_rounds(circuit)
+        if circ_verbose:
+            print(f"[dist_m4ri] Circuit rounds: dem_rounds={eff_dem_rounds} (the largest number of measurements of one "
+                  f"qubit; the binary's automatic rw_opt has the row slabs of rw_opt 4 only for 1)")
     if getattr(dem, "num_errors", None) == 0:  # (a stim object; e.g., a noiseless circuit with p_noise=0)
         sys.stderr.write("# Note: the DEM has no error mechanisms (no noise, e.g., p_noise=0 for a noiseless circuit "
                          "or with force_noise): no distance computed\n")
@@ -7367,7 +7502,8 @@ def compute_dem_distance(
                 kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
                 cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
                 merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop,
-                outD=outd_file, sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, rw_opt=rw_opt
+                outD=outd_file, sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, rw_opt=rw_opt,
+                dem_rounds=eff_dem_rounds
             )
 
         if cert_mode == "auto" and _auto_cert_eligible(
@@ -8079,6 +8215,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "sort_rows": None,
         "cc_prune": None,
         "rw_opt": None,
+        "dem_rounds": None,
         "ortho": True,
         "noscan": 0,
         "irred": None,
@@ -8470,6 +8607,12 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["cc_prune"] = cp
             elif key_lower in ("rw_opt", "rw-opt", "rwopt"):
                 args["rw_opt"] = _parse_rw_opt(val, num_arg)
+            elif key_lower in ("dem_rounds", "dem-rounds", "demrounds"):
+                dr = _cli_int(val, num_arg)
+                if dr < 0:
+                    raise ValueError(f"invalid '{num_arg}': dem_rounds should be 0 (unknown), 1 (a single round), or "
+                                     f"the number of rounds")
+                args["dem_rounds"] = dr
             elif key_lower == "ortho":
                 ort = _cli_int(val, num_arg)
                 if ort not in (0, 1):
@@ -8625,8 +8768,8 @@ Usage: dist_m4ri.py [key=val | --flag val ...]
 
 Allowed parameters:
   fdem (dem), finH, finG, finL, fin, Hx (finHx), Hz (finHz), Lx (finLx),
-  Lz (finLz), pmin, merge, drop, outD, --out-reduced, classical, css,
-  --simple (--simplified), --full, basis, --rounds, --out-dir, --out-dem,
+  Lz (finLz), pmin, merge, drop, outD, --out-reduced, dem_rounds, classical,
+  css, --simple (--simplified), --full, basis, --rounds, --out-dir, --out-dem,
   --out-stim, --p-noise, --force-noise, --model-lb, --model-minority,
   --out-model, method (m), dmin, dmax, dstop, dexp (dest),
   steps (nsteps, num_steps), wmin, wmax, timeout (time),
@@ -8808,6 +8951,14 @@ Required input (at least one matrix/model specification):
                         like the default, to --out-dir or the directory of the input file: write
                         ./PREFIX for the current directory).  The reduced DEM has the same distance,
                         and its codewords are mapped to codewords of the DEM by "errors".
+  dem_rounds=N          The rounds T of the DEM, passed to the binary as dem_rounds=N (default:
+                        automatic: for a Stim circuit its rounds, the largest number of measurements
+                        of one qubit, e.g., 1 with --rounds 0 for a circuit with one round before its
+                        REPEAT block; 0, unknown, for a .dem file): 1 adds the row slabs of rw_opt 4 to
+                        the automatic rw_opt of the binary (the boundary slabs are the two detector
+                        layers of the round); 2 or more: no automatic row slabs; 0: the binary
+                        decides (a DEM without round structure and with at most 640 detectors, see
+                        win_hyb).  The distance and the cache do not depend on it.
   classical=0|1         Code type override:
                         1: Classical linear code (finH only; ignored with a warning if finG, finL,
                            fin, fdem, or Hz is given, or Lx or Lz with Hx; Lx / Lz without Hx and Hz
@@ -8988,8 +9139,10 @@ Multithreading & throttling:
                         win_hyb columns, and the other steps uniform random permutations (also
                         for codewords which are not local in the column order); with a nonzero
                         resolved rw_opt (the run plan), used only for a DEM (matrices use uniform
-                        permutations unless the resolved rw_opt is 0 or win_hyb > 0).  kwin=-1 (any
-                        negative value): no windows, uniform random permutations in every step.
+                        permutations unless the resolved rw_opt is 0 or win_hyb > 0), and with the
+                        row slabs of rw_opt 4 (e.g., automatic for a single round), a slab instead.
+                        kwin=-1 (any negative value): no windows, uniform random permutations in
+                        every step.
   win_mode=0|1          Locality metric for kwin > 0: 0 = Tanner graph BFS neighbors
                         (default), 1 = contiguous column index window.
   win_hyb=N             Window size of the hybrid RW steps (kwin=0, n>=500; at most 3n/4).
@@ -9000,13 +9153,15 @@ Multithreading & throttling:
                         touch few detectors: windows of 192-256 columns find circuit codewords 2-10
                         times faster than 512, and windows of one round of columns much slower.  With
                         --verbose (or debug&1), the binary prints the rounds of a DEM (estimated
-                        from the time translation of its errors: D detectors and L columns per
-                        round; printed only, the search does not use it, and a folded schedule,
-                        whose rounds alternate between two forms, gives no round structure) and the
-                        codewords found by the uniform and by the window steps (line '# RW step
+                        from the time translation of its errors by D detectors, 2 <= D <= m/3, i.e.,
+                        at least three detector layers: D detectors and L columns per round; a
+                        single round, a folded schedule, whose rounds alternate between two forms,
+                        or detectors not in time order give no round structure, which the automatic
+                        row slabs of rw_opt 4 use, see dem_rounds) and the codewords found by the
+                        uniform steps, by the window steps, and by the row slabs (line '# RW step
                         types': the codewords in hash, i.e., without outC, --cws, and maxC at most
-                        cov_cws of the minimum weight, the first found; 'both': found by both kinds
-                        of steps).
+                        cov_cws of the minimum weight, the first found; 'both': found by the uniform
+                        and by the other steps).
   pairs=N               RW pairs of non-pivot columns (p=2, as in Lee-Brickell and Stern): a RW
                         step also finds the codewords with exactly two non-pivot columns,
                         checking only the pairs of columns which agree on N random pivot rows
@@ -9045,14 +9200,16 @@ Multithreading & throttling:
                            of G in the pairs (only while that weight is at most 64; not when
                            collecting; automatic: off);
                         4: row-slab windows of a DEM in time order (kwin=0, not with sort_rows=1):
-                           every other step, the columns inside a range of min(320, m/2) detectors
-                           (the first or the last range with 15% probability each), a random
-                           independent set of the triplet graph first (automatic: off; on deep circuit
-                           DEMs, the index windows with 1 found more minimum-weight codewords per
-                           second; on some single-round DEMs, the slabs found lighter codewords much
-                           sooner, e.g., weight 16 of the double-gross DEM with one round, but they
-                           often find the same few codewords again, which raises <n> of min_hits
-                           without 16);
+                           every other step (the others use uniform random permutations), the
+                           columns inside the first or the last m/2 detectors, i.e., the two detector
+                           layers of a single round, a random independent set of the triplet graph
+                           first (automatic: a DEM with a single round, dem_rounds=1, e.g., from a
+                           Stim circuit with one round, or without round structure, see win_hyb, and
+                           with at most 640 detectors: the slabs find the codewords confined to one
+                           layer, e.g., weight 16 of the double-gross DEM with one round, which the
+                           other steps hardly find; not on deep circuit DEMs, where the index windows
+                           with 1 found more minimum-weight codewords per second; the slabs find the
+                           same codewords over and over, and min_hits does not count their hits);
                         8: sparse-dual elimination: an m x m inverse instead of the m x n matrix (the
                            same information sets, less memory per RW thread; quantum inputs with up to
                            64 rows of L; automatic: m x n above 512 KiB, and n >= 20 m or m >= 1400;
@@ -9083,17 +9240,24 @@ Multithreading & throttling:
                         -sum ln(1 + |S_a|) on ln Pr(J) of the dense full-matrix steps with pairs, with
                         any stage but not with 8 or on the slab steps, and -ln C(n, r)).
   min_hits=N            QDistRnd-style RW stopping criterion (default: 5, 0 = off; alias: max_hits).
-                        Stops RW when the average number of hits <n> per codeword (by all RW steps,
-                        with or without windows, and by CC or finC) reaches min_hits, both for the
-                        codewords of the minimum weight found and for a representative set of
-                        cov_cws lowest-weight codewords (heavier codewords are kept until enough
-                        lighter ones are found).  A single codeword suffices.  A lighter codeword is
-                        missed with probability about exp(-<n>), assuming that lighter codewords
-                        are found at least as often.  With debug&1 (or --verbose), a warning is
-                        printed at the end if the hit counts of codewords of the same weight are
-                        strongly non-uniform (then exp(-<n>) is optimistic), together with an
-                        information-set estimate (uniform random information sets) of the
-                        probability to miss a lighter codeword and of the RW steps needed for 1%.
+                        Stops RW when the average number of hits <n> per codeword (over the
+                        codewords hit) reaches min_hits, both for the codewords of the minimum weight
+                        found and for a representative set of cov_cws lowest-weight codewords
+                        (heavier codewords are kept until enough lighter ones are found).  A single
+                        codeword suffices.  The hits counted: with a resolved rw_opt of 0 (rw_opt=0,
+                        or e.g. a classical code), all, as in version 0.16.1; otherwise (see the run
+                        plan) those of the uniform RW steps, of CC, of finC, and of the windows of
+                        kwin > 0 (then no step is uniform), but not those of the row slabs of rw_opt
+                        4 and of the hybrid index windows (kwin=0), which find the same codewords over
+                        and over (they are shown apart, see '# RW step types').  While no codeword
+                        of the minimum weight has a counted hit, the min_hits stop is inactive (the
+                        status line and the summary say so).  A lighter codeword is missed with
+                        probability about exp(-<n>), assuming that lighter codewords are found at
+                        least as often.  With debug&1 (or --verbose), a warning is printed at the end
+                        if the hit counts of codewords of the same weight are strongly non-uniform
+                        (then exp(-<n>) is optimistic), together with an information-set estimate
+                        (uniform random information sets) of the probability to miss a lighter
+                        codeword and of the RW steps needed for 1%.
                         With --verbose, the active stopping rule and the baseline information-set
                         estimate are shown for a result which is not certified.  With min_hits=0, RW
                         records only the codewords lighter than the upper bound (unless collecting
@@ -9110,7 +9274,7 @@ Multithreading & throttling:
                         on deep circuit DEMs, where the window steps find them), the min_hits stop is
                         inactive and RW runs until the steps or the timeout end (the status line and
                         the summary say so; the window steps are shown for information only, see
-                        '# RW step types').  Without 16, <n> above (all steps).
+                        '# RW step types').  Without 16, <n> above.
   cov_cws=N             Size of the representative set of lowest-weight codewords for min_hits
                         (default: 100; 0 = only the minimum weight).  Without outC and maxC, at
                         most cov_cws minimum-weight codewords are tracked (all if cov_cws=0).
@@ -9331,7 +9495,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   windows               kwin, win_mode, win_hyb, rw_opt
   stopping, stop        steps, wmin, timeout, min_hits, cov_cws
   bounds                dmin, dmax, dstop, dexp, wmax
-  dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand
+  dem                   fdem, pmin, merge, drop, outD, --out-reduced, expand, dem_rounds
   stim                  fdem, basis, --rounds, --out-dir, --out-dem, --out-stim, --p-noise,
                         --force-noise, --model-lb, --model-minority, --out-model
   matrices, matrix      finH, finG, finL, fin, Hx, Lx, classical, ortho
@@ -9535,6 +9699,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
             dem_opts.append("outD=")
         if args.get("out_reduced") is not None:
             dem_opts.append("--out-reduced")
+        if args.get("dem_rounds") is not None:
+            dem_opts.append("dem_rounds=")
         if dem_opts:
             warns.append(f"{', '.join(dem_opts)}: only used with fdem= (a DEM or Stim circuit); ignored")
         if args.get("Hx") is not None or args.get("Hz") is not None:
@@ -9764,6 +9930,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 sort_rows=args["sort_rows"],
                 cc_prune=args["cc_prune"],
                 rw_opt=args["rw_opt"],
+                dem_rounds=args["dem_rounds"],
                 min_hits=args["min_hits"],
                 cov_cws=args["cov_cws"],
                 refresh=args["refresh"],

@@ -51,7 +51,8 @@ typedef struct CW_VEC_T cw_vec_t;
 
 /* The stages of the RW search selected by `rw_opt=[int]` (a bitmask; -1: automatic, 0: none, as in version 0.16.1),
  * see rw_triplet.h and doc/rw_triplet_degeneracies.tex (Sec. 9, Stages 1-5 and the dispatch rules D1-D5; the automatic
- * mask follows D1-D5, except that Stage 2b and the row slabs of D4 are explicit only, see rw_stages_plan()) */
+ * mask follows D1-D5, except that Stage 2b is explicit only and the row slabs of D4 are automatic only for a DEM with a
+ * single round or without round structure, see rw_slab_auto() and rw_stages_plan()) */
 #define RW_OPT_T3     0x01 /**< Stage 1 (T_3 enumeration) and 2a (contraction, hoisted L syndromes, Stern filter) */
 #define RW_OPT_GEN    0x02 /**< Stage 2b: shortening by the rows of G (finG) and the realized-generator filter */
 #define RW_OPT_SLAB   0x04 /**< Stage 3: row-slab windows of a DEM with MIS push-back order */
@@ -126,6 +127,11 @@ typedef struct{
   int cw_max_w;          /* maximum weight of the codewords in hash (0: none) */
   long long int *cw_cnt_w;  /* number of codewords of each weight in hash (size nvar+2, allocated on first use) */
   long long int *cw_hits_w; /* total hits of the codewords of each weight in hash (same size) */
+  long long int *cw_nhits_w; /* their hits counted for the `min_hits` statistic <n> (the sources in nhits_src; same
+                                size, see codeword_hit_stats()) */
+  long long int *cw_ncnt_w; /* the codewords of each weight in hash with such a hit (same size) */
+  int nhits_src;            /* the sources of the hits counted for <n>: a bitmask of 1 << CW_SRC_* (default: all; set by
+                               dist_m4ri once the RW stages are resolved, see rw_nhits_sources() in dist_m4ri.c) */
   char *fdem;
   double pmin;
   int merge;       /* 1: merge the equal columns of a DEM (same detectors and observables), see dem_merge_columns() */
@@ -181,14 +187,19 @@ typedef struct{
                      ignored by dist_m4ri_old */
   int rw_active;  /* the RW stages in use, resolved from rw_opt by dist_m4ri at the start of the run (0 before) */
   int rw_planned; /* 1 once rw_active is resolved (dist_m4ri, see rw_hybrid_on()) */
-  int slab_rows;  /* study option, the row slabs of rw_opt 4: detectors per slab (0, the default: min(320, m/2)) */
-  int slab_bnd;   /* study option: the probability in percent of each of the two boundary slabs (default 15) */
+  int slab_rows;  /* study option, the row slabs of rw_opt 4: detectors per slab (0, the default: m/2) */
+  int slab_bnd;   /* study option: the probability in percent of each of the two boundary slabs (default 50: only the
+                     boundary slabs, the two detector layers of a single-round DEM) */
   int slab_var;   /* study option: the random height reduction of a slab in percent (0, the default: none) */
-  int slab_every; /* study option: a slab on every slab_every-th RW step (default 2: every other step) */
+  int slab_every; /* study option: a slab on every slab_every-th RW step (default 2: every other step; at least 2, never
+                     slabs only) */
   char *steplog;  /* study option steplog=FILE: the log of the RW steps and of their codewords (NULL: none), see
                      steplog_t in dist_m4ri.c */
+  int dem_rounds; /* the rounds T of the DEM if known (fdem; 0, the default: unknown): 1 adds the row slabs of rw_opt 4
+                     to the automatic rw_opt, 2 or more excludes them, see rw_slab_auto() */
   rw_canon_stats_t canon; /* Stage 5 (RW_OPT_CANON): the statistics of the canonical classes (rw_canon_converged()) */
-  int round_D;    /* the rounds of a DEM (debug&1, see dem_round_estimate()): detectors per round (0: none found) */
+  int round_D;    /* the rounds of a DEM (see dem_round_estimate(); with debug&1, or for rw_slab_auto()): detectors per
+                     round (0: none found) */
   int round_L;    /* columns per round, n D / m (0: none found) */
   double round_score; /* the score of the estimate (accepted if >= 0.5; -1: not estimated) */
   int min_hits;   /* RW stopping criterion: average hits <n> per lowest-weight cw (0 = off) */
@@ -321,7 +332,8 @@ long long int nzlist_write(const char fnam[], const char comment[], params_t *p)
  * @param arr Array of indices representing the support of the codeword (sorted).
  * @param weight Weight of the codeword (length of arr).
  * @param src Where the codeword was found, for the hit counts of each kind of RW step (CW_SRC_RW_UNIFORM,
- *            CW_SRC_RW_WINDOW; CW_SRC_OTHER for CC and finC), see print_rw_step_stats().
+ *            CW_SRC_RW_WINDOW, CW_SRC_RW_SLAB; CW_SRC_OTHER for CC and finC), see print_rw_step_stats(); the hits of
+ *            the sources in p->nhits_src are counted for the `min_hits` statistic <n> (see codeword_hit_stats()).
  * @return The codeword hash (`p->codewords`).
  */
 cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, int src);
@@ -336,17 +348,23 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, i
  */
 int codeword_count(const params_t * const p, const int arr[], const int weight);
 
-/** @brief The source of a codeword added to the hash, see codeword_add_maybe(). */
-enum { CW_SRC_OTHER = 0, CW_SRC_RW_UNIFORM = 1, CW_SRC_RW_WINDOW = 2 };
+/** @brief The source of a codeword added to the hash, see codeword_add_maybe(): CC, finC, and the other sources; the RW
+ *         steps with a uniform random permutation, with a window (kwin, the hybrid index windows), and the row slabs of
+ *         rw_opt 4. */
+enum { CW_SRC_OTHER = 0, CW_SRC_RW_UNIFORM = 1, CW_SRC_RW_WINDOW = 2, CW_SRC_RW_SLAB = 3 };
+
+/** @brief All sources (p->nhits_src: all hits count for <n>, as in version 0.16.1). */
+#define CW_SRC_ALL ((1 << CW_SRC_OTHER) | (1 << CW_SRC_RW_UNIFORM) | (1 << CW_SRC_RW_WINDOW) | (1 << CW_SRC_RW_SLAB))
 
 /**
  * @brief DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform random
- *        permutation and by those with a window (index windows, kwin, or the row slabs of rw_opt 4): the distinct
+ *        permutation, by those with a window (index windows, kwin), and by the row slabs of rw_opt 4: the distinct
  *        codewords and their hits, e.g., to see whether some codewords are found only by the uniform steps (not
  *        local in the column order).  Only the codewords in hash are counted: without outC and maxC, at most cov_cws
  *        codewords of the minimum weight (the first ones found) and heavier ones only for the representative set of
- *        min_hits (see codeword_add_maybe()); "both" counts the codewords found by both kinds of steps, and "of N cws"
- *        all codewords of the weight in hash (also those found only by CC or read with finC).
+ *        min_hits (see codeword_add_maybe()); "both" counts the codewords found by the uniform steps and by the window
+ *        or slab steps, and "of N cws" all codewords of the weight in hash (also those found only by CC or read with
+ *        finC).
  */
 void print_rw_step_stats(FILE *stream, const params_t * const p);
 
@@ -376,6 +394,41 @@ static inline int rw_hybrid_window(const params_t * const p, const int nvar) {
 static inline int rw_hybrid_on(const params_t * const p, const int nvar) {
   const int mask = p->rw_planned ? p->rw_active : p->rw_opt;
   return (p->kwin == 0) && (nvar >= 500) && ((mask == 0) || (p->fdem != NULL) || (p->win_hyb > 0));
+}
+
+/** @brief The most detectors of a DEM without round structure with the row slabs in the automatic rw_opt, see
+ *         rw_slab_auto() (the default slab height m/2 is then at most 320, as in the row-slab study). */
+#define RW_SLAB_AUTO_MMAX 640
+
+/**
+ * @brief Whether the automatic rw_opt (-1) has the row slabs of rw_opt 4 (Stage 3, Rule D4) for a DEM (fdem; with
+ *        kwin=0 and the rows not sorted, see rw_stages_plan() in dist_m4ri.c): if the DEM is known to have a single
+ *        round (dem_rounds=1, e.g., passed by dist_m4ri.py for a Stim circuit with one round), or if its rounds are not
+ *        known (dem_rounds=0) and it has no round structure and at most RW_SLAB_AUTO_MMAX detectors.  A DEM has round
+ *        structure if the estimate of dem_round_estimate() finds a time translation of its errors by D detectors, 2 <=
+ *        D <= m/3 (at least three detector layers; its score at least 1/2): a single-round DEM, whose detectors form
+ *        two layers (the round and the final readout), never has one, nor do the folded schedules whose rounds
+ *        alternate between two forms, or a DEM whose detectors are not in time order.  On such a DEM, the boundary
+ *        slabs (the first and the last m/2 detectors, see slab_bnd) are the two detector layers of a single round:
+ *        they reach the codewords confined to one layer, which the uniform steps and the index windows hardly find
+ *        (the row-slab study: the weight-16 codewords of the double-gross DEM with one round).  With dem_rounds >= 2,
+ *        no automatic slabs (on deep DEMs, the slabs found fewer codewords than the index windows).
+ */
+static inline int rw_slab_auto(const params_t * const p) {
+  if (p->dem_rounds == 1) return 1;
+  return (p->dem_rounds == 0) && (p->spaH != NULL) && (p->spaH->rows <= RW_SLAB_AUTO_MMAX) &&
+         (p->round_score >= 0.0) && (p->round_D == 0);
+}
+
+/**
+ * @brief Whether the row slabs of rw_opt 4 apply to the input (Stage 3, Rule D4, see rw_stages_plan() in dist_m4ri.c):
+ *        a DEM (fdem) with its detectors in time order (rows not sorted, sort_rows=0), kwin=0 (the slabs replace the
+ *        index windows of the hybrid steps), at least 4 detectors, and the stage explicit (`expl`: rw_opt with bit 4)
+ *        or in the automatic mask (rw_slab_auto()).
+ */
+static inline int rw_slab_input(const params_t * const p, const int expl) {
+  return (p->fdem != NULL) && (p->kwin == 0) && !p->rows_sorted && (p->spaH != NULL) && (p->spaH->rows >= 4) &&
+         (expl || rw_slab_auto(p));
 }
 
 
@@ -499,14 +552,16 @@ static inline int codeword_rw_limit(const params_t * const p, const int cur_dmax
 
 /** @brief Hit statistics for the `min_hits` stopping criterion, see codeword_hit_stats(). */
 typedef struct {
-  long long int min_cws;  /**< number of codewords of the minimum weight min_w */
-  long long int min_hits; /**< their total number of hits */
-  long long int set_cws;  /**< number of codewords in the representative set (weights w_lo..w_hi) */
-  long long int set_hits; /**< their total number of hits */
+  long long int min_cws;  /**< number of codewords of the minimum weight min_w with a counted hit */
+  long long int min_hits; /**< their total number of counted hits */
+  long long int set_cws;  /**< number of codewords in the representative set (weights w_lo..w_hi) with a counted hit */
+  long long int set_hits; /**< their total number of counted hits */
+  long long int all_cws;  /**< number of all codewords in the representative set (also those without a counted hit) */
+  long long int excl_hits; /**< the hits of the representative set not counted (sources not in p->nhits_src) */
   int w_lo;               /**< smallest weight in the representative set (min_w) */
   int w_hi;               /**< largest weight in the representative set */
-  double avg;             /**< <n>: the smaller of the average hits per codeword of weight min_w and
-                               of the representative set (0 if no codewords) */
+  double avg;             /**< <n>: the smaller of the average counted hits per codeword (with a counted hit) of weight
+                               min_w and of the representative set (0 if no codeword of weight min_w has one) */
 } cw_hit_stats_t;
 
 /**
@@ -516,7 +571,10 @@ typedef struct {
  * with at least cov_cws codewords in total (all classes if fewer; only min_w if cov_cws <= 0 or
  * min_hits <= 0).  As in QDistRnd, <n> estimates the average number of times a codeword is found;
  * a lighter codeword is missed with probability about exp(-<n>), assuming lighter codewords are
- * found at least as often.  Heavier codewords make the estimate more conservative.
+ * found at least as often.  Heavier codewords make the estimate more conservative.  Only the hits of the sources in
+ * p->nhits_src count, over the codewords with such a hit: with a nonzero resolved rw_opt, not the hits of the row
+ * slabs and of the window steps, which find the same codewords over and over (unless every RW step has a window,
+ * kwin > 0), see rw_nhits_sources() in dist_m4ri.c.
  *
  * @param p Pointer to the params_t structure.
  * @param st Output statistics.
@@ -570,7 +628,7 @@ int rw_canon_converged(const params_t * const p);
  * distribution), the probability to miss a lighter codeword is at least 3 times larger than
  * exp(-mu) with equal hit rates (mu: average hits): some codewords are found much more often than
  * others of the same weight, and the estimate exp(-<n>) is optimistic.  Takes a single pass over
- * the hash.
+ * the hash.  Only the hits counted for <n> (see codeword_hit_stats()) and the codewords with such a hit are tested.
  *
  * @param stream Output stream for the warnings (typically stderr).
  * @param p Pointer to the params_t structure.
@@ -682,12 +740,12 @@ void print_short_help(const char *prog);
   "%s (version %s): calculate distance of a classical or quantum CSS code\n" \
   "Usage: %s [method=1|2|3] [parameter=value ...]\n\n" \
   "Allowed parameters:\n" \
-  "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n" \
-  "  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, start_scan,\n" \
-  "  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n" \
-  "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, rw_opt,\n" \
-  "  min_hits (max_hits), cov_cws, refresh, finC, outC, maxC, dW, irred, ortho,\n" \
-  "  seed, debug, steplog, slab_rows, slab_bnd, slab_var, slab_every\n\n" \
+  "  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, dem_rounds,\n" \
+  "  classical, css, steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax,\n" \
+  "  start, start_scan, sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout,\n" \
+  "  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs,\n" \
+  "  rw_opt, min_hits (max_hits), cov_cws, refresh, finC, outC, maxC, dW, irred,\n" \
+  "  ortho, seed, debug, steplog, slab_rows, slab_bnd, slab_var, slab_every\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -747,7 +805,7 @@ void print_short_help(const char *prog);
   "  win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)\n" \
   "  pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)\n" \
   "  rw_opt=[int] (-1)      RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63\n" \
-  "  slab_rows=[int] (0)    Study, row slabs of rw_opt 4: detectors per slab (0: min(320, m/2)); also\n" \
+  "  slab_rows=[int] (0)    Study, row slabs of rw_opt 4: detectors per slab (0: m/2); also\n" \
   "                         slab_bnd, slab_var, slab_every (see --morehelp study)\n" \
   "  steplog=[file]         Study: log the RW steps and the codewords found in them (see --morehelp study)\n" \
   "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
@@ -842,6 +900,14 @@ void print_short_help(const char *prog);
   "  outD=[file]        Write the detectors dropped from the DEM (0-based, in the\n" \
   "                     format of a drop file; only the comment line if none) to\n" \
   "                     file.  Only valid with fdem.\n" \
+  "  dem_rounds=[int]   The rounds T of the DEM, if known (default: 0 = unknown;\n" \
+  "                     only valid with fdem): 1, a single round of syndrome\n" \
+  "                     measurements and the final readout, adds the row slabs of\n" \
+  "                     rw_opt 4 to the automatic rw_opt; 2 or more: no automatic\n" \
+  "                     row slabs; 0: the automatic rw_opt has them for a DEM\n" \
+  "                     without round structure (see win_hyb; never for more than\n" \
+  "                     640 detectors).  dist_m4ri.py passes the rounds of a Stim\n" \
+  "                     circuit (the largest number of measurements of a qubit).\n" \
   "  classical=[0|1]    Code type override:\n" \
   "                     1: Treat as a classical linear code (H only: finG,\n" \
   "                        finL, or fin is an error, and the observables L of a\n" \
@@ -1026,7 +1092,8 @@ void print_short_help(const char *prog);
   "                     of win_hyb columns, the other steps uniform random\n" \
   "                     permutations (also for codewords which are not local);\n" \
   "                     with a nonzero resolved rw_opt (the run plan), only for a\n" \
-  "                     DEM or with win_hyb > 0.\n" \
+  "                     DEM or with win_hyb > 0, and with the row slabs of rw_opt\n" \
+  "                     4 (e.g., automatic for a single round), a slab instead.\n" \
   "                     kwin=-1 (any negative value): no windows, uniform random\n" \
   "                     permutations in every step.\n" \
   "  win_mode=[0|1]     Window construction mode when kwin > 0 (default: 0):\n" \
@@ -1040,14 +1107,17 @@ void print_short_help(const char *prog);
   "                     codewords 2-10 times faster than 512, and windows of one\n" \
   "                     round of columns much slower.  With debug&1, the binary\n" \
   "                     prints the rounds of a DEM (estimated from the time\n" \
-  "                     translation of its errors: D detectors and L columns per\n" \
-  "                     round; printed only, the search does not use it, and a\n" \
-  "                     folded schedule, whose rounds alternate between two\n" \
-  "                     forms, gives no round structure) and the codewords found\n" \
-  "                     by the uniform and by the window steps (line '# RW step\n" \
-  "                     types': the codewords in hash, i.e., without outC and\n" \
-  "                     maxC at most cov_cws of the minimum weight, the first\n" \
-  "                     found; 'both': found by both kinds of steps).\n" \
+  "                     translation of its errors by D detectors, 2 <= D <= m/3,\n" \
+  "                     i.e., at least three detector layers: D detectors and L\n" \
+  "                     columns per round; a single round, a folded schedule,\n" \
+  "                     whose rounds alternate between two forms, or detectors\n" \
+  "                     not in time order give no round structure, which the\n" \
+  "                     automatic row slabs of rw_opt 4 use, see dem_rounds) and\n" \
+  "                     the codewords found by the uniform steps, by the window\n" \
+  "                     steps, and by the row slabs (line '# RW step types': the\n" \
+  "                     codewords in hash, i.e., without outC and maxC at most\n" \
+  "                     cov_cws of the minimum weight, the first found; 'both':\n" \
+  "                     found by the uniform and by the other steps).\n" \
   "  pairs=[int]        RW pairs of non-pivot columns (p=2, as in Lee-Brickell and\n" \
   "                     Stern): a RW step also finds the codewords with exactly two\n" \
   "                     non-pivot columns, checking only the pairs of columns which\n" \
@@ -1093,18 +1163,21 @@ void print_short_help(const char *prog);
   "                        while that weight is at most 64; not when collecting;\n" \
   "                        automatic: off);\n" \
   "                     4: row-slab windows of a DEM in time order (kwin=0, not\n" \
-  "                        with sort_rows=1): every other step, the columns inside\n" \
-  "                        a range of min(320, m/2) detectors (the first or the\n" \
-  "                        last range with 15%% probability each; see the study\n" \
+  "                        with sort_rows=1): every other step (the others use\n" \
+  "                        uniform random permutations), the columns inside the\n" \
+  "                        first or the last m/2 detectors, i.e., the two\n" \
+  "                        detector layers of a single round (see the study\n" \
   "                        options slab_rows, slab_bnd, slab_var, slab_every), a\n" \
   "                        random independent set of the triplet graph first\n" \
-  "                        (automatic: off; on deep circuit DEMs, the index windows\n" \
-  "                        with 1 found more minimum-weight codewords per second;\n" \
-  "                        on some single-round DEMs, the slabs found lighter\n" \
-  "                        codewords much sooner, e.g., weight 16 of the\n" \
-  "                        double-gross DEM with one round, but they often find\n" \
-  "                        the same few codewords again, which raises <n> of\n" \
-  "                        min_hits without 16);\n" \
+  "                        (automatic: a DEM with a single round, dem_rounds=1, or\n" \
+  "                        without round structure, see win_hyb, and with at most\n" \
+  "                        640 detectors: the slabs find the codewords confined to\n" \
+  "                        one layer, e.g., weight 16 of the double-gross DEM with\n" \
+  "                        one round, which the other steps hardly find; not on\n" \
+  "                        deep circuit DEMs, where the index windows with 1 found\n" \
+  "                        more minimum-weight codewords per second; the slabs\n" \
+  "                        find the same codewords over and over, and min_hits\n" \
+  "                        does not count their hits);\n" \
   "                     8: sparse-dual elimination: an m x m inverse instead of\n" \
   "                        the m x n matrix (the same information sets, less\n" \
   "                        memory per RW thread; quantum codes with up to 64 rows\n" \
@@ -1144,12 +1217,21 @@ void print_short_help(const char *prog);
   "                     -ln C(n, r)).  dist_m4ri_old ignores rw_opt.\n" \
   "  min_hits=[int]     QDistRnd-style RW stopping criterion (default: 5, 0 = off;\n" \
   "                     alias: max_hits).  Stops RW when the average number of hits\n" \
-  "                     <n> per codeword (by all RW steps, with or without windows,\n" \
-  "                     and by CC or finC) reaches min_hits, both for the codewords\n" \
-  "                     of the minimum weight found and for a representative set of\n" \
-  "                     cov_cws lowest-weight codewords (heavier codewords are kept\n" \
-  "                     until enough lighter ones are found).  A single codeword\n" \
-  "                     suffices.  A lighter codeword is missed with probability\n" \
+  "                     <n> per codeword (over the codewords hit) reaches min_hits,\n" \
+  "                     both for the codewords of the minimum weight found and for\n" \
+  "                     a representative set of cov_cws lowest-weight codewords\n" \
+  "                     (heavier codewords are kept until enough lighter ones are\n" \
+  "                     found).  A single codeword suffices.  The hits counted:\n" \
+  "                     with a resolved rw_opt of 0 (rw_opt=0, or e.g. a classical\n" \
+  "                     code), all, as in version 0.16.1; otherwise (see the run\n" \
+  "                     plan) those of the uniform RW steps, of CC, of finC, and of\n" \
+  "                     the windows of kwin > 0 (then no step is uniform), but not\n" \
+  "                     those of the row slabs of rw_opt 4 and of the hybrid index\n" \
+  "                     windows (kwin=0), which find the same codewords over and\n" \
+  "                     over (they are shown apart, see '# RW step types').  While\n" \
+  "                     no codeword of the minimum weight has a counted hit, the\n" \
+  "                     min_hits stop is inactive (the status line and the summary\n" \
+  "                     say so).  A lighter codeword is missed with probability\n" \
   "                     about exp(-<n>), assuming that lighter codewords are found\n" \
   "                     at least as often.  With debug&1, a warning is printed at\n" \
   "                     the end if the hit counts of codewords of the same weight\n" \
@@ -1174,7 +1256,7 @@ void print_short_help(const char *prog);
   "                     min_hits stop is inactive and RW runs until the steps or\n" \
   "                     the timeout end (the status line and the summary say so;\n" \
   "                     the window steps are shown for information only, see\n" \
-  "                     '# RW step types').  Without 16, <n> above (all steps).\n" \
+  "                     '# RW step types').  Without 16, <n> above.\n" \
   "  cov_cws=[int]      Size of the representative set of lowest-weight codewords\n" \
   "                     for min_hits (default: 100; 0 = only the minimum weight).\n" \
   "                     Without outC and maxC, at most cov_cws minimum-weight\n" \
@@ -1188,20 +1270,21 @@ void print_short_help(const char *prog);
   "  seed=[int]         Random number generator seed (default: 0; seed<=0 is\n" \
   "                     replaced by time(NULL) + 10*pid - 1000*seed).\n\n" \
   "Study options (the statistics of the RW step types, e.g., the row slabs):\n" \
-  "  slab_rows=[int]    The detectors per row slab of rw_opt 4 (default: 0 =\n" \
-  "                     min(320, m/2); at most m).  The slab options are ignored\n" \
-  "                     (with a warning) in a run without row slabs.\n" \
+  "  slab_rows=[int]    The detectors per row slab of rw_opt 4 (default: 0 = m/2;\n" \
+  "                     at most m).  The slab options are ignored (with a warning)\n" \
+  "                     in a run without row slabs.\n" \
   "  slab_bnd=[int]     The probability in percent of each of the two boundary\n" \
   "                     slabs (the first and the last slab_rows detectors; default:\n" \
-  "                     15, at most 50); the other slabs start at a uniform random\n" \
-  "                     detector.\n" \
+  "                     50, i.e., only the boundary slabs; at most 50); the other\n" \
+  "                     slabs start at a uniform random detector.\n" \
   "  slab_var=[int]     A random reduction of the slab height by up to slab_var\n" \
   "                     percent: the height of each slab is uniform in [slab_rows\n" \
   "                     (100 - slab_var)/100, slab_rows], at least 2 (default: 0, a\n" \
   "                     fixed height; at most 99).\n" \
   "  slab_every=[int]   A slab on every slab_every-th RW step (default: 2, every\n" \
-  "                     other step; 1: all steps); the other steps use uniform\n" \
-  "                     random permutations.\n" \
+  "                     other step; at least 2: never slabs only, as the boundary\n" \
+  "                     slabs miss the codewords across the two layers); the\n" \
+  "                     other steps use uniform random permutations.\n" \
   "  steplog=[file]     Write a line for each full-matrix RW step (ksub=0) and for\n" \
   "                     each codeword recorded in it to file (the statistics of the\n" \
   "                     step types; the file is written once the search starts):\n" \
@@ -1287,13 +1370,13 @@ void print_short_help(const char *prog);
   "  without a codeword waits for it.  dist_m4ri_old checks before the search.\n" \
   "  The legacy single-threaded dist_m4ri_old (the same options) prints one number\n" \
   "  and also its own progress and codeword lines to stdout, and ignores threads,\n" \
-  "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, rw_opt, and\n" \
-  "  the study options (with a warning).\n\n" \
+  "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, rw_opt,\n" \
+  "  dem_rounds, and the study options (with a warning).\n\n" \
   "Option groups (--help GROUP prints all entries of GROUP):\n" \
   "  windows            kwin, win_mode, win_hyb\n" \
   "  stopping, stop     steps, wmin, timeout, min_hits, cov_cws\n" \
   "  bounds             dmin, dmax, dstop, dexp, wmax\n" \
-  "  dem                fdem, pmin, merge, drop, outD\n" \
+  "  dem                fdem, pmin, merge, drop, outD, dem_rounds\n" \
   "  matrices, matrix   finH, finG, finL, fin, classical, ortho\n" \
   "  codewords          outC, finC, maxC, dW, irred\n" \
   "  threading          threads, nothrottle, chunk_size\n" \

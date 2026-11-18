@@ -62,7 +62,8 @@ matrices.
 Variants: a window localizes the column order around a random column, in every step with `kwin > 0` (`kwin` columns),
 and by default (`kwin=0`) for a DEM with `n >= 500` in every other step, with windows of `win_hyb` consecutive columns:
 256 for a DEM, whose errors are in time order (matrices get such windows, 512 columns, only with `rw_opt=0` or
-`win_hyb > 0`); `kwin=-1` turns the windows off.
+`win_hyb > 0`; a DEM with the row slabs of stage 4, below, gets a slab on every other step instead); `kwin=-1` turns
+the windows off.
 The window columns come first in the elimination order, so that a codeword with most of its columns in the window is
 found far more often; a window much larger than the minimum-weight codewords, e.g., one round of a DEM, has many
 columns which cannot be pivots and helps little.
@@ -92,8 +93,15 @@ dual, stage 8: the same information sets, less memory per thread, so that more R
 `maxC`, stage 32 expands the exported codewords by the triplet `2 <-> 2` exchanges and `1 -> 2` splits, and by the
 `1 <-> 1` swaps of identical columns, which restores the codewords removed by the Stern filter, also in matrices with
 identical columns (e.g., `finH`/`finL` exported from a DEM without merging, or `merge=0`; since 0.17.2).
-Shortening by the rows of `G` (stage 2, before the contraction) and row-slab windows (stage 4) are explicit only. On
-the benchmark of version 0.17.0 (Section 11 of `benchmark/BENCHMARK.md`), the automatic mode records 1.1 to 8 times
+Shortening by the rows of `G` (stage 2, before the contraction) is explicit only. The row-slab windows of stage 4
+restrict every other step of a DEM to the columns inside the first or the last half of its detectors, i.e., the two
+detector layers of a single round, where the uniform steps and the index windows hardly find the codewords confined to
+one layer (e.g., the weight 16 of the double-gross DEM with one round); they are automatic for a DEM with a single
+round (`dem_rounds=1`; `dist_m4ri.py` passes the rounds of a Stim circuit) or without round structure (no
+time translation of its errors by one round of detectors, which needs at least three detector layers) and with at most
+640 detectors. Such steps find the same codewords over and over: with any stage on, the hits of the row slabs and of
+the hybrid index windows do not count for `min_hits` (see Convergence below). On the benchmark of version 0.17.0
+(Section 11 of `benchmark/BENCHMARK.md`, without the automatic row slabs), the automatic mode records 1.1 to 8 times
 more minimum-weight hits per second (of the at most 100 codewords kept) on 13 of 15 circuit DEMs and code-sized models,
 and reaches the weights 24 of the `bb_360` DEM and 18 of the double-gross DEM 3.5 and 2.1 times sooner (medians of 2
 and 3 seeds; the lightest known codewords of these DEMs have the weights 23 and 16).
@@ -147,11 +155,17 @@ CSS code with `d = min(dX, dZ) <= U` already known, the sector runs need no more
 The RW upper bound is not certified unless CC confirms it. As in QDistRnd (manual, Sec. 3.3), the probability to miss
 a codeword lighter than the minimum weight `w` found is estimated from the hit counts: if the `m` codewords of weight
 `w` were found `n_1, ..., n_m` times, then `P_fail < exp(-<n>)`, where `<n> = (n_1 + ... + n_m) / m` is the average
-number of times a minimum-weight codeword has been found. This assumes that all codewords of the same weight are found
-equally often, which is tested with a dispersion test of the hit counts (a warning is printed with `debug=1` if the
-hit counts are strongly non-uniform). The second estimate assumes uniformly random information sets: a given codeword
-of weight `w` is found in one step with the probability `P1(w) = w C(n-w, s-1) / C(n, s)`, where `s = n - rank(H)` is
-the number of non-pivot columns and `C(a, b)` is the binomial coefficient, plus, with the RW pairs,
+number of times a minimum-weight codeword has been found. RW stops when `<n>` reaches `min_hits` (default: 5). Not all
+hits count: with any stage of `rw_opt` on (see the run plan), those of the uniform steps, of CC, and of `finC` (and of
+the windows of `kwin > 0`, where no step is uniform), but not those of the row slabs and of the hybrid index windows,
+which sample another law and find a few codewords over and over; with `rw_opt=0` (or an automatic `rw_opt` which
+resolves to 0, e.g., for a classical code), all hits, as in version 0.16.1. The `m` codewords are those with a counted
+hit, and while no codeword of the minimum weight has one, the stop is inactive (the status line and the summary say
+so). The estimate assumes that all codewords of the same weight are found equally often, which is tested with a
+dispersion test of the hit counts (a warning is printed with `debug=1` if the hit counts are strongly non-uniform).
+The second estimate assumes uniformly random information sets: a given codeword of weight `w` is found in one step
+with the probability `P1(w) = w C(n-w, s-1) / C(n, s)`, where `s = n - rank(H)` is the number of non-pivot columns
+and `C(a, b)` is the binomial coefficient, plus, with the RW pairs,
 `P2(w) = C(w, 2) C(n-w, s-2) / C(n, s) * C(r-w+2, l) / C(r, l)` with `r = rank(H)`. See the section "RW Convergence:
 Empirical Test and Probability to Find a Codeword" in `README.md` for details.
 

@@ -4896,5 +4896,126 @@ def test_cli_study_options_disabled(capsys, tmp_path):
         assert capsys.readouterr().out == out, topic
 
 
+def test_dem_rounds_single_round(capsys):
+    # The row slabs of rw_opt 4 in the automatic rw_opt of the binary for a single-round DEM: the rounds of a Stim
+    # circuit, circuit_measurement_rounds() (the largest number of measurements of one qubit: 1 for rounds=1 of a stim
+    # memory circuit or rounds=0 of a circuit with one round before its REPEAT block, 3 for 3 rounds) and
+    # circuit_single_round(), the hand-over dem_rounds=T of compute_dem_distance() for every circuit (None: automatic;
+    # 0, 1, and 2: given), shown by the run plan of the binary (rw_opt=0x15 with the slabs, 0x11 without),
+    # run_dist_m4ri(dem_rounds=...) (only with fdem), the CLI option dem_rounds=N, and invalid values
+    stim = pytest.importorskip("stim")
+    c1 = stim.Circuit.generated("surface_code:rotated_memory_x", distance=3, rounds=1,
+                                after_clifford_depolarization=0.001)
+    c3 = stim.Circuit.generated("surface_code:rotated_memory_x", distance=3, rounds=3,
+                                after_clifford_depolarization=0.001)
+    assert dist_m4ri.circuit_single_round(c1) and not dist_m4ri.circuit_single_round(c3)
+    assert [dist_m4ri.circuit_measurement_rounds(c) for c in (c1, c3)] == [1, 3]
+    assert dist_m4ri.circuit_single_round(dist_m4ri.set_circuit_rounds(c3, 0))  # (the round before the block)
+    bb72 = os.path.join(EXAMPLES_DIR, "..", "benchmark", "stim_bb", "bb_72_12_6_si1000_r6_X.stim")
+    assert not dist_m4ri.circuit_single_round(bb72)
+    assert dist_m4ri.circuit_single_round(dist_m4ri.set_circuit_rounds(bb72, 0))
+    assert not dist_m4ri.circuit_single_round(dist_m4ri.set_circuit_rounds(bb72, 1))  # (two rounds)
+    assert dist_m4ri.circuit_measurement_rounds(bb72) == 6
+    assert dist_m4ri.circuit_measurement_rounds(dist_m4ri.set_circuit_rounds(bb72, 1)) == 2
+    assert not dist_m4ri.circuit_single_round(stim.Circuit("H 0\n"))  # (no measurement)
+    assert dist_m4ri.circuit_single_round(stim.Circuit("MPP X0*X1\nMPAD 0\nM 2\n"))  # (MPAD: not a qubit)
+    assert not dist_m4ri.circuit_single_round(stim.Circuit("MPP X0*X1\nM 1\n"))
+    assert not dist_m4ri.circuit_single_round(stim.Circuit("REPEAT 2 {\n    M 0\n}\n"))
+    assert dist_m4ri.circuit_measurement_rounds(stim.Circuit("M 0\nREPEAT 3 {\n    REPEAT 2 {\n        M 0\n    }\n}\n"
+                                                             "MPP X0*Z1\n")) == 8
+    assert dist_m4ri.circuit_measurement_rounds(stim.Circuit("H 0\n")) == 0
+    dist_m4ri.disable_distance_cache()
+    plan = {}
+    for name, circ, dr, passed in (("c1", c1, None, 1), ("c3", c3, None, 3), ("c1_0", c1, 0, 0),
+                                   ("c3_1", c3, 1, 1), ("c3_2", c3, 2, 2)):
+        dist_m4ri.compute_dem_distance(circuit=circ, method=1, num_steps=20, threads=2, dem_rounds=dr, cache_file=None,
+                                       debug=dist_m4ri.PY_DBG_COMMANDS | 2)
+        out = capsys.readouterr().out
+        run_line = [ln for ln in out.splitlines() if "[dist_m4ri] Running:" in ln][0]
+        assert (f"dem_rounds={passed}" in run_line) == (passed > 0) and ("dem_rounds=" in run_line) == (passed > 0)
+        plan[name] = [ln for ln in out.splitlines() if ln.startswith("# run plan:")][0]
+    for name in ("c1", "c3_1"):
+        assert "rw_opt=0x15 (row slabs: dem_rounds=1)" in plan[name], plan[name]
+    for name in ("c3", "c3_2"):
+        assert "rw_opt=0x11," in plan[name], plan[name]
+    with pytest.raises(ValueError, match="invalid dem_rounds=-1"):
+        dist_m4ri.compute_dem_distance(circuit=c1, method=1, num_steps=20, dem_rounds=-1, cache_file=None)
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")  # (a DEM with round structure: no automatic slabs)
+    for dr, part in ((0, "rw_opt=0x11,"), (1, "rw_opt=0x15 (row slabs: dem_rounds=1)")):
+        dist_m4ri.run_dist_m4ri(method=1, fdem=dem_file, steps=20, threads=2, dem_rounds=dr,
+                                debug=dist_m4ri.PY_DBG_COMMANDS | 2)
+        out = capsys.readouterr().out
+        assert part in out and (f"dem_rounds={dr}" in out) == (dr > 0)
+    with pytest.raises(ValueError, match="invalid dem_rounds=True"):
+        dist_m4ri.run_dist_m4ri(method=1, fdem=dem_file, steps=20, dem_rounds=True)
+    dist_m4ri.run_dist_m4ri(method=1, finH=S5_H, finL=S5_L, steps=20, threads=2, dem_rounds=1,
+                            debug=dist_m4ri.PY_DBG_COMMANDS)  # (not passed without fdem: the binary needs it)
+    assert "dem_rounds=" not in capsys.readouterr().out
+    assert dist_m4ri.parse_cli_args(["dem_rounds=1"])["dem_rounds"] == 1
+    assert dist_m4ri.parse_cli_args([])["dem_rounds"] is None
+    assert dist_m4ri.main([f"fdem={dem_file}", "method=1", "steps=20", "threads=2", "dem_rounds=1", "--no-cache",
+                           f"debug={dist_m4ri.PY_DBG_COMMANDS}"]) == 0
+    assert "dem_rounds=1" in capsys.readouterr().out
+    assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "method=1", "steps=20", "threads=2", "dem_rounds=1",
+                           "--no-cache"]) == 0
+    assert "dem_rounds=: only used with fdem= (a DEM or Stim circuit); ignored" in capsys.readouterr().err
+    assert dist_m4ri.main([f"fdem={dem_file}", "dem_rounds=-1", "--no-cache"]) == 1
+    assert "invalid 'dem_rounds=-1'" in capsys.readouterr().err
+    assert dist_m4ri.main(["--morehelp", "dem_rounds"]) == 0
+    assert "  dem_rounds=N          The rounds T of the DEM" in capsys.readouterr().out
+
+
+def test_explain_slab_and_window_hits(capsys):
+    # The hits of the row slabs (and of the hybrid index windows) are counted apart and not in <n> with a nonzero
+    # resolved rw_opt: the new lines of the binary are parsed ('row slabs' in '# RW step types', 'N window and slab hits
+    # not counted', the note of an inactive min_hits stop), and explain_bounds() says so; an older binary without the
+    # row slabs is still parsed
+    err = ("# codewords accumulated: total=47, min_w=51: cws=2, total_hits=20, hits min=8, max=12, avg=10.00, "
+           "stdev=2.00, <n>=0.00 over 45 cws of w=51..70 (min_hits=5, cov_cws=100), 20 window and slab hits not "
+           "counted\n"
+           "# Note: the min_hits stop was inactive: no codeword of the minimum weight 51 was found in a uniform RW "
+           "step (<n> does not count the 20 hits of the window and slab steps)\n"
+           "# RW information sets: n=152, rank(H)=100, steps=40 (uniform permutations: 20), ksub=0, pairs=3, "
+           "1e-05 s/step per thread, 2 RW threads\n"
+           "# RW step types, w=51: uniform steps: cws=0, hits=0; window steps: cws=0, hits=0; row slabs: cws=2, "
+           "hits=20; both: cws=0 (of 2 cws)\n")
+    st = dist_m4ri._parse_stderr_stats(err)
+    assert st["hits_not_counted"] == 20 and st["avg_hits"] == 0.0 and st["set_cws"] == 45
+    assert st["rw_step_types"][51] == {"uniform_cws": 0, "uniform_hits": 0, "window_cws": 0, "window_hits": 0,
+                                       "slab_cws": 2, "slab_hits": 20, "both_cws": 0, "cws": 2}
+    assert st["min_hits_inactive"].startswith("the min_hits stop was inactive")
+    txt = dist_m4ri.explain_bounds([1, 51, 40], method=1, stats=st)
+    assert ("Hit convergence (min_hits = 5, cov_cws = 100): inactive, no codeword of the minimum weight was found in "
+            "a uniform RW step (the min_hits stop could not end RW); the 20 hits of the row slabs and of the window "
+            "steps are counted apart, not in <n> (not converged).") in txt
+    assert "0 found in the 20 uniform steps (0 hits), 2 in the 20 row-slab steps (20 hits), 0 in both" in txt
+    # the canonical classes decide (rw_opt 16): the hits not counted are named too; the row slabs of a run (bit 4 in
+    # the resolved mask) also for a weight which they did not reach
+    st2 = dist_m4ri._parse_stderr_stats(
+        err.replace("not counted\n", "not counted, not used: the canonical classes decide (see '# RW canonical')\n")
+        + "# RW step types, w=52: uniform steps: cws=3, hits=3; window steps: cws=0, hits=0; row slabs: cws=0, hits=0; "
+          "both: cws=0 (of 3 cws)\n# RW triplets: T3=0 (0.1 ms), G_rows=0, rw_opt=0x15\n")
+    txt2 = dist_m4ri.explain_bounds([1, 51, 40], method=1, stats=st2)
+    assert "is not used for the stop; the 20 hits of the row slabs and of the window steps are counted apart" in txt2
+    assert "3 found in the 20 uniform steps (3 hits), 0 in the 20 row-slab steps (0 hits)" in txt2
+    old = dist_m4ri._parse_stderr_stats("# RW step types, w=3: uniform steps: cws=1, hits=2; window steps: cws=1, "
+                                        "hits=1; both: cws=0 (of 2 cws)\n")
+    assert old["rw_step_types"][3]["slab_cws"] == 0 and old["rw_step_types"][3]["window_cws"] == 1
+    assert "hits_not_counted" not in old
+    # a run with the row slabs (explicit 0x05: the rule of <n>): <n> is the average of the uniform-step hits
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    res = dist_m4ri.run_dist_m4ri(method=1, fdem=dem_file, steps=300, seed=5, threads=1, rw_opt=5, cov_cws=0,
+                                  min_hits=1000000000, debug=1)
+    capsys.readouterr()
+    st = dist_m4ri._last_run_stats
+    types = st["rw_step_types"][3]
+    assert types["slab_cws"] > 0 and st["hits_not_counted"] == types["slab_hits"] > 0
+    assert st["set_cws"] == types["uniform_cws"] and abs(st["avg_hits"] - types["uniform_hits"] /
+                                                         types["uniform_cws"]) < 0.006
+    txt = dist_m4ri.explain_bounds(list(res), method=1, stats=st)
+    assert f"the {types['slab_hits']} hits of the row slabs and of the window steps are counted apart" in txt
+    assert "row-slab steps" in txt
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

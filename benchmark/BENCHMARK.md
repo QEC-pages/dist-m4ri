@@ -1775,7 +1775,8 @@ the target weight in parentheses; `wmin=w`, `min_hits=0`; 5 seeds, 3 for the dou
 median is the mean); default rule: RW steps until the stop with `min_hits=5` (vector rule for `0`, canonical rule for
 `-1`; same upper bounds). R1: multi-round circuit DEMs; R2: single-round ($T = 1$, `rounds=0`) DEMs; R3: code-sized
 models (`compute_model_lower_bound(..., out_model=...)`); R4: static CSS codes (`finH=Hx finG=Hz`). $n$ after merging
-and `drop=auto`; "auto" is the mask chosen by `-1`.
+and `drop=auto`; "auto" is the mask chosen by `-1` in 0.17.0 (since the row-slab defaults of 2026-11-18, `-1` adds
+the row slabs `0x04` on the four R2 DEMs, which have no round structure; see bit `0x04` below).
 
 | Input | | $n$ | $\|\mathcal{T}_3\|$ | auto | hits/s: `0x01`, `-1` | to $w$ (s): `0`, `-1` | default rule: `0`, `-1` |
 | :--- | :-: | ---: | ---: | :-: | :-: | :-: | :-: |
@@ -1833,14 +1834,21 @@ and `drop=auto`; "auto" is the mask chosen by `-1`.
   generator pair filter only while $d_{\max} + \mathrm{ext} (+ \mathrm{dW}) \le 64$), as required for that filter to
   remain loss-free when $\mathcal{T}_3 \neq \emptyset$ (`rw_opt=3` on `finG` inputs with $\mathcal{T}_3 \neq \emptyset$
   not re-measured).
-- **Bit `0x04`** (explicit only, confirmed): on multi-round DEMs, the row slabs (`0x05`) never reach weight 18 on the
-  double-gross DEM in 25 s (stuck at 25), and slow the gross DEM to $d = 10$ by 4.4 times against `0x01` (0.176 vs
-  0.040 s; 3.4x against `rw_opt=0`, 0.052 s). On the single-round ($T = 1$) double-gross DEM (follow-up runs in
-  `results_ablation.jsonl`), slabs reach weight **16** in 0.23 s and 0.65 s where `0`, `0x01`, and `-1` find 17–18 in
-  12 s (two seeds each; matching the `qec_cert` bracket $[14, 16]$ of Section 11.3, where CC alone reached 11). Slab
-  steps often find the same few codewords repeatedly (e.g., 4 distinct codewords across 942 slab hits on `mitten_150`
-  at $T = 1$, against 99 across 17,443 index-window hits), which inflates $\langle n \rangle$ of `min_hits` without
-  `0x10`.
+- **Bit `0x04`** (explicit only in 0.17.0, confirmed for the deep DEMs; the row-slab study of 2026-11-18,
+  `scratch/slab_study/REPORT.md`, changed the defaults, see below): on multi-round DEMs, the row slabs (`0x05`) never
+  reach weight 18 on the double-gross DEM in 25 s (stuck at 25), and slow the gross DEM to $d = 10$ by 4.4 times
+  against `0x01` (0.176 vs 0.040 s; 3.4x against `rw_opt=0`, 0.052 s). On the single-round ($T = 1$) double-gross DEM
+  (follow-up runs in `results_ablation.jsonl`), slabs reach weight **16** in 0.23 s and 0.65 s where `0`, `0x01`, and
+  `-1` find 17–18 in 12 s (two seeds each; matching the `qec_cert` bracket $[14, 16]$ of Section 11.3, where CC alone
+  reached 11). Slab steps often find the same few codewords repeatedly (e.g., 4 distinct codewords across 942 slab
+  hits on `mitten_150` at $T = 1$, against 99 across 17,443 index-window hits), which inflated $\langle n \rangle$ of
+  `min_hits` without `0x10`. These runs used the slabs of 0.17.0 ($\min(320, m/2)$ detectors, each boundary slab with
+  probability 15%). Since the row-slab study, the slabs have $m/2$ detectors and are only the two boundary slabs,
+  i.e., the two detector layers of a single round, on every other step (never slabs only); the automatic `rw_opt` has
+  them for a DEM with a single round (`dem_rounds=1`; `dist_m4ri.py` passes the rounds of a Stim circuit) or
+  without round structure and with at most 640 detectors, e.g., the four $T = 1$ DEMs above, but not for the deep
+  DEMs; and with a nonzero resolved `rw_opt`, $\langle n \rangle$ counts neither the slab hits nor those of the hybrid
+  index windows (these defaults are not measured here).
 - **Bit `0x08`** (automatic gate confirmed): on the two gated DEMs, `0x19` runs at 1.55x (double gross) and 2.60x
   (`bb_360`) the steps per second of `0x11` (1.51x and 2.65x vs `rw_opt=0`); forced on the 15 ungated DEMs and models,
   0.60–0.98x vs `0x11` (0.40–0.75x vs `rw_opt=0`), and 0.49–1.15x vs `0x11` on the 5 static codes (0.50–1.87x vs

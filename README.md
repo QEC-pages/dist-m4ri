@@ -85,7 +85,8 @@ bound. A row or column index out of range is an error (before, e.g., a row index
 > **Note on Compatibility**: This 3-number output format (`dmin dmax rw_steps`) is specific to the multithreaded
 > `dist_m4ri` and is incompatible with the legacy single-threaded `dist_m4ri_old`, which takes the same options but
 > prints a single integer `d` or `-w`, and also its own progress and codeword lines, to `stdout`, and ignores `threads`,
-> `timeout`, `nothrottle`, `chunk_size`, `dexp`, `dstop`, `cc_prune`, `pairs`, and `rw_opt` (with a warning).
+> `timeout`, `nothrottle`, `chunk_size`, `dexp`, `dstop`, `cc_prune`, `pairs`, `rw_opt`, `dem_rounds`, and the study
+> options (with a warning).
 
 - **`stderr`**: Receives all status banners, thread balancing reports, CC round timings, RW discovery logs, warnings,
   and confinement profiles, as selected by the `debug` bitmap (see [Debug Output](#debug-output-debugint)).
@@ -133,16 +134,21 @@ Relevant parameters:
   A single codeword suffices (e.g., a classical code with $k=1$). A lighter codeword is then missed with probability
   about $e^{-\langle n\rangle}$; see
   [RW Convergence](#5-rw-convergence-empirical-test-and-probability-to-find-a-codeword) for this empirical estimate,
-  its test (a warning at the end with `debug&1`), and the information-set estimate. All hits count, those of CC and
-  `finC` as well as those of the RW steps with windows (`kwin > 0`, the hybrid windows of `kwin=0`, or the row slabs
-  of `rw_opt` 4), which find the codewords local in the column order much more often: $e^{-\langle n\rangle}$ may then
-  be optimistic for the other codewords (`debug&1` prints the hits of the uniform and of the window steps). With stage
-  16 (automatic for quantum codes with `kwin <= 0`), RW stops instead by a Good–Turing / Chao2 rule on the canonical
-  classes of the minimum-weight codewords found in the uniform RW steps only (see
-  [RW Convergence](#5-rw-convergence-empirical-test-and-probability-to-find-a-codeword)): while no uniform step has
-  found a codeword of the minimum weight (e.g., on deep circuit DEMs, where the window steps find them), the `min_hits`
-  stop is inactive, and RW runs until `steps` or the `timeout` end (since 0.17.2, the status line and the summary say
-  so; the codewords of the window steps are shown for information only).
+  its test (a warning at the end with `debug&1`), and the information-set estimate. The hits counted for
+  $\langle n\rangle$ (the average over the codewords with such a hit) depend on the resolved `rw_opt` (the run plan):
+  with `0x0` (`rw_opt=0`, or an automatic `rw_opt` which resolves to 0, e.g., for a classical code), all hits count,
+  as in version 0.16.1; otherwise, those of the uniform RW steps, of CC, and of `finC` count, and those of the windows
+  of `kwin > 0` (then no step is uniform), but not those of the row slabs of `rw_opt` 4 and of the hybrid index windows
+  of `kwin=0`, which find the codewords local in the column order (or in one detector layer) over and over and would
+  stop RW too early (with `debug&1`, `# RW step types` gives the hits of each kind of step, and
+  `# codewords accumulated` those not counted). Where window hits count, $e^{-\langle n\rangle}$ may be optimistic for
+  the codewords which are not local in the column order. With stage 16 (automatic for quantum codes with
+  `kwin <= 0`), RW stops instead by a Good–Turing / Chao2 rule on the canonical classes of the minimum-weight codewords
+  found in the uniform RW steps only (see
+  [RW Convergence](#5-rw-convergence-empirical-test-and-probability-to-find-a-codeword)). Either stop is inactive
+  while no codeword of the minimum weight has been counted (e.g., on deep circuit DEMs, where the window steps find
+  them), and RW then runs until `steps` or the `timeout` end (the status line and the summary say so, for stage 16
+  since 0.17.2; the codewords of the window steps are shown for information only).
 - `cov_cws=[int]`: Size of the representative set of lowest-weight codewords for `min_hits` (default: 100; 0 for the
   minimum-weight codewords only). Without `outC` and `maxC`, at most `cov_cws` minimum-weight codewords are tracked
   (all with `cov_cws=0`). For codes with fewer than `cov_cws` minimum-weight codewords, a smaller `cov_cws` may stop
@@ -151,8 +157,9 @@ Relevant parameters:
   $W$ columns near a random column, which are thus preferred as pivots, in every RW step (default: 0; for $n \ge 500$,
   every other RW step of a DEM then uses an index window of `win_hyb` consecutive columns, as with `win_mode=1`, and
   the other steps use uniform random permutations, also for codewords which are not local in the column order;
-  matrices get these hybrid windows only with `rw_opt=0` or `win_hyb > 0`, see `rw_opt`). A negative `kwin` (e.g.,
-  `kwin=-1`) turns the windows off: uniform random permutations in every RW step.
+  matrices get these hybrid windows only with `rw_opt=0` or `win_hyb > 0`, see `rw_opt`, and a DEM with the row slabs
+  of `rw_opt` 4, e.g., automatic for a single round, gets a slab on every other step instead, also for $n < 500$). A
+  negative `kwin` (e.g., `kwin=-1`) turns the windows off: uniform random permutations in every RW step.
 - `win_mode=[0|1]`: Window construction mode when `kwin > 0`: `0` for Tanner graph BFS neighborhood, `1` for contiguous
   column index window (default: 0).
 - `win_hyb=[int]`: Window size of the hybrid RW steps (with `kwin=0` and $n \ge 500$; at most $3n/4$; a value above 0
@@ -168,13 +175,16 @@ Relevant parameters:
   (the double-gross DEM: about 10 distinct codewords of weight 18 per $2 \cdot 10^4$ steps with 256 columns, 0-2 with
   512 or with one round), while matrices of codes gain nothing from 256. With `debug&1`, the binary prints the rounds
   of a DEM in the input summary (estimated from the time translation of its errors: the number $D$ of detectors per
-  round is the most frequent distance of the two detectors of an error, as of measurement errors, which maps most
-  errors to other errors when their detectors are shifted by $D$; $L = n D / m$ columns per round; none, e.g., for
-  circuits with SWAP routing or with a folded schedule; printed only, the search does not use it), and at the end of
-  RW the codewords of the three lowest weights found by the uniform steps and by the window steps (`# RW step types`;
-  e.g., to see codewords which are not local in the column order): the codewords in the hash table, i.e., without
-  `outC` and `maxC` at most `cov_cws` of the minimum weight (the first ones found), where `both` counts those found by
-  both kinds of steps.
+  round, $2 \le D \le m/3$, i.e., at least three detector layers, is a frequent distance of the two detectors of an
+  error, as of measurement errors, which maps most errors to other errors when their detectors are shifted by $D$, a
+  score of at least 1/2; $L = n D / m$ columns per round; none, e.g., for a single round, whose detectors form two
+  layers, for circuits with SWAP routing or with a folded schedule, whose rounds alternate between two forms, or for
+  detectors not in time order), and at the end of RW the codewords of the three lowest weights found by the uniform
+  steps, by the window steps, and by the row slabs of `rw_opt` 4 (`# RW step types`; e.g., to see codewords which are
+  not local in the column order): the codewords in the hash table, i.e., without `outC` and `maxC` at most `cov_cws`
+  of the minimum weight (the first ones found), where `both` counts those found by the uniform and by the other steps.
+  The search uses the rounds only for the automatic row slabs of `rw_opt` 4, which a DEM without round structure gets
+  (see `dem_rounds`; then they are also estimated without `debug&1`, for at most 640 detectors).
 - `pairs=[int]`: The RW pairs of non-pivot columns ($p=2$): the number $l$ of random pivot rows of their buckets (at
   most 64; 0: off). Default: -1 (auto), $l = \lceil \log_2 (n-r) \rceil$ (about one non-pivot column per bucket), with
   fewer rows (at least one) while a codeword of the weight $w$ of the upper bound would be kept with the probability
@@ -218,11 +228,16 @@ Relevant parameters:
     contraction of `1`; the single-column candidates up to the weight $\min(d_{\max} + w_G - 2, 64)$, with `1` up to
     $\min(d_{\max} + \max(8, w_G - 2), 64)$), and the pairs skip the columns whose circuits are rows of $G$ (only while
     that weight is at most 64, and not when collecting codewords; explicit only);
-  - `4`: row-slab windows of a DEM in time order (with `kwin=0`, not with `sort_rows=1`): every other step, the columns
-    inside a range of $\min(320, m/2)$ detectors (explicit only: on deep circuit DEMs, the index windows with `1` found
-    more minimum-weight codewords per second; on some single-round DEMs, the slabs found lighter codewords much sooner,
-    e.g., the weight 16 of the double-gross DEM with one round, but they often find the same few codewords again,
-    which raises $\langle n\rangle$ of the `min_hits` rule without `16`);
+  - `4`: row-slab windows of a DEM in time order (with `kwin=0`, not with `sort_rows=1`): on every other step, instead
+    of an index window, the columns inside the first or the last $m/2$ detectors, i.e., the two detector layers of a
+    single round, with a random independent set of the triplet graph first; the other steps use uniform random
+    permutations, which find the codewords across the two layers (see the study options `slab_rows`, `slab_bnd`,
+    `slab_var`, and `slab_every` of `--morehelp study`). Automatic for a DEM with a single round (`dem_rounds=1`, see
+    below) or, with its rounds unknown (`dem_rounds=0`, the default), for a DEM without round structure (see
+    `win_hyb`) and with at most 640 detectors: there the slabs find the codewords confined to one layer, which the
+    other steps hardly find, e.g., the weight 16 of the double-gross DEM with one round; not on deep circuit DEMs,
+    where the index windows with `1` found more minimum-weight codewords per second. The slabs find the same
+    codewords over and over, and the rule of $\langle n\rangle$ of `min_hits` does not count their hits;
   - `8`: sparse-dual elimination with an $m \times m$ inverse instead of the $m \times n$ matrix (the same information
     sets and candidates; quantum codes with up to 64 rows of $L$; automatic for $m \times n$ above 512 KiB with
     $n \ge 20 m$ or $m \ge 1400$; no `# RW FKG score`); the smaller memory per RW thread also raises the number of RW
@@ -247,16 +262,25 @@ Relevant parameters:
   `debug&1`, the binary prints the stages used and their statistics (`# RW triplets: T3=..., rw_opt=0x..`,
   `# RW canonical (w=...): classes=..., p_GT=..., C0_Chao2=...`, and `# RW FKG score: ...`, the mean Harris–FKG bound
   on $\ln \Pr(J)$ of the dense full-matrix steps with pairs, with any stage, but not with `8` and not of the slab
-  steps). Measured on the dedicated 64-core server with 16 threads (Section 11 of the
-  [benchmark](benchmark/BENCHMARK.md)): the automatic mode records 1.1–8.0 times more minimum-weight hits per second
-  (of the at most `cov_cws` = 100 codewords kept) on 13 of 15 circuit DEMs, single-round DEMs, and code-sized models
-  (0.75–0.9 times on the two smallest multi-round DEMs, `surf_d5` and `color_xyz_d5`), and 1.04–1.96 times on static
-  codes; it reaches the weight 24 of the `bb_360` DEM 3.5 times and the weight 18 of the double-gross DEM 2.1 times
-  sooner (medians of 2 and 3 seeds; the lightest known codewords of these DEMs have the weights 23 and 16); with the
-  canonical rule, `0x11` stops 2.3–9 times sooner than `rw_opt=0` on the code-sized models (1.5–3.2 times sooner than
-  `0x01`, the rule of $\langle n\rangle$ with the same contraction) and up to 7 times later where many classes exist
-  (`shyps_225` at $T = 1$, 57 times later than `0x01`). `rw_opt=0` runs within 5% of the 0.16.1 binary. Not with the
-  experimental `ksub`; `dist_m4ri_old` ignores `rw_opt`.
+  steps). Measured with 0.17.0 (without the automatic row slabs) on the dedicated 64-core server with 16 threads
+  (Section 11 of the [benchmark](benchmark/BENCHMARK.md)): the automatic mode records 1.1–8.0 times more minimum-weight
+  hits per second (of the at most `cov_cws` = 100 codewords kept) on 13 of 15 circuit DEMs, single-round DEMs, and
+  code-sized models (0.75–0.9 times on the two smallest multi-round DEMs, `surf_d5` and `color_xyz_d5`), and
+  1.04–1.96 times on static codes; it reaches the weight 24 of the `bb_360` DEM 3.5 times and the weight 18 of the
+  double-gross DEM 2.1 times sooner (medians of 2 and 3 seeds; the lightest known codewords of these DEMs have the
+  weights 23 and 16); with the canonical rule, `0x11` stops 2.3–9 times sooner than `rw_opt=0` on the code-sized
+  models (1.5–3.2 times sooner than `0x01`, the rule of $\langle n\rangle$ with the same contraction) and up to 7
+  times later where many classes exist (`shyps_225` at $T = 1$, 57 times later than `0x01`). `rw_opt=0` runs within
+  5% of the 0.16.1 binary. Not with the experimental `ksub`; `dist_m4ri_old` ignores `rw_opt`.
+- `dem_rounds=[int]`: The rounds $T$ of the DEM, if known (default: 0, unknown; only with `fdem`), for the automatic
+  `rw_opt`: 1, a single round of syndrome measurements and the final readout, adds the row slabs of `rw_opt` 4, and 2
+  or more excludes them (the Python wrapper passes the rounds of a Stim circuit, the largest number of measurements of
+  a qubit, so that, e.g., the surface code with 3 rounds gets no slabs from a weak round estimate); with
+  0, the binary adds them for a DEM without round structure (no time translation by $2 \le D \le m/3$ detectors, see
+  `win_hyb`: e.g., a single-round DEM, whose detectors form two layers, a folded schedule, or detectors not in time
+  order) and with at most 640 detectors. The run plan says why (e.g., `rw_opt=0x15 (row slabs: dem_rounds=1)` or
+  `rw_opt=0x15 (row slabs: no round structure, m <= 640)`), and so does the input summary
+  (`#   RW row slabs (rw_opt 4): ...`). `dist_m4ri_old` ignores `dem_rounds` (with a warning).
 - `ksub=[int]`: **Experimental, should not be used** (a warning is printed whenever `ksub>0` is given for RW, with or
   without `min_hits`). Subspace dimension sampled from $\ker(H)$ for cache-resident RW elimination (default: 0 for
   full-matrix RW; automatically falls back to `ksub=0`, with a warning if `debug&1`, when $m < \nu = \dim\ker(H)$,
@@ -591,8 +615,17 @@ $$
 Without the canonical classes of `rw_opt` 16 (below), RW stops once $\langle n\rangle$ reaches `min_hits`:
 $e^{-5} \approx 0.7\%$ for the default `min_hits=5`, and $e^{-10} \approx 4.5 \cdot 10^{-5}$ for `min_hits=10`. Here
 $\langle n\rangle$ is the smaller of the averages over the minimum-weight codewords and over the representative set of
-`cov_cws` lowest-weight codewords (heavier codewords only make the estimate more conservative). The assumption of
-equal probabilities for the codewords of the same weight can be tested: QDistRnd uses Pearson's statistic
+`cov_cws` lowest-weight codewords (heavier codewords only make the estimate more conservative), and $n_i$ counts only
+the hits counted for `min_hits` (see [method=1](#1-multithreaded-rw-algorithm-method1)): with a nonzero resolved
+`rw_opt`, those of the uniform RW steps, of CC, and of `finC`, and those of the windows of `kwin > 0` (then no step is
+uniform), but not those of the row slabs of `rw_opt` 4 and of the hybrid index windows, which sample another law and
+find a few codewords over and over (in the row-slab study of Sec. 9 of `doc/rw_triplet_degeneracies.tex`, on
+single-round DEMs, the rule stopped with 41–89% of the minimum-weight codewords found when it counted these hits, and
+with 99% without them); with a resolved `rw_opt` of 0, all hits, as in version 0.16.1. The $m$ codewords are those
+with a counted hit: while no codeword of the minimum weight has one, the stop is inactive (the status line and the
+summary say so: `# Note: the min_hits stop was inactive: ...`), and the line `# codewords accumulated` gives the
+number of hits not counted (`..., N window and slab hits not counted`). The assumption of equal probabilities for the
+codewords of the same weight can be tested: QDistRnd uses Pearson's statistic
 $X^2 = (m / n_{\text{tot}}) \sum_i n_i^2 - n_{\text{tot}}$, where $n_{\text{tot}} = \sum_i n_i$, which is distributed
 as $\chi^2_{m-1}$ for large $\langle n\rangle$. This is the index-of-dispersion test of the hit counts against the
 Poisson distribution. `dist_m4ri` applies it to each weight class of the representative set, using the zero-truncated
@@ -600,9 +633,9 @@ Poisson distribution (codewords never found are not known), and with `debug&1` w
 strongly non-uniform: a p-value below $10^{-3}$, a relative spread of the hit rates of at least 1, and, for
 gamma-distributed hit rates with this spread, a probability to miss a lighter codeword at least 3 times larger than
 with equal hit rates. Then $e^{-\langle n\rangle}$ is optimistic, and a larger `min_hits` is advisable; this happens,
-e.g., for the surface-code circuit `examples/surf_d5_H.mmx`. The hit counts include those of CC and `finC` and of all
-RW steps, also of the steps with windows (`kwin > 0`, the hybrid windows of `kwin=0`, or the row slabs of `rw_opt` 4),
-which find the codewords local in the column order much more often.
+e.g., for the surface-code circuit `examples/surf_d5_H.mmx`. The test uses the hits counted for $\langle n\rangle$;
+where these include window hits (`kwin > 0`, or the hybrid windows with a resolved `rw_opt` of 0, as in the example
+below), the codewords local in the column order are found much more often.
 
 **Canonical classes** (stage 16 of `rw_opt`, since 0.17.0; automatic for quantum codes with `min_hits > 0` and
 `kwin <= 0`). The minimum-weight codewords of a circuit DEM or of a degenerate code come in classes related by the
@@ -889,16 +922,16 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
 
 `--help`, `--morehelp`, and `--version` (also `-help`, `-?`, `-morehelp`, `--more-help`, `-more-help`, and `-version`)
 print to `stdout`. A file name may also be given as the next argument (e.g., `finH= file`). Conflicting inputs: `fdem`
-together with matrix files (`finH`, `finG`, `finL`, `fin`), `pmin`, `outD`, or `drop` (other than `drop=0`) without
-`fdem`, `finG` together with `finL`, and `drop`, `finG`, `finL`, or `fin` with `classical=1`, are errors; `fin`
-followed by `finH`, `finG`, or `finL` is ignored entirely (with a warning on `stderr`: e.g., `fin=A finG=B` still
-needs `finH`), while `fin` after them is an error. Numbers: since 0.17.2, an integer option also takes a
-floating-point number with an integer value (e.g., `steps=1e5` or `steps=100000.0`; `1e5` was read as 1 before),
-other text after a number is ignored with a warning (e.g., `threads=4x` is read as 4, as before, and `steps=1.5` as 1),
-and a value without a number is an error; a floating-point value (`timeout`, `pmin`) must be finite, except
-`timeout=inf` (no timeout), and `timeout` takes a trailing `s` (e.g., `timeout=10s`). Errors, also an unrecognized
-parameter or a missing input, end the binary with the exit code 255. The Python CLI (`python3 dist_m4ri.py`) has the
-same help options (see [Python Wrapper](#python-wrapper-dist_m4ripy)).
+together with matrix files (`finH`, `finG`, `finL`, `fin`), `pmin`, `outD`, `dem_rounds` (other than 0), or `drop`
+(other than `drop=0`) without `fdem`, `finG` together with `finL`, and `drop`, `finG`, `finL`, or `fin` with
+`classical=1`, are errors; `fin` followed by `finH`, `finG`, or `finL` is ignored entirely (with a warning on `stderr`:
+e.g., `fin=A finG=B` still needs `finH`), while `fin` after them is an error. Numbers: since 0.17.2, an integer option
+also takes a floating-point number with an integer value (e.g., `steps=1e5` or `steps=100000.0`; `1e5` was read as 1
+before), other text after a number is ignored with a warning (e.g., `threads=4x` is read as 4, as before, and
+`steps=1.5` as 1), and a value without a number is an error; a floating-point value (`timeout`, `pmin`) must be
+finite, except `timeout=inf` (no timeout), and `timeout` takes a trailing `s` (e.g., `timeout=10s`). Errors, also an
+unrecognized parameter or a missing input, end the binary with the exit code 255. The Python CLI
+(`python3 dist_m4ri.py`) has the same help options (see [Python Wrapper](#python-wrapper-dist_m4ripy)).
 
 ### Standard Help (`dist_m4ri --help`)
 
@@ -965,7 +998,7 @@ Extra parameters (see --morehelp for details):
   win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)
   pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
   rw_opt=[int] (-1)      RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63
-  slab_rows=[int] (0)    Study, row slabs of rw_opt 4: detectors per slab (0: min(320, m/2)); also
+  slab_rows=[int] (0)    Study, row slabs of rw_opt 4: detectors per slab (0: m/2); also
                          slab_bnd, slab_var, slab_every (see --morehelp study)
   steplog=[file]         Study: log the RW steps and the codewords found in them (see --morehelp study)
   cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
@@ -996,14 +1029,15 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
   `dmin>1`), and the confinement profile with `smax>0`.
 - `1` (default) **summary**: input matrices (sizes, numbers of nonzeros, maximum row and column weights; for a DEM also
   its rounds, `#   rounds of the DEM: D=... detectors and L=... columns per round`, and for the hybrid RW the window
-  size), warnings, the reason why the run ended (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`,
+  size, or the row slabs of `rw_opt` 4, `#   RW row slabs (rw_opt 4): ...`), warnings, the reason why the run ended
+  (`# stopped after ...s: ...`, e.g., `bounds coincide: dmin = dmax = 5`,
   `timeout=60s reached during CC round w=9 (37.5% of start columns claimed)`, or `RW convergence reached`), codeword
   and hit statistics, the reducible codewords skipped (`irred=1`, see [Codeword Export](#codeword-export-outc--finc)),
   RW information sets (`# RW information sets: ..., pairs=l, ...`), the pairs checked per step and the codewords found
   by the pairs and by the single columns (`# RW pairs (p=2, ...)`), the codewords of the three lowest weights found by
-  the uniform and by the window steps (`# RW step types, w=...`), the RW stages of `rw_opt` (`# RW triplets: ...`,
-  `# RW canonical (w=...): ...`, `# RW FKG score: ...`, and, since 0.17.2, `# Note: the min_hits stop was inactive:
-  ...`), codeword export.
+  the uniform steps, by the window steps, and by the row slabs (`# RW step types, w=...`), the RW stages of `rw_opt`
+  (`# RW triplets: ...`, `# RW canonical (w=...): ...`, `# RW FKG score: ...`), why the `min_hits` stop could not end
+  RW (`# Note: the min_hits stop was inactive: ...`, for the canonical classes since 0.17.2), codeword export.
 - `2` (default) **progress**: the run plan (method, threads, RW steps, CC weights, timeout, rng seed), finished CC
   rounds, new upper bounds, RW convergence.
 - `4` **periodic status** after 1, 2, 4, ... seconds, then every 60 s: the bounds, the RW steps and their rate, the
@@ -1018,7 +1052,7 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
 - `64` **arguments**: the command-line arguments, the rng seed, and the files read.
 - `128` **matrices** $H$, $G$, $L$ (for $n < 150$, unless bit `2048` is set).
 - `256` **codeword dump**: all codewords in the hash table with their hit counts (at the end), also those of the RW
-  steps with uniform permutations (`u`) and with windows (`w`).
+  steps with uniform permutations (`u`), with windows (`w`), and of the row slabs (`s`).
 - `2048`: no size cutoff for matrices, codeword supports, and per-weight codeword statistics.
 - `4096`: `dist_m4ri_old` only, CC recursion and confinement hash traces.
 
@@ -1126,6 +1160,15 @@ interoperability without manual threading overhead.
   - **`--rounds [N]`**: Constructs the DEM with `N` repetitions in the circuit's `REPEAT` block (`rounds=2` by default
     when `--rounds` is passed without a number). If the `.stim` circuit does not contain a `REPEAT` block, issues a
     warning to `stderr` and continues with the original circuit.
+  - **`dem_rounds`** (CLI: `dem_rounds=N`; default: `None`, automatic): the rounds $T$ of the DEM, passed to the binary
+    as `dem_rounds=N` if positive (see `dem_rounds` in [RW Algorithm](#1-multithreaded-rw-algorithm-method1)): 1 adds
+    the row slabs of `rw_opt` 4 to its automatic `rw_opt`, 2 or more excludes them, and 0 leaves the choice to the
+    binary (a DEM without round structure and with at most 640 detectors). `None` passes the rounds of a Stim circuit
+    (see `circuit_measurement_rounds()`: the largest number of measurements of one qubit, e.g., 1 with `--rounds 0` for
+    a circuit with one round before its `REPEAT` block; with `verbose=True`, a line says so), so that a shallow
+    multi-round DEM whose round structure the binary does not see gets no slabs, and 0 for a DEM. `run_dist_m4ri()`
+    takes it too (default: 0), and a negative value raises `ValueError`. The distance and the cache key do not depend
+    on it.
   - **`--out-dir DIR`, `--out-dem [FILE]`, `--out-stim [FILE]`**: Optionally saves the constructed DEM and/or the
     processed (noisy, round-adjusted) `.stim` circuit. When `--out-dem` or `--out-stim` is passed without a filename
     (or `out_dem=True` / `out_stim=True`), filenames default to `<basename>_full.dem` and `<basename>_full.stim`.
@@ -1200,9 +1243,12 @@ interoperability without manual threading overhead.
     `threads`, `timeout`, `num_steps`, `dstop`, `wmax`, `seed`, `nothrottle`, `pairs`, `sort_rows`, `cc_prune`, and
     `rw_opt` apply to each run of the binary (also in the CLI).
 - `classify_qubits_thorough(circuit, ...)` / `strip_minority_detectors(circuit, basis, ..., mask_out=None)` /
-  `set_circuit_rounds(circuit, rounds)`: Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a
-  list `mask_out` receives one entry per detector: `True` if it is stripped; `compute_dem_distance()` uses it for the
-  detectors to drop with `drop="css"`), and `REPEAT` block round adjustment.
+  `set_circuit_rounds(circuit, rounds)` / `circuit_measurement_rounds(circuit)` / `circuit_single_round(circuit)`:
+  Helpers for Stim circuit Pauli basis tracking, minority-detector stripping (a list `mask_out` receives one entry per
+  detector: `True` if it is stripped; `compute_dem_distance()` uses it for the detectors to drop with `drop="css"`),
+  `REPEAT` block round adjustment, and the rounds of syndrome measurements: the largest number of measurements of one
+  qubit (by a single-qubit or a Pauli-product measurement, with the repetitions of the `REPEAT` blocks), which
+  `compute_dem_distance()` passes as `dem_rounds`, and whether it is 1 (no qubit measured twice).
 - `read_drop_file(path)` / `write_reduced_dem(dem, dropped, prefix, pmin=0.0, num_detectors=None, meta=None)`: Reads
   a drop file (e.g., written by the binary with `outD`): the sorted 0-based detectors and the number of detectors of
   the DEM from the comment line `# N of M detectors dropped ...` (`None` if none); writes the DEM without the detectors
@@ -1266,10 +1312,10 @@ interoperability without manual threading overhead.
   for a DEM and 512 for matrices, which get the hybrid windows only with `rw_opt=0` or `win_hyb > 0`): passed to the
   binary if nonzero (see [RW Algorithm](#1-multithreaded-rw-algorithm-method1)); the cache key does not depend on it.
   With `verbose=True` (CLI: `--verbose`), the binary's summary shows the rounds of a DEM, and the explanation of the
-  bounds shows the codewords found by the uniform and by the window steps; `_last_run_stats` holds them as `"rounds"`
-  (`D`, `L`, `score`) and `"rw_step_types"` (per weight: the distinct codewords and hits of each kind of step, of the
-  codewords in the hash table, see `win_hyb`), and the model check of the information-set estimate uses the hits of
-  the uniform steps only.
+  bounds shows the codewords found by the uniform steps and by the window steps (or the row slabs of `rw_opt` 4);
+  `_last_run_stats` holds them as `"rounds"` (`D`, `L`, `score`) and `"rw_step_types"` (per weight: the distinct
+  codewords and hits of each kind of step, `uniform_*`, `window_*`, and `slab_*`, of the codewords in the hash table,
+  see `win_hyb`), and the model check of the information-set estimate uses the hits of the uniform steps only.
 - RW pairs `pairs` of all `compute_*_distance()` functions (CLI: `pairs=N`; default: -1, auto; 0: off): passed to the
   binary if not -1 (see [RW Algorithm](#1-multithreaded-rw-algorithm-method1)); the cache key does not depend on it.
   With `debug&1` (or `verbose=True`), `_last_run_stats` holds the number of rows `"rw_pairs_l"` (0: no pairs), the
@@ -1322,12 +1368,12 @@ interoperability without manual threading overhead.
   `smax > 0`).
 - CLI (`python3 dist_m4ri.py`): `--version` also shows the version of the `dist_m4ri` binary; inputs which are ignored
   give a warning on `stderr` (the input is selected in the order `fdem`, `Hx`/`Hz`, `finH`/`finG`/`finL`/`fin`; e.g.,
-  matrices with `fdem`, `pmin`, `merge`, `expand`, `drop`, `outD`, or `--out-reduced` without `fdem`, `basis`,
-  `--p-noise`, or `--force-noise` without a Stim circuit, `basis` without `drop=css`, `classical=1` with `finG`,
-  `ortho=0` without $G$), where the binary rejects some of these combinations with an error. With `finH`, `finG`, or
-  `finL`, the CLI takes only the missing `finH` and `finG` (the latter not with `finL`) from `fin`, in any order, with
-  a warning, while the binary ignores a `fin` given before them and rejects one after them. A file name may also be
-  the next argument (`finH= FILE`, as in the binary), a flag also takes the form `key=value` (e.g.,
+  matrices with `fdem`, `pmin`, `merge`, `expand`, `drop`, `outD`, `dem_rounds`, or `--out-reduced` without `fdem`,
+  `basis`, `--p-noise`, or `--force-noise` without a Stim circuit, `basis` without `drop=css`, `classical=1` with
+  `finG`, `ortho=0` without $G$), where the binary rejects some of these combinations with an error. With `finH`,
+  `finG`, or `finL`, the CLI takes only the missing `finH` and `finG` (the latter not with `finL`) from `fin`, in any
+  order, with a warning, while the binary ignores a `fin` given before them and rejects one after them. A file name
+  may also be the next argument (`finH= FILE`, as in the binary), a flag also takes the form `key=value` (e.g.,
   `--no-throttle=1`), and `--key VALUE` takes negative values (e.g., `--kwin -1`). Numbers are read as by the binary
   (e.g., `steps=1e5`, `timeout=10s`, `timeout=inf`), except that other trailing text is an error (e.g., `steps=1.5`).
   `--cws` (`do_cws`) collects the minimum-weight codewords into the cache record (written to the file `outC=FILE`;
@@ -1343,14 +1389,17 @@ interoperability without manual threading overhead.
   exit code `1`. As in the binary, the option groups (also `stim` and `cache` in the Python CLI) give all their entries
   (e.g., `-h window`), and a parameter of a group also the other entries of its group. The binary has the same help
   options.
-- RW stages (since 0.17.0): `rw_opt` (the last keyword parameter of `run_dist_m4ri()`, the `compute_*()` functions,
-  and `compute_model_lower_bound()`; CLI `rw_opt=N`, `--rw-opt N`, decimal or `0x..`) is passed to the binary (`None`:
-  the binary default `-1`, automatic; `ValueError` outside `-1..63`); it is not part of the cache key, and
-  `solver='codedistance'` ignores it with a warning. The statistics of the stages are parsed from `stderr` into
-  `_last_run_stats` (`rw_triplets`, `rw_canon`, `rw_fkg`) and reported by `explain_bounds()` and `--verbose` (the
-  information-set estimate is labelled as the baseline, and the canonical class coverage as empirical; since 0.17.2,
-  the explanation names the rule which decided the `min_hits` stop: $N$, $N/C$, $Q_1/N$, Chao2, or $\langle n\rangle$,
-  and says when the stop was inactive).
+- RW stages (since 0.17.0): `rw_opt` (the last keyword parameter of `compute_classical_distance()`,
+  `compute_quantum_distance()`, `compute_css_distance()`, and `compute_model_lower_bound()`, and the one before
+  `dem_rounds` in `run_dist_m4ri()` and `compute_dem_distance()`; CLI `rw_opt=N`, `--rw-opt N`, decimal or `0x..`) is
+  passed to the binary (`None`: the binary default `-1`, automatic; `ValueError` outside `-1..63`); it is not part of
+  the cache key, and `solver='codedistance'` ignores it with a warning. The statistics of the stages are parsed from
+  `stderr` into `_last_run_stats` (`rw_triplets`, `rw_canon`, `rw_fkg`) and reported by `explain_bounds()` and
+  `--verbose` (the information-set estimate is labelled as the baseline, and the canonical class coverage as
+  empirical; since 0.17.2, the explanation names the rule which decided the `min_hits` stop: $N$, $N/C$, $Q_1/N$,
+  Chao2, or $\langle n\rangle$, and says when the stop was inactive; with the rule of $\langle n\rangle$, it also gives
+  the hits of the row slabs and of the window steps which $\langle n\rangle$ does not count,
+  `_last_run_stats["hits_not_counted"]`, and says when no codeword of the minimum weight had a counted hit).
 - Solver / engine selection (`solver=` or `engine=` in the `compute_*_distance()` functions and the CLI, where `engine`
   takes precedence if both are given):
   - `'dist_m4ri'` (default; also `engine='native'` or `'off'`): uses the native multithreaded `dist_m4ri` binary.

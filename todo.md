@@ -126,12 +126,18 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     e.g., for a classical code with $k=1$). As in QDistRnd, a lighter codeword is missed with probability
     $\approx e^{-\langle n\rangle}$, assuming that lighter codewords are found at least as often. Since 0.17.0, the
     canonical rule of Stage 5 of Task 7 (`rw_opt` bit `0x10`, automatic for quantum codes) replaces this rule.
-  - The hits of all RW steps count, including the window steps (`kwin > 0`, and the hybrid windows on every other
-    step for $n \ge 500$, on by default, since 0.17.0 for a DEM, or for matrices with `rw_opt=0` or `win_hyb > 0`), as
-    well as the CC and `finC` hits; the window steps find local codewords much more often, so that
-    $e^{-\langle n\rangle}$ can be optimistic for codewords which are not local (found by the uniform steps only).
+  - Until the row-slab defaults of 2026-11-18, the hits of all RW steps counted, including the window steps
+    (`kwin > 0`, and the hybrid windows on every other step for $n \ge 500$, on by default, since 0.17.0 for a DEM, or
+    for matrices with `rw_opt=0` or `win_hyb > 0`) and the row slabs, as well as the CC and `finC` hits; the window
+    steps find local codewords much more often, so that $e^{-\langle n\rangle}$ can be optimistic for codewords which
+    are not local (found by the uniform steps only). Since then, with a nonzero resolved `rw_opt`, only the hits of the
+    uniform steps, of CC, and of `finC` count (and those of the windows of `kwin > 0`, where no step is uniform), not
+    those of the row slabs and of the hybrid index windows, and $\langle n\rangle$ is the average over the codewords
+    with such a hit (the stop is inactive while no codeword of the minimum weight has one); with a resolved `rw_opt` of
+    0, all hits count, as in 0.16.1 (see **A rule for the row slabs** in Task 7).
 - [x] **Hit Uniformity Check**: at the end (`debug&1`, result not certified), a dispersion test of the hit counts in
-  each weight class of the representative set (zero-truncated Poisson); a warning if they are strongly non-uniform.
+  each weight class of the representative set (zero-truncated Poisson; since 2026-11-18, of the hits counted for
+  $\langle n\rangle$); a warning if they are strongly non-uniform.
 - [x] **Information-Set Estimate** (Python `--verbose`, and in the binary with the hit uniformity warning): with
   uniform random information sets, a codeword of weight $w$ is found per RW step with probability
   $P_1(w) = w\binom{n-w}{s-1}/\binom{n}{s}$, $s = n - \mathrm{rank}\,H$, plus, with the RW pairs (0.14.4, $l$ pivot
@@ -183,13 +189,15 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - Possible directions:
   - [x] Separate hit statistics for the uniform and the windowed RW steps (0.14.3): with `debug&1`, the binary prints
     the distinct codewords and hits of the three lowest weights found by each kind of step (`# RW step types, ...`;
-    the codewords in the hash table, i.e., without `outC` and `maxC` at most `cov_cws` of the minimum weight), and the
-    Python model check of the information-set estimate uses the hits of the uniform steps only. Codewords which
-    violate the window model (e.g., time-like codewords with one error per round) are still found only by the uniform
-    steps, which are kept for this. The vector rule of `min_hits` and the hit uniformity check still use the hits of
-    both kinds of steps (`cnt`); the canonical rule of Stage 5 of Task 7 (0.17.0) counts only the uniform steps
-    (`cnt_u`), and its stop is inactive while no uniform step has found a codeword of the minimum weight (the window
-    steps are informational; the status line and the summary say so since 0.17.2).
+    since 2026-11-18 also the row slabs apart; the codewords in the hash table, i.e., without `outC` and `maxC` at most
+    `cov_cws` of the minimum weight), and the Python model check of the information-set estimate uses the hits of the
+    uniform steps only. Codewords which violate the window model (e.g., time-like codewords with one error per round)
+    are still found only by the uniform steps, which are kept for this. The vector rule of `min_hits` and the hit
+    uniformity check used the hits of all kinds of steps (`cnt`) until 2026-11-18; since then, with a nonzero resolved
+    `rw_opt`, they leave out the hits of the row slabs and of the hybrid index windows (`cnt_s`, `cnt_w`; see Task 4
+    and **A rule for the row slabs** in Task 7); the canonical rule of Stage 5 of Task 7 (0.17.0) counts only the
+    uniform steps (`cnt_u`), and its stop is inactive while no uniform step has found a codeword of the minimum weight
+    (the window steps are informational; the status line and the summary say so since 0.17.2).
   - Empirical per-weight hit rates from the representative set, extrapolated to weights below the minimum found.
   - Account for the small-weight trivial vectors explicitly (see **Trivial Codeword Statistics** below); this may
     also give a more accurate round estimate (degenerate multiplicity). Studied for the weight-3 ones: the
@@ -253,12 +261,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   defaults (D1–D5) with one expert C/Python bitmask switch (`rw_opt=-1` auto default, `0` legacy 0.16.1 off, bits
   `1..63` per-stage ablation: `0x01` T3 + contraction + filter, `0x02` G-shortening, `0x04` row slabs, `0x08` sparse
   dual, `0x10` canonical classes and stopping, `0x20` `outC` expansion; new `src/rw_triplet.{h,c}`). The automatic
-  mode is `0x11` (+ `0x08` on wide DEMs, + `0x20` when collecting); classical codes get no stage (and, as all matrices
-  with `rw_opt != 0`, no hybrid windows: D3). Idle-machine ablation (16 threads, 22 inputs of the four regimes):
-  1.13–7.45x the minimum-weight hits per second (of the at most 100 codewords kept) on 14 of 15 DEMs and models with
-  `0x01`, inert on static codes; `bb_360` to the weight 24 in 2.9 s instead of 10.1 s, double-gross DEM to 18 in
-  0.54 s instead of 1.15 s (medians of 2 and 3 seeds; the lightest known weights are 23 and 16); `rw_opt=0` within 5%
-  of the 0.16.1 binary.
+  mode is `0x11` (+ `0x08` on wide DEMs, + `0x20` when collecting, and, since 2026-11-18, + `0x04` for a DEM with a
+  single round or without round structure and $m \le 640$, see **A rule for the row slabs**); classical codes get no
+  stage (and, as all matrices with `rw_opt != 0`, no hybrid windows: D3). Idle-machine ablation (16 threads, 22 inputs
+  of the four regimes): 1.13–7.45x the minimum-weight hits per second (of the at most 100 codewords kept) on 14 of 15
+  DEMs and models with `0x01`, inert on static codes; `bb_360` to the weight 24 in 2.9 s instead of 10.1 s,
+  double-gross DEM to 18 in 0.54 s instead of 1.15 s (medians of 2 and 3 seeds; the lightest known weights are 23 and
+  16); `rw_opt=0` within 5% of the 0.16.1 binary.
   - [x] Stage 1 (bit `0x01`, automatic for quantum inputs with `steps > 2`; 0.04–8.8 ms after merge and drop, e.g.,
     47520 triplets of `bb_360` in 8.75 ms): exact $\mathcal{T}_3$ enumeration (Lemma 1: minimum-detector buckets and a
     Zobrist hash of the columns of $(H, L)$) on the matrix that RW searches, i.e., after merging and `drop=auto` (never
@@ -284,16 +293,19 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     realized generators only (Thm. 5, Sec. 8.3; e.g., 272 of the 296 weight-$d$ hits of `2bga_288_4` came from
     shortening; also only below the cap, and not when collecting). Never filter columns with $\mathrm{sig}(x) = 0$,
     $w_x \ge 3$ whose circuits are not listed.
-  - [x] Stage 3 (bit `0x04`, explicit only: the slabs never reach the weight 18 of the double-gross DEM in 25 s and slow
-    the gross DEM to d 3.4x against `rw_opt=0` (4.4x against `0x01`); but on the $T = 1$ double-gross DEM they found the
-    weight 16 in 0.2–0.7 s, where the other masks found 17–18 in 12 s, although they often find the same few codewords
-    again, which raises $\langle n\rangle$ of the vector rule): row-slab windows (a contiguous range of
-    $m_{\rm sub} = \min(320, m/2)$ detectors of a DEM in time order, the columns inside it, MIS push-back order, Stage
-    2) for any DEM with $m \ge 4$, `kwin=0`, and the rows in time order (`sort_rows=0`; the gate $m \ge 600$, $T \ge 2$
-    of D4 in the notes is not implemented), with positive weight on the two boundary slabs: $49\times$–$493\times$ the
-    window hits per second on `shyps_225` and `bidir`, $0.33\times$–$2.13\times$ for $m$ from 420 to 561, and no hits on
-    `dgross_288` with uniform slab starts (Sec. 4.4, Sec. 5). This is the item **RW window steps restricted to the
-    window** of section 4.
+  - [x] Stage 3 (bit `0x04`, explicit only until 2026-11-18: the slabs never reach the weight 18 of the double-gross
+    DEM in 25 s and slow the gross DEM to d 3.4x against `rw_opt=0` (4.4x against `0x01`); but on the $T = 1$
+    double-gross DEM they found the weight 16 in 0.2–0.7 s, where the other masks found 17–18 in 12 s, although they
+    often find the same few codewords again, which raised $\langle n\rangle$ of the vector rule; since the row-slab
+    study, automatic for a DEM with a single round or without round structure and $m \le 640$, and their hits are not
+    counted for $\langle n\rangle$, see **A rule for the row slabs**): row-slab windows (a contiguous range of
+    $m_{\rm sub}$ detectors of a DEM in time order, $\min(320, m/2)$ with 15% on each boundary slab until 2026-11-18,
+    now $m/2$ and only the two boundary slabs; the columns inside it, MIS push-back order, Stage 2) for any DEM with
+    $m \ge 4$, `kwin=0`, and the rows in time order (`sort_rows=0`; the gate $m \ge 600$, $T \ge 2$ of D4 in the notes
+    is not implemented), with positive weight on the two boundary slabs: $49\times$–$493\times$ the window hits per
+    second on `shyps_225` and `bidir`, $0.33\times$–$2.13\times$ for $m$ from 420 to 561, and no hits on `dgross_288`
+    with uniform slab starts (Sec. 4.4, Sec. 5). This is the item **RW window steps restricted to the window** of
+    section 4.
   - [x] Stage 4 (bit `0x08`, automatic behind the gate below, for quantum codes with at most 64 rows of $L$;
     bit-identical to the dense elimination; gated inputs: 1.51x steps/s on the double-gross DEM and 2.65x on `bb_360`
     against `rw_opt=0`, 1.55x and 2.60x against `0x11`; forced elsewhere 0.60–0.98x against `0x11` on the other DEMs
@@ -320,7 +332,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     $n \gtrsim 10^3$, where the spatial order alone gives $6.5\times$–$33\times$ on mitten and SHYPS, Lemma 2 and
     Sec. 8.4); uniform steps only for extended matrices (data columns, then hooks) and static codes. MIS Drop is never
     used (Prop. 2). Implemented as: hybrid windows for every DEM with $n \ge 500$, and for matrices only with
-    `rw_opt=0` or `win_hyb > 0` (also when no stage applies, e.g., for classical codes).
+    `rw_opt=0` or `win_hyb > 0` (also when no stage applies, e.g., for classical codes); since 2026-11-18, a DEM with
+    the row slabs of `0x04` (automatic for a single round) gets a slab instead on every other step, also for
+    $n < 500$.
   - Tests: the same distances with each stage on and off, and verified codeword-output behavior with `outC` / `dW`
     (codes, models, $T = 1$ and multi-round DEMs, `method=1` and `method=3`, one and many threads); hits per second and
     time to the distance in `benchmark/BENCHMARK.md`; README, `--help`/`--morehelp`, `introduction.md`, and the Python
@@ -368,7 +382,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   RW are complete without the "only with `32`" restriction (the identical columns of C1-14 are handled by `32` since
   0.17.2; the symmetries, the $\mathcal{T}_3$ swaps, and the rows of $G$ remain), while also allowing optional
   export of the compressed representative list itself (e.g., for `vecdec`).
-- [ ] **A rule for the row slabs (`rw_opt` `4`, explicit only since 0.17.1)**: they found the weight 16 of the
+- [x] **A rule for the row slabs (`rw_opt` `4`, explicit only until 2026-11-18)**: they found the weight 16 of the
   single-round double-gross DEM much sooner but often repeat the same few codewords; options: an explicit fast-first
   upper-bound pass with slabs, a small fraction of slab steps, more randomization of the slab ranges, or the slab hits
   excluded from the `min_hits` statistics.  The row-slab study (Task 7, `scratch/slab_study/findings.md`) proposes:
@@ -377,6 +391,20 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   across the layers); (3) automatic slabs only where $T = 1$ is known (e.g., `dist_m4ri.py` for DEMs generated with one
   round), or for a DEM without round structure and $m \le 640$; (4) the slab and index-window hits counted apart and
   excluded from $\langle n\rangle$ of the vector `min_hits` rule, Stage 5 kept on the uniform incidences.
+  - **Done (2026-11-18)**: (1) slabs of height $m/2$ (`slab_rows=0`; was $\min(320, m/2)$), only the two boundary
+    slabs (`slab_bnd=50`; was 15% each), on every other step, the others uniform (`slab_every=2`; `slab_every=1`, slabs
+    only, is an error). (2) Rule D4: the automatic `rw_opt` has bit 4 for a DEM (`kwin=0`, rows in time order) with
+    `dem_rounds=1` (new binary option, the rounds $T$ if known: 0 unknown, $\ge 2$ no automatic slabs; `dist_m4ri.py`
+    passes the rounds of a Stim circuit, `circuit_measurement_rounds()`: the largest number of measurements of a qubit,
+    so that shallow multi-round circuits such as the surface code with 3 rounds get no slabs), or
+    with `dem_rounds=0` for a DEM without round structure (no time translation by $2 \le D \le m/3$ detectors with a
+    score of at least 1/2, `dem_round_estimate()`, now also without `debug&1`) and $m \le 640$; the run plan and the
+    input summary say why. (3) With a nonzero resolved `rw_opt`, $\langle n\rangle$ counts the hits of the uniform
+    steps, of CC, and of `finC` (and of the windows of `kwin > 0`), not those of the row slabs and of the hybrid index
+    windows (counted apart: `cnt_s`, `cnt_w`, `row slabs: cws=..., hits=...` in `# RW step types`), over the codewords
+    with a counted hit; while no codeword of the minimum weight has one, the stop is inactive (status line, summary
+    note); a resolved `rw_opt` of 0 counts all hits, as in 0.16.1. Stage 5 unchanged. The slab fraction and D4 are
+    re-checked in the final benchmark (below).
 - [ ] **Double-gross schemes**: re-run the author's 76 double-gross schemes that reached the weight 18 with at least
   $10^5$ steps and several seeds each.
 - [ ] **Hook-aware screening of addressing orders** (the schedules of the syndrome-extraction circuits).
@@ -539,9 +567,10 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     printed to `stderr` even with `--silent` (PY-C17); integer options keep their numeric prefix with a warning (as in
     the binary, e.g., `steps=1.5` $\to 1$, `threads=4x` $\to 4$).
 - [x] **Row-slab correlation and coverage study (`rw_opt` `4`)**: examine not only benchmark speedups and hit rates of
-  Stage 3 row slabs (`rw_slab_step()`, currently a contiguous block of $m_{\rm sub} = \min(320, m/2)$ detectors on
-  every other RW step when `kwin=0` and `sort_rows=0`, with 15% weight on each boundary slab
-  $r_0 \in \{0, m - m_{\rm sub}\}$ and 70% uniform), but the correlations among the codewords found:
+  Stage 3 row slabs (`rw_slab_step()`, at the time of the study a contiguous block of $m_{\rm sub} = \min(320, m/2)$
+  detectors on every other RW step when `kwin=0` and `sort_rows=0`, with 15% weight on each boundary slab
+  $r_0 \in \{0, m - m_{\rm sub}\}$ and 70% uniform; the new defaults: **A rule for the row slabs**), but the
+  correlations among the codewords found:
   - **Starting points and data**: in the 2026-11-16 re-measurement (`scratch/fix_0.17.2/bench_post/REPORT.md`, B6),
     `0x05` on `dgross_288_T1` ($T = 1$, $m = 288$, $m_{\rm sub} = 144$) found weight 16 in 11 of 11 seeds (median
     0.081 s, range 0.024–0.553 s), against 0 of 5 seeds each in 12 s for `0`, `0x01`, and `-1` (weights 17–18; cf.
@@ -579,13 +608,13 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     slabs reach exactly the codewords confined to one of the two detector layers (rows $0..m/2-1$ or $m/2..m-1$): all 36
     codewords of weight 16 of `dgross_288_T1` lie in rows 0..143, so uniform steps and index windows practically never
     find them (1 and 0 of 30 runs) while the boundary slab at $r_0 = 0$ does (`slab_bnd=50`: 3373 steps to weight 16
-    with slabs on every other step, 1122 with slabs only, against 9092 and 4761 with the default 15%; idle machine, 8
-    threads: 0.24 s and 0.036 s against 0.31 s for `0x05`).  Elsewhere the slabs find only the one-layer codewords (57%
-    of `shyps_225_T1`, none of the 100 of weight 7 of `mitten_150_T1`, where slabs only end at weight 8), repeat them
-    hundreds of times (a slab hit is worth 0.16-0.31 uniform draws, 0 once the layer is exhausted), and make the vector
-    `min_hits` rule stop with 41-86% of the codewords; Stage 5 on the uniform incidences stays accurate (96-100% of the
-    classes).  No correlation between consecutive steps.  On deep DEMs slabs are slower than windows (D4 confirmed).
-    Recommendations: see **A rule for the row slabs**.
+    with slabs on every other step, 1122 with slabs only, against 9092 and 4761 with the former default 15%; idle
+    machine, 8 threads: 0.24 s and 0.036 s against 0.31 s for `0x05`).  Elsewhere the slabs find only the one-layer
+    codewords (57% of `shyps_225_T1`, none of the 100 of weight 7 of `mitten_150_T1`, where slabs only end at weight 8),
+    repeat them hundreds of times (a slab hit is worth 0.16-0.31 uniform draws, 0 once the layer is exhausted), and
+    make the vector `min_hits` rule stop with 41-86% of the codewords; Stage 5 on the uniform incidences stays accurate
+    (96-100% of the classes).  No correlation between consecutive steps.  On deep DEMs slabs are slower than windows
+    (D4 confirmed). Recommendations: see **A rule for the row slabs** (implemented the same day).
 - [ ] **$\mathcal{T}_3$ static CSS benchmark codes ($\{3, 7\}$ / $\{3, 8\}$ hyperbolic surface codes and $(3, 6)$
   triangular-lattice toric codes)**: qubits on edges, weight-3 face checks ($H_Z$), and weight-$q$ vertex checks
   ($H_X$, $q \in \{6, 7, 8\}$) make $\mathcal{T}_3$ non-empty ($|\mathcal{T}_3| = 2n/3$) on the $Z$-logical sector
@@ -665,7 +694,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     is 192-256 columns for all of them (1.3-3.6 D), 2-10x better than 512; on dgross, about 10 distinct weight-18
     codewords per $2 \cdot 10^4$ steps with 256 columns, 0-2 with 512 or with one round. Cycling several sizes is
     worse than the best single size (the optimum is sharp). Matrices of codes gain nothing from 256.
-  - The round estimate (D detectors and L columns per round) is printed with `debug&1` only.
+  - The round estimate (D detectors and L columns per round) is printed with `debug&1`; since 2026-11-18 it also
+    decides the automatic row slabs of `rw_opt` 4 (a DEM without round structure and with $m \le 640$ gets them, see
+    **A rule for the row slabs**), and it is then also computed without `debug&1`.
   - Next:
     - the window size for much larger codes (bb_756: not measured; the optimum did not grow with D from 60 to 180);
     - an adaptive window size (e.g., from the light codewords found by each size), or a model of the optimum from
@@ -1173,7 +1204,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   slabs (space-like logicals), tubes of a few stabilizers over all rounds (time-like logicals), Tanner-graph balls, and
   the full matrix (uniform steps, which keep every codeword reachable). Separate hit statistics for the window steps:
   done in 0.14.3 (`# RW step types` with `debug&1`, see Task 6), and the dump of `debug&256` shows the hits `u` and `w`
-  of each codeword.
+  of each codeword (since 2026-11-18 also `s`, the row slabs of Stage 3, counted apart).
   - **Done in `qec_cert`** (its upper-bound Stern ISD, no hit statistics): `ts_setup()` in
     `../qec-cert/src/ub/stern.c` eliminates only the rows touching the window, for time slabs of 1–3 rounds
     (boundary, middle, and quarter slabs, from its detector chains), Tanner-BFS balls (default window of 3000 columns
@@ -1305,8 +1336,9 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     assumptions; the prototype shows a small gain, gross 136K -> 129K nodes, double gross 1.15M -> 1.11M; keep it if
     there is no slowdown), so that each codeword is found once. Kept: 4–31% fewer nodes in the checks of 0.15.1.
   - CC hits: exactly one per codeword (needed for the RW miss estimate), as in all prototype runs with $F$; they enter
-    `cnt` and `cw_hits_w` (the `min_hits` statistic) like `finC` codewords, not `cnt_u`/`cnt_w`. With `cc_prune=0`,
-    codewords reached by several paths get more hits (gross: 2084 for 1884).
+    `cnt` and `cw_hits_w` (the `min_hits` statistic, which always counts them, also since 2026-11-18, when it leaves
+    out the hits of the row slabs and of the hybrid windows) like `finC` codewords, not `cnt_u`/`cnt_w`. With
+    `cc_prune=0`, codewords reached by several paths get more hits (gross: 2084 for 1884).
   - Per-node cost (a node costs about 2x a node of 0.14.7): one pass over the syndrome for the branching row and $b_2$,
     `acnt` as `uint16_t`, a tuned threshold for $b_2$, maybe $b_2$ updated from the packing of the parent. Done in
     0.15.2 (M4 above): the scan copies `acnt` for $b_2$, and $R \ge 3$ stays the threshold of $b_2$.
