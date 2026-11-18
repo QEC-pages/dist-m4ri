@@ -396,6 +396,11 @@ int main(int argc, char **argv){
     OLD_IGNORED(p->dstop != 0, " dstop=%d", p->dstop);
     OLD_IGNORED(p->cc_prune != 1, " cc_prune=%d", p->cc_prune);
     OLD_IGNORED(p->pairs != -1, " pairs=%d", p->pairs);
+    OLD_IGNORED(p->steplog != NULL, " steplog=%s", p->steplog);
+    OLD_IGNORED(p->slab_rows != 0, " slab_rows=%d", p->slab_rows);
+    OLD_IGNORED(p->slab_bnd != 15, " slab_bnd=%d", p->slab_bnd);
+    OLD_IGNORED(p->slab_var != 0, " slab_var=%d", p->slab_var);
+    OLD_IGNORED(p->slab_every != 2, " slab_every=%d", p->slab_every);
 #undef OLD_IGNORED
     if (len > 0)
       fprintf(stderr, "# WARNING: ignored by dist_m4ri_old (options of dist_m4ri only):%s\n", buf);

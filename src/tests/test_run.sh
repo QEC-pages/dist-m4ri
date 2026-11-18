@@ -1864,6 +1864,77 @@ done
 assert_output "$BIN_FORK method=1 finH=$EXAMPLES_DIR/c1920H.mmx steps=20 rw_opt=1 seed=1 threads=2 debug=1" 0 "" \
     "^#   RW windows: 512 columns on every other step"
 
+# Test 139: steplog=FILE (study option): a line for each RW step, followed by a line for each codeword recorded in it
+# (the support on the first line of a key), and '# end:'; the result does not change with the log (threads=1, a fixed
+# seed: the same output lines); the study options of the row slabs (slab_rows, slab_bnd, slab_var, slab_every) and
+# their checks; dist_m4ri_old ignores them (a warning)
+SL139=$(mktemp)
+check_steplog() { # file, number of steps, step types (sorted, e.g. "su"), slab heights lo..hi (or empty)
+    local f="$1" nst="$2" types="$3" hlo="$4" hhi="$5"
+    echo "Checking the step log of $nst steps (types '$types')"
+    local got
+    got=$(grep -c '^S ' "$f")
+    if [ "$got" -ne "$nst" ]; then echo "  [FAIL] steplog: $got step lines, expected $nst"; FAILED=1; fi
+    if ! grep -q -E "^# end: dmin=[0-9]+ dmax=[0-9]+ rw_steps=$nst steps_logged=$nst " "$f"; then
+        echo "  [FAIL] steplog: no line '# end: ... rw_steps=$nst steps_logged=$nst'"; FAILED=1
+    fi
+    if ! awk '/^S /{if (left) bad = 1; left = $10; next} /^C /{if (--left < 0) bad = 1} END {exit (bad || left)}' \
+        "$f"; then
+        echo "  [FAIL] steplog: the codeword lines do not follow the counts ncw of their steps"; FAILED=1
+    fi
+    if ! awk '/^C /{if (!($3 in seen) != (NF > 7)) bad = 1; if (NF > 7 && NF != 9 + $2) bad = 1; seen[$3] = 1}
+              END {exit bad}' "$f"; then
+        echo "  [FAIL] steplog: not exactly the first line of each key has its support"; FAILED=1
+    fi
+    got=$(awk '/^S /{print $4}' "$f" | sort -u | tr -d '\n')
+    if [ "$got" != "$types" ]; then echo "  [FAIL] steplog: step types '$got', expected '$types'"; FAILED=1; fi
+    if [ -n "$hlo" ] && ! awk -v lo="$hlo" -v hi="$hhi" '/^S .* s /{h = $6 - $5; if (h < lo || h > hi) bad = 1}
+                                                       END {exit bad}' "$f"; then
+        echo "  [FAIL] steplog: slab heights outside $hlo..$hhi"; FAILED=1
+    fi
+}
+RUN139="$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=300 seed=7 threads=1 min_hits=1000000000 cov_cws=0"
+for o in 0 0x01 0x05 0x15; do
+    STABLE='^[0-9]+ [0-9]+ [0-9]+$|^# codewords accumulated|^# RW step types|^# RW canonical|^# RW pairs'
+    A139=$($RUN139 rw_opt=$o debug=1 2>&1 | grep -E "$STABLE")
+    B139=$($RUN139 rw_opt=$o debug=1 steplog=$SL139 2>&1 | grep -E "$STABLE")
+    echo "Running: $RUN139 rw_opt=$o debug=1 [steplog=$SL139]"
+    if [ "$A139" != "$B139" ] || [ -z "$A139" ]; then
+        echo "  [FAIL] rw_opt=$o: the output changed with steplog:"; echo "$A139"; echo "---"; echo "$B139"; FAILED=1
+    fi
+    if [ "$o" = "0x05" ] || [ "$o" = "0x15" ]; then check_steplog "$SL139" 300 su; else check_steplog "$SL139" 300 u; fi
+done
+if ! grep -q -E '^C 3 [0-9a-f]{16} [0-9a-f]{16} [no] [1256]( |$)' "$SL139"; then
+    echo "  [FAIL] steplog: no codeword line of weight 3 with a canonical key and an origin"; FAILED=1
+fi
+if ! awk '/^C /{o[$6]++} END {exit !(o[1] > 0 && o[2] > 0)}' "$SL139"; then
+    echo "  [FAIL] steplog: no codewords from both single columns (o=1) and pairs (o=2)"; FAILED=1
+fi
+assert_output "$RUN139 rw_opt=0x05 slab_rows=4 slab_bnd=0 slab_var=50 slab_every=1 debug=3 steplog=$SL139" 0 \
+    "^1 3 300$" "^# RW row slabs \(study options\): 4 of 16 detectors \(slab_rows=4\), boundary slabs 0% each"
+check_steplog "$SL139" 300 s 2 4
+assert_output "$RUN139 rw_opt=0x05 slab_every=3 debug=0 steplog=$SL139" 0 "^1 3 300$" ""
+check_steplog "$SL139" 300 su
+S3_139=$(awk '/^S .* s /{n++} END {print n + 0}' "$SL139")
+if [ "$S3_139" -ne 100 ]; then echo "  [FAIL] slab_every=3: $S3_139 slab steps of 300, expected 100"; FAILED=1; fi
+assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 rw_opt=0x01 kwin=20 win_mode=0 seed=3 \
+threads=2 min_hits=1000000000 debug=0 steplog=$SL139" 0 "^[0-9]+ [0-9]+ 200$" ""
+check_steplog "$SL139" 200 b
+assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 rw_opt=0x01 kwin=20 win_mode=1 seed=3 \
+threads=2 min_hits=1000000000 debug=0 steplog=$SL139" 0 "^[0-9]+ [0-9]+ 200$" ""
+check_steplog "$SL139" 200 i
+assert_output "$RUN139 rw_opt=0x01 slab_rows=4 debug=0" 0 "^1 3 300$" \
+    "^# WARNING: slab_rows, slab_bnd, slab_var, and slab_every are ignored: no row slabs in this run"
+assert_output "$RUN139 slab_bnd=51" 255 "" "invalid 'slab_bnd=51': slab_bnd should be 0 to 50"
+assert_output "$RUN139 slab_rows=1" 255 "" "invalid 'slab_rows=1': slab_rows should be 0"
+assert_output "$RUN139 slab_var=100" 255 "" "invalid 'slab_var=100': slab_var should be 0 to 99"
+assert_output "$RUN139 slab_every=0" 255 "" "invalid 'slab_every=0': slab_every should be at least 1"
+assert_output "$RUN139 steplog=/nonexistent_dir/x.log debug=0" 255 "" "can't open the file steplog='/nonexistent_dir"
+assert_output "$BIN method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=500 steplog=$SL139 slab_rows=4 debug=0" 0 "^3$" \
+    "^# WARNING: ignored by dist_m4ri_old \(options of dist_m4ri only\):.* steplog=.* slab_rows=4"
+assert_output "$BIN_FORK --morehelp study" 0 "^  steplog=\[file\] .*Write a line for each full-matrix RW step" ""
+rm -f "$SL139"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

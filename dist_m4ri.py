@@ -1447,6 +1447,11 @@ def check_finc_outc(finC: Optional[str], outC: Optional[str], verbose: bool = Fa
 #   each column is eventually listed in one of the runs).
 # - irred (since version 0.14.8): the CLI ignores irred=0 with a warning (see _warn_cli_conflicts()); the binary
 #   always runs with its default irred=1, so that the codewords recorded (and cached) are irreducible.
+# - steplog, slab_rows, slab_bnd, slab_var, slab_every: the study options of the dist_m4ri binary (steplog=FILE, the
+#   log of the RW steps and of the codewords found in them, and the row slabs of rw_opt 4) are disabled in the Python
+#   interface: the CLI accepts them and ignores them with a warning to stderr (see _STUDY_OPTIONS), since a run of
+#   dist_m4ri.py may run the binary several times (e.g., two CSS sectors, or the stages of engine='auto'), or not at
+#   all (a cached result).  Run the dist_m4ri binary directly to use them.
 # ---------------------------------------------------------------------------------------------------------------
 
 def _normalize_start_list(start: Any) -> Optional[List[int]]:
@@ -1869,6 +1874,11 @@ def _warn_cert_ignored(cert_mode: str, finC: Any = None, smax: Optional[int] = N
                              ("maxC", maxC > 0)) if on]
     if names:
         _warn_ignored(f"{', '.join(k + '=' for k in names)}: not used with engine='cert'; ignored")
+
+
+# The study options of the dist_m4ri binary (steplog=FILE and the row slabs of rw_opt 4): disabled in the Python
+# interface (the CLI ignores them with a warning to stderr, see _warn_cli_conflicts())
+_STUDY_OPTIONS = ("steplog", "slab_rows", "slab_bnd", "slab_var", "slab_every")
 
 
 def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) -> None:
@@ -7937,7 +7947,7 @@ def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
 _CLI_FALSE = ("0", "false", "no", "off", "none")  # the CLI values of a flag which mean off (also as "" for some)
 # the CLI file options which also take the file name as the next argument, as in the binary ('finH= FILE')
 _CLI_FILE_KEYS = ("fdem", "dem", "finh", "fing", "finl", "fin", "hx", "finhx", "hz", "finhz", "lx", "finlx", "lz",
-                  "finlz", "finc", "outc", "outd", "drop")
+                  "finlz", "finc", "outc", "outd", "drop", "steplog")
 
 
 def _cli_arg_text(key: str, val: str, arg: str) -> str:
@@ -8024,7 +8034,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
     Parses CLI arguments supporting both key=value pairs and standard --flags.
 
     The values are checked: ValueError (naming the argument) for an invalid one, except for the disabled options
-    noscan, cbeg, cend, irred, and css, which are kept as given (ignored with a warning).  A file option given as
+    noscan, cbeg, cend, irred, and css, and the study options steplog, slab_rows, slab_bnd, slab_var, and slab_every of
+    the binary, which are kept as given (ignored with a warning).  A file option given as
     'key=' takes the file name from the next argument (e.g., 'finH= FILE', as the binary), and the form '--key VALUE'
     also takes a negative number (e.g., '--kwin -1').
     """
@@ -8071,6 +8082,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "ortho": True,
         "noscan": 0,
         "irred": None,
+        "steplog": None,  # (the study options of the binary: disabled, see _STUDY_OPTIONS)
+        "slab_rows": None,
+        "slab_bnd": None,
+        "slab_var": None,
+        "slab_every": None,
         "classical": -1,
         "seed": 0,
         "debug": 0,
@@ -8486,6 +8502,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                     _add_help_topic(val)  # help=TOPIC: the same as morehelp=TOPIC
             elif key_lower == "noscan":
                 args["noscan"] = _cli_int_or_text(val)
+            elif key_lower in _STUDY_OPTIONS:  # (disabled: ignored with a warning, see _warn_cli_conflicts())
+                args[key_lower] = val
             elif key_lower == "irred":  # (disabled: ignored with a warning, see _warn_cli_conflicts())
                 args["irred"] = _cli_int_or_text(val)
             elif key_lower == "classical":
@@ -8617,7 +8635,8 @@ Allowed parameters:
   refresh, smax, noscan, start, start_scan, cbeg, cend, finC, outC, maxC,
   expand, dW, irred, seed, debug (dbg), solver, engine, cache (cache_file),
   --no-cache, --verbose, --silent (-q, --quiet), --cws (--do_cws),
-  --trust-start, sort_rows, cc_prune, ortho
+  --trust-start, sort_rows, cc_prune, ortho, steplog, slab_rows, slab_bnd,
+  slab_var, slab_every
 
 Help options:
   -h, -?, --help : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -8685,7 +8704,7 @@ Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
   start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (also start_scan=1; see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
-  noscan, cbeg, cend    Disabled in Python (ignored with a warning; also css=, irred=0, --simple/--simplified, --full)
+  noscan, cbeg, cend    Disabled in Python (ignored, a warning; also css=, irred=0, steplog, slab_*, --simple, --full)
   ortho=0|1 (1)         Expert: 0 skips the check H G^T = 0 of G (valid only if it holds)
   sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
   cc_prune=0|1|2 (1)    CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds
@@ -9166,6 +9185,17 @@ Connected Cluster (CC) search options:
                         split runs, where every column is eventually covered by one of the runs.
                         Run the dist_m4ri binary directly to use them (see its --morehelp).
 
+Study options of the dist_m4ri binary (the statistics of the RW step types, e.g., the row slabs):
+  steplog=FILE, slab_rows=N, slab_bnd=N, slab_var=N, slab_every=N
+                        Disabled in the Python interface: the study options of the dist_m4ri binary
+                        (steplog=FILE: a log of the RW steps and of the codewords found in them; the
+                        height, the boundary probability, the height variation, and the step period
+                        of the row slabs of rw_opt 4) are accepted, but ignored with a warning to
+                        stderr: a run of dist_m4ri.py may run the binary several times (e.g., two
+                        CSS sectors, or the stages of engine='auto'), or not at all (a cached
+                        result).  Run the dist_m4ri binary directly to use them (see its --morehelp
+                        study).
+
 Codeword collection and export:
   --cws                 Collect non-trivial minimum-weight codewords (up to min_w + dW) into the
                         cache record (also --do_cws, cws=0|1, do_cws=0|1).  Does not print them to
@@ -9269,8 +9299,9 @@ General options:
   --silent / -q         No warnings on stderr for the inputs which are ignored (e.g., matrices with
                         fdem, the options of the binary with solver=codedistance, or the options
                         not used with --model-lb; also the k = 0 note); the warnings for the
-                        disabled options (--simple, --full, noscan, cbeg, cend, irred=0, css=) and
-                        on the validity of a result are still written (also --quiet, silent=0|1).
+                        disabled options (--simple, --full, noscan, cbeg, cend, irred=0, css=, and the
+                        study options steplog and slab_*) and on the validity of a result are still
+                        written (also --quiet, silent=0|1).
                         In Python: set_silent().
   seed=N                Random number generator seed (default: 0; the binary replaces seed<=0 by
                         time(NULL) + 10*pid - 1000*seed).
@@ -9309,6 +9340,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   cache                 cache, --no-cache, --trust-start
   expert                start, start_scan, --trust-start, noscan
   experimental          ksub, refresh
+  study                 steplog, slab_rows, slab_bnd, slab_var, slab_every
 
 Help options:
   -h, -?, --help [TOPIC]
@@ -9454,7 +9486,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
     a Stim circuit), Hx / Hz (a CSS code), and finH / finG / finL / fin (one sector of a quantum code, or a classical
     code); fin=PREFIX supplies only the missing finH (PREFIX + 'X.mtx') and finG (PREFIX + 'Z.mtx', unless finL).  The
     disabled options --simple and --full always give a warning (see _warn_disabled_simple_full()), and so does the
-    expert option irred of the dist_m4ri binary, unless irred=1 (the codewords recorded are always irreducible).  The
+    expert option irred of the dist_m4ri binary, unless irred=1 (the codewords recorded are always irreducible), and so
+    do the study options of the binary (steplog, slab_rows, slab_bnd, slab_var, slab_every; see _STUDY_OPTIONS).  The
     expert option ortho=0 gives a warning here for a DEM or a classical code (for a quantum code, see _warn_ortho()).
     """
     def given(*keys: str) -> List[str]:
@@ -9464,6 +9497,10 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
     if args.get("irred") is not None and args["irred"] != 1:  # (not passed on: the binary's default irred=1)
         _warn_disabled(f"irred={args['irred']} is disabled in the Python interface (ignored: only irreducible "
                        f"codewords are recorded); use the dist_m4ri binary directly")
+    for key in _STUDY_OPTIONS:  # (not passed on: the study options of the binary, see _STUDY_OPTIONS)
+        if args.get(key) is not None:
+            _warn_disabled(f"{key}={args[key]} is disabled in the Python interface (a study option of the dist_m4ri "
+                           f"binary; ignored); use the dist_m4ri binary directly")
     stim_opts = [opt for opt, on in (("basis=", args.get("basis") is not None),
                                      ("--out-stim", args.get("out_stim") is not None),
                                      ("--p-noise", args.get("p_noise") is not None),

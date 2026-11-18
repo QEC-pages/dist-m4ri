@@ -4859,5 +4859,42 @@ def test_bitpacked_gf2_k0_and_medium_dem(monkeypatch, capsys, tmp_path):
         assert cd_calls == ["code"]
 
 
+def test_cli_study_options_disabled(capsys, tmp_path):
+    # The study options of the binary (steplog=FILE, the log of the RW steps, and slab_rows, slab_bnd, slab_var,
+    # slab_every of the row slabs of rw_opt 4) are disabled in the Python CLI: accepted, ignored with a warning to
+    # stderr (also with --silent), not passed to the binary; documented in --help, --morehelp, and the group 'study'
+    import io
+    args = dist_m4ri.parse_cli_args(["fdem=x.dem", "steplog=log.txt", "slab_rows=40", "slab_bnd=0", "slab_var=50",
+                                     "slab_every=4"])
+    assert [args[k] for k in dist_m4ri._STUDY_OPTIONS] == ["log.txt", "40", "0", "50", "4"]
+    # (the file name also as the next argument, as in the binary: 'steplog= FILE')
+    assert dist_m4ri.parse_cli_args(["fdem=x.dem", "steplog=", "log.txt", "slab_bnd=50"])["steplog"] == "log.txt"
+    log = tmp_path / "steps.log"
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    ret = dist_m4ri.main([f"fdem={dem_file}", "steplog=", str(log), "slab_rows=4", "slab_every=1", "method=1",
+                          "steps=50", "threads=2", "--no-cache", "--silent", f"debug={dist_m4ri.PY_DBG_COMMANDS}"])
+    captured = capsys.readouterr()
+    assert ret == 0
+    for opt in ("steplog=", "slab_rows=4", "slab_every=1"):
+        assert f"# Warning: {opt}" in captured.err, opt
+    assert captured.err.count("is disabled in the Python interface (a study option of the dist_m4ri binary") == 3
+    assert not log.exists()
+    assert "steplog" not in captured.out and "slab_" not in captured.out  # (the command line of the binary)
+    help_buf, short_buf = io.StringIO(), io.StringIO()
+    dist_m4ri.print_cli_help(file=help_buf)
+    dist_m4ri.print_cli_short_help(file=short_buf)
+    assert "steplog, slab_*" in help_buf.getvalue()
+    assert "steplog, slab_rows, slab_bnd," in short_buf.getvalue() and "slab_every" in short_buf.getvalue()
+    assert dist_m4ri.main(["--morehelp", "study"]) == 0
+    out = capsys.readouterr().out
+    firsts = [s.split()[0] for s in out.splitlines() if s.startswith("  ") and not s.startswith("   ")]
+    assert firsts == ["steplog=FILE,", "study"]
+    assert out.splitlines()[0].startswith("Study options of the dist_m4ri binary (")  # (a section, as in the binary)
+    assert "Disabled in the Python interface: the study options of the dist_m4ri binary" in out
+    for topic in ("steplog", "slab_var", "SLAB-EVERY"):
+        assert dist_m4ri.main(["--morehelp", topic]) == 0
+        assert capsys.readouterr().out == out, topic
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

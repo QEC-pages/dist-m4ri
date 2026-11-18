@@ -371,7 +371,12 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 - [ ] **A rule for the row slabs (`rw_opt` `4`, explicit only since 0.17.1)**: they found the weight 16 of the
   single-round double-gross DEM much sooner but often repeat the same few codewords; options: an explicit fast-first
   upper-bound pass with slabs, a small fraction of slab steps, more randomization of the slab ranges, or the slab hits
-  excluded from the `min_hits` statistics.
+  excluded from the `min_hits` statistics.  The row-slab study (Task 7, `scratch/slab_study/findings.md`) proposes:
+  (1) the boundary slabs as the default positions (`slab_bnd=50`, i.e., the two detector layers of a $T = 1$ DEM at the
+  default height $m/2$; no random heights, which were worse); (2) never slabs only (the uniform steps find the codewords
+  across the layers); (3) automatic slabs only where $T = 1$ is known (e.g., `dist_m4ri.py` for DEMs generated with one
+  round), or for a DEM without round structure and $m \le 640$; (4) the slab and index-window hits counted apart and
+  excluded from $\langle n\rangle$ of the vector `min_hits` rule, Stage 5 kept on the uniform incidences.
 - [ ] **Double-gross schemes**: re-run the author's 76 double-gross schemes that reached the weight 18 with at least
   $10^5$ steps and several seeds each.
 - [ ] **Hook-aware screening of addressing orders** (the schedules of the syndrome-extraction circuits).
@@ -533,7 +538,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - [x] Python CLI: disabled-option warnings (`--simple`, `--full`, `noscan`, `cbeg`, `cend`, `irred=0`, `css=`)
     printed to `stderr` even with `--silent` (PY-C17); integer options keep their numeric prefix with a warning (as in
     the binary, e.g., `steps=1.5` $\to 1$, `threads=4x` $\to 4$).
-- [ ] **Row-slab correlation and coverage study (`rw_opt` `4`)**: examine not only benchmark speedups and hit rates of
+- [x] **Row-slab correlation and coverage study (`rw_opt` `4`)**: examine not only benchmark speedups and hit rates of
   Stage 3 row slabs (`rw_slab_step()`, currently a contiguous block of $m_{\rm sub} = \min(320, m/2)$ detectors on
   every other RW step when `kwin=0` and `sort_rows=0`, with 15% weight on each boundary slab
   $r_0 \in \{0, m - m_{\rm sub}\}$ and 70% uniform), but the correlations among the codewords found:
@@ -568,6 +573,19 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   - **Method**: add a `debug` option in `src/dist_m4ri.c` that logs for each RW step its step type (uniform, window,
     slab, and slab row range) and the codeword and canonical-class keys hit in that step; run multi-seed sweeps on the
     benchmark DEMs; compute the repeat, correlation, coverage, and $N_{\rm eff}$ statistics in Python.
+  - **Done (2026-11-18, `scratch/slab_study/`: `findings.md`, `REPORT.md`)**: the study option `steplog=FILE` (one line
+    per RW step and per codeword recorded in it) and the slab study options `slab_rows`, `slab_bnd`, `slab_var`,
+    `slab_every`; 1482 runs on 4 single-round DEMs, 5 deep DEMs ($T = 7$-$13$), and `hyp_3_7_546`.  On a $T = 1$ DEM the
+    slabs reach exactly the codewords confined to one of the two detector layers (rows $0..m/2-1$ or $m/2..m-1$): all 36
+    codewords of weight 16 of `dgross_288_T1` lie in rows 0..143, so uniform steps and index windows practically never
+    find them (1 and 0 of 30 runs) while the boundary slab at $r_0 = 0$ does (`slab_bnd=50`: 3373 steps to weight 16
+    with slabs on every other step, 1122 with slabs only, against 9092 and 4761 with the default 15%; idle machine, 8
+    threads: 0.24 s and 0.036 s against 0.31 s for `0x05`).  Elsewhere the slabs find only the one-layer codewords (57%
+    of `shyps_225_T1`, none of the 100 of weight 7 of `mitten_150_T1`, where slabs only end at weight 8), repeat them
+    hundreds of times (a slab hit is worth 0.16-0.31 uniform draws, 0 once the layer is exhausted), and make the vector
+    `min_hits` rule stop with 41-86% of the codewords; Stage 5 on the uniform incidences stays accurate (96-100% of the
+    classes).  No correlation between consecutive steps.  On deep DEMs slabs are slower than windows (D4 confirmed).
+    Recommendations: see **A rule for the row slabs**.
 - [ ] **$\mathcal{T}_3$ static CSS benchmark codes ($\{3, 7\}$ / $\{3, 8\}$ hyperbolic surface codes and $(3, 6)$
   triangular-lattice toric codes)**: qubits on edges, weight-3 face checks ($H_Z$), and weight-$q$ vertex checks
   ($H_X$, $q \in \{6, 7, 8\}$) make $\mathcal{T}_3$ non-empty ($|\mathcal{T}_3| = 2n/3$) on the $Z$-logical sector

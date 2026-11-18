@@ -965,6 +965,9 @@ Extra parameters (see --morehelp for details):
   win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)
   pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)
   rw_opt=[int] (-1)      RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63
+  slab_rows=[int] (0)    Study, row slabs of rw_opt 4: detectors per slab (0: min(320, m/2)); also
+                         slab_bnd, slab_var, slab_every (see --morehelp study)
+  steplog=[file]         Study: log the RW steps and the codewords found in them (see --morehelp study)
   cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
   refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]

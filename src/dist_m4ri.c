@@ -76,6 +76,9 @@
 #define _GNU_SOURCE
 #include <inttypes.h>
 #include <strings.h>
+#include <string.h>
+#include <errno.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -245,12 +248,16 @@ typedef struct {
   rw_canon_tab_t *canon_tab;         /* Stage 5: the canonical classes (under cw_mutex; NULL: none) */
   atomic_int canon_w;                /* the weight of the classes in canon_tab (INT_MAX: none yet) */
   int slab_on;                       /* Stage 3: row-slab windows on the window steps (kwin=0) */
-  int slab_msub;                     /* the detectors of a slab */
+  int slab_msub;                     /* the detectors of a slab (the largest height with slab_var > 0) */
+  int slab_bnd;                      /* the probability in percent of each boundary slab (study option slab_bnd) */
+  int slab_var;                      /* the random height reduction in percent (study option slab_var) */
+  int slab_every;                    /* a slab on every slab_every-th step (study option slab_every, default 2) */
   int *col_rmax;                     /* the largest row of each column of H (-1: a zero column) */
   int *slab_order;                   /* the nonzero columns of H by their smallest row ... */
   int *slab_first;                   /* ... those with the smallest row r from slab_order[slab_first[r]] on */
   int dual_on;                       /* Stage 4: the sparse-dual elimination of the full-matrix steps */
   int *dcp, *dci;                    /* Stage 4: the distinct rows dci[dcp[c]..dcp[c+1]-1] of each column c of H */
+  struct steplog *steplog;           /* steplog=FILE: the log of the RW steps (NULL: none), see steplog_t */
 
   /* CC state for current weight (cache-line isolated) */
   _Alignas(64) atomic_llong cc_next; /* weight, fixed levels, next work unit of the current CC round, see `cc_pack()` */
@@ -346,6 +353,7 @@ typedef struct worker_arg {
   double fkg_sum[2]; /* rw_opt: the sums of the Harris-FKG scores of the full-matrix RW steps with pairs: uniform (0)
                       * and window (1) steps, see rw_pairs_step() */
   long fkg_steps[2]; /* and their numbers */
+  struct steplog_thr *slt; /* steplog=FILE: the codewords of the current RW step of this worker (NULL: none) */
 } worker_arg_t;
 
 /* A CC round at weight w hands out the work units u = beg*R .. (end+1)*R-1 one at a time, where beg..end are the start
@@ -1266,6 +1274,111 @@ static inline int rw_cw_limit(distfork_ctx_t * const ctx) {
                            atomic_load_explicit(&ctx->cw_feed_limit, memory_order_relaxed));
 }
 
+/* ------------------------------------------------------------------------------------------------------------------
+ * steplog=FILE (study option): the log of the full-matrix RW steps (ksub=0) and of the codewords recorded in them, for
+ * the statistics of the step types (the format is in the help of steplog).  Each RW thread collects the codewords
+ * recorded in its current step (steplog_cw() in rw_record_locked(), under `cw_mutex`) and writes all lines of the step
+ * at its end (steplog_step_end()) under the mutex of the log, which also guards the set of the keys logged: the first
+ * line of a key has the support.  The keys are those of rec_add() (rw_set_key() with the Zobrist values of
+ * rw_zobrist_cols(), fixed: the same in every run on the same matrix), the canonical keys those of rw_canon_key()
+ * (Stage 5), computed once per codeword and thread, outside the mutexes.  Off by default: then only the tests of
+ * ctx->steplog and warg->slt (NULL) remain in the RW steps.
+ * ------------------------------------------------------------------------------------------------------------------ */
+#define STEPLOG_SEEN_MAX (1u << 23)  /* at most this many keys get their supports logged (then none) */
+#define STEPLOG_CACHE_MAX (1u << 20) /* at most this many canonical keys are cached per thread */
+
+typedef struct steplog {
+  FILE *f;
+  pthread_mutex_t mtx;   /* guards the file, the set of the keys logged, and the counts */
+  const uint64_t *zcol;  /* the Zobrist values of the columns (ctx->zcol, or own_zcol) */
+  uint64_t *own_zcol;    /* (without the RW stages of rw_opt) */
+  uint64_t *seen;        /* the keys logged with their supports (open addressing, 0: an empty slot) */
+  uint32_t smask, nseen;
+  int seen_full;         /* STEPLOG_SEEN_MAX keys logged: no more supports */
+  long long nsteps, ncw; /* the lines S and C written */
+} steplog_t;
+
+typedef struct steplog_thr {
+  int n, cap;            /* the codewords recorded in the current step: their weights, flags (see steplog_cw()), */
+  int *w;                /* origins, keys, canonical keys, and supports pool[off..off+w-1] */
+  char *flag, *org;
+  uint64_t *key, *ckey;
+  size_t *off;
+  int *pool;
+  size_t plen, pcap;
+  char *out;             /* the lines of the step */
+  size_t olen, ocap;
+  uint64_t *ck, *cv;     /* the canonical keys computed by this thread (open addressing by the key, 0: empty) */
+  uint32_t cmask, ncache;
+  double t0;             /* the start of the current step */
+  int open;              /* 1: a step is started and not logged yet */
+  int orig;              /* the origin of the codeword recorded next: 1 a single column (p=1), 2 a pair (p=2), plus 4
+                          * for its shortened form (Stage 2, see rw_candidate()) */
+} steplog_thr_t;
+
+static void *steplog_realloc(void * const ptr, const size_t size) {
+  void * const q = realloc(ptr, size);
+  if (!q) ERROR("memory allocation");
+  return q;
+}
+
+static inline uint32_t steplog_slot(const uint64_t key, const uint32_t mask) {
+  return (uint32_t)(key ^ (key >> 32)) & mask;
+}
+
+static steplog_thr_t *steplog_thr_free(steplog_thr_t * const s) {
+  if (!s) return NULL;
+  free(s->w);
+  free(s->flag);
+  free(s->org);
+  free(s->key);
+  free(s->ckey);
+  free(s->off);
+  free(s->pool);
+  free(s->out);
+  free(s->ck);
+  free(s->cv);
+  free(s);
+  return NULL;
+}
+
+/* A new step of the thread */
+static inline void steplog_step_begin(steplog_thr_t * const s) {
+  s->n = 0;
+  s->plen = 0;
+  s->open = 1;
+  s->t0 = get_time_sec();
+}
+
+/* The codeword ee (sorted, cnt columns) recorded in the current step of the thread (under `cw_mutex`): `flag` n (new in
+ * the codeword hash), o (a codeword in hash: one more hit), or x (not kept, see codeword_add_maybe()); its origin is
+ * s->orig, set by the caller */
+static void steplog_cw(const steplog_t * const sl, steplog_thr_t * const s, const int * const ee, const int cnt,
+                       const char flag) {
+  if (s->n == s->cap) {
+    s->cap = s->cap ? 2 * s->cap : 64;
+    s->w = steplog_realloc(s->w, (size_t)s->cap * sizeof(int));
+    s->flag = steplog_realloc(s->flag, (size_t)s->cap);
+    s->org = steplog_realloc(s->org, (size_t)s->cap);
+    s->key = steplog_realloc(s->key, (size_t)s->cap * sizeof(uint64_t));
+    s->ckey = steplog_realloc(s->ckey, (size_t)s->cap * sizeof(uint64_t));
+    s->off = steplog_realloc(s->off, (size_t)s->cap * sizeof(size_t));
+  }
+  if (s->plen + (size_t)cnt > s->pcap) {
+    s->pcap = 2 * (s->plen + (size_t)cnt) + 1024;
+    s->pool = steplog_realloc(s->pool, s->pcap * sizeof(int));
+  }
+  const int i = s->n++;
+  s->w[i] = cnt;
+  s->flag[i] = flag;
+  s->org[i] = (char)('0' + s->orig);
+  s->key[i] = rw_set_key(sl->zcol, ee, cnt, 0x2545f4914f6cdd1dULL); /* (as in rec_add()) */
+  s->ckey[i] = 0;
+  s->off[i] = s->plen;
+  memcpy(s->pool + s->plen, ee, (size_t)cnt * sizeof(int));
+  s->plen += (size_t)cnt;
+}
+
 /* Record the RW codeword `ee` of weight `cnt` (sorted indices) found in a step with a uniform random permutation or
  * with a window (`src`: CW_SRC_RW_UNIFORM or CW_SRC_RW_WINDOW): add it to the hash (or count one more hit), update
  * the upper bound dmax and the stop flags (`ksub` > 0 only for the message).  rw_record_locked() is the part under
@@ -1276,7 +1389,10 @@ static void rw_record_locked(distfork_ctx_t * const ctx, const rci_t * const ee,
   /* with outC or maxC, codewords are collected: RW does not end the run when the bounds coincide or on wmin (in
    * method 3, the coordinator then runs the CC rounds which enumerate the codewords) */
   const bool collecting = (p->outC != NULL) || (p->maxC > 0);
+  steplog_thr_t * const slt = ctx->steplog ? ctx->wargs[tid].slt : NULL; /* (steplog=FILE: NULL with ksub > 0) */
+  const int cnt0 = slt ? codeword_count(p, ee, cnt) : 0;
   p->codewords = codeword_add_maybe(p, ee, cnt, src);
+  if (slt) steplog_cw(ctx->steplog, slt, ee, cnt, cnt0 ? 'o' : (codeword_count(p, ee, cnt) ? 'n' : 'x'));
   ctx_update_feed_limit(ctx);
   const int best = p->min_w; /* a codeword lighter than min_w is always added */
   const int old_dmax = atomic_load(&ctx->dmax);
@@ -1637,6 +1753,7 @@ typedef struct {
   uint32_t *spos;       /* their slots */
   uint64_t *key;        /* their Zobrist keys */
   uint64_t *ckey;       /* their canonical keys (Stage 5; 0: not computed) */
+  unsigned char *org;   /* their origins (for steplog=FILE, see steplog_thr_t) */
   int *pool;
   size_t plen, pcap;
   int *slot;            /* the hash of the keys: the codeword in each slot (-1: empty) */
@@ -1662,6 +1779,8 @@ typedef struct {
   word *spmask;         /* the pivot columns (slab columns) */
   uint32_t *smark;      /* the marks of the independent set of the triplet graph (generation sgen) */
   uint32_t sgen;
+  int slab_r0, slab_r1; /* the detectors r0..r1-1 of the last slab (for steplog=FILE) */
+  int slab_ns;          /* and its columns */
 } rw_thr_t;
 
 static void rec_init(rw_rec_t * const r) {
@@ -1672,6 +1791,7 @@ static void rec_init(rw_rec_t * const r) {
   r->spos = malloc((size_t)r->cap * sizeof(uint32_t));
   r->key = malloc((size_t)r->cap * sizeof(uint64_t));
   r->ckey = malloc((size_t)r->cap * sizeof(uint64_t));
+  r->org = malloc((size_t)r->cap);
   r->pcap = 1024;
   r->pool = malloc(r->pcap * sizeof(int));
   r->smask = 127;
@@ -1679,7 +1799,7 @@ static void rec_init(rw_rec_t * const r) {
   r->cmask = 63;
   r->cset = calloc((size_t)r->cmask + 1, sizeof(uint64_t));
   r->cpos = malloc((size_t)(r->cmask + 1) * sizeof(uint32_t));
-  if (!r->off || !r->wt || !r->spos || !r->key || !r->ckey || !r->pool || !r->slot || !r->cset || !r->cpos)
+  if (!r->off || !r->wt || !r->spos || !r->key || !r->ckey || !r->org || !r->pool || !r->slot || !r->cset || !r->cpos)
     ERROR("memory allocation");
   for (uint32_t s = 0; s <= r->smask; s++) r->slot[s] = -1;
 }
@@ -1690,6 +1810,7 @@ static void rec_free(rw_rec_t * const r) {
   free(r->spos);
   free(r->key);
   free(r->ckey);
+  free(r->org);
   free(r->pool);
   free(r->slot);
   free(r->cset);
@@ -1699,8 +1820,10 @@ static void rec_free(rw_rec_t * const r) {
 
 static inline uint32_t rec_hash(const uint64_t key) { return (uint32_t)(key ^ (key >> 32)); }
 
-/* Add the codeword ee (sorted, cnt columns) to the codewords of the step; returns 0 if it was found before in it */
-static int rec_add(rw_rec_t * const r, const uint64_t * const zcol, const int * const ee, const int cnt) {
+/* Add the codeword ee (sorted, cnt columns) of the origin `org` (see steplog_thr_t) to the codewords of the step;
+ * returns 0 if it was found before in it */
+static int rec_add(rw_rec_t * const r, const uint64_t * const zcol, const int * const ee, const int cnt,
+                   const int org) {
   const uint64_t key = rw_set_key(zcol, ee, cnt, 0x2545f4914f6cdd1dULL);
   uint32_t s = rec_hash(key) & r->smask;
   for (; r->slot[s] >= 0; s = (s + 1) & r->smask) {
@@ -1714,7 +1837,8 @@ static int rec_add(rw_rec_t * const r, const uint64_t * const zcol, const int * 
     r->spos = realloc(r->spos, (size_t)r->cap * sizeof(uint32_t));
     r->key = realloc(r->key, (size_t)r->cap * sizeof(uint64_t));
     r->ckey = realloc(r->ckey, (size_t)r->cap * sizeof(uint64_t));
-    if (!r->off || !r->wt || !r->spos || !r->key || !r->ckey) ERROR("memory allocation");
+    r->org = realloc(r->org, (size_t)r->cap);
+    if (!r->off || !r->wt || !r->spos || !r->key || !r->ckey || !r->org) ERROR("memory allocation");
   }
   if (r->plen + (size_t)cnt > r->pcap) {
     r->pcap = 2 * (r->plen + (size_t)cnt);
@@ -1743,6 +1867,7 @@ static int rec_add(rw_rec_t * const r, const uint64_t * const zcol, const int * 
   r->wt[i] = cnt;
   r->key[i] = key;
   r->ckey[i] = 0;
+  r->org[i] = (unsigned char)org;
   r->slot[s] = i;
   r->spos[i] = s;
   return 1;
@@ -1837,7 +1962,9 @@ static void rw_rec_flush(distfork_ctx_t * const ctx, rw_thr_t * const th, const 
       if (r->wt[i] <= cw) r->ckey[i] = rw_canon_key(ctx, th, r->pool + r->off[i], r->wt[i]);
   }
   pthread_mutex_lock(&ctx->cw_mutex);
+  steplog_thr_t * const slt = ctx->wargs[tid].slt; /* (steplog=FILE: the origins) */
   for (int i = r->nflushed; i < r->nrec; i++) {
+    if (slt) slt->orig = r->org[i];
     rw_record_locked(ctx, r->pool + r->off[i], r->wt[i], tid, 0, r->src);
     if (ctx->canon_tab) rw_canon_note_locked(ctx, th, i);
   }
@@ -1846,19 +1973,164 @@ static void rw_rec_flush(distfork_ctx_t * const ctx, rw_thr_t * const th, const 
   r->nflushed = r->nrec;
 }
 
-/* Record the RW codeword ee (sorted, cnt columns) found in the current step: at once without rw_rec_buf (as before
- * rw_opt), otherwise once per step, at once if lighter than the upper bound, or else at the end of the step */
+/* Record the RW codeword ee (sorted, cnt columns) of the origin `org` (see steplog_thr_t) found in the current step:
+ * at once without rw_rec_buf (as before rw_opt), otherwise once per step, at once if lighter than the upper bound, or
+ * else at the end of the step */
 static void rw_rec_record(distfork_ctx_t * const ctx, rw_thr_t * const th, const int * const ee, const int cnt,
-                          const int tid, long long * const hits) {
+                          const int tid, long long * const hits, const int org) {
   if (!ctx->rw_rec_buf) {
     if (rw_is_hit(ctx, cnt)) (*hits)++;
+    if (ctx->wargs[tid].slt) ctx->wargs[tid].slt->orig = org;
     rw_record_codeword(ctx, ee, cnt, tid, 0, th->rec.src);
     return;
   }
-  if (!rec_add(&th->rec, ctx->zcol, ee, cnt)) return; /* found before in this step */
+  if (!rec_add(&th->rec, ctx->zcol, ee, cnt, org)) return; /* found before in this step */
   if (rw_is_hit(ctx, cnt)) (*hits)++;
   const int dmax = atomic_load_explicit(&ctx->dmax, memory_order_relaxed);
   if (dmax <= 0 || cnt < dmax) rw_rec_flush(ctx, th, tid); /* a new upper bound */
+}
+
+/* steplog=FILE: the canonical key (rw_canon_key()) of the codeword c (sorted, w columns) with the key `key`, once per
+ * codeword in this thread (then from the cache of the thread); 0 without the RW stages, without T_3 and G, or above
+ * RW_CANON_WMAX */
+static uint64_t steplog_ckey(distfork_ctx_t * const ctx, steplog_thr_t * const s, rw_thr_t * const th,
+                             const int * const c, const int w, const uint64_t key) {
+  if (!th || !ctx->zcol || !(ctx->t3 || ctx->gdb) || w > RW_CANON_WMAX) return 0;
+  uint32_t q = 0;
+  if (s->ck) {
+    for (q = steplog_slot(key, s->cmask); s->ck[q]; q = (q + 1) & s->cmask)
+      if (s->ck[q] == key) return s->cv[q];
+  }
+  const uint64_t ck = rw_canon_key(ctx, th, c, w);
+  if (s->ncache >= STEPLOG_CACHE_MAX) return ck;
+  if (!s->ck || 2 * ((size_t)s->ncache + 1) > (size_t)s->cmask + 1) { /* twice as many slots (at most half full) */
+    const uint32_t cmask = s->ck ? 2 * s->cmask + 1 : 1023;
+    uint64_t * const nk = calloc((size_t)cmask + 1, sizeof(uint64_t));
+    uint64_t * const nv = malloc(((size_t)cmask + 1) * sizeof(uint64_t));
+    if (!nk || !nv) ERROR("memory allocation");
+    for (uint32_t t = 0; s->ck && t <= s->cmask; t++) {
+      if (!s->ck[t]) continue;
+      uint32_t u = steplog_slot(s->ck[t], cmask);
+      while (nk[u]) u = (u + 1) & cmask;
+      nk[u] = s->ck[t];
+      nv[u] = s->cv[t];
+    }
+    free(s->ck);
+    free(s->cv);
+    s->ck = nk;
+    s->cv = nv;
+    s->cmask = cmask;
+    for (q = steplog_slot(key, s->cmask); s->ck[q]; q = (q + 1) & s->cmask) continue;
+  }
+  s->ck[q] = key;
+  s->cv[q] = ck;
+  s->ncache++;
+  return ck;
+}
+
+/* steplog=FILE: add the key to the set of the keys logged (under the mutex of the log); returns 1 if it is new there
+ * (then its support is logged) */
+static int steplog_seen_add(steplog_t * const sl, const uint64_t key) {
+  if (sl->seen_full) return 0;
+  uint32_t q = steplog_slot(key, sl->smask);
+  for (; sl->seen[q]; q = (q + 1) & sl->smask)
+    if (sl->seen[q] == key) return 0;
+  if (sl->nseen >= STEPLOG_SEEN_MAX) {
+    sl->seen_full = 1;
+    return 0;
+  }
+  if (2 * ((size_t)sl->nseen + 1) > (size_t)sl->smask + 1) { /* twice as many slots (at most half full) */
+    const uint32_t smask = 2 * sl->smask + 1;
+    uint64_t * const ns = calloc((size_t)smask + 1, sizeof(uint64_t));
+    if (!ns) ERROR("memory allocation");
+    for (uint32_t t = 0; t <= sl->smask; t++) {
+      if (!sl->seen[t]) continue;
+      uint32_t u = steplog_slot(sl->seen[t], smask);
+      while (ns[u]) u = (u + 1) & smask;
+      ns[u] = sl->seen[t];
+    }
+    free(sl->seen);
+    sl->seen = ns;
+    sl->smask = smask;
+    for (q = steplog_slot(key, sl->smask); sl->seen[q]; q = (q + 1) & sl->smask) continue;
+  }
+  sl->seen[q] = key;
+  sl->nseen++;
+  return 1;
+}
+
+/* steplog=FILE: append the formatted text to the lines of the step */
+static void steplog_printf(steplog_thr_t * const s, const char * const fmt, ...) __attribute__((format(printf, 2, 3)));
+static void steplog_printf(steplog_thr_t * const s, const char * const fmt, ...) {
+  for (;;) {
+    va_list ap;
+    va_start(ap, fmt);
+    const int len = vsnprintf(s->out ? s->out + s->olen : NULL, s->out ? s->ocap - s->olen : 0, fmt, ap);
+    va_end(ap);
+    if (len < 0) ERROR("steplog: formatting error");
+    if (s->out && s->olen + (size_t)len < s->ocap) {
+      s->olen += (size_t)len;
+      return;
+    }
+    s->ocap = 2 * (s->olen + (size_t)len + 1) + 4096;
+    s->out = steplog_realloc(s->out, s->ocap);
+  }
+}
+
+/* steplog=FILE: the L syndrome of the codeword c (w columns): the mask with at most 64 rows of L, otherwise its hash
+ * (a fixed random linear function of the syndrome); 0 for a classical code */
+static uint64_t steplog_lsig(const params_t * const p, const int * const c, const int w) {
+  const colmask_t * const cm = p->maskL;
+  if (p->classical || !cm) return 0;
+  uint64_t s = 0;
+  for (int i = 0; i < w; i++) {
+    if (cm->kw == 1) {
+      s ^= cm->mask[c[i]];
+      continue;
+    }
+    for (int k = 0; k < cm->kw; k++)
+      for (word x = cm->mask[(size_t)c[i] * cm->kw + k]; x; x &= x - 1)
+        s ^= mix64(0x2545f4914f6cdd1dULL + (uint64_t)(64 * k + __builtin_ctzll(x)));
+  }
+  return s;
+}
+
+/* steplog=FILE: write the lines of the current step of the thread `tid` (the global step `step` of the type `type`
+ * with a, b, ns, rank as in the help of steplog; ok: 1 completed, 0 abandoned at a stop) */
+static void steplog_step_end(distfork_ctx_t * const ctx, steplog_thr_t * const s, rw_thr_t * const th, const int tid,
+                             const long step, const char type, const int a, const int b, const int ns, const int rank,
+                             const int ok) {
+  steplog_t * const sl = ctx->steplog;
+  const params_t * const p = ctx->p;
+  const csr_t * const HT = ctx->mHT_cc;
+  const double t1 = get_time_sec();
+  s->open = 0;
+  for (int i = 0; i < s->n; i++) s->ckey[i] = steplog_ckey(ctx, s, th, s->pool + s->off[i], s->w[i], s->key[i]);
+  pthread_mutex_lock(&sl->mtx);
+  s->olen = 0;
+  steplog_printf(s, "S %d %ld %c %d %d %d %d %d %d %lld %lld\n", tid, step, type, a, b, ns, rank, ok, s->n,
+                 (long long)llround((t1 - ctx->start_time) * 1e6), (long long)llround((t1 - s->t0) * 1e6));
+  for (int i = 0; i < s->n; i++) {
+    steplog_printf(s, "C %d %016" PRIx64 " %016" PRIx64 " %c %c", s->w[i], s->key[i], s->ckey[i], s->flag[i],
+                   s->org[i]);
+    if (steplog_seen_add(sl, s->key[i])) { /* the first line of the key: the L syndrome, the detectors, the support */
+      const int * const c = s->pool + s->off[i];
+      int rlo = INT_MAX, rhi = -1;
+      for (int k = 0; k < s->w[i]; k++) {
+        for (int e = HT->p[c[k]]; e < HT->p[c[k] + 1]; e++) {
+          if (HT->i[e] < rlo) rlo = HT->i[e];
+          if (HT->i[e] > rhi) rhi = HT->i[e];
+        }
+      }
+      steplog_printf(s, " %" PRIx64 " %d %d", steplog_lsig(p, c, s->w[i]), (rhi >= 0) ? rlo : -1, rhi);
+      for (int k = 0; k < s->w[i]; k++) steplog_printf(s, " %d", c[k]);
+    }
+    steplog_printf(s, "\n");
+  }
+  if (fwrite(s->out, 1, s->olen, sl->f) != s->olen) ERROR("steplog: write error (%s)", strerror(errno));
+  sl->nsteps++;
+  sl->ncw += s->n;
+  pthread_mutex_unlock(&sl->mtx);
 }
 
 /* A nontrivial RW candidate ee (cnt columns, any order; L ee != 0) of the current step: recorded if lighter than
@@ -1908,7 +2180,7 @@ static void rw_candidate(distfork_ctx_t * const ctx, rw_thr_t * const th, rci_t 
   }
   if (cnt < limit && (cs == cnt || (ctx->collecting && p->dW >= 1))) {
     rci_quick_sort(ee, cnt);
-    rw_rec_record(ctx, th, ee, cnt, tid, hits);
+    rw_rec_record(ctx, th, ee, cnt, tid, hits, pair ? 2 : 1);
   }
   if (cs == cnt) return;
   const int lim2 = pair ? rw_pairs_limit(ctx) : rw_cw_limit(ctx); /* (the upper bound may have decreased) */
@@ -1918,7 +2190,7 @@ static void rw_candidate(distfork_ctx_t * const ctx, rw_thr_t * const th, rci_t 
     atomic_fetch_add_explicit(&ctx->cw_red_rw, 1, memory_order_relaxed);
     cs = rw_cw_reduce(ctx->mHT_cc, p->maskL, th->ws, sh, cs);
   }
-  rw_rec_record(ctx, th, sh, cs, tid, hits);
+  rw_rec_record(ctx, th, sh, cs, tid, hits, pair ? 6 : 5);
 }
 
 /* The columns of a RW step (see rw_pairs_step()): all columns of H (full = 1: the transposed reduced matrix `ht`), or
@@ -2494,6 +2766,7 @@ static int rw_pairs_step(distfork_ctx_t * const ctx, const rw_view_t * const v, 
             } else {
               rci_quick_sort(ee, cnt);
               if (rw_is_hit(ctx, cnt)) nhits++;
+              if (ctx->wargs[tid].slt) ctx->wargs[tid].slt->orig = 2; /* (steplog=FILE: a pair) */
               rw_record_codeword(ctx, ee, cnt, tid, 0, src);
             }
             lim = rw_pairs_limit(ctx);
@@ -2527,22 +2800,32 @@ static inline uint32_t slab_gen(rw_thr_t * const th, const int nvar) {
  * m - msub with probability 15% each (the boundary slabs), otherwise uniform, ordered by a random maximal independent
  * set of the triplet graph G_3 first, then the others (MIS push-back, Theorem 2(a) of the notes), each part in random
  * order; the slab matrix (msub rows) is reduced (Gauss-Jordan), and its single columns and pairs give codewords of H
- * (the slab columns touch no other row), mapped back to the columns of H.  Returns the rank of the slab matrix (-1:
- * stopped in its elimination or in the pairs; then the step does not count as completed). */
+ * (the slab columns touch no other row), mapped back to the columns of H.  The study options slab_bnd and slab_var
+ * change the probability of the boundary slabs and reduce the height msub at random (with their defaults, the same
+ * random numbers are drawn).  Returns the rank of the slab matrix (-1: stopped in its elimination or in the pairs;
+ * then the step does not count as completed). */
 static int rw_slab_step(distfork_ctx_t * const ctx, rw_thr_t * const th, rw_pairs_ws_t * const pws, rci_t * const ee,
                         uint64_t * const rng, const int tid, long long * const hits1, long long * const hits2,
                         long long * const n_pairs) {
   params_t * const p = ctx->p;
   const int m = p->spaH->rows, nvar = p->spaH->cols;
-  const int msub = ctx->slab_msub, span = m - msub;
-  const uint64_t u = splitmix64(rng) % 100;
-  const int r0 = (u < 15) ? 0 : ((u < 30) ? span : rand_uniform_thread(span + 1, rng));
+  int msub = ctx->slab_msub;
+  if (ctx->slab_var > 0) { /* a random height in [slab_msub (100 - slab_var)/100, slab_msub], at least 2 */
+    msub -= rand_uniform_thread((int)((long long)ctx->slab_msub * ctx->slab_var / 100) + 1, rng);
+    if (msub < 2) msub = minint(2, m);
+  }
+  const int span = m - msub;
+  const uint64_t u = splitmix64(rng) % 100, bnd = (uint64_t)ctx->slab_bnd;
+  const int r0 = (u < bnd) ? 0 : ((u < 2 * bnd) ? span : rand_uniform_thread(span + 1, rng));
   const int r1 = r0 + msub;
   int ns = 0;
   for (int k = ctx->slab_first[r0]; k < ctx->slab_first[r1]; k++) {
     const int j = ctx->slab_order[k];
     if (ctx->col_rmax[j] < r1) th->cols[ns++] = j;
   }
+  th->slab_r0 = r0;
+  th->slab_r1 = r1;
+  th->slab_ns = ns;
   if (ns < 2) return 0;
   for (int i = ns - 1; i > 0; i--) {
     const int j = rand_uniform_thread(i + 1, rng);
@@ -2739,6 +3022,10 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
   const int kwin = p->kwin;
   const int win_mode = p->win_mode;
   worker_arg_t * const warg = &ctx->wargs[tid];
+  steplog_thr_t * const slt = warg->slt; /* steplog=FILE (NULL: no log) */
+  long lg_step = step0;                  /* (the current step for the log: its type, range, and columns) */
+  char lg_type = 'u';
+  int lg_a = 0, lg_b = 0, lg_ns = nvar;
   int eff_nrows = *eff_nrows_ptr;
   int n_done = 0;
   long n_unif = 0; /* completed steps with uniform random permutations (for the information-set estimate) */
@@ -2755,10 +3042,10 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
     int eff_kwin = kwin;
     int eff_win_mode = win_mode;
     bool slab = false;
-    if (eff_kwin == 0 && ((step0 + step) & 1) == 1) { /* hybrid: every other global step */
-      if (ctx->slab_on) {
-        slab = true; /* Stage 3: a row-slab window instead of an index window */
-      } else if (rw_hybrid_on(p, nvar)) {
+    if (eff_kwin == 0) {
+      if (ctx->slab_on) { /* Stage 3: a row-slab window on every slab_every-th global step (default: every other) */
+        slab = ((step0 + step) % ctx->slab_every) == ctx->slab_every - 1;
+      } else if (((step0 + step) & 1) == 1 && rw_hybrid_on(p, nvar)) { /* hybrid: every other global step */
         eff_kwin = hybrid_window(p, nvar);
         eff_win_mode = 1;
       }
@@ -2766,12 +3053,27 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
     const bool uniform = !slab && !(eff_kwin > 0 && eff_kwin < nvar);
     const int src = uniform ? CW_SRC_RW_UNIFORM : CW_SRC_RW_WINDOW;
     if (th) rec_step(&th->rec, src);
+    if (slt) {
+      steplog_step_begin(slt);
+      lg_step = step0 + step;
+      lg_type = 'u';
+      lg_a = lg_b = 0;
+      lg_ns = nvar;
+    }
 
     if (slab) {
-      if (rw_slab_step(ctx, th, pws, ee, rng_state, tid, &hits1, &hits2, &n_pairs) < 0) break;
+      const int srank = rw_slab_step(ctx, th, pws, ee, rng_state, tid, &hits1, &hits2, &n_pairs);
+      if (slt) {
+        lg_type = 's';
+        lg_a = th->slab_r0;
+        lg_b = th->slab_r1;
+        lg_ns = th->slab_ns;
+      }
+      if (srank < 0) break;
       rw_rec_flush(ctx, th, tid);
       atomic_fetch_add(&ctx->rw_steps_completed, 1);
       n_done++;
+      if (slt) steplog_step_end(ctx, slt, th, tid, lg_step, lg_type, lg_a, lg_b, lg_ns, srank, 1);
       rw_time_step(ctx, &t_last, &acc_t, &acc_n, n_done == 1);
       continue;
     }
@@ -2782,6 +3084,12 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
                             p->spaH, ctx->mHT_cc,
                             visited_cols, visited_checks, col_queue,
                             visit_marker, rng_state);
+      if (slt) {
+        lg_type = eff_win_mode ? 'i' : 'b';
+        lg_a = seed_col;
+        lg_b = eff_win_mode ? seed_col + eff_kwin : eff_kwin;
+        lg_ns = eff_kwin;
+      }
     } else {
       pivs = mzp_rand_thread(pivs, nvar, rng_state);
       mzp_set_ui(perm, 1);
@@ -2799,6 +3107,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
       atomic_fetch_add(&ctx->rw_steps_completed, 1);
       n_done++;
       if (uniform) n_unif++;
+      if (slt) steplog_step_end(ctx, slt, th, tid, lg_step, lg_type, lg_a, lg_b, lg_ns, rank, 1);
       rw_time_step(ctx, &t_last, &acc_t, &acc_n, n_done == 1);
       continue;
     }
@@ -2872,6 +3181,7 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
         if (classical || colmask_syndrome_non_zero(maskL, cnt, ee)) {
           rci_quick_sort(ee, cnt);
           if (rw_is_hit(ctx, cnt)) hits1++;
+          if (slt) slt->orig = 1; /* (steplog=FILE: a single column) */
           rw_record_codeword(ctx, ee, cnt, tid, 0, src);
         }
       }
@@ -2924,9 +3234,11 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
     atomic_fetch_add(&ctx->rw_steps_completed, 1);
     n_done++;
     if (uniform) n_unif++;
+    if (slt) steplog_step_end(ctx, slt, th, tid, lg_step, lg_type, lg_a, lg_b, lg_ns, rank, 1);
     rw_time_step(ctx, &t_last, &acc_t, &acc_n, n_done == 1);
   }
   if (th) rw_rec_flush(ctx, th, tid); /* (a step abandoned at a stop) */
+  if (slt && slt->open) steplog_step_end(ctx, slt, th, tid, lg_step, lg_type, lg_a, lg_b, lg_ns, -1, 0);
   rw_time_publish(ctx, &acc_t, &acc_n);
   atomic_fetch_add_explicit(&ctx->rw_unif_steps, n_unif, memory_order_relaxed);
   if (n_pairs > 0) atomic_fetch_add_explicit(&ctx->rw_pairs_checked, n_pairs, memory_order_relaxed);
@@ -3217,6 +3529,10 @@ static void *worker_thread_func(void *arg) {
       rw_pairs_ws_init(&rw_pws, ctx, mH, nvar);
       if (ctx->rw_active) rw_th = rw_thr_init(ctx);
     }
+    if (ctx->steplog && !use_ksub) { /* steplog=FILE: the codewords of the current RW step of this worker */
+      warg->slt = calloc(1, sizeof(steplog_thr_t));
+      if (!warg->slt) ERROR("memory allocation");
+    }
   }
 
   /* Thread-local CC memory (only for CC, method 2 or 3) */
@@ -3455,6 +3771,7 @@ static void *worker_thread_func(void *arg) {
     rw_pairs_ws_free(&rw_pws);
     rw_th = rw_thr_free(rw_th);
     rw_dl = rw_dual_free(rw_dl);
+    warg->slt = steplog_thr_free(warg->slt);
     safe_mzp_free(perm);
     safe_mzp_free(pivs);
     free(ee);
@@ -4716,6 +5033,64 @@ static void cc_hash_free(cc_hash_t * const hs) {
   free(hs);
 }
 
+/* steplog=FILE: open the log of the RW steps (before the workers start) and write its header (see steplog_t) */
+static void steplog_open(distfork_ctx_t * const ctx) {
+  const params_t * const p = ctx->p;
+  steplog_t * const sl = calloc(1, sizeof(steplog_t));
+  if (!sl) ERROR("memory allocation");
+  sl->f = fopen(p->steplog, "w");
+  if (!sl->f) ERROR("can't open the file steplog='%s' for writing: %s", p->steplog, strerror(errno));
+  setvbuf(sl->f, NULL, _IOFBF, (size_t)1 << 20);
+  pthread_mutex_init(&sl->mtx, NULL);
+  if (ctx->zcol) {
+    sl->zcol = ctx->zcol;
+  } else { /* (the same values as rw_stages_setup()) */
+    sl->own_zcol = rw_zobrist_cols(p->spaH->cols);
+    sl->zcol = sl->own_zcol;
+  }
+  sl->smask = 1023;
+  sl->seen = calloc((size_t)sl->smask + 1, sizeof(uint64_t));
+  if (!sl->seen) ERROR("memory allocation");
+  const int nvar = p->spaH->cols;
+  const bool hyb = (p->kwin == 0) && !ctx->slab_on && rw_hybrid_on(p, nvar);
+  fprintf(sl->f, "# dist_m4ri steplog: input=%s n=%d m=%d rows_L=%d classical=%d method=%d threads=%d rw_threads=%d "
+          "steps=%ld seed=%d rw_opt=%d rw_active=0x%x kwin=%d win_mode=%d hybrid_window=%d pairs=%d min_hits=%d "
+          "cov_cws=%d slab_on=%d slab_rows=%d slab_bnd=%d slab_var=%d slab_every=%d T3=%lld G_rows=%d\n",
+          p->fdem ? p->fdem : (p->finH ? p->finH : (p->fin ? p->fin : "")), nvar, p->spaH->rows,
+          p->maskL ? p->maskL->rows : 0, p->classical, p->method, ctx->num_threads, ctx->rw_threads,
+          ctx->total_rw_steps, p->seed, p->rw_opt, (unsigned int)ctx->rw_active, p->kwin, p->win_mode,
+          hyb ? hybrid_window(p, nvar) : 0, p->pairs, p->min_hits, p->cov_cws, ctx->slab_on,
+          ctx->slab_on ? ctx->slab_msub : 0, p->slab_bnd, p->slab_var, p->slab_every,
+          ctx->t3 ? ctx->t3->ntrip : 0LL, ctx->gdb ? ctx->gdb->nrows : 0);
+  fprintf(sl->f, "# S tid step type a b ns rank ok ncw t_us dt_us (type u: uniform, i: index window of the columns "
+          "a..b-1 mod n, b: BFS window, seed column a, b columns, s: row slab of the detectors a..b-1; ok=0: abandoned "
+          "at a stop; t_us: the end since the start, dt_us: the duration, microseconds)\n");
+  fprintf(sl->f, "# C w key ckey flag o [lsig rlo rhi c_1 ... c_w] (flag n: new in the codeword hash, o: one more hit, "
+          "x: not kept; o: 1 a single column, 2 a pair, 5 and 6 their shortened forms; ckey 0: not computed; on the "
+          "first line of a key: its L syndrome, the smallest and largest detector, and its 0-based columns)\n");
+  if (fflush(sl->f) != 0) ERROR("steplog: write error (%s)", strerror(errno));
+  ctx->steplog = sl;
+  if ((p->debug & DBG_SUMMARY) && (!(p->method & 1) || ctx->rw_threads == 0 || p->ksub > 0))
+    fprintf(stderr, "# Note: steplog=%s: no full-matrix RW steps to log (method=2, steps=0, or ksub > 0)\n",
+            p->steplog);
+}
+
+/* steplog=FILE: write the last line of the log (the result) and close it (after the workers ended) */
+static void steplog_close(distfork_ctx_t * const ctx, const int dmin, const int dmax, const long rw_steps) {
+  steplog_t * const sl = ctx->steplog;
+  if (!sl) return;
+  fprintf(sl->f, "# end: dmin=%d dmax=%d rw_steps=%ld steps_logged=%lld cw_lines=%lld keys=%u%s stop=%d time=%.3f\n",
+          dmin, dmax, rw_steps, sl->nsteps, sl->ncw, sl->nseen, sl->seen_full ? " (full)" : "",
+          atomic_load(&ctx->stop_reason), get_time_sec() - ctx->start_time);
+  if (fclose(sl->f) != 0) fprintf(stderr, "# WARNING: steplog=%s: write error (%s)\n", ctx->p->steplog,
+                                  strerror(errno));
+  pthread_mutex_destroy(&sl->mtx);
+  free(sl->own_zcol);
+  free(sl->seen);
+  free(sl);
+  ctx->steplog = NULL;
+}
+
 int main(int argc, char **argv) {
   params_t * const p = &prm;
 
@@ -4994,7 +5369,10 @@ int main(int argc, char **argv) {
   if (p->rw_active & RW_OPT_SLAB) { /* Stage 3: the columns by their smallest row, and their largest rows */
     const int m = p->spaH->rows, nv = p->spaH->cols;
     ctx.slab_on = 1;
-    ctx.slab_msub = minint(320, m / 2);
+    ctx.slab_msub = (p->slab_rows > 0) ? minint(p->slab_rows, m) : minint(320, m / 2);
+    ctx.slab_bnd = p->slab_bnd;
+    ctx.slab_var = p->slab_var;
+    ctx.slab_every = p->slab_every;
     ctx.col_rmax = malloc(((size_t)nv + 1) * sizeof(int));
     ctx.slab_order = malloc(((size_t)nv + 1) * sizeof(int));
     ctx.slab_first = calloc((size_t)m + 2, sizeof(int));
@@ -5012,6 +5390,14 @@ int main(int argc, char **argv) {
       if (mHT->p[j + 1] > mHT->p[j]) ctx.slab_order[cur[mHT->i[mHT->p[j]]]++] = j;
     free(cur);
   }
+  const bool slab_study = (p->slab_rows != 0 || p->slab_bnd != 15 || p->slab_var != 0 || p->slab_every != 2);
+  if (slab_study && !ctx.slab_on) /* (the study options of the row slabs, see rw_slab_step()) */
+    fprintf(stderr, "# WARNING: slab_rows, slab_bnd, slab_var, and slab_every are ignored: no row slabs in this run "
+            "(rw_opt 4 with a DEM, kwin=0, sort_rows=0)\n");
+  else if (slab_study && (p->debug & DBG_PROGRESS))
+    fprintf(stderr, "# RW row slabs (study options): %d of %d detectors (slab_rows=%d), boundary slabs %d%% each, "
+            "height reduced by up to %d%%, a slab on 1 of every %d RW steps\n", ctx.slab_msub, p->spaH->rows,
+            p->slab_rows, ctx.slab_bnd, ctx.slab_var, ctx.slab_every);
   ctx.dual_on = (p->rw_active & RW_OPT_DUAL) != 0;
   if (ctx.dual_on) { /* Stage 4: the distinct rows of each column of H (a repeated entry counts once, as in mH) */
     const int nv = p->spaH->cols;
@@ -5103,10 +5489,12 @@ int main(int argc, char **argv) {
     args[i].irr_ws = NULL; /* (allocated by the worker, see worker_thread_func()) */
     args[i].fkg_sum[0] = args[i].fkg_sum[1] = 0.0;
     args[i].fkg_steps[0] = args[i].fkg_steps[1] = 0;
+    args[i].slt = NULL; /* (allocated by an RW worker with steplog=FILE, see worker_thread_func()) */
     for (int k = 0; k < MAX_W; k++) {
       args[i].min_swei[k] = p->spaH->rows + 1;
     }
   }
+  if (p->steplog) steplog_open(&ctx); /* (before the workers start) */
   ctx_spawn(&ctx, ctx.spawn_initial);
 
   if (p->method == 1) {
@@ -5277,6 +5665,7 @@ int main(int argc, char **argv) {
     k_zero_note(p, "0 0 0");
   printf("%d %d %ld\n", final_dmin, final_dmax, reported_rw_steps);
   fflush(stdout);
+  steplog_close(&ctx, final_dmin, final_dmax, reported_rw_steps); /* (steplog=FILE) */
 
   /* rw_opt bit 32: the codewords obtained from those found by T_3 (2 <-> 2 exchanges, 1 -> 2 splits) and by the 1 <-> 1
    * swaps of identical columns, before the export (at most RW_EXPAND_MAX of them) */

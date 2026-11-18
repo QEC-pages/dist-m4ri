@@ -181,6 +181,12 @@ typedef struct{
                      ignored by dist_m4ri_old */
   int rw_active;  /* the RW stages in use, resolved from rw_opt by dist_m4ri at the start of the run (0 before) */
   int rw_planned; /* 1 once rw_active is resolved (dist_m4ri, see rw_hybrid_on()) */
+  int slab_rows;  /* study option, the row slabs of rw_opt 4: detectors per slab (0, the default: min(320, m/2)) */
+  int slab_bnd;   /* study option: the probability in percent of each of the two boundary slabs (default 15) */
+  int slab_var;   /* study option: the random height reduction of a slab in percent (0, the default: none) */
+  int slab_every; /* study option: a slab on every slab_every-th RW step (default 2: every other step) */
+  char *steplog;  /* study option steplog=FILE: the log of the RW steps and of their codewords (NULL: none), see
+                     steplog_t in dist_m4ri.c */
   rw_canon_stats_t canon; /* Stage 5 (RW_OPT_CANON): the statistics of the canonical classes (rw_canon_converged()) */
   int round_D;    /* the rounds of a DEM (debug&1, see dem_round_estimate()): detectors per round (0: none found) */
   int round_L;    /* columns per round, n D / m (0: none found) */
@@ -319,6 +325,16 @@ long long int nzlist_write(const char fnam[], const char comment[], params_t *p)
  * @return The codeword hash (`p->codewords`).
  */
 cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, int src);
+
+/**
+ * @brief The hits of a codeword in the hash (see codeword_add_maybe()), 0 if it is not there (for steplog=FILE).
+ *
+ * @param p Pointer to the params_t structure.
+ * @param arr The support of the codeword (sorted).
+ * @param weight Its weight (length of arr).
+ * @return The hit count `cnt` of the codeword in hash, or 0.
+ */
+int codeword_count(const params_t * const p, const int arr[], const int weight);
 
 /** @brief The source of a codeword added to the hash, see codeword_add_maybe(). */
 enum { CW_SRC_OTHER = 0, CW_SRC_RW_UNIFORM = 1, CW_SRC_RW_WINDOW = 2 };
@@ -671,7 +687,7 @@ void print_short_help(const char *prog);
   "  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n" \
   "  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, rw_opt,\n" \
   "  min_hits (max_hits), cov_cws, refresh, finC, outC, maxC, dW, irred, ortho,\n" \
-  "  seed, debug\n\n" \
+  "  seed, debug, steplog, slab_rows, slab_bnd, slab_var, slab_every\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -731,6 +747,9 @@ void print_short_help(const char *prog);
   "  win_hyb=[int] (0)      Hybrid RW window size (0: 256 for a DEM, 512 otherwise)\n" \
   "  pairs=[int] (-1)       RW pairs of non-pivot columns (p=2; -1: auto, 0: off)\n" \
   "  rw_opt=[int] (-1)      RW triplet stages: -1 auto, 0 off (as 0.16.1), or a bitmask 1..63\n" \
+  "  slab_rows=[int] (0)    Study, row slabs of rw_opt 4: detectors per slab (0: min(320, m/2)); also\n" \
+  "                         slab_bnd, slab_var, slab_every (see --morehelp study)\n" \
+  "  steplog=[file]         Study: log the RW steps and the codewords found in them (see --morehelp study)\n" \
   "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
   "  refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
@@ -1076,15 +1095,16 @@ void print_short_help(const char *prog);
   "                     4: row-slab windows of a DEM in time order (kwin=0, not\n" \
   "                        with sort_rows=1): every other step, the columns inside\n" \
   "                        a range of min(320, m/2) detectors (the first or the\n" \
-  "                        last range with 15%% probability each), a random\n" \
-  "                        independent set of the triplet graph first (automatic:\n" \
-  "                        off; on deep circuit DEMs, the index windows with 1\n" \
-  "                        found more minimum-weight codewords per second; on some\n" \
-  "                        single-round DEMs, the slabs found lighter codewords\n" \
-  "                        much sooner, e.g., weight 16 of the double-gross DEM\n" \
-  "                        with one round, but they often find the same few\n" \
-  "                        codewords again, which raises <n> of min_hits without\n" \
-  "                        16);\n" \
+  "                        last range with 15%% probability each; see the study\n" \
+  "                        options slab_rows, slab_bnd, slab_var, slab_every), a\n" \
+  "                        random independent set of the triplet graph first\n" \
+  "                        (automatic: off; on deep circuit DEMs, the index windows\n" \
+  "                        with 1 found more minimum-weight codewords per second;\n" \
+  "                        on some single-round DEMs, the slabs found lighter\n" \
+  "                        codewords much sooner, e.g., weight 16 of the\n" \
+  "                        double-gross DEM with one round, but they often find\n" \
+  "                        the same few codewords again, which raises <n> of\n" \
+  "                        min_hits without 16);\n" \
   "                     8: sparse-dual elimination: an m x m inverse instead of\n" \
   "                        the m x n matrix (the same information sets, less\n" \
   "                        memory per RW thread; quantum codes with up to 64 rows\n" \
@@ -1167,6 +1187,49 @@ void print_short_help(const char *prog);
   "                     ksub > 0, 0 = off).\n" \
   "  seed=[int]         Random number generator seed (default: 0; seed<=0 is\n" \
   "                     replaced by time(NULL) + 10*pid - 1000*seed).\n\n" \
+  "Study options (the statistics of the RW step types, e.g., the row slabs):\n" \
+  "  slab_rows=[int]    The detectors per row slab of rw_opt 4 (default: 0 =\n" \
+  "                     min(320, m/2); at most m).  The slab options are ignored\n" \
+  "                     (with a warning) in a run without row slabs.\n" \
+  "  slab_bnd=[int]     The probability in percent of each of the two boundary\n" \
+  "                     slabs (the first and the last slab_rows detectors; default:\n" \
+  "                     15, at most 50); the other slabs start at a uniform random\n" \
+  "                     detector.\n" \
+  "  slab_var=[int]     A random reduction of the slab height by up to slab_var\n" \
+  "                     percent: the height of each slab is uniform in [slab_rows\n" \
+  "                     (100 - slab_var)/100, slab_rows], at least 2 (default: 0, a\n" \
+  "                     fixed height; at most 99).\n" \
+  "  slab_every=[int]   A slab on every slab_every-th RW step (default: 2, every\n" \
+  "                     other step; 1: all steps); the other steps use uniform\n" \
+  "                     random permutations.\n" \
+  "  steplog=[file]     Write a line for each full-matrix RW step (ksub=0) and for\n" \
+  "                     each codeword recorded in it to file (the statistics of the\n" \
+  "                     step types; the file is written once the search starts):\n" \
+  "                     'S tid step type a b ns rank ok ncw t_us dt_us': the\n" \
+  "                     thread, the global step, its type u (uniform), i (index\n" \
+  "                     window of the columns a..b-1 mod n), b (Tanner BFS window:\n" \
+  "                     seed column a, b columns), or s (row slab: detectors\n" \
+  "                     a..b-1), its ns columns, the rank of its elimination, ok=0\n" \
+  "                     if abandoned at a stop, the ncw codeword lines which\n" \
+  "                     follow, the time of its end since the start and its\n" \
+  "                     duration (microseconds); then\n" \
+  "                     'C w key ckey flag o [lsig rlo rhi c_1 ... c_w]': the\n" \
+  "                     weight, the hash of the support (the same in all runs on\n" \
+  "                     the same matrix), that of its canonical form (see rw_opt\n" \
+  "                     16; 0 without the triplets T3 and G), n (new in the\n" \
+  "                     codeword hash), o (one more hit of a codeword in hash), or\n" \
+  "                     x (not kept), its origin o: 1 a single column (p=1), 2 a\n" \
+  "                     pair (p=2), 5 and 6 their shortened forms (see rw_opt 1),\n" \
+  "                     and on the first line of a key in the file its L\n" \
+  "                     syndrome (hex; a hash with more than 64 rows of L), its\n" \
+  "                     smallest and largest detector (row), and its columns\n" \
+  "                     (0-based, after merge and drop).  The lines of a step are\n" \
+  "                     written together at its end by its thread; a header gives\n" \
+  "                     the parameters, and '# end:' the result.  The codewords are\n" \
+  "                     logged as RW records them: with min_hits=0, only the\n" \
+  "                     lighter ones (min_hits=1000000000 cov_cws=0: every hit of\n" \
+  "                     the minimum weight).  Default: none (no log); not with\n" \
+  "                     ksub > 0; dist_m4ri_old ignores it.\n\n" \
   "Debug output bitmap (debug=[int], default: 3):\n" \
   "  Diagnostic output goes to stderr (stdout only has the result line); lower\n" \
   "  bits are more informative.  The value is decimal or hexadecimal (0x...).\n" \
@@ -1224,8 +1287,8 @@ void print_short_help(const char *prog);
   "  without a codeword waits for it.  dist_m4ri_old checks before the search.\n" \
   "  The legacy single-threaded dist_m4ri_old (the same options) prints one number\n" \
   "  and also its own progress and codeword lines to stdout, and ignores threads,\n" \
-  "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, and rw_opt\n" \
-  "  (with a warning).\n\n" \
+  "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, rw_opt, and\n" \
+  "  the study options (with a warning).\n\n" \
   "Option groups (--help GROUP prints all entries of GROUP):\n" \
   "  windows            kwin, win_mode, win_hyb\n" \
   "  stopping, stop     steps, wmin, timeout, min_hits, cov_cws\n" \
@@ -1235,7 +1298,8 @@ void print_short_help(const char *prog);
   "  codewords          outC, finC, maxC, dW, irred\n" \
   "  threading          threads, nothrottle, chunk_size\n" \
   "  expert             noscan, start, start_scan, cbeg, cend\n" \
-  "  experimental       ksub, refresh\n\n" \
+  "  experimental       ksub, refresh\n" \
+  "  study              slab_rows, slab_bnd, slab_var, slab_every, steplog\n\n" \
   "Help options:\n" \
   "  -h, --help         Display help for commonly used parameters (fits 80 rows);\n" \
   "                     --help TOPIC is the same as --morehelp TOPIC.\n" \

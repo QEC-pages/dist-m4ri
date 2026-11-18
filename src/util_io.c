@@ -84,6 +84,11 @@ params_t prm={
   .pairs=-1, /* (auto) */
   .rw_opt=-1, /* (auto) */
   .rw_active=0,
+  .slab_rows=0, /* (auto: min(320, m/2)) */
+  .slab_bnd=15,
+  .slab_var=0,
+  .slab_every=2,
+  .steplog=NULL,
   .canon={.active=0, .full=0, .w=INT_MAX, .classes=0, .raw=0, .n_unif=0, .f1=0, .f2=0},
   .round_D=0,
   .round_L=0,
@@ -1361,6 +1366,39 @@ void var_init(int argc, char **argv, params_t * const p){
       refresh_set=1;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, refresh=%d\n",argv[i],p->refresh);
+    }
+    else if (int_arg(argv[i],"slab_rows=",&dbg)){ /** study options: the row slabs of rw_opt 4 */
+      if ((dbg < 0) || (dbg == 1))
+        ERROR("invalid '%s': slab_rows should be 0 (automatic: min(320, m/2)) or at least 2\n", argv[i]);
+      p->slab_rows=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_rows=%d\n",argv[i],p->slab_rows);
+    }
+    else if (int_arg(argv[i],"slab_bnd=",&dbg)){
+      if ((dbg < 0) || (dbg > 50))
+        ERROR("invalid '%s': slab_bnd should be 0 to 50 (percent for each of the two boundary slabs)\n", argv[i]);
+      p->slab_bnd=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_bnd=%d\n",argv[i],p->slab_bnd);
+    }
+    else if (int_arg(argv[i],"slab_var=",&dbg)){
+      if ((dbg < 0) || (dbg > 99))
+        ERROR("invalid '%s': slab_var should be 0 to 99 (percent of random slab height reduction)\n", argv[i]);
+      p->slab_var=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_var=%d\n",argv[i],p->slab_var);
+    }
+    else if (int_arg(argv[i],"slab_every=",&dbg)){
+      if (dbg < 1)
+        ERROR("invalid '%s': slab_every should be at least 1 (a slab on every slab_every-th RW step)\n", argv[i]);
+      p->slab_every=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_every=%d\n",argv[i],p->slab_every);
+    }
+    else if (0==strncmp(argv[i],"steplog=",8)){ /** study option: the log of the RW steps */
+      p->steplog = file_arg_value(argc, argv, &i, 8);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, steplog=%s\n",argv[i],p->steplog);
     }
     else{ /* unrecognized option */
       fprintf(stderr, "%s: unrecognized parameter \"%s\" at position %d\n\n", argv[0], argv[i], i);
@@ -3060,6 +3098,13 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, i
   /* gradually replace heavier codewords by lighter ones */
   cw_trim(p);
   return p->codewords;
+}
+
+int codeword_count(const params_t * const p, const int arr[], const int weight) {
+  if (weight <= 0 || !p->codewords) return 0;
+  cw_vec_t *pvec = NULL;
+  HASH_FIND(hh, p->codewords, arr, (size_t)weight * sizeof(int), pvec);
+  return pvec ? pvec->cnt : 0;
 }
 
 void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cnt,
