@@ -384,7 +384,7 @@ int main(int argc, char **argv){
     p->rw_opt = 0;
   }
   { /* the other options of dist_m4ri which this single-threaded legacy binary ignores (given non-default values) */
-    char buf[256] = "";
+    char buf[512] = "";
     size_t len = 0;
 #define OLD_IGNORED(cond, ...) \
     if ((cond) && len < sizeof(buf)) len += (size_t)snprintf(buf + len, sizeof(buf) - len, __VA_ARGS__)
@@ -402,6 +402,9 @@ int main(int argc, char **argv){
     OLD_IGNORED(p->slab_var != 0, " slab_var=%d", p->slab_var);
     OLD_IGNORED(p->slab_every != 2, " slab_every=%d", p->slab_every);
     OLD_IGNORED(p->dem_rounds != 0, " dem_rounds=%d", p->dem_rounds);
+    OLD_IGNORED(p->stamp != 0, " stamp=%d", p->stamp);
+    OLD_IGNORED(p->json != 0, " json=1");
+    OLD_IGNORED(p->json_file != NULL, " json=%s", p->json_file);
 #undef OLD_IGNORED
     if (len > 0)
       fprintf(stderr, "# WARNING: ignored by dist_m4ri_old (options of dist_m4ri only):%s\n", buf);

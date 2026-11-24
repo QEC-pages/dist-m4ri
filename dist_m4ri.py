@@ -35,7 +35,7 @@ _codedistance_mod = None
 _stim_mod = None
 _qec_cert_mod = None
 
-__version__ = "0.17.3"
+__version__ = "0.17.4"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -542,6 +542,9 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
     statistic <n> (avg_hits), "hits_not_counted": the hits of the row slabs and of the window steps which <n> does not
     count (with a nonzero resolved rw_opt; absent if none), and "min_hits_inactive" also for the rule of <n> (no
     codeword of the minimum weight with a counted hit).
+
+    When the binary is invoked with opt-in `json=1` (since version 0.17.4), the `# RESULT {json}` line on stderr is
+    parsed into `"result_json"` (the decoded dict, schema `"dm4ri-result/1"`).
     """
     import re
     stats: Dict[str, Any] = {"extra_weights": [], "rw_converged": False, "hit_warnings": []}
@@ -555,6 +558,12 @@ def _parse_stderr_stats(stderr: str) -> Dict[str, Any]:
         return None if x == "n/a" else float(x)
     for line in stderr.splitlines():
         line_s = line.strip()
+        if line_s.startswith("# RESULT "):  # opt-in JSON summary (json=1, since version 0.17.4)
+            try:
+                stats["result_json"] = json.loads(line_s[len("# RESULT "):])
+            except Exception:
+                pass
+            continue
         if line_s.startswith("#   information-set estimate"):  # printed by the binary after a hit warning
             skip_estimate = True
         elif skip_estimate and line_s.startswith("#   "):
@@ -1476,6 +1485,9 @@ def check_finc_outc(finC: Optional[str], outC: Optional[str], verbose: bool = Fa
 #   interface: the CLI accepts them and ignores them with a warning to stderr (see _STUDY_OPTIONS), since a run of
 #   dist_m4ri.py may run the binary several times (e.g., two CSS sectors, or the stages of engine='auto'), or not at
 #   all (a cached result).  Run the dist_m4ri binary directly to use them.
+# - stamp, json (since version 0.17.4): the opt-in machine-readable output options of the dist_m4ri binary (stamp=1,
+#   json=1|FILE) are likewise disabled in the Python CLI (accepted and ignored with a warning to stderr, see
+#   _BIN_OUTPUT_OPTIONS); use the dist_m4ri binary directly, or run_dist_m4ri(stamp=..., json_out=...) in Python.
 # ---------------------------------------------------------------------------------------------------------------
 
 def _normalize_start_list(start: Any) -> Optional[List[int]]:
@@ -1903,6 +1915,8 @@ def _warn_cert_ignored(cert_mode: str, finC: Any = None, smax: Optional[int] = N
 # The study options of the dist_m4ri binary (steplog=FILE and the row slabs of rw_opt 4): disabled in the Python
 # interface (the CLI ignores them with a warning to stderr, see _warn_cli_conflicts())
 _STUDY_OPTIONS = ("steplog", "slab_rows", "slab_bnd", "slab_var", "slab_every")
+# Opt-in machine-readable output options of the dist_m4ri binary (since version 0.17.4): disabled in the Python CLI
+_BIN_OUTPUT_OPTIONS = ("stamp", "json")
 
 
 def _warn_disabled_options(noscan: Any = 0, cbeg: Any = None, cend: Any = None) -> None:
@@ -3014,7 +3028,9 @@ def run_dist_m4ri(
     ortho: bool = True,
     warn_ortho: bool = True,
     rw_opt: Optional[int] = None,
-    dem_rounds: int = 0
+    dem_rounds: int = 0,
+    stamp: bool = False,
+    json_out: Optional[Union[bool, int, str, Path]] = None
 ) -> Tuple[int, int, int]:
     """
     Low-level invocation of the multithreaded dist_m4ri binary.
@@ -3191,6 +3207,13 @@ def run_dist_m4ri(
             profile of smax > 0) are forwarded to stderr (since version 0.17.2; except those which the wrapper writes
             itself, see _binary_stderr_forwarded()).
 
+    Machine-readable binary output (opt-in, off by default; requires dist_m4ri >= 0.17.4):
+        stamp: If True, passes stamp=1 so progress lines (debug bit 2) and the stop line (debug bit 1) carry the
+            elapsed search time ' [t=S.SSSs]'.  Default: False (not passed).
+        json_out: Passes json=1 (when True or 1) or json=FILE (when a non-empty path str/Path) to emit the
+            single-line JSON summary (schema 'dm4ri-result/1').  With json_out=True, the '# RESULT {...}' line on
+            stderr is also decoded into _last_run_stats['result_json'].  Default: None (off, not passed).
+
     Cancellation:
         stop_event: Optional threading.Event; once it is set, the binary is terminated and RuntimeError is raised
             (the binary is also terminated on any other exception, e.g., KeyboardInterrupt).
@@ -3231,6 +3254,23 @@ def run_dist_m4ri(
         raise ValueError(f"invalid cc_prune={cc_prune!r}: cc_prune should be 0, 1, or 2")
     _check_rw_opt(rw_opt)
     _check_dem_rounds(dem_rounds)
+    json_arg: Optional[str] = None
+    if json_out is not None:
+        if isinstance(json_out, bool):
+            json_arg = "1" if json_out else None
+        elif isinstance(json_out, int):
+            if json_out not in (0, 1):
+                raise ValueError(f"invalid json_out={json_out!r}: expected None, bool, 0, 1, or a file path")
+            json_arg = "1" if json_out == 1 else None
+        elif isinstance(json_out, Path):
+            s_json = str(json_out)
+            json_arg = f"./{s_json}" if s_json in ("0", "1") else s_json
+        elif isinstance(json_out, str):
+            if not json_out:
+                raise ValueError("invalid json_out='': expected None, bool, 0, 1, or a file path")
+            json_arg = None if json_out == "0" else json_out
+        else:
+            raise ValueError(f"invalid json_out={json_out!r}: expected None, bool, 0, 1, or a file path")
 
     if method not in (1, 2, 3) or isinstance(method, bool):
         raise ValueError(f"invalid method={method!r}: method should be 1 (RW), 2 (CC), or 3 (both)")
@@ -3291,6 +3331,8 @@ def run_dist_m4ri(
     if refresh is not None: cmd.append(f"refresh={refresh}")
     if rw_opt is not None: cmd.append(f"rw_opt={int(rw_opt)}")
     if fdem and dem_rounds: cmd.append(f"dem_rounds={int(dem_rounds)}")
+    if stamp: cmd.append("stamp=1")
+    if json_arg is not None: cmd.append(f"json={json_arg}")
 
     if eff_debug & PY_DBG_COMMANDS:
         print(f"[dist_m4ri] Running: {' '.join(cmd)}")
@@ -3340,8 +3382,9 @@ def run_dist_m4ri(
 
 
 # The warnings of the binary which the wrapper writes itself (see _start_warning_text(), _ksub_warning_text(), and
-# _warn_ortho()), and its notes on drop=FILE (reported by compute_dem_distance()): not forwarded at debug=0
-_BIN_STDERR_OWN = ("# WARNING: start=", "# WARNING: ksub=", "# WARNING: ortho=0", "# Note: drop=")
+# _warn_ortho()), its notes on drop=FILE (reported by compute_dem_distance()), and '# RESULT ' (decoded into
+# _last_run_stats['result_json'] by _parse_stderr_stats()): not forwarded at debug=0
+_BIN_STDERR_OWN = ("# WARNING: start=", "# WARNING: ksub=", "# WARNING: ortho=0", "# Note: drop=", "# RESULT ")
 
 
 def _binary_stderr_forwarded(stderr: str) -> str:
@@ -3349,8 +3392,9 @@ def _binary_stderr_forwarded(stderr: str) -> str:
     The lines of the stderr of a run of the binary with debug=0 which run_dist_m4ri() forwards to sys.stderr (since
     version 0.17.2; the binary writes them with any debug value): its warnings on the validity of the inputs and of
     the result, its notes, and the confinement profile of smax > 0, except the warnings which the wrapper writes itself
-    (start, ksub, ortho=0, with their continuation lines '#   ...') and the notes on drop=FILE (in _last_run_stats,
-    see _parse_stderr_stats(); compute_dem_distance() reports them in its own words).
+    (start, ksub, ortho=0, with their continuation lines '#   ...'), the notes on drop=FILE (in _last_run_stats, see
+    _parse_stderr_stats(); compute_dem_distance() reports them in its own words), and '# RESULT ' (in _last_run_stats
+    as 'result_json').
     """
     out: List[str] = []
     skip = False
@@ -8083,7 +8127,7 @@ def _write_nzlist_file(filepath: str, cws: List[List[int]]) -> None:
 _CLI_FALSE = ("0", "false", "no", "off", "none")  # the CLI values of a flag which mean off (also as "" for some)
 # the CLI file options which also take the file name as the next argument, as in the binary ('finH= FILE')
 _CLI_FILE_KEYS = ("fdem", "dem", "finh", "fing", "finl", "fin", "hx", "finhx", "hz", "finhz", "lx", "finlx", "lz",
-                  "finlz", "finc", "outc", "outd", "drop", "steplog")
+                  "finlz", "finc", "outc", "outd", "drop", "steplog", "json")
 
 
 def _cli_arg_text(key: str, val: str, arg: str) -> str:
@@ -8170,10 +8214,10 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
     Parses CLI arguments supporting both key=value pairs and standard --flags.
 
     The values are checked: ValueError (naming the argument) for an invalid one, except for the disabled options
-    noscan, cbeg, cend, irred, and css, and the study options steplog, slab_rows, slab_bnd, slab_var, and slab_every of
-    the binary, which are kept as given (ignored with a warning).  A file option given as
-    'key=' takes the file name from the next argument (e.g., 'finH= FILE', as the binary), and the form '--key VALUE'
-    also takes a negative number (e.g., '--kwin -1').
+    noscan, cbeg, cend, irred, and css, the study options steplog, slab_rows, slab_bnd, slab_var, and slab_every, and
+    the machine-readable binary output options stamp and json, which are kept as given (ignored with a warning).  A
+    file option given as 'key=' takes the file name from the next argument (e.g., 'finH= FILE', as the binary), and the
+    form '--key VALUE' also takes a negative number (e.g., '--kwin -1').
     """
     args: Dict[str, Any] = {
         "method": 3,
@@ -8224,6 +8268,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "slab_bnd": None,
         "slab_var": None,
         "slab_every": None,
+        "stamp": None,  # (machine-readable binary output options: disabled in CLI, see _BIN_OUTPUT_OPTIONS)
+        "json": None,
         "classical": -1,
         "seed": 0,
         "debug": 0,
@@ -8647,6 +8693,8 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["noscan"] = _cli_int_or_text(val)
             elif key_lower in _STUDY_OPTIONS:  # (disabled: ignored with a warning, see _warn_cli_conflicts())
                 args[key_lower] = val
+            elif key_lower in _BIN_OUTPUT_OPTIONS:  # (disabled: ignored with a warning, see _warn_cli_conflicts())
+                args[key_lower] = val
             elif key_lower == "irred":  # (disabled: ignored with a warning, see _warn_cli_conflicts())
                 args["irred"] = _cli_int_or_text(val)
             elif key_lower == "classical":
@@ -8779,7 +8827,7 @@ Allowed parameters:
   expand, dW, irred, seed, debug (dbg), solver, engine, cache (cache_file),
   --no-cache, --verbose, --silent (-q, --quiet), --cws (--do_cws),
   --trust-start, sort_rows, cc_prune, ortho, steplog, slab_rows, slab_bnd,
-  slab_var, slab_every
+  slab_var, slab_every, stamp, json
 
 Help options:
   -h, -?, --help : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -8847,7 +8895,7 @@ Extra parameters (see --morehelp for details):
   smax=N (0)            Max syndrome weight for CC confinement profile (0 to disable)
   start=LIST (-1)       Expert: CC from listed columns only, e.g. start=0,48 (also start_scan=1; see --morehelp)
   --trust-start         Expert: accept start-list results as valid (copied to main cache record)
-  noscan, cbeg, cend    Disabled in Python (ignored, a warning; also css=, irred=0, steplog, slab_*, --simple, --full)
+  noscan, cbeg, cend    Disabled (warn, ignored): also css=, irred=0, steplog, slab_*, stamp, json, --simple, --full
   ortho=0|1 (1)         Expert: 0 skips the check H G^T = 0 of G (valid only if it holds)
   sort_rows=0|1         Sort the rows of H by weight for CC (default: 1 for matrices, 0 for a DEM)
   cc_prune=0|1|2 (1)    CC search: 0 first-row walk, 1 branch and bound, 2 also cover bounds
@@ -9360,6 +9408,17 @@ Study options of the dist_m4ri binary (the statistics of the RW step types, e.g.
                         result).  Run the dist_m4ri binary directly to use them (see its --morehelp
                         study).
 
+Machine-readable output options of the dist_m4ri binary (since version 0.17.4):
+  stamp=0|1, json=0|1|FILE
+                        Disabled in the Python interface: the machine-readable output options of
+                        the dist_m4ri binary (stamp=1: elapsed search-time stamps [t=S.SSSs] on
+                        progress and stop lines; json=1|FILE: a single-line JSON summary, schema
+                        dm4ri-result/1) are accepted by the CLI, but ignored with a warning to
+                        stderr: a run of dist_m4ri.py may run the binary several times (e.g., two
+                        CSS sectors, or the stages of engine='auto'), or not at all (a cached
+                        result).  Run the dist_m4ri binary directly (see its --morehelp output),
+                        or pass stamp=True / json_out=True|FILE to run_dist_m4ri() in Python.
+
 Codeword collection and export:
   --cws                 Collect non-trivial minimum-weight codewords (up to min_w + dW) into the
                         cache record (also --do_cws, cws=0|1, do_cws=0|1).  Does not print them to
@@ -9463,9 +9522,9 @@ General options:
   --silent / -q         No warnings on stderr for the inputs which are ignored (e.g., matrices with
                         fdem, the options of the binary with solver=codedistance, or the options
                         not used with --model-lb; also the k = 0 note); the warnings for the
-                        disabled options (--simple, --full, noscan, cbeg, cend, irred=0, css=, and the
-                        study options steplog and slab_*) and on the validity of a result are still
-                        written (also --quiet, silent=0|1).
+                        disabled options (--simple, --full, noscan, cbeg, cend, irred=0, css=, the
+                        study options steplog and slab_*, and stamp, json) and on the validity of a
+                        result are still written (also --quiet, silent=0|1).
                         In Python: set_silent().
   seed=N                Random number generator seed (default: 0; the binary replaces seed<=0 by
                         time(NULL) + 10*pid - 1000*seed).
@@ -9505,6 +9564,7 @@ Option groups (--help GROUP prints all entries of GROUP):
   expert                start, start_scan, --trust-start, noscan
   experimental          ksub, refresh
   study                 steplog, slab_rows, slab_bnd, slab_var, slab_every
+  output                stamp, json
 
 Help options:
   -h, -?, --help [TOPIC]
@@ -9665,6 +9725,10 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
         if args.get(key) is not None:
             _warn_disabled(f"{key}={args[key]} is disabled in the Python interface (a study option of the dist_m4ri "
                            f"binary; ignored); use the dist_m4ri binary directly")
+    for key in _BIN_OUTPUT_OPTIONS:  # (not passed on: binary output options, see _BIN_OUTPUT_OPTIONS)
+        if args.get(key) is not None:
+            _warn_disabled(f"{key}={args[key]} is disabled in the Python interface (a machine-readable output option "
+                           f"of the dist_m4ri binary; ignored); use the dist_m4ri binary directly")
     stim_opts = [opt for opt, on in (("basis=", args.get("basis") is not None),
                                      ("--out-stim", args.get("out_stim") is not None),
                                      ("--p-noise", args.get("p_noise") is not None),

@@ -205,6 +205,11 @@ typedef struct{
   int min_hits;   /* RW stopping criterion: average hits <n> per lowest-weight cw (0 = off) */
   int cov_cws;    /* RW stopping criterion: size of the representative set of lowest-weight cws (default 100) */
   int refresh;    /* RW steps interval for adaptive basis refresh (0 = off, auto 5000 if ksub>0) */
+  int stamp;      /* opt-in time stamps on progress and stop lines: 1 appends ' [t=S.SSSs]' (0: off, default) */
+  int json;       /* opt-in JSON summary on stderr: 1 writes '# RESULT {json}' as its last line (0: off, default) */
+  char *json_file;/* opt-in JSON summary file (json=FILE; NULL: none); may be combined with json=1 */
+  int m_full;     /* rows of H as read (after pmin, before DEM merge and drop), for the JSON summary */
+  int n_full;     /* columns of H as read (after pmin, before DEM merge and drop), for the JSON summary */
 } params_t;
 
 static inline int minint(const int a, const int b) { return (a < b) ? a : b; }
@@ -727,7 +732,7 @@ void print_codeword_support(FILE *stream, const char *prefix, const int arr[], c
  */
 void csr_dump(FILE *stream, const csr_t * const M, const char name[], const int debug);
 
-#define DIST_M4RI_VERSION "0.17.3"
+#define DIST_M4RI_VERSION "0.17.4"
 
 /**
  * @brief Print short help message listing all allowed parameters to stderr.
@@ -745,7 +750,8 @@ void print_short_help(const char *prog);
   "  start, start_scan, sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout,\n" \
   "  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs,\n" \
   "  rw_opt, min_hits (max_hits), cov_cws, refresh, finC, outC, maxC, dW, irred,\n" \
-  "  ortho, seed, debug, steplog, slab_rows, slab_bnd, slab_var, slab_every\n\n" \
+  "  ortho, seed, debug, stamp, json, steplog, slab_rows, slab_bnd, slab_var,\n" \
+  "  slab_every\n\n" \
   "Help options:\n" \
   "  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n" \
   "  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n"
@@ -811,6 +817,8 @@ void print_short_help(const char *prog);
   "  cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic\n" \
   "  refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)\n" \
   "  seed=[int] (0)         RNG seed [0 for time(NULL)]\n" \
+  "  stamp=[0|1] (0)        Append elapsed search time ' [t=S.SSSs]' to progress and stop lines\n" \
+  "  json=[0|1|file] (0)    Emit JSON summary (dm4ri-result/1): 1 '# RESULT' on stderr, or file\n" \
   "  debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)\n\n" \
   "Help options:\n" \
   "  -h, --help         Display this help message (--help TOPIC: the same as --morehelp TOPIC)\n" \
@@ -1313,6 +1321,39 @@ void print_short_help(const char *prog);
   "                     lighter ones (min_hits=1000000000 cov_cws=0: every hit of\n" \
   "                     the minimum weight).  Default: none (no log); not with\n" \
   "                     ksub > 0; dist_m4ri_old ignores it.\n\n" \
+  "Machine-readable output (opt-in; since version 0.17.4):\n" \
+  "  stamp=[0|1]        Append the elapsed search time ' [t=S.SSSs]' (seconds\n" \
+  "                     since the start of the search, the clock of timeout and\n" \
+  "                     of '# stopped after') to every progress line (debug bit\n" \
+  "                     2) and the stop line (debug bit 1).  Default: 0 (off;\n" \
+  "                     default output unchanged).  Needs debug bits 1 or 2 for\n" \
+  "                     those lines to appear (e.g., debug=3).  dist_m4ri_old\n" \
+  "                     ignores it.\n" \
+  "  json=[0|1|file]    Emit a single-line JSON summary (schema 'dm4ri-result/1')\n" \
+  "                     on every normal exit (including timeout, k=0, and\n" \
+  "                     no-search stops; nothing on errors with exit code 255 or\n" \
+  "                     signals):\n" \
+  "                     0: off (default);\n" \
+  "                     1: write '# RESULT {json}' as the last line of stderr\n" \
+  "                        (at any debug level);\n" \
+  "                     file: write the JSON object (one line) to file (opened\n" \
+  "                        after input loading, empty if killed; write ./1 or\n" \
+  "                        ./0 for a file named 1 or 0).\n" \
+  "                     Repeating json= adds destinations (e.g., json=1\n" \
+  "                     json=out.json writes both); json=0 clears both.  Fields:\n" \
+  "                     schema, version, dmin, dmax, rw_steps, k0, k0_reason,\n" \
+  "                     search, stop {code, text}, t_input (process start to\n" \
+  "                     search start), t_stop, t_ub, t_lb (search clock),\n" \
+  "                     timeout, seed (resolved), method, threads {requested,\n" \
+  "                     cpus, used, spawned, rw, cc}, rw_opt (resolved),\n" \
+  "                     rw_opt_requested, rw_steps_done, size {full, searched},\n" \
+  "                     cc_rounds [{w, thread_s, wall_s, nodes, threads,\n" \
+  "                     complete}], events [[t, dmin, dmax], ...], witness\n" \
+  "                     {available, weight, source, base, support (all 1-based\n" \
+  "                     original columns)}.  Callers probing an older binary can\n" \
+  "                     check 'dist_m4ri --help json' (exit 0 vs 1) or catch\n" \
+  "                     exit code 255 with 'unrecognized parameter' on stderr.\n" \
+  "                     dist_m4ri_old ignores it.\n\n" \
   "Debug output bitmap (debug=[int], default: 3):\n" \
   "  Diagnostic output goes to stderr (stdout only has the result line); lower\n" \
   "  bits are more informative.  The value is decimal or hexadecimal (0x...).\n" \
@@ -1371,7 +1412,7 @@ void print_short_help(const char *prog);
   "  The legacy single-threaded dist_m4ri_old (the same options) prints one number\n" \
   "  and also its own progress and codeword lines to stdout, and ignores threads,\n" \
   "  timeout, nothrottle, chunk_size, dexp, dstop, cc_prune, pairs, rw_opt,\n" \
-  "  dem_rounds, and the study options (with a warning).\n\n" \
+  "  dem_rounds, stamp, json, and the study options (with a warning).\n\n" \
   "Option groups (--help GROUP prints all entries of GROUP):\n" \
   "  windows            kwin, win_mode, win_hyb\n" \
   "  stopping, stop     steps, wmin, timeout, min_hits, cov_cws\n" \
@@ -1382,7 +1423,8 @@ void print_short_help(const char *prog);
   "  threading          threads, nothrottle, chunk_size\n" \
   "  expert             noscan, start, start_scan, cbeg, cend\n" \
   "  experimental       ksub, refresh\n" \
-  "  study              slab_rows, slab_bnd, slab_var, slab_every, steplog\n\n" \
+  "  study              slab_rows, slab_bnd, slab_var, slab_every, steplog\n" \
+  "  output             stamp, json\n\n" \
   "Help options:\n" \
   "  -h, --help         Display help for commonly used parameters (fits 80 rows);\n" \
   "                     --help TOPIC is the same as --morehelp TOPIC.\n" \

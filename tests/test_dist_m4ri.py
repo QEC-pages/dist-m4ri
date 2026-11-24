@@ -5017,5 +5017,82 @@ def test_explain_slab_and_window_hits(capsys):
     assert "row-slab steps" in txt
 
 
+def test_bin_stamp_and_json(capsys, tmp_path, monkeypatch):
+    # Opt-in machine-readable output in run_dist_m4ri(): stamp=False and json_out=None by default (not passed on the
+    # command line); stamp=True passes stamp=1, json_out=True passes json=1 and sets _last_run_stats['result_json']
+    # (without forwarding '# RESULT' to stderr at debug=0), and json_out=PATH writes the file (preserving './0', './1').
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    res_def = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=dist_m4ri.PY_DBG_COMMANDS)
+    out_def = capsys.readouterr()
+    assert res_def == (3, 3, 6)
+    assert "stamp=" not in out_def.out and "json=" not in out_def.out
+    assert "result_json" not in dist_m4ri._last_run_stats
+
+    res_sj = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=3, stamp=True, json_out=True)
+    out_sj = capsys.readouterr()
+    assert res_sj == (3, 3, 6)
+    assert " [t=" in out_sj.out and "# RESULT " in out_sj.out
+    rj = dist_m4ri._last_run_stats.get("result_json")
+    assert rj is not None and rj["schema"] == "dm4ri-result/1"
+    assert [rj["dmin"], rj["dmax"], rj["rw_steps"]] == [3, 3, 6]
+    assert rj["witness"]["available"] is True and rj["witness"]["weight"] == 3 and len(rj["witness"]["support"]) == 3
+
+    # debug=0 with json_out=True decodes result_json without forwarding raw '# RESULT {...}' to stderr
+    res_q = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=True)
+    out_q = capsys.readouterr()
+    assert res_q == (3, 3, 6) and out_q.err == "" and out_q.out == ""
+    assert dist_m4ri._last_run_stats["result_json"]["stop"]["code"] == "bounds"
+
+    jf = tmp_path / "res.json"
+    res_f = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=jf)
+    out_f = capsys.readouterr()
+    assert res_f == (3, 3, 6) and "# RESULT" not in out_f.err
+    rj_f = json.loads(jf.read_text())
+    assert rj_f["schema"] == "dm4ri-result/1" and rj_f["stop"]["code"] == "bounds"
+    assert rj_f["size"]["full"] == [24, 221] and rj_f["size"]["searched"] == [16, 55]
+
+    # Path("./1") and Path("./0") keep file semantics despite pathlib normalizing them to "1" / "0"
+    monkeypatch.chdir(tmp_path)
+    for name in ("1", "0"):
+        assert dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=Path(f"./{name}")) == (
+            3, 3, 6)
+        assert capsys.readouterr().err == ""
+        assert json.loads((tmp_path / name).read_text())["dmax"] == 3
+
+    with pytest.raises(ValueError, match="json_out"):
+        dist_m4ri.run_dist_m4ri(fdem=dem_file, json_out="")
+    with pytest.raises(ValueError, match="json_out"):
+        dist_m4ri.run_dist_m4ri(fdem=dem_file, json_out=2)
+
+
+def test_cli_stamp_json_disabled(capsys, tmp_path):
+    # stamp= and json= (including the two-token form 'json= FILE') are accepted by the Python CLI, disabled with a
+    # warning to stderr (also with --silent), not passed to the binary, and documented in --help / --morehelp output.
+    import io
+    args = dist_m4ri.parse_cli_args(["fdem=x.dem", "stamp=1", "json=1"])
+    assert args["stamp"] == "1" and args["json"] == "1"
+    assert dist_m4ri.parse_cli_args(["fdem=x.dem", "json=", "out.json"])["json"] == "out.json"
+    jf = tmp_path / "cli.json"
+    dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+    ret = dist_m4ri.main([f"fdem={dem_file}", "stamp=1", "json=", str(jf), "method=1", "steps=50", "threads=1",
+                          "--no-cache", "--silent", f"debug={dist_m4ri.PY_DBG_COMMANDS}"])
+    captured = capsys.readouterr()
+    assert ret == 0
+    assert "# Warning: stamp=1 is disabled in the Python interface" in captured.err
+    assert f"# Warning: json={jf} is disabled in the Python interface" in captured.err
+    assert not jf.exists()
+    assert "stamp=" not in captured.out and "json=" not in captured.out
+    help_buf, short_buf = io.StringIO(), io.StringIO()
+    dist_m4ri.print_cli_help(file=help_buf)
+    dist_m4ri.print_cli_short_help(file=short_buf)
+    assert "stamp, json" in help_buf.getvalue() and "stamp, json" in short_buf.getvalue()
+    assert dist_m4ri.main(["--morehelp", "output"]) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].startswith("Machine-readable output options of the dist_m4ri binary")
+    for topic in ("stamp", "json", "OUTPUT"):
+        assert dist_m4ri.main(["--morehelp", topic]) == 0
+        assert capsys.readouterr().out == out, topic
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

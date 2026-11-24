@@ -356,10 +356,10 @@ assert_output "$BIN --help" 0 "morehelp" ""
 assert_output "$BIN --morehelp" 0 "classical=\[0\|1\]" ""
 
 # Test 47: dist_m4ri --version
-assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.17.3" ""
+assert_output "$BIN_FORK --version" 0 "dist_m4ri version 0.17.4" ""
 
 # Test 48: dist_m4ri_old --version
-assert_output "$BIN --version" 0 "dist_m4ri version 0.17.3" ""
+assert_output "$BIN --version" 0 "dist_m4ri version 0.17.4" ""
 
 # Test 49: dist_m4ri RW with ksub subspace sketching
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=200 ksub=32 debug=0 threads=4" \
@@ -2010,6 +2010,85 @@ assert_output "$BIN_FORK method=1 fdem=$DEEP140 steps=200 seed=1 threads=1 rw_op
 assert_output "$BIN_FORK method=1 fdem=$EXAMPLES_DIR/surf_d3.dem steps=10000 seed=1 threads=2 kwin=20 debug=1" 0 \
     "^1 3 [0-9]+$" "RW convergence reached \(<n>=" "not counted"
 rm -f "$T1_140" "$DEEP140" "$BIG140"
+
+# Test 141: opt-in machine-readable output: stamp=0|1 (suffix ' [t=S.SSSs]' on progress and stop lines) and
+# json=0|1|FILE (single-line JSON summary, schema 'dm4ri-result/1', '# RESULT {...}' last line of stderr and/or FILE);
+# off by default; --help json probe; k=0 and no-search stops; errors; dist_m4ri_old ignores both with a warning
+assert_output "$BIN_FORK --help json" 0 "^  json=\[0\|1\|file\]" ""
+assert_output "$BIN_FORK --help output" 0 "^  stamp=\[0\|1\]" ""
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem stamp=2" 255 "" "stamp should be 0 or 1"
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem json=/nonexistent_dir_141/r.json" 255 "" \
+    "can't open the file json="
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem json=" 255 "" "missing file name"
+assert_output "$BIN method=2 fdem=$EXAMPLES_DIR/surf_d3.dem wmax=3 stamp=1 json=1 debug=0" 0 "^3$" \
+    "^# WARNING: ignored by dist_m4ri_old \(options of dist_m4ri only\):.* stamp=1 json=1"
+J141=$(mktemp --suffix=.json)
+ERR141=$(mktemp)
+OUT141=$(mktemp)
+"$BIN_FORK" fdem="$EXAMPLES_DIR/surf_d3.dem" seed=1 threads=1 debug=3 stamp=1 json=1 json="$J141" \
+    > "$OUT141" 2> "$ERR141"
+RC141=$?
+echo "Running Test 141: stamp=1 json=1 json=FILE on surf_d3.dem (rc=$RC141)"
+if [ "$RC141" -ne 0 ] || [ "$(cat "$OUT141")" != "3 3 6" ]; then
+    echo "  [FAIL] Test 141: expected rc=0 stdout='3 3 6', got rc=$RC141 stdout='$(cat "$OUT141")'"
+    FAILED=1
+fi
+if ! python3 - "$ERR141" "$J141" "$OUT141" <<'PYEOF'
+import json, re, sys
+from pathlib import Path
+
+err_lines = Path(sys.argv[1]).read_text().splitlines()
+j_file = Path(sys.argv[2]).read_text().strip()
+out_toks = [int(x) for x in Path(sys.argv[3]).read_text().split()]
+assert err_lines and err_lines[-1].startswith("# RESULT "), err_lines[-1:]
+raw = err_lines[-1][len("# RESULT "):]
+assert raw == j_file, "stderr # RESULT differs from json=FILE"
+obj = json.loads(raw, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
+assert obj["schema"] == "dm4ri-result/1" and [obj["dmin"], obj["dmax"], obj["rw_steps"]] == out_toks
+assert obj["search"] is True and obj["k0"] is False and obj["stop"]["code"] == "bounds"
+assert obj["size"]["full"] == [24, 221] and obj["size"]["searched"] == [16, 55]
+assert obj["t_input"] >= 0 and obj["t_stop"] >= 0 and obj["t_ub"] is not None and obj["t_lb"] >= 0
+assert obj["witness"]["available"] is True and obj["witness"]["weight"] == 3 and obj["witness"]["base"] == 1
+assert len(obj["witness"]["support"]) == 3 and obj["witness"]["source"] == "rw"
+assert len(obj["cc_rounds"]) == 2 and all(r["complete"] for r in obj["cc_rounds"])
+assert obj["events"][0][1:] == [1, 0] and obj["events"][-1][1:] == [3, 3]
+stamp_re = re.compile(r" \[t=\d+\.\d{3}s\]$")
+stamped = [ln for ln in err_lines[:-1] if stamp_re.search(ln)]
+assert any(ln.startswith("# run plan:") for ln in stamped)
+assert any("found new upper bound" in ln for ln in stamped)
+assert any(ln.startswith("# CC round w=") for ln in stamped)
+assert any(ln.startswith("# stopped after ") for ln in stamped)
+PYEOF
+then
+    echo "  [FAIL] Test 141: JSON or stamp validation failed"
+    FAILED=1
+fi
+# json=FILE alone (two-token form) writes no '# RESULT' to stderr; debug=0 json=1 writes only '# RESULT'
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem seed=1 threads=1 debug=0 json= $J141" 0 "^3 3 6$" "" "# RESULT"
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem seed=1 threads=1 debug=0 json=1" 0 "^3 3 6$" \
+    '^# RESULT \{"schema":"dm4ri-result/1",'
+# no-search stop (dmin=dmax supplied) and k=0 (known at once) emit valid JSON with search=false
+assert_output "$BIN_FORK finH=$EXAMPLES_DIR/QX40.mtx finG=$EXAMPLES_DIR/QZ40.mtx dmin=6 dmax=6 threads=1 debug=1 \
+stamp=1 json=1" 0 "^6 6 0$" '^# stopped: bounds coincide: .* \[t=[0-9]+\.[0-9]{3}s\]$'
+H141=$(mktemp --suffix=.mtx)
+printf '%%%%MatrixMarket matrix coordinate integer general\n1 2 2\n1 1 1\n1 2 1\n' > "$H141"
+assert_output "$BIN_FORK finH=$H141 finG=$H141 threads=1 debug=0 json=1" 0 "^0 0 0$" \
+    '"k0":true,.*"search":false,.*"stop":\{"code":"k0",'
+# DEM with all columns dropped (k=0 before seed init): seed is resolved (>0); missing finC leaves json=FILE alone
+DEM141=$(mktemp --suffix=.dem)
+DRP141=$(mktemp)
+printf 'error(0.01) D0 L0\n' > "$DEM141"
+printf '0\n' > "$DRP141"
+assert_output "$BIN_FORK fdem=$DEM141 drop=$DRP141 seed=0 threads=1 debug=0 json=1" 0 "^0 0 0$" \
+    '"k0":true,"k0_reason":"no column left after merge and drop",.*"seed":[1-9][0-9]*,'
+J141_NO=$(mktemp --suffix=.json)
+rm -f "$J141_NO"
+assert_output "$BIN_FORK fdem=$EXAMPLES_DIR/surf_d3.dem finC=/nonexistent_141.nz json=$J141_NO" 255 "" ""
+if [ -e "$J141_NO" ]; then
+    echo "  [FAIL] Test 141: json=FILE was created on missing finC error"
+    FAILED=1
+fi
+rm -f "$J141" "$ERR141" "$OUT141" "$H141" "$DEM141" "$DRP141" "$J141_NO"
 
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"

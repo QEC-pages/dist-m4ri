@@ -85,11 +85,13 @@ bound. A row or column index out of range is an error (before, e.g., a row index
 > **Note on Compatibility**: This 3-number output format (`dmin dmax rw_steps`) is specific to the multithreaded
 > `dist_m4ri` and is incompatible with the legacy single-threaded `dist_m4ri_old`, which takes the same options but
 > prints a single integer `d` or `-w`, and also its own progress and codeword lines, to `stdout`, and ignores `threads`,
-> `timeout`, `nothrottle`, `chunk_size`, `dexp`, `dstop`, `cc_prune`, `pairs`, `rw_opt`, `dem_rounds`, and the study
-> options (with a warning).
+> `timeout`, `nothrottle`, `chunk_size`, `dexp`, `dstop`, `cc_prune`, `pairs`, `rw_opt`, `dem_rounds`, `stamp`, `json`,
+> and the study options (with a warning).
 
 - **`stderr`**: Receives all status banners, thread balancing reports, CC round timings, RW discovery logs, warnings,
-  and confinement profiles, as selected by the `debug` bitmap (see [Debug Output](#debug-output-debugint)).
+  and confinement profiles, as selected by the `debug` bitmap (see [Debug Output](#debug-output-debugint)). For
+  opt-in time stamps on progress/stop lines and a single-line JSON summary (schema `dm4ri-result/1`), see
+  [Machine-Readable Output](#machine-readable-output-stamp-json).
 
 ---
 
@@ -199,14 +201,14 @@ Relevant parameters:
   3000 steps (20 without pairs, with 2% more time per step), 24 for `bb_360` in 600 steps (26), and lighter codewords of
   classical LDPC codes with a large distance (`c1920H`: 210-277 instead of 317-321 in 1000 steps, three seeds). With 128
   threads, RW finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s, and 23 for `bb_360` in
-  1-2 min instead of 24 in 4 min (Section 8 of the [benchmark](benchmark/BENCHMARK.md)). For small codes, a step takes
-  2-5 times longer, but `min_hits` is reached in fewer steps, mostly in about the same time. Where the hit counts are
-  strongly non-uniform (a warning with `debug&1`), whether the rule of $\langle n\rangle$ reaches `min_hits` within
-  `steps` is a matter of chance, with or without pairs (measured with 0.14.x, i.e., `rw_opt=0` now): e.g., the
-  unreduced matrices `examples/surf_d7_H.mmx` with `_L.mmx` (a circuit DEM given as matrices) mostly run to the step
-  limit with the pairs, in twice the time, while the surface-code circuit of stim with $d = 7$ as a DEM (reduced by the
-  binary) converges as soon as without pairs, and the one with $d = 9$ converges only with the pairs (Section 8.4 of
-  the benchmark). With `debug&1`, the binary prints the pairs checked per step and the codewords recorded from the
+  1-2 min instead of 24 in 4 min (Section 8 of the [benchmark history](benchmark/HISTORY.md)). For small codes, a step
+  takes 2-5 times longer, but `min_hits` is reached in fewer steps, mostly in about the same time. Where the hit counts
+  are strongly non-uniform (a warning with `debug&1`), whether the rule of $\langle n\rangle$ reaches `min_hits` within
+  `steps` is a matter of chance, with or without pairs (measured with 0.14.x, i.e., `rw_opt=0` now): e.g., the unreduced
+  matrices `examples/surf_d7_H.mmx` with `_L.mmx` (a circuit DEM given as matrices) mostly run to the step limit with
+  the pairs, in twice the time, while the surface-code circuit of stim with $d = 7$ as a DEM (reduced by the binary)
+  converges as soon as without pairs, and the one with $d = 9$ converges only with the pairs (Section 8.4 of the
+  benchmark history). With `debug&1`, the binary prints the pairs checked per step and the codewords recorded from the
   pairs and from the single columns (`# RW pairs (p=2, ...)`). Not with the experimental `ksub`.
 - `rw_opt=[int]`: The RW stages with the weight-3 degeneracies (since 0.17.0; the analysis is in
   `doc/rw_triplet_degeneracies.tex`). Default: `-1` (automatic: the stages below which apply to the input); `0`: none
@@ -263,15 +265,15 @@ Relevant parameters:
   `# RW canonical (w=...): classes=..., p_GT=..., C0_Chao2=...`, and `# RW FKG score: ...`, the mean Harris–FKG bound
   on $\ln \Pr(J)$ of the dense full-matrix steps with pairs, with any stage, but not with `8` and not of the slab
   steps). Measured with 0.17.0 (without the automatic row slabs) on the dedicated 64-core server with 16 threads
-  (Section 11 of the [benchmark](benchmark/BENCHMARK.md)): the automatic mode records 1.1–8.0 times more minimum-weight
-  hits per second (of the at most `cov_cws` = 100 codewords kept) on 13 of 15 circuit DEMs, single-round DEMs, and
-  code-sized models (0.75–0.9 times on the two smallest multi-round DEMs, `surf_d5` and `color_xyz_d5`), and
+  (Section 11 of the [benchmark history](benchmark/HISTORY.md)): the automatic mode records 1.1–8.0 times more
+  minimum-weight hits per second (of the at most `cov_cws` = 100 codewords kept) on 13 of 15 circuit DEMs, single-round
+  DEMs, and code-sized models (0.75–0.9 times on the two smallest multi-round DEMs, `surf_d5` and `color_xyz_d5`), and
   1.04–1.96 times on static codes; it reaches the weight 24 of the `bb_360` DEM 3.5 times and the weight 18 of the
   double-gross DEM 2.1 times sooner (medians of 2 and 3 seeds; the lightest known codewords of these DEMs have the
-  weights 23 and 16); with the canonical rule, `0x11` stops 2.3–9 times sooner than `rw_opt=0` on the code-sized
-  models (1.5–3.2 times sooner than `0x01`, the rule of $\langle n\rangle$ with the same contraction) and up to 7
-  times later where many classes exist (`shyps_225` at $T = 1$, 57 times later than `0x01`). `rw_opt=0` runs within
-  5% of the 0.16.1 binary. Not with the experimental `ksub`; `dist_m4ri_old` ignores `rw_opt`.
+  weights 23 and 16); with the canonical rule, `0x11` stops 2.3–9 times sooner than `rw_opt=0` on the code-sized models
+  (1.5–3.2 times sooner than `0x01`, the rule of $\langle n\rangle$ with the same contraction) and up to 7 times later
+  where many classes exist (`shyps_225` at $T = 1$, 57 times later than `0x01`). `rw_opt=0` runs within 5% of the
+  0.16.1 binary. Not with the experimental `ksub`; `dist_m4ri_old` ignores `rw_opt`.
 - `dem_rounds=[int]`: The rounds $T$ of the DEM, if known (default: 0, unknown; only with `fdem`), for the automatic
   `rw_opt`: 1, a single round of syndrome measurements and the final readout, adds the row slabs of `rw_opt` 4, and 2
   or more excludes them (the Python wrapper passes the rounds of a Stim circuit, the largest number of measurements of
@@ -916,7 +918,8 @@ merge, and reduce the DEM in all), and it drops about half of the detectors and 
    gives the closest names on `stderr`, and the exit code `1`. The section "Option groups" of the full help lists
    groups of related parameters: `windows` (`kwin`, `win_mode`, `win_hyb`), `stopping`, `bounds`, `dem`, `matrices`,
    `codewords`, `threading`, `expert` (the CC options whose results rely on assumptions: `noscan`, `start`,
-   `start_scan`, `cbeg`, `cend`), and `experimental` (`ksub`, `refresh`). A group name, also as singular or plural
+   `start_scan`, `cbeg`, `cend`), `experimental` (`ksub`, `refresh`), `study` (`slab_rows`, `slab_bnd`, `slab_var`,
+   `slab_every`, `steplog`), and `output` (`stamp`, `json`). A group name, also as singular or plural
    (e.g., `dist_m4ri -h window`), gives all entries of the group, and a parameter of a group also the other entries of
    its group, as "see also" (e.g., `--help kwin` gives the three window entries).
 
@@ -937,7 +940,7 @@ unrecognized parameter or a missing input, end the binary with the exit code 255
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.17.3): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.17.4): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -1004,6 +1007,8 @@ Extra parameters (see --morehelp for details):
   cov_cws=[int] (100)    Number of lowest-wt cws used for the min_hits statistic
   refresh=[int] (0)      RW steps between ker(H) basis refreshes (experimental ksub only; 5000 if ksub>0)
   seed=[int] (0)         RNG seed [0 for time(NULL)]
+  stamp=[0|1] (0)        Append elapsed search time ' [t=S.SSSs]' to progress and stop lines
+  json=[0|1|file] (0)    Emit JSON summary (dm4ri-result/1): 1 '# RESULT' on stderr, or file
   debug=[int] (3)        Debug bitmask (0: silent, 1: summary, 2: progress, ...)
 
 Help options:
@@ -1065,6 +1070,48 @@ allocation and timing.
 line every 1000 RW steps) is now `4`; the old `16` (new codewords) is now `32` (the upper bound messages: `2`); the old
 `32` (matrices and codeword list) is now `128` and `256`; the old `64` and `128` (hash traces) are now `4096`.
 Repeated `debug` arguments with different values were rejected.
+
+### Machine-Readable Output (`stamp`, `json`)
+
+Since version 0.17.4, `dist_m4ri` provides two opt-in options for benchmark harnesses and scripts. Both are off by
+default, leaving the default `stdout` and `stderr` output unchanged for backward compatibility with older parsers.
+
+- **`stamp=[0|1]`** (default: `0`): When `stamp=1`, every progress line (`debug` bit `2`: run plan, new RW upper
+  bounds, RW convergence, finished/completed CC rounds, lower-bound raises, bounds-coincide / `dstop` lines, and CC
+  timeout notes) and the stop line (`debug` bit `1`: `# stopped after ...` and `# stopped: ... (no search)`) ends with
+  ` [t=S.SSSs]` (regex `r" \[t=(\d+\.\d{3})s\]$"`), where `S.SSS` is the elapsed time in seconds since the **start of
+  the search** (the same monotonic clock used by `timeout` and `# stopped after`, starting after input reading, DEM
+  merge/drop, and thread planning, and including Stage-1 $T_3$ enumeration). Dropping that suffix recovers the default
+  line verbatim. Because progress and stop lines are gated by `debug` bits `2` and `1`, pass a debug mask including
+  them (e.g., `debug=3`, the default; passing `debug=32` alone replaces the default `3`).
+- **`json=[0|1|file]`** (default: `0`): Emits a single-line, valid RFC 8259 JSON object (no `NaN`/`Infinity`; times in
+  seconds with 6 decimal places) on every normal exit (including timeout, $k = 0$, and no-search stops; nothing on
+  errors with exit code 255 or fatal signals):
+  - `json=1`: writes `# RESULT {json}` as the **last line of `stderr`** at any `debug` level (including `debug=0`).
+  - `json=FILE` (two-token form `json= FILE` also works; use `./1` or `./0` for a file named `1` or `0`): opens `FILE`
+    after input loading (including `finC`, so input errors do not touch it and a killed run leaves it empty) and writes
+    the same JSON object as one line.
+  - Repeating `json=` adds destinations (`json=1 json=out.json` writes both); `json=0` clears both.
+- **Schema (`"dm4ri-result/1"`)**:
+  - Core result (matches `stdout`): `schema`, `version`, `dmin`, `dmax`, `rw_steps`, `k0`, `k0_reason`, `search`
+    (`false` when no worker search ran).
+  - Stop reason: `stop: {"code", "text"}` with stable `code` in `bounds`, `cc_found`, `rw_converged`, `rw_steps`,
+    `timeout`, `cc_done`, `cc_slow`, `wmin`, `maxc`, `collected`, `dstop`, `k0`, `none`.
+  - Timings: `t_input` (process start to search start), `t_stop` (search clock at stop, matching `# stopped after`),
+    `t_ub` (`null` if no upper bound or $k = 0$) and `t_lb` (search clock when `dmax` / `dmin` reached their final
+    values).
+  - Run configuration and sizes: `timeout`, `seed` (resolved), `method`, `threads: {"requested", "cpus", "used",
+    "spawned", "rw", "cc"}`, `rw_opt` (resolved integer bitmask), `rw_opt_requested`, `rw_steps_done` (actual completed
+    RW steps, even when `rw_steps` on `stdout` is 0), `size: {"full": [m, n], "searched": [m, n]}` (`full`: as read
+    after `pmin`, before DEM merge/drop).
+  - Progress trace and witness: `cc_rounds: [{"w", "thread_s", "wall_s", "nodes", "threads", "complete"}, ...]`,
+    `events: [[t, dmin, dmax], ...]` (search clock; starts with initial bounds, ends with final bounds), and
+    `witness: {"available", "weight", "source" ("rw"|"cc"|"finc"|null), "base": 1, "support": [...]}` with **all**
+    1-based original input column indices (never truncated at `DBG_CW_MAX = 25`; `support: []` when unavailable).
+- **Compatibility with older binaries**: Before version 0.17.4, `dist_m4ri` does not recognize `stamp=` or `json=`.
+  Callers can probe support once via `dist_m4ri --help json` (exit code `0` when supported, `1` on older binaries), or
+  catch exit code `255` with `unrecognized parameter` on `stderr` (before input reading) and fall back to running
+  without them and parsing `stderr`. `dist_m4ri_old` accepts and ignores both with a warning.
 
 ### CLI Examples
 
@@ -1423,10 +1470,10 @@ interoperability without manual threading overhead.
     the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
     `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
     Benchmark (35 codes, circuits, and classical codes, `timeout=45`, 64 threads, Section 11.3 of the
-    [benchmark](benchmark/BENCHMARK.md)): in 0.17.0, `'auto'` certified 31 instances against 26 for the binary alone and
-    32 for `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against 0.443 s
-    for the delegation of 0.16.1, which imports `qec_cert` in every call); the shorter Stage-A budget and wide-bracket
-    `use_ub` gate of 0.17.1 follow directly from that benchmark.
+    [benchmark history](benchmark/HISTORY.md)): in 0.17.0, `'auto'` certified 31 instances against 26 for the binary
+    alone and 32 for `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against
+    0.443 s for the delegation of 0.16.1, which imports `qec_cert` in every call); the shorter Stage-A budget and
+    wide-bracket `use_ub` gate of 0.17.1 follow directly from that benchmark.
   - Hand-off scope: the hand-off covers distance-only requests. Codeword output (`do_cws=True` or `outC`), `finC`,
     `smax > 0`, an explicit `dW >= 0` (the Python default `dW=-1` means not set), `maxC > 0`, `start`, `outD`,
     `out_reduced`, `pmin > 0`, and `method=1` or `2` stay on the native `dist_m4ri` binary with `'auto'` (which also
@@ -1455,6 +1502,11 @@ interoperability without manual threading overhead.
   messages), `PY_DBG_CIRCUITS` (`262144`: Stim circuit to DEM conversion details), and `PY_DBG_KEEP_FILES`
   (`524288`: keep and list the temporary files). In the CLI, the value may be hexadecimal (e.g., `debug=0x10003`),
   multiple `debug` arguments are OR-combined, and `--verbose` implies the bits `1`, `2`, `65536`, and `131072`.
+- Machine-readable binary output (since 0.17.4): `run_dist_m4ri()` accepts opt-in `stamp=False` and `json_out=None`
+  (`True` passes `json=1`, a path passes `json=FILE`; off by default); when `json_out=True` (or `# RESULT` is present
+  on `stderr`), `_parse_stderr_stats()` parses the JSON object into `_last_run_stats["result_json"]`. In the high-level
+  Python CLI (`python3 dist_m4ri.py`), `stamp=` and `json=` are accepted and ignored with a warning on `stderr` (like
+  `steplog=` and `slab_*`), since a CLI invocation may run the binary several times or return a cached result.
 
 ### Python Example
 
@@ -1535,25 +1587,27 @@ The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes 
 with circuits of their published hook-free schedules, SHYPS codes, and 2D-local torus BB circuits),
 their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on a
 128-thread server: the scaling with the number of threads (0.17.0, 0.15.2, and earlier versions), and a comparison of
-the versions 0.14.6, 0.14.5, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. For example, on the full DEMs of the circuits, 0.14.0
-finds a codeword of the minimum weight in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it
-certifies the circuit-level distance 9 of the `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1:
-2.1 h for the DEM with the minority-basis detectors stripped, whose distance is only a lower bound). Its Section 7
-measures the RW window size and the thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its
-Section 8 the RW pairs of 0.14.4 with the work bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5.
-With the pairs, RW needs 6-30 times fewer steps to a minimum-weight codeword of a full DEM where many steps are needed
-(the time of these short runs is mostly reading and reducing the DEM), it finds the weight 18 of the double-gross
-circuit in 1.5-2.7 s instead of 10-19 s and the weight 23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and
-it finds lighter codewords of codes with a large distance. Its Sections 9 and 10 measure the branch-and-bound CC
-search of 0.15.0 (4-35 times faster for the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of
-`bb_360` certified, up to $d = 24$, and those up to $d = 18$ confirmed with the walk of the earlier versions) and the
-lower cost per node of 0.15.2. Its Section 11 measures the RW stages of 0.17.0 (`rw_opt`: a stage ablation on 22
-inputs, the thread scaling, e.g., RW on the double-gross DEM 34 times faster on 64 threads than on one, instead of 11
-times) and the two-stage `engine="auto"` with `qec_cert` on 35 instances.
+the versions 0.14.6, 0.14.5, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. [`benchmark/BENCHMARK.md`](benchmark/BENCHMARK.md) shows
+the current results in figures with plain captions, and [`benchmark/HISTORY.md`](benchmark/HISTORY.md) the dated results
+of each version. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight in at most
+1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of the
+`mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
+detectors stripped, whose distance is only a lower bound). Section 7 of the history measures the RW window size and the
+thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its Section 8 the RW pairs of 0.14.4 with the
+work bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5. With the pairs, RW needs 6-30 times fewer
+steps to a minimum-weight codeword of a full DEM where many steps are needed (the time of these short runs is mostly
+reading and reducing the DEM), it finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s and
+the weight 23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and it finds lighter codewords of codes with a
+large distance. Sections 9 and 10 of the history measure the branch-and-bound CC search of 0.15.0 (4-35 times faster for
+the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of `bb_360` certified, up to $d = 24$, and
+those up to $d = 18$ confirmed with the walk of the earlier versions) and the lower cost per node of 0.15.2. Section 11
+of the history measures the RW stages of 0.17.0 (`rw_opt`: a stage ablation on 22 inputs, the thread scaling, e.g., RW
+on the double-gross DEM 34 times faster on 64 threads than on one, instead of 11 times) and the two-stage
+`engine="auto"` with `qec_cert` on 35 instances.
 
-![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/fulldem_time.png)
+![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/time_to_d_full_dems.png)
 
-![The lightest codeword found against time, 0.14.3 and 0.14.6](benchmark/figures/rw_pairs.png)
+![The lightest codeword found against time, 0.14.3 and 0.14.6](benchmark/figures/lightest_vs_time.png)
 
 ---
 

@@ -99,7 +99,12 @@ params_t prm={
   .round_score=-1.0, /* (not estimated) */
   .min_hits=5,
   .cov_cws=100,
-  .refresh=0
+  .refresh=0,
+  .stamp=0,
+  .json=0,
+  .json_file=NULL,
+  .m_full=0,
+  .n_full=0
 };
 
 params_t * const p = &prm;
@@ -1441,6 +1446,26 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, steplog=%s\n",argv[i],p->steplog);
     }
+    else if (int_arg(argv[i],"stamp=",&dbg)){ /** opt-in time stamps on progress and stop lines */
+      if ((dbg != 0) && (dbg != 1))
+        ERROR("invalid '%s': stamp should be 0 or 1\n", argv[i]);
+      p->stamp=dbg;
+      if (p->debug & DBG_ARGS)
+        fprintf(stderr, "# read %s, stamp=%d\n",argv[i],p->stamp);
+    }
+    else if (0==strncmp(argv[i],"json=",5)){ /** opt-in machine-readable JSON summary (0, 1, or FILE) */
+      char * const val = file_arg_value(argc, argv, &i, 5);
+      if (strcmp(val, "0") == 0) {
+        p->json = 0;
+        p->json_file = NULL;
+      } else if (strcmp(val, "1") == 0) {
+        p->json = 1;
+      } else {
+        p->json_file = val;
+      }
+      if (p->debug & DBG_ARGS)
+        fprintf(stderr, "# read %s, json=%s\n",argv[i],val);
+    }
     else{ /* unrecognized option */
       fprintf(stderr, "%s: unrecognized parameter \"%s\" at position %d\n\n", argv[0], argv[i], i);
       print_short_help(argv[0]);
@@ -1574,6 +1599,8 @@ void var_init(int argc, char **argv, params_t * const p){
   
   if (p->fdem) {
     read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
+    p->m_full = p->spaH->rows;
+    p->n_full = p->spaH->cols;
     if (p->merge)
       dem_merge_columns(p);
     if ((p->drop_mode != 0) && (p->classical != 1) && (p->spaL->rows > 0)) /* (not without L: k = 0, no codeword) */
@@ -1595,6 +1622,8 @@ void var_init(int argc, char **argv, params_t * const p){
   } else {
     if (p->finH){
       p->spaH=csr_mm_read(p->finH,p->spaH,0);
+      p->m_full = p->spaH->rows;
+      p->n_full = p->spaH->cols;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read H <- file '%s'\n",p->finH);
       csr_dump(stderr, p->spaH, "H", p->debug);
