@@ -63,6 +63,9 @@ params_t prm={
   .cw_max_w=0,
   .cw_cnt_w=NULL,
   .cw_hits_w=NULL,
+  .cw_nhits_w=NULL,
+  .cw_ncnt_w=NULL,
+  .nhits_src=CW_SRC_ALL, /* (all hits count for <n> until dist_m4ri resolves the RW stages) */
   .finH=NULL,
   .finG=NULL,
   .finL=NULL,
@@ -82,12 +85,26 @@ params_t prm={
   .win_mode=0,
   .win_hyb=0, /* (auto: 256 for a DEM, 512 for matrices) */
   .pairs=-1, /* (auto) */
+  .rw_opt=-1, /* (auto) */
+  .rw_active=0,
+  .slab_rows=0, /* (auto: m/2) */
+  .slab_bnd=50, /* (only the two boundary slabs) */
+  .slab_var=0,
+  .slab_every=2,
+  .steplog=NULL,
+  .dem_rounds=0, /* (unknown) */
+  .canon={.active=0, .full=0, .w=INT_MAX, .classes=0, .raw=0, .n_unif=0, .f1=0, .f2=0},
   .round_D=0,
   .round_L=0,
   .round_score=-1.0, /* (not estimated) */
   .min_hits=5,
   .cov_cws=100,
-  .refresh=0
+  .refresh=0,
+  .stamp=0,
+  .json=0,
+  .json_file=NULL,
+  .m_full=0,
+  .n_full=0
 };
 
 params_t * const p = &prm;
@@ -152,6 +169,87 @@ static int parse_debug_value(const char * const str, const char * const arg){
   if ((end == digits) || (*end != '\0') || errno || (val < 0) || (val > INT_MAX))
     ERROR("invalid '%s': expected a non-negative decimal or hexadecimal (0x...) integer", arg);
   return (int) val;
+}
+
+/** @brief Parse the value `str` of the argument `arg` = `rw_opt=...`: -1 (automatic), or a bitmask of the RW stages
+ *  0..RW_OPT_ALL as a decimal or hexadecimal (0x...) integer */
+static int parse_rw_opt(const char * const str, const char * const arg){
+  if (strcmp(str, "-1") == 0)
+    return -1;
+  const int hex = (str[0] == '0') && ((str[1] == 'x') || (str[1] == 'X'));
+  const char * const digits = hex ? str + 2 : str;
+  char *end = NULL;
+  errno = 0;
+  const long val = strtol(digits, &end, hex ? 16 : 10);
+  if ((end == digits) || (*end != '\0') || errno || (val < 0) || (val > RW_OPT_ALL))
+    ERROR("invalid '%s': rw_opt should be -1 (automatic), 0 (none), or a bitmask of the RW stages from 1 to %d (0x%x)",
+          arg, RW_OPT_ALL, RW_OPT_ALL);
+  return (int) val;
+}
+
+/** @brief Parse the value `s` of the argument `arg` as an integer: a decimal integer, or an integer written as a
+ *  floating-point number (e.g., 1e5 or 100000.0, as a script may write it: sscanf() read `steps=1e5` as 1 before
+ *  version 0.17.2); otherwise its numeric prefix, as before (e.g., `steps=1.5` gives 1, `threads=4x` gives 4), with a
+ *  warning.  An error without a numeric prefix (e.g., `steps=` or `steps=abc`) or out of range. */
+static long long parse_ll_value(const char * const s, const char * const arg){
+  char *end = NULL;
+  errno = 0;
+  const long long x = strtoll(s, &end, 10);
+  if ((end == s) || errno)
+    ERROR("invalid '%s': expected an integer", arg);
+  if (*end == '\0')
+    return x;
+  char *dend = NULL;
+  errno = 0;
+  const double d = strtod(s, &dend);
+  if ((*dend == '\0') && !errno && isfinite(d) && (d == floor(d)) && (fabs(d) <= 9.0e18))
+    return (long long) d;
+  fprintf(stderr, "# WARNING: '%s' read as %lld (the rest of the value, '%s', is ignored)\n", arg, x, end);
+  return x;
+}
+
+/** @brief If the argument `arg` is `name...` (`name` with the '=', e.g., "steps="), parse the rest as an integer into
+ *  `*val` (see parse_ll_value()) and return 1; returns 0 if `arg` does not start with `name` */
+static int int_arg(const char * const arg, const char * const name, int * const val){
+  const size_t len = strlen(name);
+  if (strncmp(arg, name, len) != 0)
+    return 0;
+  const long long v = parse_ll_value(arg + len, arg);
+  if ((v < INT_MIN) || (v > INT_MAX))
+    ERROR("invalid '%s': the value is out of range", arg);
+  *val = (int) v;
+  return 1;
+}
+
+/** @brief As int_arg(), for a `long long` value */
+static int ll_arg(const char * const arg, const char * const name, long long * const val){
+  const size_t len = strlen(name);
+  if (strncmp(arg, name, len) != 0)
+    return 0;
+  *val = parse_ll_value(arg + len, arg);
+  return 1;
+}
+
+/** @brief As int_arg(), for a floating-point value: its numeric prefix, with a warning if more follows (e.g.,
+ *  `pmin=0.01x`), except for the unit `s` after `timeout=` (e.g., `timeout=10s`); not NaN or infinite, except
+ *  `timeout=inf`, which means no timeout (as timeout=0) */
+static int double_arg(const char * const arg, const char * const name, double * const val){
+  const size_t len = strlen(name);
+  if (strncmp(arg, name, len) != 0)
+    return 0;
+  const char * const s = arg + len;
+  char *end = NULL;
+  errno = 0;
+  double d = strtod(s, &end);
+  const int is_timeout = (strcmp(name, "timeout=") == 0);
+  if (is_timeout && isinf(d) && (d > 0.0))
+    d = 0.0;
+  if ((end == s) || errno || !isfinite(d))
+    ERROR("invalid '%s': expected a (finite) number", arg);
+  if ((*end != '\0') && !(is_timeout && (strcmp(end, "s") == 0)))
+    fprintf(stderr, "# WARNING: '%s' read as %g (the rest of the value, '%s', is ignored)\n", arg, d, end);
+  *val = d;
+  return 1;
 }
 
 /** @brief The file name given in the argument `argv[*i]` = `name=file` (`len` is the length of `name=`), or in the
@@ -224,13 +322,39 @@ static void print_round_summary(FILE *stream, const params_t * const p){
 }
 
 /** @brief DBG_SUMMARY: the index windows of the hybrid RW steps (kwin=0, n >= 500: every other step; see win_hyb) */
-static void print_window_summary(FILE *stream, const params_t * const p){
+void print_window_summary(FILE *stream, const params_t * const p){
   fprintf(stream, "#   RW windows: %d columns on every other step, uniform permutations on the others (",
           rw_hybrid_window(p, p->nvar));
   if (p->win_hyb > 0)
     fprintf(stream, "win_hyb=%d)\n", p->win_hyb);
   else
     fprintf(stream, "win_hyb=0: 256 for a DEM, 512 for matrices)\n");
+}
+
+/** @brief The row slabs of rw_opt 4 as planned before the run (see rw_stages_plan() in dist_m4ri.c; not after a
+ *         fallback of the experimental ksub): they replace the index windows of the hybrid steps */
+static int rw_slabs_expected(const params_t * const p){
+  if (!(p->method & 1) || (p->ksub > 0) || (p->rw_opt == 0)) return 0;
+  const int expl = (p->rw_opt > 0);
+  if (expl ? (!(p->rw_opt & RW_OPT_SLAB) || (p->steps <= 0)) : (p->steps <= 2)) return 0;
+  return rw_slab_input(p, expl);
+}
+
+/** @brief DBG_SUMMARY: the row slabs of rw_opt 4 (see rw_slabs_expected()) */
+static void print_slab_summary(FILE *stream, const params_t * const p){
+  const int m = p->spaH->rows;
+  const int msub = (p->slab_rows > 0) ? minint(p->slab_rows, m) : m / 2;
+  fprintf(stream, "#   RW row slabs (rw_opt 4): %d of %d detectors on 1 of every %d steps, the first or the last ones",
+          msub, m, p->slab_every);
+  if (p->slab_bnd < 50)
+    fprintf(stream, " (%d%% each, otherwise from a uniform detector)", p->slab_bnd);
+  if (p->rw_opt > 0)
+    fprintf(stream, ", uniform permutations on the others (explicit)\n");
+  else if (p->dem_rounds == 1)
+    fprintf(stream, ", uniform permutations on the others (automatic: dem_rounds=1, a single round)\n");
+  else
+    fprintf(stream, ", uniform permutations on the others (automatic: no round structure, m <= %d)\n",
+            RW_SLAB_AUTO_MMAX);
 }
 
 /** @brief DBG_SUMMARY: the code type, its length n, the input files, and the input matrices */
@@ -257,13 +381,18 @@ static void print_input_summary(FILE *stream, const params_t * const p){
     fprintf(stream, "#   dropped %d of %d detectors (drop=%s), exact: the %d columns touching them have twins (%s), "
             "%d columns kept\n", p->ndrop, p->ndrop_rows, drop_label(p), p->ndrop_cols,
             p->drop_A ? "L + A H with A != 0" : "the same observables", p->nvar);
-  else if (p->drop_none)
+  else if (p->drop_none == 1)
     fprintf(stream, "#   drop=auto: no detector can be dropped exactly (the full DEM is used)\n");
+  else if (p->drop_none == 2)
+    fprintf(stream, "#   drop=auto: found no detector to drop (the search is not exhaustive: some groups not verified "
+            "or the work limit reached, see debug 8; the full DEM is used)\n");
   if (p->rows_sorted)
     fprintf(stream, "#   rows of H sorted by increasing weight for CC (sort_rows=1; sort_rows=0 keeps their order)\n");
   if (p->round_score >= 0.0)
     print_round_summary(stream, p);
-  if ((p->method & 1) && (p->kwin == 0) && (p->nvar >= 500))
+  if (rw_slabs_expected(p))
+    print_slab_summary(stream, p);
+  else if ((p->method & 1) && rw_hybrid_on(p, p->nvar))
     print_window_summary(stream, p);
   if (p->spaG)
     print_matrix_summary(stream, "G", p->spaG, "");
@@ -763,6 +892,156 @@ static int help_option(const char * const arg, const char ** const topic) {
   return 0;
 }
 
+/* The largest dense copy of H for the rank check of k = 0: m*n bits (2^33 bits, i.e., 1 GiB), see var_k_zero() */
+#define K0_DENSE_MAX 8589934592.0
+
+/**
+ * k = 0, i.e., no codeword (H c = 0, c != 0, and L c != 0 for a quantum code or a DEM), when known at once: k = 0 if L
+ * has no rows (also the rows of L computed from H and G: k is their number) or L = 0; k > 0 if L was computed from G
+ * with rows, for a classical code with m < n (rank H <= m < n), with m = 0, or with a zero column of H whose column
+ * of L is not zero (a codeword of weight 1).  Sets and returns p->k_zero: 1 (k = 0, with p->k0_reason), 0 (k > 0, or
+ * not checked: a dense copy of H of more than K0_DENSE_MAX bits, with a note), or -1 (the rank check of k_zero_rank()
+ * is needed: in its own thread in dist_m4ri, before the search in dist_m4ri_old).
+ */
+static int var_k_zero(params_t * const p, const int L_from_G) {
+  const csr_t * const H = p->spaH;
+  const csr_t * const L = p->classical ? NULL : p->spaL;
+  const int m = H->rows, n = H->cols;
+  const int nzL = L ? ((L->nz == -1) ? L->p[L->rows] : L->nz) : 0;
+  if (L && (L->rows == 0 || nzL == 0)) {
+    snprintf(p->k0_reason, sizeof(p->k0_reason), (L->rows == 0) ? "L has no rows" : "L = 0");
+    return p->k_zero = 1;
+  }
+  if ((L && L_from_G) || (!L && m < n) || (L && m == 0)) /* k = rows of L; rank H <= m < n; a column with L c != 0 */
+    return p->k_zero = 0;
+  if (L) { /* a zero column of H with a nonzero column of L (the column indices of both forms of csr_t are in `i`) */
+    const int nzH = (H->nz == -1) ? H->p[H->rows] : H->nz;
+    char * const hcol = calloc((size_t)n, 1);
+    if (!hcol)
+      ERROR("memory allocation");
+    for (int k = 0; k < nzH; k++) hcol[H->i[k]] = 1;
+    int found = 0;
+    for (int k = 0; k < nzL && !found; k++) found = !hcol[L->i[k]];
+    free(hcol);
+    if (found)
+      return p->k_zero = 0;
+  }
+  if ((double)m * (double)n > K0_DENSE_MAX) {
+    if (p->debug & DBG_SUMMARY)
+      fprintf(stderr, "# Note: k=0 is not checked (H with m*n > 2^33 entries: a dense copy of more than 1 GiB)\n");
+    return p->k_zero = 0;
+  }
+  return p->k_zero = -1;
+}
+
+/* The rows of a csr_t (either form) as dense rows of W words (or-ed: the entries are distinct); lo[r] and hi[r] give
+ * the range of words of row r which may be nonzero (lo > hi: none) */
+static void k0_dense_rows(const csr_t * const A, uint64_t ** const row, const size_t W, int * const lo,
+                          int * const hi) {
+  for (int r = 0; r < A->rows; r++) {
+    lo[r] = (int)W;
+    hi[r] = -1;
+  }
+  const int nz = (A->nz == -1) ? A->p[A->rows] : A->nz;
+  for (int r = 0, k = 0; k < nz; k++) {
+    if (A->nz == -1) {
+      while (k >= A->p[r + 1]) r++; /* (the row of the entry k) */
+    } else {
+      r = A->p[k];
+    }
+    const int w = A->i[k] >> 6;
+    row[r][w] |= (uint64_t)1 << (A->i[k] & 63);
+    if (w < lo[r]) lo[r] = w;
+    if (w > hi[r]) hi[r] = w;
+  }
+}
+
+int k_zero_rank(const csr_t * const H, const csr_t * const L, char * const reason, const size_t len,
+                atomic_int * const stop) {
+  const int m = H->rows, n = H->cols, k = L ? L->rows : 0;
+  if (m <= 0 || n <= 0)
+    return 0; /* (see var_k_zero()) */
+  /* the rows of H, then those of L, as dense rows (malloc only: M4RI's memory cache is not thread-safe) */
+  const size_t W = ((size_t)n + 63) / 64;
+  uint64_t * const buf = calloc((size_t)(m + k) * W, sizeof(uint64_t));
+  uint64_t ** const row = malloc((size_t)(m + k) * sizeof(uint64_t *));
+  int * const lo = malloc((size_t)(m + k) * sizeof(int));
+  int * const hi = malloc((size_t)(m + k) * sizeof(int));
+  int * const pivc = malloc((size_t)m * sizeof(int));
+  if (!buf || !row || !lo || !hi || !pivc)
+    ERROR("memory allocation (the rank check of k=0: %d x %d)", m + k, n);
+  for (int r = 0; r < m + k; r++) row[r] = buf + (size_t)r * W;
+  k0_dense_rows(H, row, W, lo, hi);
+  if (L)
+    k0_dense_rows(L, row + m, W, lo + m, hi + m);
+  /* the row echelon form of H, column by column: the rows below `rank` have no 1 in the columns done; row i has its
+   * leading 1 in the column pivc[i]; the ranges [lo, hi] (only extended to the right) skip the zero words */
+  int rank = 0, ret = 1;
+  for (int c = 0; c < n && rank < m && ret >= 0; c++) {
+    if (stop && !(c & 255) && atomic_load(stop)) {
+      ret = -1;
+      break;
+    }
+    const int w = c >> 6;
+    const uint64_t b = (uint64_t)1 << (c & 63);
+    int piv = -1;
+    for (int r = rank; r < m && piv < 0; r++)
+      if (lo[r] <= w && w <= hi[r] && (row[r][w] & b)) piv = r;
+    if (piv < 0)
+      continue;
+    uint64_t * const t = row[piv];
+    row[piv] = row[rank];
+    row[rank] = t;
+    const int tl = lo[piv], th = hi[piv];
+    lo[piv] = lo[rank];
+    hi[piv] = hi[rank];
+    lo[rank] = tl;
+    hi[rank] = th;
+    const uint64_t * const pr = row[rank];
+    for (int r = piv + 1; r < m; r++) { /* (the rows rank+1..piv have no 1 in the column c) */
+      if (lo[r] <= w && w <= hi[r] && (row[r][w] & b)) {
+        uint64_t * const x = row[r];
+        for (int q = w; q <= th; q++) x[q] ^= pr[q];
+        if (th > hi[r]) hi[r] = th;
+        if (lo[r] < w) lo[r] = w;
+      }
+    }
+    pivc[rank++] = c;
+  }
+  if (ret >= 0 && !L) {
+    ret = (rank == n);
+    if (ret)
+      snprintf(reason, len, "classical code with rank H = n = %d", n);
+  } else if (ret >= 0) { /* a row of L is in the row space of H iff the rows i = 0, 1, ... of the echelon form reduce it
+                          * to 0, each added if the row (as reduced so far) has a 1 in the column pivc[i] */
+    for (int j = m; j < m + k && ret == 1; j++) {
+      uint64_t * const v = row[j];
+      for (int i = 0; i < rank; i++) {
+        const int w = pivc[i] >> 6;
+        if (w <= hi[j] && (v[w] & ((uint64_t)1 << (pivc[i] & 63)))) {
+          for (int q = w; q <= hi[i]; q++) v[q] ^= row[i][q];
+          if (hi[i] > hi[j]) hi[j] = hi[i];
+        }
+      }
+      for (size_t q = 0; q < W && ret == 1; q++)
+        if (v[q]) ret = 0;
+      if (stop && atomic_load(stop)) ret = -1;
+    }
+    if (ret == 1)
+      snprintf(reason, len, "every row of L is in the row space of H");
+  }
+  free(pivc);
+  free(hi);
+  free(lo);
+  free(row);
+  free(buf);
+  return ret;
+}
+
+void k_zero_note(const params_t * const p, const char * const result) {
+  fprintf(stderr, "# Note: k=0: no logical codeword (%s); the result is %s\n", p->k0_reason, result);
+}
+
 void var_init(int argc, char **argv, params_t * const p){
   int dbg=0;
   int swit=0;
@@ -831,7 +1110,7 @@ void var_init(int argc, char **argv, params_t * const p){
   for(int i=1; i<argc; i++){
     if (0 == strncmp(argv[i], "debug=", 6)){ /** `debug`: already parsed above */
     }
-    else if (sscanf(argv[i],"css=%d",&dbg)==1){
+    else if (int_arg(argv[i],"css=",&dbg)){
       p->css=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, css=%d\n",argv[i],p->css);
@@ -869,7 +1148,7 @@ void var_init(int argc, char **argv, params_t * const p){
 	ERROR("arg[%d]='%s' in conflict with finL=%s\n",i,argv[i],p->finL);
       p->fin = file_arg_value(argc, argv, &i, 4); /**< allow space before file name */
     }
-    else if (sscanf(argv[i],"method=%d",&dbg)==1){
+    else if (int_arg(argv[i],"method=",&dbg)){
       p->method=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, method=%d\n",argv[i],p->method);
@@ -879,22 +1158,22 @@ void var_init(int argc, char **argv, params_t * const p){
         exit(-1);
       }
     }
-    else if (sscanf(argv[i],"smax=%d",&dbg)==1){
+    else if (int_arg(argv[i],"smax=",&dbg)){
       p->smax=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, smax=%d\n",argv[i],p->smax);
     }
-    else if (sscanf(argv[i],"wmax=%d",&dbg)==1){
+    else if (int_arg(argv[i],"wmax=",&dbg)){
       p->wmax=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, wmax=%d\n",argv[i],p->wmax);
     }
-    else if (sscanf(argv[i],"dmin=%d",&dbg)==1){
+    else if (int_arg(argv[i],"dmin=",&dbg)){
       p->dmin=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dmin=%d\n",argv[i],p->dmin);
     }
-    else if (sscanf(argv[i],"dmax=%d",&dbg)==1){
+    else if (int_arg(argv[i],"dmax=",&dbg)){
       p->dmax=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dmax=%d\n",argv[i],p->dmax);
@@ -904,40 +1183,40 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, start_num=%d\n",argv[i],p->start_num);
     }
-    else if (sscanf(argv[i],"start_scan=%d",&dbg)==1){ /** clusters from a listed start column c use only columns > c */
+    else if (int_arg(argv[i],"start_scan=",&dbg)){ /** clusters from a listed start column c use only columns > c */
       if (dbg != 0 && dbg != 1)
         ERROR("invalid '%s': start_scan should be 0 or 1\n", argv[i]);
       p->start_scan=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, start_scan=%d\n",argv[i],p->start_scan);
     }
-    else if (sscanf(argv[i],"cbeg=%d",&dbg)==1){
+    else if (int_arg(argv[i],"cbeg=",&dbg)){
       p->cbeg=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, cbeg=%d\n",argv[i],p->cbeg);
     }
-    else if (sscanf(argv[i],"cend=%d",&dbg)==1){
+    else if (int_arg(argv[i],"cend=",&dbg)){
       p->cend=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, cend=%d\n",argv[i],p->cend);
     }
-    else if (sscanf(argv[i],"wmin=%d",&dbg)==1){
+    else if (int_arg(argv[i],"wmin=",&dbg)){
       p->wmin=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, wmin=%d\n",argv[i],p->wmin);
     }
-    else if (sscanf(argv[i],"steps=%d",&dbg)==1){
+    else if (int_arg(argv[i],"steps=",&dbg)){
       p->steps=dbg;
       steps_set=1;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, steps=%d\n",argv[i],p->steps);
     }
-    else if (sscanf(argv[i],"seed=%d",&dbg)==1){
+    else if (int_arg(argv[i],"seed=",&dbg)){
       p->seed=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, seed=%d\n",argv[i],p->seed);      
     }    
-    else if (sscanf(argv[i],"noscan=%d",&dbg)==1){
+    else if (int_arg(argv[i],"noscan=",&dbg)){
       p->noscan=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, noscan=%d\n",argv[i],p->noscan);
@@ -947,40 +1226,40 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, fdem=%s\n",argv[i],p->fdem);
     }
-    else if (sscanf(argv[i],"pmin=%lg",&prob)==1){
+    else if (double_arg(argv[i],"pmin=",&prob)){
       p->pmin=prob;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, pmin=%g\n",argv[i],p->pmin);
     }
-    else if (sscanf(argv[i],"merge=%d",&dbg)==1){
+    else if (int_arg(argv[i],"merge=",&dbg)){
       if ((dbg != 0) && (dbg != 1))
         ERROR("invalid '%s': merge should be 0 or 1\n", argv[i]);
       p->merge=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, merge=%d\n",argv[i],p->merge);
     }
-    else if (sscanf(argv[i],"sort_rows=%d",&dbg)==1){
+    else if (int_arg(argv[i],"sort_rows=",&dbg)){
       if ((dbg != 0) && (dbg != 1))
         ERROR("invalid '%s': sort_rows should be 0 or 1\n", argv[i]);
       p->sort_rows=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, sort_rows=%d\n",argv[i],p->sort_rows);
     }
-    else if (sscanf(argv[i],"irred=%d",&dbg)==1){
+    else if (int_arg(argv[i],"irred=",&dbg)){
       if ((dbg != 0) && (dbg != 1))
         ERROR("invalid '%s': irred should be 0 or 1\n", argv[i]);
       p->irred=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, irred=%d\n",argv[i],p->irred);
     }
-    else if (sscanf(argv[i],"ortho=%d",&dbg)==1){
+    else if (int_arg(argv[i],"ortho=",&dbg)){
       if ((dbg != 0) && (dbg != 1))
         ERROR("invalid '%s': ortho should be 0 or 1\n", argv[i]);
       p->ortho=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, ortho=%d\n",argv[i],p->ortho);
     }
-    else if (sscanf(argv[i],"cc_prune=%d",&dbg)==1){
+    else if (int_arg(argv[i],"cc_prune=",&dbg)){
       if ((dbg < 0) || (dbg > 2))
         ERROR("invalid '%s': cc_prune should be 0, 1, or 2\n", argv[i]);
       p->cc_prune=dbg;
@@ -1016,49 +1295,49 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, outC=%s\n",argv[i],p->outC);
     }
-    else if (sscanf(argv[i],"maxC=%lld",&dbg_ll)==1){
+    else if (ll_arg(argv[i],"maxC=",&dbg_ll)){
       p->maxC=dbg_ll;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, maxC=%lld\n",argv[i],p->maxC);
     }
-    else if (sscanf(argv[i],"dW=%d",&dbg)==1){
+    else if (int_arg(argv[i],"dW=",&dbg)){
       p->dW=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dW=%d\n",argv[i],p->dW);
     }
-    else if (sscanf(argv[i],"classical=%d",&dbg)==1){
+    else if (int_arg(argv[i],"classical=",&dbg)){
       p->classical=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, classical=%d\n",argv[i],p->classical);
     }
-    else if (sscanf(argv[i],"threads=%d",&dbg)==1){
+    else if (int_arg(argv[i],"threads=",&dbg)){
       p->threads=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, threads=%d\n",argv[i],p->threads);
     }
-    else if (sscanf(argv[i],"dexp=%d",&dbg)==1){
+    else if (int_arg(argv[i],"dexp=",&dbg)){
       p->dexp=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dexp=%d\n",argv[i],p->dexp);
     }
-    else if (sscanf(argv[i],"dest=%d",&dbg)==1){
+    else if (int_arg(argv[i],"dest=",&dbg)){
       p->dexp=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dest=%d (alias for dexp)\n",argv[i],p->dexp);
     }
-    else if (sscanf(argv[i],"dstop=%d",&dbg)==1){ /** `dstop`: stop once CC certifies dmin >= dstop */
+    else if (int_arg(argv[i],"dstop=",&dbg)){ /** `dstop`: stop once CC certifies dmin >= dstop */
       if (dbg < 0)
         ERROR("invalid '%s': dstop must be non-negative", argv[i]);
       p->dstop=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, dstop=%d\n",argv[i],p->dstop);
     }
-    else if (sscanf(argv[i],"timeout=%lf",&prob)==1){
+    else if (double_arg(argv[i],"timeout=",&prob)){
       p->timeout=prob;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, timeout=%g\n",argv[i],p->timeout);
     }
-    else if (sscanf(argv[i],"nothrottle=%d",&dbg)==1){
+    else if (int_arg(argv[i],"nothrottle=",&dbg)){
       p->nothrottle=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, nothrottle=%d\n",argv[i],p->nothrottle);
@@ -1069,34 +1348,34 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, nothrottle=1\n",argv[i]);
     }
-    else if (sscanf(argv[i],"chunk_size=%d",&dbg)==1 || sscanf(argv[i],"batch=%d",&dbg)==1){
+    else if (int_arg(argv[i],"chunk_size=",&dbg) || int_arg(argv[i],"batch=",&dbg)){
       p->chunk_size=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, chunk_size=%d\n",argv[i],p->chunk_size);
     }
-    else if (sscanf(argv[i],"ksub=%d",&dbg)==1){
+    else if (int_arg(argv[i],"ksub=",&dbg)){
       p->ksub=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, ksub=%d\n",argv[i],p->ksub);
     }
-    else if (sscanf(argv[i],"kwin=%d",&dbg)==1 || sscanf(argv[i],"win=%d",&dbg)==1){
+    else if (int_arg(argv[i],"kwin=",&dbg) || int_arg(argv[i],"win=",&dbg)){
       p->kwin=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, kwin=%d\n",argv[i],p->kwin);
     }
-    else if (sscanf(argv[i],"win_mode=%d",&dbg)==1){
+    else if (int_arg(argv[i],"win_mode=",&dbg)){
       p->win_mode=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, win_mode=%d\n",argv[i],p->win_mode);
     }
-    else if (sscanf(argv[i],"win_hyb=%d",&dbg)==1){
+    else if (int_arg(argv[i],"win_hyb=",&dbg)){
       if (dbg < 0)
         ERROR("invalid '%s': win_hyb should be 0 (256 columns for a DEM, 512 for matrices) or positive\n", argv[i]);
       p->win_hyb=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, win_hyb=%d\n",argv[i],p->win_hyb);
     }
-    else if (sscanf(argv[i],"pairs=%d",&dbg)==1){
+    else if (int_arg(argv[i],"pairs=",&dbg)){
       if ((dbg < -1) || (dbg > RW_PAIRS_MAX_BITS))
         ERROR("invalid '%s': pairs should be -1 (auto), 0 (off), or 1 to %d (random pivot rows of the buckets)\n",
               argv[i], RW_PAIRS_MAX_BITS);
@@ -1104,21 +1383,88 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, pairs=%d\n",argv[i],p->pairs);
     }
-    else if (sscanf(argv[i],"min_hits=%d",&dbg)==1 || sscanf(argv[i],"max_hits=%d",&dbg)==1){
+    else if (0==strncmp(argv[i],"rw_opt=",7)){ /** `rw_opt`: the RW stages (-1: automatic, 0: none, or a bitmask) */
+      p->rw_opt = parse_rw_opt(argv[i] + 7, argv[i]);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, rw_opt=%d (0x%x)\n",argv[i],p->rw_opt,(unsigned int) p->rw_opt);
+    }
+    else if (int_arg(argv[i],"min_hits=",&dbg) || int_arg(argv[i],"max_hits=",&dbg)){
       p->min_hits=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, min_hits=%d\n",argv[i],p->min_hits);
     }
-    else if (sscanf(argv[i],"cov_cws=%d",&dbg)==1){
+    else if (int_arg(argv[i],"cov_cws=",&dbg)){
       p->cov_cws=dbg;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, cov_cws=%d\n",argv[i],p->cov_cws);
     }
-    else if (sscanf(argv[i],"refresh=%d",&dbg)==1){
+    else if (int_arg(argv[i],"refresh=",&dbg)){
       p->refresh=dbg;
       refresh_set=1;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read %s, refresh=%d\n",argv[i],p->refresh);
+    }
+    else if (int_arg(argv[i],"slab_rows=",&dbg)){ /** study options: the row slabs of rw_opt 4 */
+      if ((dbg < 0) || (dbg == 1))
+        ERROR("invalid '%s': slab_rows should be 0 (automatic: m/2) or at least 2\n", argv[i]);
+      p->slab_rows=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_rows=%d\n",argv[i],p->slab_rows);
+    }
+    else if (int_arg(argv[i],"slab_bnd=",&dbg)){
+      if ((dbg < 0) || (dbg > 50))
+        ERROR("invalid '%s': slab_bnd should be 0 to 50 (percent for each of the two boundary slabs)\n", argv[i]);
+      p->slab_bnd=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_bnd=%d\n",argv[i],p->slab_bnd);
+    }
+    else if (int_arg(argv[i],"slab_var=",&dbg)){
+      if ((dbg < 0) || (dbg > 99))
+        ERROR("invalid '%s': slab_var should be 0 to 99 (percent of random slab height reduction)\n", argv[i]);
+      p->slab_var=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_var=%d\n",argv[i],p->slab_var);
+    }
+    else if (int_arg(argv[i],"slab_every=",&dbg)){
+      if (dbg < 2)
+        ERROR("invalid '%s': slab_every should be at least 2 (a slab on every slab_every-th RW step, uniform random "
+              "permutations on the others: never slabs only)\n", argv[i]);
+      p->slab_every=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, slab_every=%d\n",argv[i],p->slab_every);
+    }
+    else if (int_arg(argv[i],"dem_rounds=",&dbg)){ /** the rounds of a DEM if known, see rw_slab_auto() */
+      if (dbg < 0)
+        ERROR("invalid '%s': dem_rounds should be 0 (unknown), 1 (a single round), or the number of rounds\n",
+              argv[i]);
+      p->dem_rounds=dbg;
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, dem_rounds=%d\n",argv[i],p->dem_rounds);
+    }
+    else if (0==strncmp(argv[i],"steplog=",8)){ /** study option: the log of the RW steps */
+      p->steplog = file_arg_value(argc, argv, &i, 8);
+      if (p->debug & DBG_ARGS)
+	fprintf(stderr, "# read %s, steplog=%s\n",argv[i],p->steplog);
+    }
+    else if (int_arg(argv[i],"stamp=",&dbg)){ /** opt-in time stamps on progress and stop lines */
+      if ((dbg != 0) && (dbg != 1))
+        ERROR("invalid '%s': stamp should be 0 or 1\n", argv[i]);
+      p->stamp=dbg;
+      if (p->debug & DBG_ARGS)
+        fprintf(stderr, "# read %s, stamp=%d\n",argv[i],p->stamp);
+    }
+    else if (0==strncmp(argv[i],"json=",5)){ /** opt-in machine-readable JSON summary (0, 1, or FILE) */
+      char * const val = file_arg_value(argc, argv, &i, 5);
+      if (strcmp(val, "0") == 0) {
+        p->json = 0;
+        p->json_file = NULL;
+      } else if (strcmp(val, "1") == 0) {
+        p->json = 1;
+      } else {
+        p->json_file = val;
+      }
+      if (p->debug & DBG_ARGS)
+        fprintf(stderr, "# read %s, json=%s\n",argv[i],val);
     }
     else{ /* unrecognized option */
       fprintf(stderr, "%s: unrecognized parameter \"%s\" at position %d\n\n", argv[0], argv[i], i);
@@ -1129,6 +1475,12 @@ void var_init(int argc, char **argv, params_t * const p){
 
   if (!refresh_set && p->ksub > 0) {
     p->refresh = 5000;
+  }
+
+  if (p->dW < 0) { /* (dW < 0 made RW record only the codewords lighter than dmax when collecting) */
+    fprintf(stderr, "# WARNING: dW=%d is negative: using dW=0 (codewords up to the minimum weight found + dW)\n",
+            p->dW);
+    p->dW = 0;
   }
 
   if (p->noscan && p->method != 2) {
@@ -1152,6 +1504,9 @@ void var_init(int argc, char **argv, params_t * const p){
   }
   if (p->outD && !p->fdem) {
     ERROR("outD can only be used when fdem is specified");
+  }
+  if (p->dem_rounds > 0 && !p->fdem) {
+    ERROR("dem_rounds can only be used when fdem is specified");
   }
   if (p->drop_set && (p->drop_mode != 0) && (p->classical == 1)) {
     ERROR("drop cannot be combined with classical=1 (the observables are needed)");
@@ -1244,14 +1599,19 @@ void var_init(int argc, char **argv, params_t * const p){
   
   if (p->fdem) {
     read_dem_file(p->fdem, &(p->spaH), &(p->spaL), p->pmin, p->debug);
+    p->m_full = p->spaH->rows;
+    p->n_full = p->spaH->cols;
     if (p->merge)
       dem_merge_columns(p);
-    if ((p->drop_mode != 0) && (p->classical != 1))
+    if ((p->drop_mode != 0) && (p->classical != 1) && (p->spaL->rows > 0)) /* (not without L: k = 0, no codeword) */
       dem_drop_detectors(p);
     if (p->outD)
       dem_write_drop_list(p);
-    /* the rounds of the DEM for the input summary (in the detector order of the DEM, i.e., before sort_rows) */
-    if (p->debug & DBG_SUMMARY)
+    /* the rounds of the DEM for the input summary and for the automatic row slabs of rw_opt 4 (rw_slab_auto(): only
+     * for at most RW_SLAB_AUTO_MMAX detectors, with the rounds not given), in the detector order of the DEM, i.e.,
+     * before sort_rows */
+    if ((p->debug & DBG_SUMMARY) ||
+        ((p->rw_opt < 0) && (p->dem_rounds == 0) && (p->spaH->rows <= RW_SLAB_AUTO_MMAX)))
       dem_round_estimate(p);
     if (p->classical == -1) p->classical = 0;
     p->nvar = p->spaH->cols;
@@ -1262,6 +1622,8 @@ void var_init(int argc, char **argv, params_t * const p){
   } else {
     if (p->finH){
       p->spaH=csr_mm_read(p->finH,p->spaH,0);
+      p->m_full = p->spaH->rows;
+      p->n_full = p->spaH->cols;
       if (p->debug & DBG_ARGS)
 	fprintf(stderr, "# read H <- file '%s'\n",p->finH);
       csr_dump(stderr, p->spaH, "H", p->debug);
@@ -1294,6 +1656,22 @@ void var_init(int argc, char **argv, params_t * const p){
       if (p->classical == -1) p->classical = 1;
       p->spaG=NULL;
     }
+  }
+
+  /* degenerate inputs (the dense RW matrices of M4RI need rows and columns): no columns is an error; without rows of H,
+   * every column is in ker(H), so that CC at the weight 1 finds a codeword (a column with L c != 0) if there is one */
+  if (p->spaH->cols <= 0) {
+    if (!p->fdem)
+      ERROR("invalid input: H has no columns (n=0)");
+    /* (read_dem_file() requires a column) a DEM whose columns were all removed by merge and drop: k = 0 */
+    p->k_zero = 1;
+    snprintf(p->k0_reason, sizeof(p->k0_reason), "no column left after merge and drop");
+    return;
+  }
+  const int method_m0 = ((p->spaH->rows <= 0) && (p->method & 1)) ? p->method : 0; /* (the warning: after k = 0) */
+  if (method_m0) {
+    p->method = 2;
+    if (p->wmax <= 0) p->wmax = 1;
   }
 
   if(p->method & 2){ /* CC */
@@ -1359,7 +1737,8 @@ void var_init(int argc, char **argv, params_t * const p){
     p->start_num = num;
   }
   
-  if((p->spaG) && (p->spaL==NULL)){
+  const int L_from_G = (p->spaG) && (p->spaL==NULL); /* (then k is the number of rows of L, see var_k_zero()) */
+  if(L_from_G){
     /** create `Lx` */
     /** WARNING: this does not necessarily have minimal row weights */
     p->spaL = Lx_for_CSS_code(p->spaH,p->spaG);
@@ -1408,6 +1787,15 @@ void var_init(int argc, char **argv, params_t * const p){
     print_input_summary(stderr, p);
   if (p->debug & DBG_PARAMS)
     print_code_params(stderr, p);
+
+  /* k = 0 when known at once (no codeword, also after the pmin cut, merge, and drop of a DEM): no search, and none of
+   * the warnings below; the binaries print the note (k_zero_note()) and the result 0 0 0.  Otherwise, if k is not known
+   * (p->k_zero = -1), the rank check of k_zero_rank() follows (dist_m4ri: in its own thread during the search) */
+  if (var_k_zero(p, L_from_G) == 1)
+    return;
+  if (method_m0)
+    fprintf(stderr, "# WARNING: H has no rows (m=0): every column is in ker(H); running CC only (method=2 instead of "
+            "method=%d)\n", method_m0);
 
   if ((p->debug & DBG_SUMMARY) && !p->fdem && (p->method & 2) && p->smax == 0) {
     fprintf(stderr, "# Warning: smax=0, confinement profile is not computed\n");
@@ -1476,9 +1864,9 @@ void var_init(int argc, char **argv, params_t * const p){
       fprintf(stderr, "# WARNING: win_hyb=%d is ignored for n=%d < 500 (uniform permutations in all RW steps)\n",
               p->win_hyb, p->nvar);
   }
-  if ((p->pairs > 0) && (p->ksub > 0) && (p->method & 1))
-    fprintf(stderr, "# WARNING: pairs=%d is ignored with ksub=%d (no RW pairs with the experimental ksub)\n", p->pairs,
-            p->ksub);
+  /* (rw_opt and pairs with ksub > 0: see main() of dist_m4ri, after the fallback to ksub=0) */
+  if ((p->rw_opt > 0) && !(p->method & 1)) /* explicit RW stages which cannot run */
+    fprintf(stderr, "# WARNING: rw_opt=%d is ignored with method=%d (no RW)\n", p->rw_opt, p->method);
   /* The experimental RW option ksub (with or without min_hits, also if it falls back to ksub=0 for m < nu) */
   if (p->ksub > 0 && (p->method & 1)) {
     fprintf(stderr,
@@ -1528,8 +1916,12 @@ void var_kill(params_t * const p){
   p->cw_max_w = 0;
   free(p->cw_cnt_w);
   free(p->cw_hits_w);
+  free(p->cw_nhits_w);
+  free(p->cw_ncnt_w);
   p->cw_cnt_w = NULL;
   p->cw_hits_w = NULL;
+  p->cw_nhits_w = NULL;
+  p->cw_ncnt_w = NULL;
 }
 
 typedef struct {
@@ -1616,6 +2008,19 @@ static void parse_instructions(dem_program_t *prog, int *p_line_idx,
         
         if (*c == '}') {
             return;
+        }
+
+        /* an optional tag right after the instruction name (stim: `error[tag](0.01) D0`, `detector[tag](1, 2) D3`,
+         * `repeat[tag] 5 {`, with backslash escapes in the tag) is ignored: it is removed from the line (in place, so
+         * that the lines of a repeat block are read the same way each time) */
+        char *e = c;
+        while (isalpha((unsigned char)*e) || *e == '_') e++;
+        if ((e > c) && (*e == '[')) {
+            char *t = e + 1;
+            while (*t && *t != ']') t += (t[0] == '\\' && t[1]) ? 2 : 1;
+            if (*t != ']')
+                ERROR("unterminated tag '[' in DEM line %d: '%s'\n", *p_line_idx, line);
+            memmove(e, t + 1, strlen(t + 1) + 1);
         }
         
         int num = 0;
@@ -1750,7 +2155,10 @@ void read_dem_file(char *fnam, csr_t **p_spaH, csr_t **p_spaL, double pmin, int 
 
   if (debug & DBG_ARGS)
     fprintf(stderr, "# read DEM %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",fnam,r,k,n,iD,iL);
-  if((r<=0)||(k<=0)||(n<=0))
+  /* no L tag in the error lines kept (e.g., all removed by the pmin cut): L without rows, i.e., k = 0 (var_init()) */
+  if (k < 0)
+    k = 0;
+  if((r<=0)||(n<=0))
     ERROR("invalid DEM file %s: rows_H=%d rows_L=%d cols=%d; nz_H=%d nz_L=%d\n",
 	  fnam,r,k,n,iD,iL);
   
@@ -2018,8 +2426,9 @@ static int drop_group_cmp(const void *a, const void *b) { /* the largest groups 
  *   candidate, no droppable set contains the seed group, which is kept.  Otherwise, the detectors dropped are kept in M
  *   if every column touching them has the mask of its other detectors in Sub(j).
  * A column with more than 64 detectors keeps its detectors (still exact).  The result is verified again in
- * dem_drop_detectors(), which also allows A != 0 (drop=FILE). */
-static int dem_drop_auto(const params_t * const p, char * const inM) {
+ * dem_drop_detectors(), which also allows A != 0 (drop=FILE).  `*exhaustive` is set to 0 if a group was not verified
+ * or the work limit was reached (then a droppable set may have been missed), 1 otherwise. */
+static int dem_drop_auto(const params_t * const p, char * const inM, int * const exhaustive) {
   const csr_t * const H = p->spaH; /* row r: the columns with detector r */
   const int m = H->rows, n = H->cols;
   const double t0 = (p->debug & DBG_TIMING) ? drop_wall_time() : 0.0;
@@ -2040,9 +2449,8 @@ static int dem_drop_auto(const params_t * const p, char * const inM) {
   for (int r = m; r > 0; r--) fp[r] = fp[r - 1];
   fp[0] = 0;
   size_t cap = (size_t)n + 16, ns = 0;
-  int *st = malloc(cap * sizeof(int));           /* Sub(j): the column t */
   uint64_t *sm = malloc(cap * sizeof(uint64_t)); /* Sub(j): the mask of the positions of the detectors of t in j */
-  if (!st || !sm) ERROR("memory allocation");
+  if (!sm) ERROR("memory allocation");
   for (int j = 0; j < n; j++) {
     sp[j] = (int)ns;
     const int b = HT->p[j], w = HT->p[j + 1] - b;
@@ -2063,11 +2471,9 @@ static int dem_drop_auto(const params_t * const p, char * const inM) {
         if (v < wt) continue;
         if (ns == cap) {
           cap *= 2;
-          st = realloc(st, cap * sizeof(int));
           sm = realloc(sm, cap * sizeof(uint64_t));
-          if (!st || !sm) ERROR("memory allocation");
+          if (!sm) ERROR("memory allocation");
         }
-        st[ns] = t;
         sm[ns++] = mask;
       }
     }
@@ -2221,6 +2627,7 @@ static int dem_drop_auto(const params_t * const p, char * const inM) {
     fprintf(stderr, "# drop=auto: %d of %d detectors found (%d groups to try: %d dropped, %d kept, %d not verified%s; "
             "%zu sub-columns), %.3f s\n", num, m, ng, n_ok, n_fail, n_unver,
             (work > work_max) ? ", work limit reached" : "", ns, drop_wall_time() - t0);
+  *exhaustive = (n_unver == 0) && (work <= work_max);
   free(ulog);
   free(Q.in);
   free(Q.q);
@@ -2232,7 +2639,6 @@ static int dem_drop_auto(const params_t * const p, char * const inM) {
   free(state);
   free(parent);
   free(sm);
-  free(st);
   free(big);
   free(sp);
   csr_free(LT);
@@ -2248,7 +2654,9 @@ static void dem_write_drop_list(const params_t * const p) {
     ERROR("can't open the file outD='%s' for writing: %s", p->outD, strerror(errno));
   const int m = (p->ndrop > 0) ? p->ndrop_rows : p->spaH->rows;
   fprintf(f, "# %d of %d detectors dropped (drop=%s%s), 0-based\n", p->ndrop, m,
-          (p->classical == 1) ? "0, classical=1" : drop_label(p), p->drop_none ? ": none can be dropped exactly" : "");
+          (p->classical == 1) ? "0, classical=1" : drop_label(p),
+          (p->drop_none == 1) ? ": none can be dropped exactly"
+                              : ((p->drop_none == 2) ? ": none found, the search is not exhaustive" : ""));
   for (int i = 0; i < p->ndrop; i++)
     fprintf(f, "%d%c", p->drop_list[i], ((i % 16 == 15) || (i == p->ndrop - 1)) ? '\n' : ' ');
   fclose(f);
@@ -2272,10 +2680,11 @@ static void dem_drop_detectors(params_t * const p) {
   char * const inM = calloc((size_t)m + 1, 1);
   if (!inM) ERROR("memory allocation");
   const char * const label = drop_label(p);
-  const int num = (p->drop_mode == 1) ? dem_drop_auto(p, inM) : dem_read_drop_list(p->fdrop, m, inM);
+  int exhaustive = 1;
+  const int num = (p->drop_mode == 1) ? dem_drop_auto(p, inM, &exhaustive) : dem_read_drop_list(p->fdrop, m, inM);
   if (num == 0) {
     if (p->drop_mode == 1)
-      p->drop_none = 1;
+      p->drop_none = exhaustive ? 1 : 2; /* (2: none found, but the search was not exhaustive) */
     else
       fprintf(stderr, "# Note: drop=%s: none of the listed detectors is in the DEM, nothing dropped\n", label);
     free(inM);
@@ -2325,19 +2734,13 @@ static void dem_drop_detectors(params_t * const p) {
       if (hs[mid].h < hk[j]) lo = mid + 1;
       else hi = mid;
     }
-    int tw = -1;
+    int tw = -1; /* a twin, with the same observables if there is one (A = 0 for this column) */
     for (int s = lo; (s < ns) && (hs[s].h == hk[j]); s++) {
       const int t = hs[s].j;
       if (!dem_kept_equal(HT, inM, j, t)) continue;
-      if (tw < 0) {
-        tw = t;
-      } else if (!csr_rows_equal(LT, tw, t)) { /* (then the two columns are a codeword of weight 2) */
-        fail = j;
-        why = "it has two twins with different observables";
-        break;
-      }
+      /* (two twins with different observables are a codeword of weight 2, which touches no dropped detector) */
+      if ((tw < 0) || (!csr_rows_equal(LT, j, tw) && csr_rows_equal(LT, j, t))) tw = t;
     }
-    if (fail >= 0) break;
     if (tw < 0) {
       fail = j;
       why = "no column with the same other detectors touches none of the dropped ones";
@@ -2347,31 +2750,60 @@ static void dem_drop_detectors(params_t * const p) {
     if (!csr_rows_equal(LT, j, tw)) need_A = 1;
   }
   if ((fail < 0) && need_A) {
-    /* a matrix A with A H_M(j) = L(j) + L(twin(j)) for all columns j touching M exists iff no row of the row echelon
-     * form of the rows [H_M(j) | L(j) + L(twin(j))] has its leading entry in the L part */
+    /* a matrix A with A H_M(j) = L(j) + L(twin(j)) for all columns j touching M exists iff no vector in the row space
+     * of the rows [H_M(j) | L(j) + L(twin(j))] is zero in its H_M part and nonzero in its L part, i.e., iff no row of a
+     * row echelon form has its leading (smallest) entry in the L part.  Incremental elimination: each row is reduced by
+     * the pivot rows from its smallest entry upward, and kept as a new pivot row (leading at its smallest entry) if
+     * nonzero; at most num + k pivot rows of num + k bits, instead of a dense nj x (num + k) matrix (about 1.4 GB for a
+     * drop file with A != 0 on a DEM of the size of bb_756) */
     int * const mind = malloc(((size_t)m + 1) * sizeof(int)); /* the index of a detector of M among them */
-    if (!mind) ERROR("memory allocation");
+    const int ncol = num + k;
+    const size_t nw = ((size_t)ncol + 63) >> 6;
+    int * const prow = malloc(((size_t)ncol + 1) * sizeof(int)); /* the pivot row leading at each entry (-1: none) */
+    uint64_t * const v = calloc(nw, sizeof(uint64_t));
+    size_t pcap = 64, npiv = 0;
+    uint64_t *piv = malloc(pcap * nw * sizeof(uint64_t)); /* the pivot rows */
+    if (!mind || !prow || !v || !piv) ERROR("memory allocation");
     for (int r = 0, c = 0; r < m; r++) mind[r] = inM[r] ? c++ : -1;
-    mzd_t * const E = mzd_init(nj, num + k);
-    for (int j = 0, row = 0; j < n; j++) {
+    for (int c = 0; c < ncol; c++) prow[c] = -1;
+    for (int j = 0; (j < n) && (fail < 0); j++) {
       if (!touch[j]) continue;
+      memset(v, 0, nw * sizeof(uint64_t));
       for (int t = HT->p[j]; t < HT->p[j + 1]; t++)
-        if (inM[HT->i[t]]) mzd_write_bit(E, row, mind[HT->i[t]], 1);
-      for (int t = LT->p[j]; t < LT->p[j + 1]; t++) mzd_flip_bit(E, row, num + LT->i[t]);
+        if (inM[HT->i[t]]) v[mind[HT->i[t]] >> 6] ^= 1ULL << (mind[HT->i[t]] & 63);
+      for (int t = LT->p[j]; t < LT->p[j + 1]; t++) v[(num + LT->i[t]) >> 6] ^= 1ULL << ((num + LT->i[t]) & 63);
       if (twin[j] >= 0)
-        for (int t = LT->p[twin[j]]; t < LT->p[twin[j] + 1]; t++) mzd_flip_bit(E, row, num + LT->i[t]);
-      row++;
-    }
-    const int rank = mzd_echelonize(E, 0);
-    for (int r = 0; (r < rank) && (fail < 0); r++) {
-      int c = 0;
-      while ((c < num) && !mzd_read_bit(E, r, c)) c++;
-      if (c >= num) {
+        for (int t = LT->p[twin[j]]; t < LT->p[twin[j] + 1]; t++)
+          v[(num + LT->i[t]) >> 6] ^= 1ULL << ((num + LT->i[t]) & 63);
+      int lead = -1;
+      for (size_t iw = 0; (iw < nw) && (lead < 0); iw++) {
+        while (v[iw]) {
+          const int c = (int)(iw * 64 + (size_t)__builtin_ctzll(v[iw]));
+          if (prow[c] < 0) {
+            lead = c;
+            break;
+          }
+          const uint64_t * const pr = piv + (size_t)prow[c] * nw; /* (zero below its leading entry c) */
+          for (size_t q = iw; q < nw; q++) v[q] ^= pr[q];
+        }
+      }
+      if (lead < 0) continue; /* (in the row space of the pivot rows) */
+      if (lead >= num) {
         fail = n; /* (not a single column) */
         why = "the observables of the twins are not L + A H for any matrix A";
+        break;
       }
+      if (npiv == pcap) {
+        pcap *= 2;
+        piv = realloc(piv, pcap * nw * sizeof(uint64_t));
+        if (!piv) ERROR("memory allocation");
+      }
+      memcpy(piv + npiv * nw, v, nw * sizeof(uint64_t));
+      prow[lead] = (int)npiv++;
     }
-    mzd_free(E);
+    free(piv);
+    free(v);
+    free(prow);
     free(mind);
   }
   if (fail >= 0) {
@@ -2519,6 +2951,7 @@ static void dem_round_estimate(params_t * const p) {
   }
 }
 
+
 FILE * nzlist_w_new(const char fnam[], const char comment[]){
   FILE *f=fopen(fnam,"w");
   if(!f){
@@ -2587,6 +3020,10 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
     fprintf(stderr, "%s:%lld: invalid NZLIST entry\n", fnam, *lineno);
     ERROR("expected an integer");
   }
+  if (w < 0) { /* (w = 0: an empty entry, skipped as invalid by nzlist_read()) */
+    fprintf(stderr, "%s:%lld: invalid NZLIST entry of weight w=%d\n", fnam, *lineno, w);
+    ERROR("expected a weight w >= 0 followed by w column indices");
+  }
   if ((vec!=NULL) && (vec->weight<w)){
     free(vec);
     vec=NULL;
@@ -2606,10 +3043,11 @@ cw_vec_t * nzlist_r_one(FILE *f, cw_vec_t * vec, const char fnam[], long long in
     vec->arr[i]--;
   }
 
-  for(int i=1; i<w; i++){
-    if((vec->arr[i-1] < 0) || (vec->arr[i-1] >= vec->arr[i])){
-      fprintf(stderr, "%s:%lld: invalid entry of weight w=%d\n",fnam, *lineno, w);
-      ERROR("expected strictly increasing positive entries");
+  for(int i=0; i<w; i++){ /* every entry, also for w = 1 (1-based indices: 0 is out of range) */
+    if((vec->arr[i] < 0) || ((i > 0) && (vec->arr[i-1] >= vec->arr[i]))){
+      fprintf(stderr, "%s:%lld: invalid entry of weight w=%d: column index %d at position %d\n", fnam, *lineno, w,
+              vec->arr[i] + 1, i + 1);
+      ERROR("expected strictly increasing positive (1-based) column indices");
     }   
   }
   (*lineno)++;
@@ -2654,6 +3092,15 @@ int codeword_feed_limit(const params_t * const p) {
   return p->cw_max_w + 1;
 }
 
+/* The hits of the codeword cw counted for the `min_hits` statistic <n>: those of the sources in p->nhits_src (the
+ * uniform RW steps, CC, and finC are always counted), see codeword_hit_stats() */
+static inline int cw_nhits(const params_t * const p, const cw_vec_t * const cw) {
+  int h = cw->cnt;
+  if (!((p->nhits_src >> CW_SRC_RW_WINDOW) & 1)) h -= cw->cnt_w;
+  if (!((p->nhits_src >> CW_SRC_RW_SLAB) & 1)) h -= cw->cnt_s;
+  return h;
+}
+
 /* Remove the heaviest weight classes from the hash as long as the remaining codewords keep the collection window
  * and at least `cw_rep_size()` codewords (whole weight classes are kept) */
 static void cw_trim(params_t * const p) {
@@ -2679,8 +3126,11 @@ static void cw_trim(params_t * const p) {
   cw_vec_t *cw, *tmp;
   HASH_ITER(hh, p->codewords, cw, tmp) {
     if (cw->weight > keep) {
+      const int nh = cw_nhits(p, cw);
       p->cw_cnt_w[cw->weight]--;
       p->cw_hits_w[cw->weight] -= cw->cnt;
+      p->cw_nhits_w[cw->weight] -= nh;
+      p->cw_ncnt_w[cw->weight] -= (nh > 0);
       HASH_DEL(p->codewords, cw);
       free(cw);
       p->num_cws--;
@@ -2695,17 +3145,26 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, i
   if (!p->cw_cnt_w) { /* weight histograms, allocated on first use */
     p->cw_cnt_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
     p->cw_hits_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
-    if (!p->cw_cnt_w || !p->cw_hits_w) ERROR("memory allocation");
+    p->cw_nhits_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
+    p->cw_ncnt_w = calloc((size_t)p->nvar + 2, sizeof(long long int));
+    if (!p->cw_cnt_w || !p->cw_hits_w || !p->cw_nhits_w || !p->cw_ncnt_w) ERROR("memory allocation");
   }
+  const int counted = (p->nhits_src >> src) & 1; /* a hit counted for <n> (see cw_nhits()) */
 
   const size_t keylen = weight * sizeof(int);
   cw_vec_t *pvec = NULL;
   HASH_FIND(hh, p->codewords, arr, keylen, pvec);
   if (pvec) { /* a known codeword: one more hit */
+    const int nh0 = cw_nhits(p, pvec);
     pvec->cnt++;
     pvec->cnt_u += (src == CW_SRC_RW_UNIFORM);
     pvec->cnt_w += (src == CW_SRC_RW_WINDOW);
+    pvec->cnt_s += (src == CW_SRC_RW_SLAB);
     p->cw_hits_w[weight]++;
+    if (counted) {
+      p->cw_nhits_w[weight]++;
+      p->cw_ncnt_w[weight] += (nh0 == 0);
+    }
     return p->codewords;
   }
 
@@ -2729,17 +3188,27 @@ cw_vec_t * codeword_add_maybe(params_t * const p, const int arr[], int weight, i
   entry->cnt = 1;
   entry->cnt_u = (src == CW_SRC_RW_UNIFORM);
   entry->cnt_w = (src == CW_SRC_RW_WINDOW);
+  entry->cnt_s = (src == CW_SRC_RW_SLAB);
   memcpy(entry->arr, arr, keylen);
   HASH_ADD(hh, p->codewords, arr, keylen, entry);
   p->num_cws++;
   p->cw_cnt_w[weight]++;
   p->cw_hits_w[weight]++;
+  p->cw_nhits_w[weight] += counted;
+  p->cw_ncnt_w[weight] += counted;
   if (weight > p->cw_max_w) p->cw_max_w = weight;
   if (weight < p->min_w) p->min_w = weight;
 
   /* gradually replace heavier codewords by lighter ones */
   cw_trim(p);
   return p->codewords;
+}
+
+int codeword_count(const params_t * const p, const int arr[], const int weight) {
+  if (weight <= 0 || !p->codewords) return 0;
+  cw_vec_t *pvec = NULL;
+  HASH_FIND(hh, p->codewords, arr, (size_t)weight * sizeof(int), pvec);
+  return pvec ? pvec->cnt : 0;
 }
 
 void compute_min_w_hit_stats(const params_t * const p, int *min_cnt, int *max_cnt,
@@ -2787,8 +3256,9 @@ typedef struct {
   int c_min, c_max;   /* smallest and largest hit count */
 } cw_class_stats_t;
 
-/* Hit statistics of the codewords in hash of each weight w_lo..w_hi (one pass over the hash; free() the result) */
-static cw_class_stats_t *cw_class_stats(const params_t * const p, const int w_lo, const int w_hi) {
+/* Hit statistics of the codewords in hash of each weight w_lo..w_hi (one pass over the hash; free() the result): all
+ * hits, or with `counted` only the hits counted for <n> (see cw_nhits()) of the codewords with such a hit */
+static cw_class_stats_t *cw_class_stats(const params_t * const p, const int w_lo, const int w_hi, const int counted) {
   const int nw = w_hi - w_lo + 1;
   cw_class_stats_t *cs = calloc(nw > 0 ? nw : 1, sizeof(cw_class_stats_t));
   if (!cs) ERROR("memory allocation");
@@ -2796,12 +3266,14 @@ static cw_class_stats_t *cw_class_stats(const params_t * const p, const int w_lo
   cw_vec_t *cw, *tmp;
   HASH_ITER(hh, p->codewords, cw, tmp) {
     if (cw->weight < w_lo || cw->weight > w_hi) continue;
+    const int h = counted ? cw_nhits(p, cw) : cw->cnt;
+    if (h <= 0) continue;
     cw_class_stats_t * const c = &cs[cw->weight - w_lo];
     c->n++;
-    c->hits += cw->cnt;
-    c->sumsq += (double)cw->cnt * (double)cw->cnt;
-    if (cw->cnt < c->c_min) c->c_min = cw->cnt;
-    if (cw->cnt > c->c_max) c->c_max = cw->cnt;
+    c->hits += h;
+    c->sumsq += (double)h * (double)h;
+    if (h < c->c_min) c->c_min = h;
+    if (h > c->c_max) c->c_max = h;
   }
   return cs;
 }
@@ -2811,15 +3283,18 @@ void codeword_hit_stats(const params_t * const p, cw_hit_stats_t * const st) {
   if (p->min_w == INT_MAX || !p->cw_cnt_w || p->cw_cnt_w[p->min_w] <= 0) return;
   const long long int rep = cw_rep_size(p);
   st->w_lo = st->w_hi = p->min_w;
-  st->min_cws = p->cw_cnt_w[p->min_w];
-  st->min_hits = p->cw_hits_w[p->min_w];
+  st->min_cws = p->cw_ncnt_w[p->min_w];
+  st->min_hits = p->cw_nhits_w[p->min_w];
   for (int w = p->min_w; w <= p->cw_max_w; w++) { /* the lowest weight classes with at least `rep` codewords */
     if (p->cw_cnt_w[w] <= 0) continue;
-    st->set_cws += p->cw_cnt_w[w];
-    st->set_hits += p->cw_hits_w[w];
+    st->all_cws += p->cw_cnt_w[w];
+    st->set_cws += p->cw_ncnt_w[w];
+    st->set_hits += p->cw_nhits_w[w];
+    st->excl_hits += p->cw_hits_w[w] - p->cw_nhits_w[w];
     st->w_hi = w;
-    if (st->set_cws >= rep) break;
+    if (st->all_cws >= rep) break;
   }
+  if (st->min_cws <= 0 || st->set_cws <= 0) return; /* no counted hit of the minimum weight: <n> = 0 */
   const double avg_min = (double)st->min_hits / (double)st->min_cws;
   const double avg_set = (double)st->set_hits / (double)st->set_cws;
   st->avg = (avg_set < avg_min) ? avg_set : avg_min;
@@ -2834,7 +3309,7 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
 
   const int w_lo = p->min_w;
   const int w_hi = (p->cw_max_w > w_lo) ? p->cw_max_w : w_lo;
-  cw_class_stats_t *cs = cw_class_stats(p, w_lo, w_hi);
+  cw_class_stats_t *cs = cw_class_stats(p, w_lo, w_hi, 0);
   /* without DBG_LARGE, at most 4 heavier weight classes are shown individually, the others in one line */
   int shown = 0, rest_classes = 0, rest_lo = 0, rest_hi = 0, rest_min = INT_MAX, rest_max = 0;
   long long rest_cws = 0, rest_hits = 0;
@@ -2854,6 +3329,10 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
         codeword_hit_stats(p, &st);
         fprintf(stream, ", <n>=%.2f over %lld cws of w=%d..%d (min_hits=%d, cov_cws=%d)",
                 st.avg, st.set_cws, st.w_lo, st.w_hi, p->min_hits, p->cov_cws);
+        if (st.excl_hits > 0) /* (the hits of the row slabs and of the window steps, see rw_nhits_sources()) */
+          fprintf(stream, ", %lld window and slab hits not counted", st.excl_hits);
+        if (min_hits_rule(p) == MIN_HITS_CANON) /* (<n> is not the statistic of the min_hits stop then) */
+          fprintf(stream, ", not used: the canonical classes decide (see '# RW canonical')");
       }
       fprintf(stream, "\n");
     } else if ((p->debug & DBG_LARGE) || (shown < 4)) {
@@ -2881,7 +3360,8 @@ void print_codeword_stats(FILE *stream, const params_t * const p) {
 void print_rw_step_stats(FILE *stream, const params_t * const p) {
   if (!stream || !p || !p->codewords || p->min_w == INT_MAX) return;
   enum { NW = 3 }; /* the weights min_w, min_w + 1, min_w + 2 */
-  long long n[NW] = {0}, cws_u[NW] = {0}, hits_u[NW] = {0}, cws_w[NW] = {0}, hits_w[NW] = {0}, cws_b[NW] = {0};
+  long long n[NW] = {0}, cws_u[NW] = {0}, hits_u[NW] = {0}, cws_w[NW] = {0}, hits_w[NW] = {0}, cws_s[NW] = {0},
+            hits_s[NW] = {0}, cws_b[NW] = {0};
   cw_vec_t *cw, *tmp;
   HASH_ITER(hh, p->codewords, cw, tmp) {
     const int k = cw->weight - p->min_w;
@@ -2895,19 +3375,44 @@ void print_rw_step_stats(FILE *stream, const params_t * const p) {
       cws_w[k]++;
       hits_w[k] += cw->cnt_w;
     }
-    cws_b[k] += (cw->cnt_u > 0) && (cw->cnt_w > 0);
+    if (cw->cnt_s > 0) {
+      cws_s[k]++;
+      hits_s[k] += cw->cnt_s;
+    }
+    cws_b[k] += (cw->cnt_u > 0) && (cw->cnt_w > 0 || cw->cnt_s > 0);
   }
   for (int k = 0; k < NW; k++)
     if (n[k] > 0)
       fprintf(stream, "# RW step types, w=%d: uniform steps: cws=%lld, hits=%lld; window steps: cws=%lld, hits=%lld; "
-              "both: cws=%lld (of %lld cws)\n", p->min_w + k, cws_u[k], hits_u[k], cws_w[k], hits_w[k], cws_b[k], n[k]);
+              "row slabs: cws=%lld, hits=%lld; both: cws=%lld (of %lld cws)\n", p->min_w + k, cws_u[k], hits_u[k],
+              cws_w[k], hits_w[k], cws_s[k], hits_s[k], cws_b[k], n[k]);
 }
 
 int check_min_hits_convergence(const params_t * const p) {
-  if (p->min_hits <= 0) return 0;
+  const int rule = min_hits_rule(p);
+  if (rule == MIN_HITS_CANON) return rw_canon_converged(p);
+  if (rule != MIN_HITS_VECTOR) return 0;
   cw_hit_stats_t st;
   codeword_hit_stats(p, &st);
-  return (st.set_cws > 0) && (st.avg >= (double)p->min_hits);
+  return (st.min_cws > 0) && (st.set_cws > 0) && (st.avg >= (double)p->min_hits);
+}
+
+int min_hits_rule(const params_t * const p) {
+  if (p->min_hits <= 0) return MIN_HITS_OFF;
+  return (p->canon.active && !p->canon.full) ? MIN_HITS_CANON : MIN_HITS_VECTOR;
+}
+
+int rw_canon_converged(const params_t * const p) {
+  const rw_canon_stats_t * const c = &p->canon;
+  if (p->min_hits <= 0 || c->classes <= 0 || c->n_unif <= 0) return 0;
+  const long long need = (3LL * p->min_hits > 15) ? 3LL * p->min_hits : 15;
+  if (c->n_unif < need) return 0;
+  const double n_u = (double)c->n_unif;
+  if (n_u / (double)c->classes < (double)p->min_hits) return 0; /* the step incidences per class */
+  const double eps_gt = fmin(0.02, 3.0 * exp(-(double)p->min_hits));
+  if ((double)c->f1 / n_u > eps_gt) return 0; /* the Good-Turing unseen probability mass */
+  const double c0 = (double)c->f1 * (double)(c->f1 - 1) / (2.0 * (double)(c->f2 + 1)); /* Chao2: unseen classes */
+  return c0 / ((double)c->classes + c0) <= 0.05;
 }
 
 /* Upper tail probability P(X >= x) of the chi-square distribution with `df` degrees of freedom (exact for df <= 2,
@@ -2941,7 +3446,7 @@ int codeword_hit_check(FILE *stream, const params_t * const p) {
   cw_hit_stats_t st;
   codeword_hit_stats(p, &st);
   if (st.set_cws <= 0) return 0;
-  cw_class_stats_t *cs = cw_class_stats(p, st.w_lo, st.w_hi);
+  cw_class_stats_t *cs = cw_class_stats(p, st.w_lo, st.w_hi, 1); /* (the hits counted for <n>) */
   int num_bad = 0;
   for (int w = st.w_lo; w <= st.w_hi; w++) {
     const cw_class_stats_t * const c = &cs[w - st.w_lo];

@@ -38,19 +38,19 @@ void one_vec_print(const one_vec_t * const pvec){
 
 two_vec_t *errors=NULL;
 
-/** @brief recursively construct codewords 
+/** @brief recursively construct codewords (the legacy CC search of dist_m4ri_old, see do_CC_dist())
  * 
  * @param err error vector with sorted components 
  * @param urr unsorted vector so far 
  * @param syn array of syndrome vectors with sorted components (indexed by weight of error)
- * @param wmax max recursion level (max weight of an error to process)
+ * @param w_limit max recursion level (max weight of an error to process; at most min_w + dW once a codeword is known)
  * @param max_col_wt maximum column weight (used to predict early termination)
  * @param mH matrix `H` (check matrix of the code or `Hx` for a CSS code)
  * @param mHT matrix `H` transposed
- * @param mL matrix `L=Lx` for a CSS code, or `NULL` for a classical binary code,
- *           used to check whether zero-syndrome error is trivial or not
- * @param p_swei minimum syndrome weight array
- * @param debug bitmap 
+ * @param p the parameters: `L=Lx` (p->spaL) for a CSS code, or `NULL` for a classical binary code, used to check
+ *          whether a zero-syndrome error is trivial or not; the minimum syndrome weights p->swei (smax); the expert
+ *          start list; the codeword hash; debug bitmap
+ * @return 1 if the search is to stop (a codeword without outC and maxC, or maxC codewords), 0 otherwise
  */
 int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
 		    const int w_limit, const int max_col_wt, 
@@ -167,9 +167,8 @@ int start_CC_recurs(one_vec_t *err, one_vec_t *urr, one_vec_t * const syn[],
   return 0; /** nothing found */
 }
 
-//! rewrite of the cluster method function using only sparse matrices
-//! try recursive version first
-//! p_swei[]: min syndrome weight distribution to return (`confinement`).
+//! the cluster (CC) distance search of dist_m4ri_old (single-threaded, sparse matrices only), with the recursion
+//! start_CC_recurs(); p_swei[]: min syndrome weight distribution to return (`confinement`).
 int do_CC_dist(params_t * const p){
   const csr_t * const mH = p->spaH;
   const csr_t * const mL = p->spaL;

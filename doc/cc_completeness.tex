@@ -231,7 +231,8 @@ In step~3(a), the columns $v_1,\dots,v_{i-1}$ are forbidden in the branch $i$ wh
     version 0.15.0): $\rho_{\min}(S,F)$ is an unsatisfied row
     with the fewest available columns, $|A_r(S,F)|$ minimal (ties broken by the row order); $\varepsilon=1$; and
     $\beta=\max(\beta_0,\beta_1,\beta_2)$, with $\beta_2$ computed greedily and only where it can prune
-    ($|U(S)|>W-|S|$) and $W-|S|\ge3$. With \ttt{cc\_prune=2}, also $\beta_3$ and $\beta_4$.
+    ($|U(S)|>W-|S|$) and $W-|S|\ge3$. With \ttt{cc\_prune=2}, also $\beta_3$ and $\beta_4$, where
+    $|U(S)|>W-|S|$ and $W-|S|\ge4$.
   \item \emph{Unlimited clusters} from a start list (\ttt{start=}): $F_0=\emptyset$ (\ttt{cc\_prune=0}), or the earlier
     start columns (Proposition~\ref{prop:start}; \ttt{cc\_prune=1} and \ttt{2}), or the earlier orbits
     (Proposition~\ref{prop:orbits}).
@@ -337,7 +338,8 @@ $F_0(v)$.
 
 With $\Wr=\{W\}$, only the start columns $v\le n-W+1$ need to be searched, since a set of weight $W$ with the
 smallest column $v$ has $W-1$ columns larger than $v$. The expert options \ttt{cbeg} and \ttt{cend} restrict the start
-columns to an interval; then exactly the irreducible codewords $C$ with $\min C$ in the interval are reported.
+columns to an interval; then the irreducible codewords $C$ with $\min C$ in the interval are all reported (and some
+reducible ones, unless the rank filter of Remark~\ref{rem:reducible} is applied, as with the default \ttt{irred=1}).
 
 \begin{corollary}[distance by increasing weights]\label{cor:ladder}
 Let $w_0\ge1$ be such that there is no nontrivial codeword of weight less than $w_0$. For $w=w_0,w_0+1,\dots$, run the
@@ -435,7 +437,8 @@ $F_0(q_j)$ of Proposition~\ref{prop:orbits}, and the proposition still holds: in
 $O_1,\dots,O_{j-1}$, and so contains no column $u<q_j$; in~(b), the start column of a reported set is its smallest
 column. The forbidden sets are those of Proposition~\ref{prop:orbits} if each orbit is a range of consecutive columns,
 e.g., for the two blocks of a two-block group-algebra code over an abelian group, on each of which the translations act
-transitively ($q_1=0$, $q_2=\ell$); a permutation of the columns into such ranges gives this for any group.
+transitively ($q_1=1$, $q_2=\ell+1$ in the $1$-based numbering of $[n]$; \ttt{start=0,l} in the $0$-based column
+indices of \ttt{dist\_m4ri}); a permutation of the columns into such ranges gives this for any group.
 \end{remark}
 
 \section{Implementation details covered by the theorem}\label{sec:impl}

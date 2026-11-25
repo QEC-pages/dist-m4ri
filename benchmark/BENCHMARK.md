@@ -1,3 +1,13 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # Benchmark Suite for `dist-m4ri`
 
 This directory contains quantum LDPC CSS parity-check matrices (`.mtx`) and Stim circuit-level fault-tolerance files
@@ -6,26 +16,462 @@ the `.stim` circuits with `dist_m4ri.py` (noise is added to the noiseless templa
 0.14.0, the binary reduces the full DEM of a circuit exactly (Section 3), so that its distance, the circuit-level
 distance, is found as fast as that of the DEM with the minority-basis detectors stripped.
 
-> [!NOTE]
-> The distances in the file names (and in the source patterns below) are the nominal values of the sources, and they
-> are not always correct; the file names are kept unchanged. The distances computed with `dist_m4ri` are listed in the
-> tables below: an exact value is certified (by CC), and $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the
-> timeout. The values of the Mitten codes and circuits and of the full DEMs of the $X$-basis BB circuits are from the
-> overnight benchmark of `dist_m4ri` 0.14.0 (128 threads, Section 5), and the brackets of the double-gross and `bb_360`
-> circuits from the follow-up runs of 0.14.1 (Section 6); the values marked "(s)" are from shorter runs of earlier
-> versions on the stripped DEMs, and they are provisional. The values of the codes and circuits added on 2026-10-20 (the
-> `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise BB circuits) and the re-runs of
-> the uniform-noise gross circuit and of the torus circuits (Section 2.6) are from short runs of 0.14.7. The distances
-> of the larger codes of Section 1 (the `yarn_*` codes with $d \ge 16$, `bb_360`, and `bb_756`) are from the
-> branch-and-bound CC search of 0.15.0 (Section 9; those up to $d = 18$ confirmed with the walk of the earlier
-> versions, Section 10.1). The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were only checked in
-> short RW runs of 0.15.2: the distances in their prefixes are the exact values of their source database.
+`dist_m4ri` computes the distance of a code (classical, quantum CSS, subsystem, or non-CSS in Pauli form) or of a
+circuit (from its DEM): it finds light codewords, which bound the distance from above, and proves that no lighter ones
+exist, which bounds it from below; when the two bounds meet, the distance is certified. These files are also the
+inputs of the benchmarks of `dist_m4ri` on a 128-thread server, whose current results this file shows:
 
-## Directory Structure
+- [How to Read the Results](#how-to-read-the-results): the terms used in the figures, in plain language;
+- [Methods](#methods): the hardware, the software, and the protocol of each figure;
+- [Key Results](#key-results): the figures, each with a plain caption and a link to the details;
+- [Instance Set and Tiers](#instance-set-and-tiers): the instances for the certification benchmarks, by difficulty;
+- [Directory Structure and Running the Suite](#directory-structure-and-running-the-suite);
+- [the inputs](#inputs-codes-circuits-and-dems): the codes and their distances
+  ([Section 1](#1-css-parity-check-and-logical-matrices-benchmarkcss)), the circuits and their circuit-level distances
+  ([Section 2](#2-stim-circuits-stim_bb-stim_mitten-stim_shyps-stim_torus-stim_2bga)), and the full DEMs with their
+  exact reduction ([Section 3](#3-full-dems-and-their-exact-reduction));
+- [Origins and References](#origins-and-references) of the inputs.
 
-- `css/`: MatrixMarket (`.mtx`) CSS parity-check matrices (`_Hx.mtx`, `_Hz.mtx`) and canonical logical operators
+The dated, version-by-version results (Sections 4–12, with all the tables) are in [HISTORY.md](HISTORY.md).
+
+---
+
+## How to Read the Results
+
+- **Distance of a code.** A codeword is a set of errors (columns of the parity-check matrix $H$) which flips no check
+  but changes the encoded information, and its weight is the number of errors in it; the distance $d$ is the smallest
+  weight of a codeword. A quantum CSS code has two sectors, the $X$-type and the $Z$-type logical operators, with the
+  distances $d_X$ and $d_Z$, and $d = \min(d_X, d_Z)$ (Section 1); `dist_m4ri` computes one sector at a time.
+- **Distance of a circuit** (the circuit-level distance). The fewest faults (error mechanisms of the circuit's detector
+  error model) which cause an undetected logical error. A DEM is a matrix whose rows are the detectors (parities of
+  measurement outcomes which are deterministic without errors) and whose columns are the error mechanisms, together
+  with the logical observables that each error flips; the circuit distance is the distance of this matrix. It is often
+  below the distance of the code, since a single fault in the syndrome-extraction circuit (e.g., a hook error, which
+  spreads from an ancilla to several data qubits) can act like several data errors (Section 2.6).
+- **RW (`method=1`).** A randomized information-set search (RW stands for random window): each step eliminates the
+  matrix with its columns in a random order (for a DEM, often a window of columns close in time) and reads off light
+  codewords. A codeword of weight $w$ proves $d \le w$, an upper bound. RW never proves that no lighter codeword exists,
+  and the time until it reaches the minimum weight is random: it changes from run to run (seed). RW stops after a
+  number of steps (`steps`), at the first codeword of weight at most `wmin`, at the `timeout`, or, by default, when the
+  lightest codewords have been found again often enough (`min_hits`); with `min_hits=0` and a given number of steps,
+  every run does the same work (fixed work).
+- **CC (`method=2`).** An exhaustive connected-cluster search: it grows clusters of connected columns, weight by
+  weight, and provably finds every codeword of the minimum weight up to its weight limit `wmax`. If it finds none of
+  weight at most $w$, this proves $d > w$, a certified lower bound. Its work up to a given weight is deterministic: it
+  depends neither on the seed nor on the number of threads.
+- **`method=3`** (the default). RW and CC run together, with the threads balanced between them: RW lowers the upper
+  bound $d_{\max}$, CC raises the lower bound $d_{\min}$, and the run ends when they meet, which certifies the exact
+  distance. A run stopped earlier (by a `timeout`, or by given `steps` and `wmax`) reports the bracket
+  $[d_{\min}, d_{\max}]$.
+- **Full and reduced DEM.** The full DEM of a memory circuit has the detectors of both bases ($X$ and $Z$ checks):
+  with two-qubit depolarizing noise, many errors flip detectors of both. The stripped DEM keeps only the detectors of
+  the measured basis, and its distance is only a lower bound on the circuit distance. Since 0.14.0, `dist_m4ri` merges
+  the equal columns of a DEM and drops the minority-basis detectors when it verifies that this is exact (`drop=auto`,
+  the default), which reduces the full DEM to a much smaller matrix with the same distance (Section 3).
+- **Threads, wall time, speedup.** $p$ is the number of threads (`threads=p`, with `nothrottle=1` in the scaling runs,
+  so that the binary uses all $p$ threads). The wall time is that of the whole run of the binary: it includes reading
+  the input and, for a DEM, merging and reducing it (the input stage). The fast cases were repeated, and the figures
+  show the medians. The speedup is $T(1)/T(p)$, the time on one thread over the time on $p$ threads, of the same
+  version; the ideal speedup is $p$. Rates such as RW steps per second (Figure 9) use the RW time reported by the
+  binary instead, without the input stage.
+- **The default thread throttle.** Without `nothrottle=1`, the binary may run RW on fewer threads than given: for
+  example, on a large matrix whose dense RW working copies take more than 15 MB per thread, at most 32 threads run RW
+  (the memory bus saturates at 32–64 threads), and a short run gets about one RW thread per 10 steps
+  ($\lceil\texttt{steps}/10\rceil$).
+- **The sparse elimination** (0.17.0). On wide DEMs, with many more columns than detectors, an RW step of 0.17.0
+  eliminates with an $m \times m$ inverse per thread ($m$ detectors) instead of dense copies of the whole
+  $m \times n$ matrix and of its transpose, which lifts the memory-bandwidth limit (Figures 4 and 9).
+- **The Python wrapper and reference values.** `dist_m4ri.py` is the Python interface of the binary: it also builds the
+  DEMs of Stim circuits and adds noise. All figures in this document measure the native `dist_m4ri` binary; for
+  instances in Sections 1–2 and T3 whose `dist_m4ri` bracket remains open, known exact distances or tighter brackets
+  from external exact certification or published constructions are noted as reference values.
+- **The server.** All runs used a two-socket AMD EPYC 7B13 server: 2 x 32 cores, i.e., 64 physical cores and 128
+  logical CPUs with SMT (two hardware threads per core), and 236 GiB of memory. In the thread-scaling runs (Figures
+  2–6 and 9), a run with $p$ threads is pinned with `taskset` to the logical CPUs $0..p-1$, in this order: 0–31 are
+  the cores of socket 0, 32–63 those of socket 1, and 64–95 and 96–127 their SMT siblings (the second hardware threads
+  of the cores of socket 0 and 1). Up to $p = 64$, each thread has a core of its own; beyond, the threads share cores.
+  The gray line in the figures marks $p = 64$.
+- **Versions.** The figures compare versions of `dist_m4ri`, from 0.9.0 (pull request #26, 2026-09-18) to 0.17.3–0.17.4
+  (2026-11-24); `dist_m4ri_old` is the legacy single-threaded program, built from the 0.14.0 sources.
+
+---
+
+## Methods
+
+- **Hardware.** One server, a virtual machine (KVM) with two AMD EPYC 7B13 sockets: 2 x 32 cores, 128 logical CPUs
+  with SMT, and 236 GiB of memory; NUMA node 0 holds the CPUs 0–31 and 64–95, node 1 the CPUs 32–63 and 96–127.
+- **Software.** Each version of `dist_m4ri` named in a figure, built from its own sources with its makefile;
+  `dist_m4ri_old` built from the 0.14.0 sources. The DEMs of the circuits are generated from the `.stim` files with
+  `dist_m4ri.py` and stim 1.16 (Section 3).
+- **Wall time.** The time of the whole process: for Figures 1–8, from the binary's start to its exit, including reading
+  the input and, for a DEM, merging and reducing it. Figure 9 shows rates per second of the RW time reported by the
+  binary.
+- **Exclusive runs.** Within each benchmark, one run at a time. The runs of 0.17.3 (Figures 1 and 6) and 0.17.0
+  (Figure 9, and the 0.17.0 curves of Figures 2–5) were made on a server without other jobs, with the load recorded;
+  for the earlier runs, the load was not recorded.
+- **Protocol of each figure:**
+  - Figure 1: `method=3` with the default parameters on 128 threads (`nothrottle=1`, `timeout=1800`); 5 seeds (3 or 2
+    where a run exceeds 300 or 900 s).
+  - Figures 2–5: fixed work (RW `steps` with `min_hits=0`, CC up to `wmax`, or both); $p = 1, \dots, 128$ threads on
+    the CPUs $0..p-1$, with `nothrottle=1`; no time limit (`timeout=0`), except 600 s per case and method for 0.9.0
+    (400 s on the full DEM of Figure 5, also for 0.12.2); the same seed for every version; the median of three runs
+    for the fast cases, one run otherwise.
+  - Figure 6: long-running CC up to `wmax` (`method=2`, fixed work) and exact certification (`method=3`, default
+    parameters, `timeout=0`); $p = 1, \dots, 128$ threads on the CPUs $0..p-1$ (`p >= 4` for `gross` `method=3`), with
+    `nothrottle=1`; median of three runs where $\le 150$ s, one run otherwise.
+  - Figure 7: until a codeword of weight $d$ (`wmin=d`, `min_hits=0`, `steps=10^9`); 128 threads, not pinned, with
+    `nothrottle=1`; a time limit of 300 s (120 s for gross); five seeds for 0.14.x (seven for gross), one run for
+    0.12.2 and 0.9.0.
+  - Figure 8: the lightest codeword found against time; the default threads (32 RW threads on the two DEMs, 128 on the
+    codes), not pinned; until weight 18 (time limit 180 s) or 23 (240 s) on the DEMs, and 30 s on the codes; three
+    seeds (two for `bb_360`).
+  - Figure 9: RW with a fixed step limit; $p = 1, \dots, 128$ threads on the CPUs $0..p-1$, with `nothrottle=1` and
+    with the default throttle; a time limit of 25–30 s; one run per point.
+
+---
+
+## Key Results
+
+Each figure below has a one-line statement of what is measured (with the versions and the run dates), a caption (the
+runs, the axes, how to read them, the main result), and a link to the details in [HISTORY.md](HISTORY.md). The
+figures are grouped: the certification of distances (Figure 1), the scaling with the number of threads (Figures
+2–6), and diagnostics of the RW search (Figures 7–9). The protocols are summarized in [Methods](#methods).
+
+### Certification
+
+#### Figure 1: Exact certification on 128 threads
+
+**Wall time to certify the exact distance (`method=3`) of 12 circuits and 13 CSS codes on 128 threads; 0.17.3,
+2026-11-24.**
+
+![Time to certify the exact distance on 128 threads](figures/cert_times_128t.png)
+
+- *Run:* `method=3` with the default parameters on 128 threads (`nothrottle=1`, `timeout=1800`) on the full DEMs of 12
+  multi-round circuits (reduced exactly by `drop=auto`) and one sector ($d_Z$) of 13 CSS codes; 5 seeds, or 3
+  (`yarn_mitten_780`) and 2 (`2bga_292`) on the two longest codes.
+- *Axes:* horizontal bars show the median wall time across seeds (logarithmic axis, reading and reducing the input
+  included), with whiskers from the fastest to the slowest seed; blue bars are circuits, green bars CSS codes, and
+  hatched gray is an uncertified bracket when the binary stops early (`STOP_CC_SLOW`) because the next CC round is
+  predicted to exceed the remaining time budget.
+- *Result:* 24 of the 25 instances are certified exact across every seed: all 12 circuits in 0.66–147 s (e.g., 77.6 s
+  on the 12-round `si1000` gross circuit, $1728 \times 72576 \to 936 \times 8784$, $d = 10$; 122 s on `mitten_270`
+  custom, $d = 9$) and 12 of the 13 codes in 0.145–1,697 s (0.145 s on `double_gross` $[[288, 12, 18]]$, 53.5 s on
+  `bb_360` $[[360, 12, 24]]$, 570 s on `yarn_mitten_780` $[[780, 156, 22]]$, and 1,697 s on `2bga_292`
+  $[[292, 22, 23]]$). On `2bga_270_38_23` ($k = 38$), CC certifies $d \ge 18$ and stops cleanly at 936 s with the
+  bracket $[18, 23]$.
+- *Details:* [HISTORY.md, Section 12.1](HISTORY.md#121-exact-certification-on-128-threads).
+
+### Thread Scaling with Fixed Work and Certification
+
+#### Figure 2: Gross code, RW with fixed work
+
+**Wall time of 3,000,000 RW steps on one sector of the gross code $[[144, 12, 12]]$ against the number of threads;
+versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+
+![Thread scaling of RW on the gross code](figures/threads_gross_code.png)
+
+- *Run:* `method=1 steps=3000000 min_hits=0` on `css/gross_144_12_12_Hx.mtx` with `_Hz.mtx`, for $p = 1, \dots, 128$.
+  With `min_hits=0`, RW does not stop when it has found the distance, so every run does the same work: the time
+  measures how fast the RW steps run, not how fast the distance is found (Figures 7 and 8 measure that).
+- *Axes:* left, the wall time against $p$ (both axes logarithmic); right, the speedup $T(1)/T(p)$ of each version,
+  with the ideal speedup $p$ dotted. The star is the legacy single-threaded `dist_m4ri_old` (one thread).
+- *Reading:* with perfect scaling, the time halves with each doubling of $p$.
+- *Result:* RW scales almost linearly up to 64 threads, and the SMT siblings ($p > 64$) add more: 0.17.0 takes 80 s
+  on one thread, with a speedup of 57x at 64 threads and 76x at 128 (0.14.0: 50 s, 58x, and 80x). A step of 0.15.2 or
+  0.17.0 takes ~1.6x longer than one of 0.12.2 or 0.14.0 because it also scans pairs of non-pivot columns (added in
+  0.14.4; with `pairs=0`, 0.17.x matches 0.14.0); the pairs find light codewords in far fewer steps (Figures 7 and 8).
+- *Not shown:* CC up to weight 11 and the exact distance (`method=2 wmax=11` and `method=3`), which take a fraction of
+  a second with 0.14.0 and later and are dominated by the start-up of the threads (Figure 6 measures multi-second to
+  multi-minute CC and `method=3` runs); their times are in HISTORY.md.
+- *Versions (run dates):* 0.17.0 (2026-11-13), 0.15.2 (2026-10-28), and 0.14.0, 0.12.2, and 0.9.0 (2026-10-11).
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
+
+#### Figure 3: Double-gross code, RW, CC, and both with fixed work
+
+**Wall time of fixed-work RW, CC, and RW + CC on the double-gross code $[[288, 12, 18]]$ against the threads;
+versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+
+![Thread scaling of RW, CC, and both on the double-gross code](figures/threads_dgross_code.png)
+
+- *Run:* left, RW with 1,000,000 steps (`method=1 steps=1000000 min_hits=0`); middle, the complete CC search up to
+  weight 15 (`method=2 wmax=15`), which finds no codeword, since $d = 18$, and so proves $d \ge 16$; right, both
+  (`method=3 steps=500000 wmax=15 min_hits=0`), which gives the bracket $16 \le d \le 18$.
+- *Axes:* top, the wall time against $p$; bottom, the speedup $T(1)/T(p)$ of each version (dotted: ideal).
+- *Result:* RW scales as on the gross code (0.17.0: 82 s on one thread, 1.18 s on 128). CC became much faster from
+  version to version: up to weight 15, 0.17.0 takes 0.83 s on one thread, 3.8x less than 0.15.2 (3.1 s), and 0.14.0
+  took 10 s, while 0.9.0 needs 472 s on 128 threads. On 64–128 threads, 0.17.0 takes only 0.035–0.047 s, and more
+  threads hardly help. RW + CC: 42 s on one thread and 0.59 s on 128 with 0.17.0.
+- *Versions:* as in Figure 2; 0.9.0 ran CC and RW + CC on 128 threads only (it was limited to 600 s per case and
+  method).
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
+
+#### Figure 4: Double-gross circuit, RW and RW + CC with fixed work
+
+**Wall time of fixed-work RW and RW + CC on the DEM of the double-gross circuit against the number of threads;
+versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+
+![Thread scaling of RW and RW + CC on the DEM of the double-gross circuit](figures/threads_dgross_circuit.png)
+
+- *Run:* the $X$-basis memory circuit of the double-gross code with `si1000` noise and 18 rounds
+  (`stim_bb/double_gross_288_12_18_si1000_r18_X.stim`), as its DEM with the minority-basis detectors stripped,
+  $2736 \times 31392$ (merged to 26208 distinct columns since 0.14.0). Left, RW with 300 steps
+  (`method=1 steps=300 min_hits=0`); right, RW with 150 steps and CC up to weight 5
+  (`method=3 steps=150 wmax=5 min_hits=0`).
+- *Axes:* as in Figure 3.
+- *Result:* until 0.15.2, RW on this large matrix is limited by the memory bandwidth (each thread works on dense
+  copies of the matrix and of its transpose): at most about 15–20x faster with 0.14.0 and 11x with 0.15.2, and the SMT
+  siblings make it slower. 0.17.0 instead uses the sparse elimination (see [How to Read](#how-to-read-the-results))
+  and scales almost linearly to 32 threads (25x): 21.6 s on one thread and 0.63 s on 64 threads, 3.7 times less than
+  0.15.2 (2.36 s). RW + CC: 12.9 s on one thread and 0.75 s on 64 (0.15.2: 15.4 s and 1.17 s).
+- *Not shown:* CC alone up to weight 5 (`method=2 wmax=5`), which takes under one second with 0.14.0 and later (Figure
+  6 shows deeper CC rounds); its times are in HISTORY.md.
+- *Versions:* as in Figure 2; 0.9.0 ran RW + CC from $p = 2$ on only (600 s per case), so it has no speedup curve
+  there.
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details) (and
+  [Section 11.2](HISTORY.md#112-thread-scaling-of-the-rw-stages) for 0.17.0).
+
+#### Figure 5: bb_72 circuit, RW with fixed work on the full DEM
+
+**Wall time of 20,000 RW steps on the full DEM of the `bb_72` circuit, reduction included, against the threads;
+versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+
+![Thread scaling of RW on the full DEM of the bb_72 circuit](figures/threads_bb72_full_dem.png)
+
+- *Run:* the $X$-basis memory circuit of the $[[72, 12, 6]]$ bivariate bicycle code with `si1000` noise and 6 rounds
+  (`stim_bb/bb_72_12_6_si1000_r6_X.stim`), as its full DEM with 432 detectors and 17280 error mechanisms;
+  `method=1 steps=20000 min_hits=0`: a fixed 20,000 RW steps. This is the RW throughput, not the time to find a
+  codeword of the minimum weight 6, which takes 0.092 s on 128 threads (Figure 7).
+- *Input stage:* every time includes reading the full DEM and, since 0.14.0, reducing it exactly to $252 \times 2232$
+  (the stripped DEM with its equal columns merged); 0.12.2 and 0.9.0 search the full matrix.
+- *Axes:* left, the wall time against $p$; right, the speedup $T(1)/T(p)$ of each version (dotted: ideal).
+- *Result:* the exact reduction makes RW much faster: 0.14.0 takes 5.6 s on one thread instead of 99 s (0.12.2) and
+  163 s (0.9.0, two threads), and 0.18 s on 128 threads instead of 2.1 s and 7.2 s. 0.17.0 takes 11.2 s on one thread
+  and 0.28 s on 128: its steps are 1.25 times longer than those of 0.15.2 (8.9 s on one thread), since they also
+  shorten the candidate codewords, and they record 1.5 times more minimum-weight hits per second
+  ([HISTORY.md, Section 11.1](HISTORY.md#111-stage-ablation-16-threads)).
+- *Not shown:* the complete CC search up to weight 5 (`method=2 wmax=5`, which finds nothing, since $d = 6$) and the
+  exact distance with the default parameters (`method=3`), which take a fraction of a second with 0.14.0 and later,
+  mostly the input stage (see Figure 6 for larger DEMs); their times are in HISTORY.md.
+- *Versions:* as in Figure 2; 0.9.0 ran from $p = 2$ on only, so it has no speedup curve.
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
+
+#### Figure 6: Long-running CC and exact certification against threads
+
+**Wall time and speedup of long-running CC (`method=2`) and exact distance certification (`method=3`) on one CSS code
+and three full circuit DEMs; 0.17.3 and 0.16.1, 2026-11-24.**
+
+![Thread scaling of long-running CC and exact certification](figures/threads_cc_cert.png)
+
+- *Run:* $p = 1, \dots, 128$ threads pinned to CPUs $0..p-1$ with `nothrottle=1` and `timeout=0` on `yarn_mitten_540`
+  ($216 \times 540$, $d = 18$), the `gross` `si1000` full DEM ($1728 \times 72576 \to 936 \times 8784$, $d = 10$;
+  `method=3` from $p = 4$ on), the `shyps_225` DEM ($600 \times 10125 \to 600 \times 8325$, $d = 8$), and the
+  `mitten_270` `hef` full DEM ($1080 \times 67482 \to 648 \times 8910$, $d = 7$). Left: fixed-work CC (`method=2`) up
+  to weights $w = 17, 8, 7, 6$; right: exact certification (`method=3`, default parameters). Open circles on the CC
+  panel are back-to-back runs of 0.16.1 at $p = 1, 16, 128$.
+- *Axes:* top, the wall time (including reading and reducing the full DEMs) against $p$; bottom, the speedup
+  $T(1)/T(p)$ ($4 \cdot T(4)/T(p)$ for `gross` `method=3`), with the ideal speedup $p$ dotted.
+- *Result:* on the three multi-minute inputs, both CC and `method=3` scale with parallel efficiency 1.01–1.10 across
+  $p = 2..32$, reaching **58–65x** on 64 physical cores and **63–84x** with SMT on 128 threads (`yarn_mitten_540`:
+  768 s on one thread to 9.10 s on 128, **84.4x**; `gross` `method=3`: 1,370 s on 4 threads to 73.6 s on 128,
+  **74.4x**). On the faster `mitten_270` `hef` DEM (74–75 s on one thread, 1.54 and 1.97 s on 128), the serial
+  $\approx 0.35$ s DEM input/reduction stage bounds the 128-thread speedup to 48.0x (`method=2`) and 38.1x
+  (`method=3`). The 0.16.1 CC medians match 0.17.3 within $< 1\%$ (ratios 0.997–1.008).
+- *Details:* [HISTORY.md, Section 12.2](HISTORY.md#122-long-running-thread-scaling-of-cc-and-method3).
+
+### Diagnostics of the RW Search
+
+#### Figure 7: Full DEMs, time to a minimum-weight codeword
+
+**Wall time and RW steps until RW finds a codeword of the minimum weight in the full DEMs of 12 circuits; versions
+0.9.0–0.14.6, run 2026-10-11 and 2026-10-15.**
+
+![Time and RW steps to a minimum-weight codeword in the full DEMs](figures/time_to_d_full_dems.png)
+
+- *Run:* `method=1 wmin=d min_hits=0 steps=10^9`, which stops at the first codeword of weight at most $d$ (timeout
+  300 s, 120 s for gross; 0.9.0 has no `min_hits`), with 128 threads and `nothrottle=1`, on the full DEMs of the ten
+  Mitten circuits, the `bb_72` circuit, and the gross circuit; $d$ is the certified circuit distance (Section 2.6).
+- *Axes:* top, the wall time (logarithmic), which includes reading the DEM, merging, and the exact reduction; bottom,
+  the RW steps until the codeword was found. The bars of 0.14.x are the medians of five seeds (seven for gross), with
+  error bars from the fastest to the slowest run; 0.12.2 and 0.9.0: one run each, not run on gross; hatched: no
+  codeword of weight $d$ found in 300 s.
+- *Result:* since the exact reduction of 0.14.0, a codeword of the minimum weight is found in at most 1.4 s for every
+  circuit, while 0.12.2 needs up to 52 s and finds none for the two `mitten_270` circuits in 300 s, and 0.9.0 misses
+  three. With the RW pairs, 0.14.5 needs 6–30 times fewer steps than 0.14.3 where many steps are needed (`mitten_150`,
+  `mitten_210` hef, `mitten_270`, gross), and 0.14.6 about as few; the wall time is then mostly the input stage
+  (0.07–0.7 s).
+- *Versions:* 0.14.6, 0.14.5, 0.14.3, and 0.14.0 (2026-10-15); 0.12.2 and 0.9.0 (2026-10-11).
+- *Details:* [HISTORY.md, Sections 5.2](HISTORY.md#52-full-dems-time-to-a-codeword-of-the-minimum-weight),
+  [8.1](HISTORY.md#81-full-dems-time-to-a-codeword-of-the-minimum-weight), and
+  [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146).
+
+#### Figure 8: Lightest codeword against time, with and without the RW pairs
+
+**Weight of the lightest codeword found by RW against time, without (0.14.3) and with (0.14.6) the RW pairs;
+2026-10-15.**
+
+![The lightest codeword found against time, 0.14.3 and 0.14.6](figures/lightest_vs_time.png)
+
+- *Run:* RW (`method=1 min_hits=0 steps=10^9`) on the full DEMs of the double-gross circuit (until a codeword of
+  weight 18, `wmin=18`, three seeds) and of the `bb_360` circuit (until weight 23 or 240 s, two seeds), with the
+  default 32 RW threads (the thread throttle, see [How to Read](#how-to-read-the-results)); and on the classical codes
+  `c1920H` ($n = 1920$, $k = 641$) and a random (3,6)-regular LDPC code with $n = 3000$, for 30 s on 128 threads,
+  three seeds.
+- *Axes:* the weight of the lightest codeword found so far against the time since the start of the run (logarithmic),
+  which includes reading and reducing the input (about 1 s and 2 s for the two DEMs); one line per run, and each step
+  down is a lighter codeword.
+- *Result:* the RW pairs (since 0.14.4) find light codewords much sooner: weight 18 of the double-gross circuit after
+  1.5–2.4 s instead of 9.6–18.8 s, and weight 23 of `bb_360` after 56 and 119 s, while 0.14.3 found only 24 in 240 s.
+  For the two classical codes, the lightest codeword found is lighter at all times; at 30 s, 227–234 against 253–265
+  for `c1920H`, and 396–402 against 410–426 for the LDPC code.
+- *Note:* 18 is not the distance of the double-gross circuit: an external exact search verified a codeword of weight 16
+  and the bracket $[13, 16]$ (Section 2.6; on one round, row slabs find weight 16 in 0.08–0.14 s,
+  [HISTORY.md, Section 12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174)).
+- *Versions:* 0.14.3 and 0.14.6 (2026-10-15).
+- *Details:* [HISTORY.md, Sections 8.2](HISTORY.md#82-large-dems-the-time-to-light-codewords),
+  [8.3](HISTORY.md#83-codes-with-a-large-distance), and [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146).
+
+#### Figure 9: RW stages of 0.17.0 against threads
+
+**RW steps and minimum-weight hits per second against the threads: the RW of 0.16.1 and the RW stages of 0.17.0;
+2026-11-13.**
+
+![RW stages of 0.17.0 against threads](figures/threads_rw_stages.png)
+
+- *Run:* `method=1` with a fixed step limit, or a 25–30 s timeout on the slower inputs (as given in the panel titles),
+  with `rw_opt=0` (the RW of 0.16.1) and with `rw_opt=-1` (the automatic stages of 0.17.0, which shorten the
+  candidate codewords and record the codewords found in a step together, and which also choose the sparse elimination
+  on the two wide DEMs, `bb_360` and `bb_756`). Top two rows: four inputs on which RW finds minimum-weight codewords
+  often (`min_hits=10^9`, so that RW does not stop early), with `nothrottle=1`; the fourth is the code-sized model of
+  the `bb_72` circuit, a $36 \times 180$ matrix with one column per net effect of a single fault on the checks, whose
+  distance is a certified lower bound on the circuit distance
+  ([HISTORY.md, Section 6.3](HISTORY.md#63-certified-lower-bounds-from-a-code-sized-model)). Bottom row: three deep or
+  wide DEMs (`min_hits=0`), with the default thread throttle and with `nothrottle=1`, and, on the right, the RW
+  threads which the default throttle allowed.
+- *Axes:* the RW steps per second (top and bottom rows) and the minimum-weight hits per second (middle row; a hit is an
+  RW step finding one of the up to 100 stored codewords of the minimum weight) against $p$. The rates use the RW time
+  reported by the binary, without reading the input.
+- *Result:* where hits are frequent, 0.17.0 records them per step, which removes the contention of the threads on the
+  shared codeword table of 0.16.1: on the full `bb_72` DEM, the step rate grows 63x from one to 128 threads instead of
+  34x, and at 128 threads, 0.17.0 records 1.9x the hits per second. On the wide `bb_360` DEM, the sparse elimination
+  runs 2.3x the steps per second on one thread. With the default throttle, the short runs of the bottom row get few RW
+  threads (8 for `bb_360` with 80 steps, 3 for `bb_756` with 24), equally for both modes; in sustained 1,280-step runs
+  (`0.17.3`), `-1` reaches 311 steps/s on `bb_360` (9.9–13.5x `0`) and 8.35 steps/s on `bb_756` (5.3–7.7x `0`).
+- *Versions:* 0.17.0 (2026-11-13), with `rw_opt=0` for the RW of 0.16.1.
+- *Details:* [HISTORY.md, Sections 11.2](HISTORY.md#112-thread-scaling-of-the-rw-stages),
+  [11.1](HISTORY.md#111-stage-ablation-16-threads), and
+  [12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174).
+
+---
+
+## Instance Set and Tiers
+
+The certification benchmarks use a fixed set of 51 instances from `benchmark/`, in four tiers by the wall time of the
+baseline (the binary alone, `method=3` with the default options, on 128 threads): T0 under 1 s, T1 1–60 s, T2 1–30
+min, and T3 not certified in 30 min. Each tier has one time budget, the same for every engine: 60, 300, 1800, and
+3600 s. The versioned manifest [`manifest/certify_v1.json`](manifest/certify_v1.json) (see
+[`manifest/README.md`](manifest/README.md) and [`tools/bench/`](../tools/bench/README.md)) records the sha256 of every
+input and the deterministic recipe of every generated DEM; the best known times below calibrate the tiers.
+
+- Ids: `css/<prefix>:Z` is one sector of a code of Section 1 (`finH=Hx finG=Hz`, which gives $d_Z$; `:X` gives
+  $d_X$); `classical/<prefix>` a classical code of Section 1.1; `dem/<circuit>.full` and `circ/<circuit>` a circuit
+  of Section 2 with all its detectors (the noiseless templates with `add_noise(p=0.001)`; the binary reduces the DEM
+  exactly).
+- Best known: the median wall time of `dist_m4ri` alone on 128 threads, with the version that measured it, unless noted
+  otherwise. The sources are the sections of this file and of [HISTORY.md](HISTORY.md) ("H" below).
+
+**T0: under 1 s** (13 instances, budget 60 s).
+
+| Instance | $d$ | Best known (s) | Source |
+| :----------------------------- | :-: | :----------------------------- | :---------------- |
+| `css/gross_144_12_12:Z` | 12 | 0.014 (0.17.3, 16 threads; 0.031 in 0.14.0) | H 5.3, 12.3 |
+| `css/double_gross_288_12_18:Z` | 18 | 0.145 (0.17.3; 0.34 in 0.15.0) | H 9.1, 12.1 |
+| `css/yarn_mitten_300_60_14:Z` | 14 | 0.22 (0.15.0) | H 9.1 |
+| `css/yarn_smitten_600_120_14:Z` | 14 | 0.14 (0.15.0) | H 9.1 |
+| `css/mitten_270_54_10_C9xS3:Z` | 10 | < 0.04 (0.14.0) | Section 1 |
+| `css/kasai_cpm_184_50_10:Z` | 10 | 0.015 (0.17.3, 16 threads) | Section 1, H 12 |
+| `css/hyp_3_7_546_28_7:Z` | 7 | 0.014 (0.17.3, 16 threads) | Section 1, H 12 |
+| `classical/tanner_155_64_20` | 20 | 0.284 (0.17.3, 16 threads) | Section 1.1, H 12.3 |
+| `dem/bb_72_12_6_si1000_r6_X.full` | 6 | 0.11 (0.14.0) | H 5.1 |
+| `dem/mitten_150_30_8_C5xS3_custom_r5_Z.full` | 7 | 0.659 (0.17.3; 0.56 in 0.14.0) | H 5.1, 12.1 |
+| `dem/bb_90_8_10_si1000_r10_X.full` | 8 | 0.880 (0.17.3; 0.68 in 0.14.0) | H 5.1, 12.1 |
+| `dem/torus_n60_k8_d14_X.full` | 6 | 0.15 (0.14.0) | H 5.1 |
+| `circ/surface_rot_d7_r7_Z` | 7 | 0.716 (0.17.3, 64 threads, `dist_m4ri.py`) | Section 2.7 |
+
+**T1: 1–60 s** (15 instances, budget 300 s).
+
+| Instance | $d$ | Best known (s) | Source |
+| :------------------------------------- | :-: | :--------------------------- | :---------- |
+| `css/yarn_mitten_500_100_16:Z` | 16 | 1.11 (0.17.3) | H 9.3, 12.1 |
+| `css/yarn_smitten_600_120_16:Z` | 16 | 1.52 (0.17.3; 1.4 in 0.15.0) | H 9.3, 12.1 |
+| `css/yarn_smitten_840_168_18:X` | 17 | 3.3 (0.15.0) | H 9.3 |
+| `css/yarn_smitten_840_168_18:Z` | 18 | 8.98 (0.17.3) | H 9.3, 12.1 |
+| `css/yarn_mitten_540_108_18:Z` | 18 | 8.85 (0.17.3) | H 9.3, 12.1 |
+| `css/yarn_smitten_1200_240_20:Z` | 20 | 59.5 (0.17.3; 58 in 0.15.0) | H 9.3, 12.1 |
+| `css/2bga_288_4_20_C24xS3:Z` | 20 | 1.30 (0.17.3) | H 12.1 |
+| `css/2bga_252_16_20_C7xD18:Z` | 20 | 6.90 (0.17.3) | H 12.1 |
+| `css/2bga_288_8_22_C18xD8:Z` | 22 | 33 (CC of 0.16.1, 64 threads) | Section 1 |
+| `css/bb_360_12_24:Z` | 24 | 53.5 (0.17.3; 3.2 min in 0.15.0) | H 9.3, 12.1 |
+| `dem/mitten_270_54_10_C9xS3_hef_r4_Z.full` | 7 | 2.02 (0.17.3) | H 10.3, 12.1 |
+| `dem/shyps_225_16_8_r9_Z.full` | 8 | 6.72 (0.17.3) | H 10.3, 12.1 |
+| `dem/torus_n200_k8_d17_X.full` | 8 | 17.1 (0.17.3) | H 10.3, 12.1 |
+| `dem/torus_n200_k16_d16_X.full` | 8 | 50.8 (0.17.3; 67.3 in 0.15.1) | H 10.3, 12.1 |
+| `dem/yarn_mitten_150_30_10_hookfree_r10_X.full` | 8 | 57.6 (0.17.3; 62.4 in 0.15.1) | H 10.3, 12.1 |
+
+**T2: 1–30 min** (8 instances, budget 1800 s).
+
+| Instance | $d$ | Best known | Source |
+| :--------------------------------- | :-: | :--------------------------- | :-------------- |
+| `css/yarn_mitten_630_126_20:Z` | 20 | 90.0 s (0.17.3; 82 s in 0.15.0) | H 9.3, 12.1 |
+| `css/yarn_mitten_780_156_22:Z` | 22 | 570 s (0.17.3; 9.3 min in 0.15.0) | H 9.3, 12.1 |
+| `css/2bga_292_22_23_C146:Z` | 23 | 1,697 s (0.17.3) | H 12.1 |
+| `css/2bga_294_24_21_SG147_5:Z` | 21 | to calibrate | Section 1 |
+| `dem/gross_144_12_12_si1000_r12_X.full` | 10 | 77.6 s (0.17.3) | H 9.1, 10.3, 12.1 |
+| `dem/gross_144_12_12_uniform_r12_X.full` | 10 | 66.4 s (0.17.3) | H 10.3, 12.1 |
+| `dem/yarn_mitten_150_30_10_hookfree_r10_Z.full` | 8 | 147 s (0.17.3; 154 s in 0.15.1) | H 10.3, 12.1 |
+| `dem/mitten_270_54_10_C9xS3_custom_r4_Z.full` | 9 | 122 s (0.17.3; 137–150 s in 0.15.0–1) | H 9.1, 10.3, 12.1 |
+
+**T3: not certified by `dist_m4ri` alone in 30 min** (15 instances, budget 3600 s; the result is the bracket at the
+budget).
+
+| Instance | $d$ or bracket | Known | Source |
+| :------------------------------ | :-------: | :--------------------------- | :----------- |
+| `css/yarn_mitten_975_195_24:Z` | 24 | 59 min (0.15.0) | H 9.3 |
+| `css/yarn_mitten_975_195_24:X` | [23, 24] | open after 20 min; the round $w = 23$ takes about 46 min | H 9.3 |
+| `css/bb_756_16_34:Z` | [26, 34] | open after 12 min (0.15.0) | H 9.3 |
+| `css/2bga_270_38_23_C45xC3:Z` | 23 | external exact; `dist_m4ri`: [18, 23] at 936 s | Section 1, H 12.1 |
+| `css/2bga_270_38_21_SG135_4:Z` | 21 | external exact; `dist_m4ri`: [13, 21] | Section 1 |
+| `css/color_721_1_31:Z` | 31 | construction; `dist_m4ri`: [13, 31] | Section 1 |
+| `css/toric_3_6_432_2_12:X` | 24 | construction ($2L$); `dist_m4ri`: [18, 24] | Section 1 |
+| `css/surface_strip_333_1_3:Z` | 67 | construction; `dist_m4ri`: [11, 78] | Section 1 |
+| `dem/double_gross_288_12_18_si1000_r18_X.full` | [13, 16] | ref.; `dist_m4ri`: [11, 19] in 2.8 h | Section 2.6 |
+| `dem/double_gross_288_si1000_X.T1` ($T = 1$) | [14, 16] | external ref.; RW slabs find 16 | H 11.1, 12.3 |
+| `dem/bb_360_12_24_si1000_r24_X.full` | [12, 23] | the code-sized model bound and RW | Section 2.6 |
+| `circ/surface_rot_d11_r11_Z`, `circ/surface_rot_d13_r13_Z` | 11, 13 | construction ($d = L$) | Section 2.7 |
+| `dem/rep_d71_r6` | 71 | construction; `dist_m4ri`: [7, 71] | Section 2.7 |
+| `circ/yarn_mitten_300_60_14_hookfree_r14_X` | – | not computed yet | Section 2.6 |
+
+---
+
+## Directory Structure and Running the Suite
+
+### Directory Structure
+
+- `classical/`: MatrixMarket (`.mtx`) parity-check matrices (`_H.mtx`) of classical linear, Reed–Muller, BCH, and
+  quasi-cyclic LDPC codes (including a full-rank $k = 0$ check matrix).
+- `css/`: MatrixMarket (`.mtx`) CSS parity-check matrices (`_Hx.mtx`, `_Hz.mtx`) and logical operator bases
   (`_Lx.mtx`, `_Lz.mtx` for the Mitten codes, including the `yarn_*` codes of arXiv:2607.28795, and for the `2bga_*`
-  codes, which also have logical operators of the minimum weight in `.nz` files, `_wX.nz` and `_wZ.nz`).
+  codes; the seven Bicycle Race codes of Origins, item 5, also have logical operators of the minimum weight in `.nz`
+  files, `_wX.nz` and `_wZ.nz`).
+- `subsystem/`: MatrixMarket (`.mtx`) static subsystem gauge sectors, hook-extended CSS matrices, unmerged
+  identical-column matrices, and duplicate-entry coordinate test matrices (`_H.mtx`, `_G.mtx`, `_L.mtx`).
+- `stabilizer/`: MatrixMarket (`.mtx`) non-CSS quantum stabilizer codes in length-$3n$ Pauli-expanded form
+  (`_H.mtx`, `_G.mtx`, `_L.mtx`, with exact quantum Pauli weight and $|\mathcal{T}_3| \ge n$).
+- `dem/`: Standalone Detector Error Models (`.dem`), detector-drop lists (`.drop`), and `make_large_drop_dems.py` for
+  large $A \neq 0$ drop benchmarks.
+- `stim_surface/`: Rotated planar surface-code `.stim` memory circuits ($d = 3, 5, 7, 9, 11, 13$).
+- `stim_color/`: Color-code `memory_xyz` `.stim` circuits ($d = 3, 5, 7, 9$, cycling $X \to Y \to Z$ detectors).
+- `stim_noise/`: Specialized noise-model, gate-set, and high-$k$ ($k = 125 > 64$) `.stim` circuits (`PAULI_CHANNEL_1/2`,
+  XZZX rotated basis, `HERALDED_ERASE`, `MPP`/`MZZ`).
 - `stim_bb/`: Unmodified Bivariate Bicycle (BB), Gross, and Double-Gross `.stim` circuits from external repositories.
 - `stim_mitten/`: Mitten code `.stim` circuits generated via `quits` with `CircuitBuildOptions(get_all_detectors=True)`
   (`mitten_*`), and from the published hook-free schedules of arXiv:2607.28795 with `make_yarn_mitten_circuits.py`
@@ -33,9 +479,678 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
 - `stim_shyps/`: Unmodified SHYPS code `.stim` circuits ($Z$-basis memory).
 - `stim_2bga/`: Unmodified `.stim` circuits of two two-block group-algebra (2BGA) codes (memory in both bases).
 - `stim_torus/`: 2D local torus Bivariate Bicycle `.stim` circuits (`d = 14` to `17`, noiseless templates).
-- `figures/`: scaling of `dist_m4ri` with the number of threads on some of these codes and circuits (Section 4), the
-  time to a minimum-weight codeword in the full DEMs of the circuits (Sections 5 and 8), and the lightest codeword
-  found against time with and without the RW pairs (Section 8).
+- `manifest/`: versioned certification benchmark manifest ([`manifest/certify_v1.json`](manifest/certify_v1.json)) and
+  canonical DEM builder ([`manifest/make_inputs.py`](manifest/make_inputs.py); harness in
+  [`tools/bench/`](../tools/bench/README.md)).
+- `figures/`: the figures of the [Key Results](#key-results): 128-thread certification and long-running CC/`method=3`
+  scaling (Section 12 of [HISTORY.md](HISTORY.md)), fixed-work scaling across versions (Section 4), the time to a
+  minimum-weight codeword in the full DEMs of the circuits (Sections 5 and 8), the lightest codeword found against time
+  with and without the RW pairs (Section 8), and the RW scaling of the stages of 0.17.0 (Section 11); made by
+  `scratch/bench_doc/make_doc_figures.py` and `scratch/bench_fold/make_phase2_figures.py` (not in the repository).
+
+### Running `dist_m4ri` on the Inputs
+
+To avoid storing large pre-generated `.dem` files in the repository, DEMs can be generated on the fly from the `.stim`
+files (noise of strength `p_noise=0.001` is added to the noiseless templates; `--force-noise` replaces the noise of a
+circuit by this uniform noise):
+```python
+import dist_m4ri
+
+# the full DEM of the circuit, reduced exactly by the binary; also save the reduced DEM and its maps to the full one
+dist, bounds = dist_m4ri.compute_dem_distance(
+    circuit="benchmark/stim_torus/NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim",
+    out_dem="tmp/torus_n60_X_full.dem", out_reduced="tmp/torus_n60_X")  # tmp/torus_n60_X_red.dem, _red.json
+```
+
+The command-line arguments used in the benchmarks (`method`, `steps`, `wmax`, `wmin`, `min_hits`, `threads`,
+`nothrottle`, `rw_opt`, `drop`, ...) are described in the [README](../README.md).
+
+---
+
+## Inputs: Codes, Circuits, and DEMs
+
+Sections 1–3 list the inputs: the codes and their distances (Section 1), the circuits and their circuit-level
+distances (Section 2), and the full DEMs of the circuits with their exact reduction (Section 3). Sections 4–12,
+the version-by-version results, are in [HISTORY.md](HISTORY.md).
+
+> [!NOTE]
+> The distances in the file names (and in the source patterns below) are the nominal values of the sources, and they are
+> not always correct; the file names are kept unchanged. The distances computed with `dist_m4ri` are listed in the
+> tables below: an exact value is certified (by CC), and $[d_{\min}, d_{\max}]$ is a bracket from a run which hit the
+> timeout. The values of the Mitten codes and circuits and of the full DEMs of the $X$-basis BB circuits are from the
+> overnight benchmark of `dist_m4ri` 0.14.0 (128 threads,
+> [Section 5](HISTORY.md#5-overnight-benchmark-of-0140-2026-10-11)), the bracket of the `bb_360` circuit is from the
+> follow-up runs of 0.14.1 ([Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14)), and that of the double-gross
+> circuit ($[13, 16]$, tightening $[12, 18]$ of [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14)) is a
+> reference bracket from an external exact search (with a verified weight-16 witness); the values marked "(s)" are
+> from shorter runs of earlier versions on the stripped DEMs, and they are provisional. The values of the codes and
+> circuits added on 2026-10-20 (the `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise
+> BB circuits) and the re-runs of the uniform-noise gross circuit and of the torus circuits (Section 2.6) are from short
+> runs of 0.14.7. The distances of the larger codes of Section 1 (the `yarn_*` codes with $d \ge 16$, `bb_360`, and
+> `bb_756`) are from the branch-and-bound CC search of
+> 0.15.0 ([Section 9](HISTORY.md#9-branch-and-bound-cc-search-of-0150-2026-10-25); those up to $d = 18$ confirmed with
+> the walk of the earlier versions, [Section 10.1](HISTORY.md#101-the-distances-of-section-93-with-the-walk-cc_prune0)).
+> The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were checked in short RW runs of 0.15.2 and
+> 128-thread `method=3` runs of 0.17.3: the distances in their prefixes are the exact values of their source database.
+> The high-rate 2BGA code `2bga_270_38_23_C45xC3` added on 2026-11-16 (Origins, item 6) has exact distance $d = 23$ from
+> its source search and is checked here in fixed-work and 128-thread runs.
+
+---
+
+<div id="1-css-parity-check-and-logical-matrices-benchmarkcss"></div>
+
+## 1. CSS Parity-Check and Logical Matrices (`benchmark/css/`)
+
+| Prefix | $[[n, k, d]]$ | Size ($m \times n$) | Construction / Polynomials or Group |
+| :--------------------- | :--------------- | :---------- | :------------------------------ |
+| `bb_72_12_6` | $[[72, 12, 6]]$ | $36 \times 72$ | $\ell=6, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
+| `bb_90_8_10` | $[[90, 8, 10]]$ | $45 \times 90$ | $\ell=15, m=3$, $A=x^9+y+y^2$, $B=1+x^2+x^7$ |
+| `bb_108_8_10` | $[[108, 8, 10]]$ | $54 \times 108$ | $\ell=9, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
+| `gross_144_12_12` | $[[144, 12, 12]]$ | $72 \times 144$ | $\ell=12, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
+| `double_gross_288_12_18` | $[[288, 12, 18]]$ | $144 \times 288$ | $\ell=12, m=12$, $A=x^3+y^2+y^7$, $B=y^3+x+x^2$ |
+| `bb_360_12_24` | $[[360, 12, 24]]$ | $180 \times 360$ | $\ell=30, m=6$, $A=x^9+y+y^2$, $B=y^3+x^{25}+x^{26}$ |
+| `bb_756_16_34` | $[[756, 16, \le 34]]$ | $378 \times 756$ | $\ell=21, m=18, A=x^3+y^{10}+y^{17}, B=y^5+x^3+x^{19}$ |
+| `mitten_90_18_6_C3xS3` | $[[90, 18, 6]]$ | $36 \times 90$ | $G = C_3 \times S_3$ ($\|G\|=18$, `seed=2`) |
+| `mitten_150_30_8_C5xS3` | $[[150, 30, 8]]$ | $60 \times 150$ | $G = C_5 \times S_3$ ($\|G\|=30$, `seed=2`) |
+| `mitten_210_42_8_C7xS3` | $[[210, 42, 6]]$ | $84 \times 210$ | $G = C_7 \times S_3$ ($\|G\|=42$, `seed=2`) |
+| `mitten_270_54_10_C9xS3` | $[[270, 54, 10]]$ | $108 \times 270$ | $G = C_9 \times S_3$ ($\|G\|=54$, `seed=2`) |
+| `mitten_330_66_6_C11xS3` | $[[330, 66, 4]]$ | $132 \times 330$ | $G = C_{11}\times S_3$ ($\|G\|=66$, `seed=2`) |
+| `yarn_mitten_150_30_10` | $[[150, 30, 10]]$ | $60 \times 150$ | $G = C_5 \times S_3$ |
+| `yarn_mitten_200_40_12` | $[[200, 40, 12]]$ | $80 \times 200$ | $G = C_4 \times D_{10}$ |
+| `yarn_mitten_300_60_14` | $[[300, 60, 14]]$ | $120 \times 300$ | $G = C_{10} \times S_3$ |
+| `yarn_mitten_500_100_16` | $[[500, 100, 16]]$ | $200 \times 500$ | $G = C_5 \times (C_5 \rtimes C_4)$ |
+| `yarn_mitten_540_108_18` | $[[540, 108, 18]]$ | $216 \times 540$ | $G = (C_9 \rtimes C_3) \rtimes C_4$ |
+| `yarn_mitten_630_126_20` | $[[630, 126, 20]]$ | $252 \times 630$ | $G = C_7 \rtimes C_{18}$ |
+| `yarn_mitten_780_156_22` | $[[780, 156, 22]]$ | $312 \times 780$ | $G = C_{13} \times A_4$ |
+| `yarn_mitten_975_195_24` | $[[975, 195, \le 24]]$ | $390 \times 975$ | $G = C_5 \times (C_{13} \rtimes C_3)$ |
+| `yarn_smitten_300_60_9` | $[[300, 60, 10]]$ | $120 \times 300$ | structured, $G = C_{10} \times S_3$ |
+| `yarn_smitten_330_66_12` | $[[330, 66, 12]]$ | $132 \times 330$ | structured, $G = C_{11} \times S_3$ |
+| `yarn_smitten_600_120_14` | $[[600, 120, 14]]$ | $240 \times 600$ | structured, $G = C_5 \times S_4$ |
+| `yarn_smitten_600_120_16` | $[[600, 120, 16]]$ | $240 \times 600$ | structured, $G = C_5 \times S_4$ |
+| `yarn_smitten_840_168_18` | $[[840, 168, 17]]$ | $336 \times 840$ | structured, $G = C_7 \times S_4$ |
+| `yarn_smitten_1200_240_20` | $[[1200, 240, 20]]$ | $480 \times 1200$ | structured, $\|G\| = 240$ |
+| `yarn_ablp_560_112_14` | $[[560, 112, 14]]$ | $224 \times 560$ | abelian lifted product, $\|G\| = 112$ |
+| `2bga_102_20_10_C51` | $[[102, 20, 10]]$ | $51 \times 102$ | 2BGA, $G = C_{51}$, weight 9 = 5 + 4 |
+| `2bga_120_24_10_C30xC2` | $[[120, 24, 10]]$ | $60 \times 120$ | 2BGA, $G = C_{30} \times C_2$, weight 9 = 5 + 4 |
+| `2bga_252_16_20_C7xD18` | $[[252, 16, 20]]$ | $126 \times 252$ | 2BGA, $G = C_7 \times D_{18}$, weight 7 = 4 + 3 |
+| `2bga_288_4_20_C24xS3` | $[[288, 4, 20]]$ | $144 \times 288$ | 2BGA, $G = C_{24} \times S_3$, weight 5 = 3 + 2 |
+| `2bga_288_8_22_C18xD8` | $[[288, 8, 22]]$ | $144 \times 288$ | 2BGA, $G = C_{18} \times D_8$, weight 6 = 3 + 3 |
+| `2bga_292_22_23_C146` | $[[292, 22, 23]]$ | $146 \times 292$ | 2BGA, $G = C_{146}$, weight 8 = 4 + 4 |
+| `2bga_294_24_21_SG147_5` | $[[294, 24, 21]]$ | $147 \times 294$ | 2BGA, $G = C_7^2 \rtimes C_3$, weight 9 = 6 + 3 |
+| `2bga_270_38_23_C45xC3` | $[[270, 38, 23]]$ | $135 \times 270$ | 2BGA, $G = C_{45} \times C_3$, weight 12 = 6 + 6 |
+| `k0_graph_ghz5` | $[[5, 0, \text{–}]]$ | $1 \times 5, 4 \times 5$ | 5-qubit GHZ stabilizer state ($k = 0$) |
+| `tiny_d1_4_1_1` | $[[4, 1, 1]]$ | $1 \times 4, 2 \times 4$ | 3-qubit state + unchecked qubit 4 ($d = 1$) |
+| `steane_7_1_3` | $[[7, 1, 3]]$ | $3 \times 7$ | Steane CSS Hamming code, weight 4 |
+| `shor_9_1_3` | $[[9, 1, 3]]$ | $2 \times 9, 6 \times 9$ | Shor 9-qubit code ($w_X = 6, w_Z = 2$) |
+| `hyp_5_5_40_10_4` | $[[40, 10, 4]]$ | $16 \times 40$ | $\{5, 5\}$ hyperbolic surface (`QX40`/`QZ40`), $w = 5$ |
+| `hyp_3_7_84_6_4` | $[[84, 6, 4]]$ | $24, 56 \times 84$ | $\{3, 7\}$ Klein quartic ($\mathrm{PSL}(2,7)$, $w=7,3$) |
+| `hyp_3_7_252_14_6` | $[[252, 14, 6]]$ | $72, 168 \times 252$ | $\{3, 7\}$ Macbeath ($\mathrm{PSL}(2,8)$, $w=7,3$) |
+| `hyp_3_7_546_28_7` | $[[546, 28, 7]]$ | $156, 364 \times 546$ | $\{3, 7\}$ Hurwitz ($\mathrm{PSL}(2,13)$, $w=7,3$) |
+| `hyp_3_8_96_10_4` | $[[96, 10, 4]]$ | $24, 64 \times 96$ | $\{3, 8\}$ quotient ($\|Q\|=192$, $w=8,3$) |
+| `hyp_3_8_216_20_5` | $[[216, 20, 5]]$ | $54, 144 \times 216$ | $\{3, 8\}$ quotient ($\|Q\|=432$, $w=8,3$) |
+| `hyp_3_8_648_56_6` | $[[648, 56, 6]]$ | $162, 432 \times 648$ | $\{3, 8\}$ quotient ($\|Q\|=1296$, $w=8,3$) |
+| `toric_3_6_108_2_6` | $[[108, 2, 6]]$ | $36, 72 \times 108$ | $(3, 6)$ triangular toric, $L = 6$ ($w = 6, 3$) |
+| `toric_3_6_192_2_8` | $[[192, 2, 8]]$ | $64, 128 \times 192$ | $(3, 6)$ triangular toric, $L = 8$ ($w = 6, 3$) |
+| `toric_3_6_432_2_12` | $[[432, 2, 12]]$ | $144, 288 \times 432$ | $(3, 6)$ triangular toric, $L = 12$ ($w = 6, 3$) |
+| `surface_rot_9_1_3` | $[[9, 1, 3]]$ | $4 \times 9$ | Rotated planar surface, $L = 3$ ($w \le 4$) |
+| `surface_rot_25_1_5` | $[[25, 1, 5]]$ | $12 \times 25$ | Rotated planar surface, $L = 5$ ($w \le 4$) |
+| `surface_rot_49_1_7` | $[[49, 1, 7]]$ | $24 \times 49$ | Rotated planar surface, $L = 7$ ($w \le 4$) |
+| `surface_rot_81_1_9` | $[[81, 1, 9]]$ | $40 \times 81$ | Rotated planar surface, $L = 9$ ($w \le 4$) |
+| `surface_rot_121_1_11` | $[[121, 1, 11]]$ | $60 \times 121$ | Rotated planar surface, $L = 11$ ($w \le 4$) |
+| `surface_rot_169_1_13` | $[[169, 1, 13]]$ | $84 \times 169$ | Rotated planar surface, $L = 13$ ($w \le 4$) |
+| `color_271_1_19` | $[[271, 1, 19]]$ | $135 \times 271$ | $(6.6.6)$ triangular color code, $d = 19$ ($w \le 6$) |
+| `color_721_1_31` | $[[721, 1, 31]]$ | $360 \times 721$ | $(6.6.6)$ triangular color code, $d = 31$ ($w \le 6$) |
+| `bidir_rect_261_16_9` | $[[261, 16, 9]]$ | $105, 140 \times 261$ | Directional rectangle (`NNENWWSWWNENN`, $w\le13$) |
+| `rep_css_68_1_1` | $[[68, 1, 1]]$ | $66, 1 \times 68$ | Asymmetric CSS repetition ($d_Z = 67 > 64, d_X = 1$) |
+| `surface_strip_333_1_3` | $[[333, 1, 3]]$ | $198, 134 \times 333$ | $3 \times 67$ surface strip ($d_Z=67, d_X=3$) |
+| `hgp_585_112_5` | $[[585, 112, 5]]$ | $248, 225 \times 585$ | $\mathrm{HGP}([15,7,5], [31,16,7])$ BCH |
+| `kasai_cpm_184_50_10` | $[[184, 50, 10]]$ | $69 \times 184$ | CPM pair-partition ($P = 23, w = 8$, rank 67) |
+| `bp_zsz_275_55_10` | $[[275, 55, 10]]$ | $110 \times 275$ | ZSZ balanced product, $C_{11} \rtimes C_5$ ($w=9$) |
+| `bp_zsz_625_125_14` | $[[625, 125, \le 14]]$ | $250 \times 625$ | ZSZ balanced product, $C_{25} \rtimes C_5$ ($w=9$) |
+| `bb_18_4_4` | $[[18, 4, 4]]$ | $9 \times 18$ | $\ell=3, m=3, A=x^2+x^2y^2+x, B=x^2+x^2y^2+y^2$ |
+| `bb_30_4_6` | $[[30, 4, 6]]$ | $15 \times 30$ | $\ell=3, m=5, A=y^2+xy^3+x^2y, B=xy+y+x^2y^4$ |
+| `torus_60_8_6` | $[[60, 8, 6]]$ | $30 \times 60$ | 2D local torus (`NNEESEEESEENN ... n60_k8_d14`) |
+| `torus_120_8_6` | $[[120, 8, 6]]$ | $60 \times 120$ | 2D local torus (`NEENNWNWNNEEN ... n120_k8_d15`) |
+| `torus_200_16_10` | $[[200, 16, 10]]$ | $100 \times 200$ | 2D local torus (`NEENNWNWNNEEN ... n200_k16_d16`) |
+| `torus_200_8_10` | $[[200, 8, 10]]$ | $100 \times 200$ | 2D local torus (`ENENESESENENE ... n200_k8_d17`) |
+| `2bga_270_38_21_SG135_4` | $[[270, 38, 21]]$ | $135 \times 270$ | 2BGA, $G = C_5 \times (C_9 \rtimes C_3)$, $w = 12$ |
+| `2bga_310_36_21_SG155_1` | $[[310, 36, \le 21]]$ | $155 \times 310$ | 2BGA, $G = C_{31} \rtimes C_5$, $w = 12$ |
+
+Distances computed with `dist_m4ri`:
+
+| Prefix | $d_X$ | $d_Z$ |
+| :--- | :--- | :--- |
+| `bb_72_12_6` | 6 | 6 |
+| `bb_90_8_10` | 10 | 10 |
+| `bb_108_8_10` | – | 10 |
+| `gross_144_12_12` | 12 | 12 |
+| `double_gross_288_12_18` | 18 | 18 |
+| `bb_360_12_24` | – | 24 |
+| `bb_756_16_34` | – | [26, 34] |
+| `mitten_90_18_6_C3xS3` | 6 | 6 |
+| `mitten_150_30_8_C5xS3` | 8 | 8 |
+| `mitten_210_42_8_C7xS3` | **6** | 8 |
+| `mitten_270_54_10_C9xS3` | 10 | 10 |
+| `mitten_330_66_6_C11xS3` | **4** | 6 |
+| `yarn_mitten_150_30_10` | 10 | 10 |
+| `yarn_mitten_200_40_12` | 12 | 12 |
+| `yarn_mitten_300_60_14` | 14 | 14 |
+| `yarn_mitten_500_100_16` | 16 | 16 |
+| `yarn_mitten_540_108_18` | 18 | 18 |
+| `yarn_mitten_630_126_20` | 20 | 20 |
+| `yarn_mitten_780_156_22` | 22 | 22 |
+| `yarn_mitten_975_195_24` | [23, 24] | 24 |
+| `yarn_smitten_300_60_9` | **10** | **10** |
+| `yarn_smitten_330_66_12` | 12 | 12 |
+| `yarn_smitten_600_120_14` | 14 | 14 |
+| `yarn_smitten_600_120_16` | 16 | 16 |
+| `yarn_smitten_840_168_18` | **17** | 18 |
+| `yarn_smitten_1200_240_20` | 20 | 20 |
+| `yarn_ablp_560_112_14` | 14 | 14 |
+| `2bga_102_20_10_C51` | $\le 10$ | 10 |
+| `2bga_120_24_10_C30xC2` | $\le 10$ | 10 |
+| `2bga_252_16_20_C7xD18` | $\le 20$ | 20 |
+| `2bga_288_4_20_C24xS3` | $\le 20$ | 20 |
+| `2bga_288_8_22_C18xD8` | $\le 22$ | $\le 22$ |
+| `2bga_292_22_23_C146` | $\le 23$ | 23 |
+| `2bga_294_24_21_SG147_5` | $\le 21$ | $\le 21$ |
+| `2bga_270_38_23_C45xC3` | [14, 23] | [18, 23] |
+| `k0_graph_ghz5` | 0 ($k=0$) | 0 ($k=0$) |
+| `tiny_d1_4_1_1` | 1 | 1 |
+| `steane_7_1_3` | 3 | 3 |
+| `shor_9_1_3` | 3 | 3 |
+| `hyp_5_5_40_10_4` | 4 | 4 |
+| `hyp_3_7_84_6_4` | 8 | 4 |
+| `hyp_3_7_252_14_6` | 14 | 6 |
+| `hyp_3_7_546_28_7` | 14 | 7 |
+| `hyp_3_8_96_10_4` | 10 | 4 |
+| `hyp_3_8_216_20_5` | 12 | 5 |
+| `hyp_3_8_648_56_6` | 14 | 6 |
+| `toric_3_6_108_2_6` | 12 | 6 |
+| `toric_3_6_192_2_8` | 16 | 8 |
+| `toric_3_6_432_2_12` | [18, 24] | 12 |
+| `surface_rot_9_1_3` | 3 | 3 |
+| `surface_rot_25_1_5` | 5 | 5 |
+| `surface_rot_49_1_7` | 7 | 7 |
+| `surface_rot_81_1_9` | 9 | 9 |
+| `surface_rot_121_1_11` | 11 | 11 |
+| `surface_rot_169_1_13` | 13 | 13 |
+| `color_271_1_19` | [13, 19] | [13, 19] |
+| `color_721_1_31` | [13, 31] | [13, 31] |
+| `bidir_rect_261_16_9` | 9 | 9 |
+| `rep_css_68_1_1` | 1 | 67 |
+| `surface_strip_333_1_3` | 3 | [11, 78] |
+| `hgp_585_112_5` | 7 | 5 |
+| `kasai_cpm_184_50_10` | 10 | 10 |
+| `bp_zsz_275_55_10` | 12 | 10 |
+| `bp_zsz_625_125_14` | [12, 14] | [12, 18] |
+| `bb_18_4_4` | 4 | 4 |
+| `bb_30_4_6` | 6 | 6 |
+| `torus_60_8_6` | 6 | 6 |
+| `torus_120_8_6` | 6 | 6 |
+| `torus_200_16_10` | 10 | 10 |
+| `torus_200_8_10` | 10 | 10 |
+| `2bga_270_38_21_SG135_4` | [13, 21] | [13, 21] |
+| `2bga_310_36_21_SG155_1` | [13, 21] | [13, 25] |
+
+- $d_X$ ($d_Z$) is the minimum weight of an $X$-type ($Z$-type) logical operator, i.e., of a vector $c$ with
+  $H_Z c = 0$ ($H_X c = 0$) which is not in the row space of $H_X$ ($H_Z$); $d = \min(d_X, d_Z)$. "–": not computed
+  yet.
+- For the BB codes, $d_X = d_Z$ by the symmetry exchanging the two sectors, so one sector suffices.
+- `mitten_330_66_6_C11xS3` has distance **4**, not 6: $d_X = 4$ (132 $X$-type logical operators of weight 4 were
+  found, and those checked independently over GF(2) are valid), while $d_Z = 6$.
+- `mitten_210_42_8_C7xS3` has distance **6**, not 8: $d_X = 6$, while $d_Z = 8$.
+- The Mitten distances are certified by CC (0.14.0: under 0.04 s per sector on 128 threads), and the lightest logical
+  operator found in each run of the 0.12.1 benchmark passed an independent check over GF(2). Numbers of
+  minimum-weight logical operators ($X$ / $Z$, enumerated by CC): 66 / 90 (`mitten_90`), 180 / 120 (`mitten_150`),
+  84 / 42 (`mitten_210`), 216 / 648 (`mitten_270`), and 132 / 132 (`mitten_330`).
+- For `bb_360` and `bb_756`, the published distances are upper bounds (the codewords found by `dist_m4ri` have the same
+  weights). 0.15.0 certified $d = 24$ for `bb_360` in 3.2 min (53.5 s in 0.17.3 with the even-weight CC skip,
+  [Section 12.1](HISTORY.md#121-exact-certification-on-128-threads)) and raised the lower bound of `bb_756` from 17
+  (60 s runs) to 26 in 12 min ([Section 9.3](HISTORY.md#93-distances-of-the-larger-codes-of-section-1)).
+- The `yarn_*` codes (2026-10-20): `method=3` of 0.14.7 with a timeout of 20 s per sector on 128 threads. The upper
+  bounds are the nominal distances, except for `yarn_smitten_840_168_18`. The codes with $d \ge 16$ were certified by
+  0.15.0 (2026-10-25, `method=3` on 128 threads,
+  [Section 9.3](HISTORY.md#93-distances-of-the-larger-codes-of-section-1)): from 1 s per sector for
+  `yarn_mitten_500_100_16` to 59 min for $d_Z$ of `yarn_mitten_975_195_24`, whose $d_X$ is in $[23, 24]$ (the round
+  $w = 23$ was not run).
+  - `yarn_smitten_300_60_9` has distance **10**, not 9, certified by CC in both sectors (also by the single-threaded
+    `dist_m4ri_old method=2 wmax=9`: no codeword of weight at most 9).
+  - `yarn_smitten_840_168_18` has distance **17**, not 18: RW found 7 distinct $X$-type logical operators of weight 17,
+    valid in an independent check over GF(2), and 0.15.0 certified $d_X = 17$ and $d_Z = 18$.
+- The seven Bicycle Race `2bga_*` codes (2026-11-05, Origins, item 5): $\le w$ is the weight of the lightest logical
+  operator found by RW of 0.15.2 (20,000 steps on 16 threads, under 0.1 s per sector); 0.17.3 (`method=3`) certified
+  $d_Z$ by CC for `2bga_102` (0.077 s), `2bga_120` (0.081 s), `2bga_288_4` (1.30 s), `2bga_252` (6.90 s), and
+  `2bga_292` (1,697 s on 128 threads; [Section 12.1](HISTORY.md#121-exact-certification-on-128-threads)), and 0.16.1 CC
+  certified `2bga_288_8` ($d_Z = 22$, 33 s on 64 threads). In both sectors of every code it is the exact distance of
+  the source database ($d_X = d_Z = d$ in the prefix). The `.nz` files of these codes give the same upper bounds
+  through `finC`, and the logical bases `_Lx.mtx`, `_Lz.mtx` (`finL`) the same RW results as `finG`.
+- `2bga_270_38_23_C45xC3` (2026-11-16, Origins, item 6): exact distance $d_X = d_Z = 23$ from its source search
+  (2026-11-14). Fixed-work runs of `dist_m4ri` (`method=3 wmax=13 steps=50000` on 8 threads, `finG`) certify
+  $d_{\min} = 14$ and find valid weight-23 logical operators in both sectors (`[14, 23]`, verified over GF(2)), and a
+  128-thread `method=3` run in 0.17.3 reaches $[18, 23]$ at 936 s
+  ([Section 12.1](HISTORY.md#121-exact-certification-on-128-threads)); `_Lx.mtx`, `_Lz.mtx` (`finL`) give the same RW
+  upper bound 23.
+- Boundary and small CSS codes (Origins, item 7): `k0_graph_ghz5` returns `0 0 0` (`k = 0`) in both sectors;
+  `tiny_d1_4_1_1` triggers the zero-column $d = 1$ fast path (`1 1 0`); `steane_7_1_3`, `shor_9_1_3`, and
+  `hyp_5_5_40_10_4` are certified by CC in both sectors (`finG` and `finL`).
+- $(3, q)$ hyperbolic surface and $(3, 6)$ triangular-lattice toric codes (Origins, item 8): on the $Z$-logical sector
+  (`finH=Hx`, `finG=Hz`), the weight-3 triangular face checks give $|\mathcal{T}_3| = 2n/3$ ($w_G = 3$), exercising
+  Stage 1 (`0x01`), `rw_opt=2` ($w_G = 3$), and bit-32 (`0x20`) codeword expansion. All sectors above are certified by
+  CC ($\le 8$ threads), except $d_X$ of `toric_3_6_432_2_12` (`[18, 24]` at `wmax=16`; exact $d_X = 2L = 24$).
+- Topological $k = 1$, planar rectangle, and $d > 64$ CSS codes (Origins, item 9): `surface_rot_*` ($d = 3..13$),
+  `bidir_rect_261_16_9` ($d_X = d_Z = 9$), and `rep_css_68_1_1` ($d_Z = 67 > 64$, $d_X = 1$) are certified by native CC
+  ($\le 8$ threads); `color_271_1_19` ($d = 19$), `color_721_1_31` ($d = 31$), and $d_Z$ of `surface_strip_333_1_3`
+  ($d_Z = 67 > 64$) have short native `wmax=10..12` brackets above (exact distances from their topological/product
+  constructions).
+- HGP, CPM pair-partition, ZSZ balanced-product, small BB, 2D torus, and non-abelian $w = 12$ 2BGA CSS codes (Origins,
+  item 11): `hgp_585_112_5` ($k = 112 > 64$, $d_X = 7, d_Z = 5$), `kasai_cpm_184_50_10` ($d = 10$), `bp_zsz_275_55_10`
+  ($d_X = 12, d_Z = 10$), `bb_18_4_4` ($d = 4$), `bb_30_4_6` ($d = 6$), and the four `torus_*` static codes ($d = 6, 6,
+  10, 10$) are certified exact by native CC ($\le 8$ threads). `2bga_270_38_21_SG135_4` has exact distance
+  $d_X = d_Z = 21$ from the `hr-2bga` search (short `wmax=12` brackets above), while `bp_zsz_625_125_14` ($k = 125 >
+  64$) and `2bga_310_36_21_SG155_1` ($d_X \in [18, 21]$, $d_Z \in [18, 27]$ in 64-thread runs) report short 8-thread
+  brackets.
+
+### 1.1 Classical Linear Codes (`benchmark/classical/`)
+
+| File (`benchmark/classical/`) | $[n, k, d]$ | Size ($m \times n$) | `dist_m4ri` ($d$) | Construction / Source |
+| :------------------- | :--------- | :--------- | :----------- | :--------------------------- |
+| `k0_classical_eye8_H.mtx` | $[8, 0, \text{–}]$ | $8 \times 8$ | 0 ($k=0$) | $I_8$, full-rank check ($k = 0$) |
+| `hamming_7_4_3_H.mtx` | $[7, 4, 3]$ | $3 \times 7$ | 3 | Binary Hamming code |
+| `golay_24_12_8_H.mtx` | $[24, 12, 8]$ | $12 \times 24$ | 8 | Extended binary Golay ($[I_{12} \mid B_{12}]$, even-wt) |
+| `bch_63_36_11_H.mtx` | $[63, 36, 11]$ | $27 \times 63$ | 11 | Narrow-sense primitive BCH ($x^6 + x + 1$) |
+| `bch_127_64_21_H.mtx` | $[127, 64, 21]$ | $63 \times 127$ | [8, 21] | Narrow-sense primitive BCH ($x^7 + x + 1$) |
+| `rm_2_7_128_29_32_H.mtx` | $[128, 29, 32]$ | $99 \times 128$ | [16, 32] | Reed–Muller $\mathrm{RM}(2, 7)$ |
+| `tanner_155_64_20_H.mtx` | $[155, 64, 20]$ | $93 \times 155$ | 20 | $(3, 5)$ QC-LDPC ($\ell = 31$, rank 91) |
+| `bch_255_45_87_H.mtx` | $[255, 45, 87]$ | $210 \times 255$ | [10, 87] | Narrow-sense BCH ($n=255$, $d=87>64$) |
+
+Checked with `classical=1 method=3` ($\le 8$ threads, Origins, item 7): exact CC certificates for Hamming, Golay
+(even-weight CC skip), BCH $[63, 36, 11]$, and Tanner $[155, 64, 20]$ (also with `start=0,31,62,93,124 start_scan=1`),
+and short-run brackets (`wmax=12` and `wmax=14`, `steps=5000`) matching the exact algebraic distances 21 and 32 for
+`bch_127_64_21` and `rm_2_7_128_29_32`.
+
+### 1.2 Subsystem Gauge and Hook-Extended Matrices (`benchmark/subsystem/`)
+
+| Prefix (`subsystem/`) | $[[n, k, d]]$ | $H$ ($m \times n$) | $G$ ($m_G \times n, w_G$) | $\|\mathcal{T}_3\|$ | $d$ |
+| :-------------------------- | :-------------- | :--------- | :------------------ | -----: | :-- |
+| `shyps_225_16_8_gauge` | $[[225, 16, 8]]$ | $44 \times 225$ | $225 \times 225$, $w_G=3$ | 525 | 8 |
+| `bacon_shor_25_1_5_gauge` | $[[25, 1, 5]]$ | $4 \times 25$ | $20 \times 25$, $w_G=2$ | 0 | 5 |
+| `bacon_shor_81_1_9_gauge` | $[[81, 1, 9]]$ | $8 \times 81$ | $72 \times 81$, $w_G=2$ | 0 | 9 |
+| `bb_72_hookext` | $[[180, 12, 5]]$ | $36 \times 180$ | $144 \times 180$, $w_G=6$ | 144 | 5 |
+| `gross_144_hookext` | $[[360, 12, 8]]$ | $72 \times 360$ | $288 \times 360$, $w_G=6$ | 288 | 8 |
+| `t11_8_1_3` | $[[8, 1, 3]]$ | $5 \times 8$ | $2 \times 8$, $w_G=5$ | 1 | 3 |
+
+All six instances include `_H.mtx`, `_G.mtx`, and `_L.mtx` (Origins, item 8) and are certified exact by CC (`method=3`,
+$\le 8$ threads, with `finG` and `finL`, and under `rw_opt=3`). Note: on Bacon–Shor, the weight-2 gauge rows of $G$ make
+columns within each column of the $L \times L$ grid identical in $(H, L)$.
+
+### 1.3 Unmerged Identical-Column and Duplicate-Entry Matrices (`benchmark/subsystem/`)
+
+| Files (`subsystem/`) | Mode | $H$ ($m \times n$) | $L$ ($k \times n$) | Unique | $\|\mathcal{T}_3\|$ | $d$ |
+| :----------------------------- | :---------- | :----------- | :---------- | -----: | ------: | :-- |
+| `bb_72_dup2x_{H,L}.mtx` | `finH`, `finL` | $36 \times 144$ | $12 \times 144$ | 72 | 0 | 6 |
+| `bb_72_r3_X_unmerged_{H,L}.mtx` | `finH`, `finL` | $180 \times 9{,}180$ | $12 \times 9{,}180$ | 1,512 | 653,688 | 6 |
+| `dup_entries_xor_H.mtx` | `classical=1` | $12 \times 24$ | – ($k = 12$) | 24 | – | 8 |
+
+Checked on $\le 8$ threads (Origins, item 10): `bb_72_dup2x` exports all 5,376 weight-6 codewords across 84 canonical
+classes via $1 \leftrightarrow 1$ identical-column swaps (`rw_opt=33`, `steps=600`); `bb_72_r3_X_unmerged` is certified
+at $d = 6$ by CC (`method=3`, 3.9–4.2 s on 16 threads with default parameters since 0.17.4,
+[Section 12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174)); and `dup_entries_xor_H.mtx` logs
+`# WARNING: ... summed mod 2` and certifies the extended Golay distance $d = 8$.
+
+### 1.4 Non-CSS Stabilizer Codes in Length-$3n$ Pauli Form (`benchmark/stabilizer/`)
+
+| Prefix (`stabilizer/`) | $[[n, k, d]]$ | $H$ | $G$ | $L$ | $\|\mathcal{T}_3\|$ | $d$ |
+| :-------------------------- | :-------------- | :-------- | :---------- | :-------- | -----: | :-- |
+| `laflamme_5_1_3_pauli3n` | $[[5, 1, 3]]$ | $4 \times 15$ | $9 \times 15$ | $2 \times 15$ | 5 | 3 |
+| `gottesman_8_3_3_pauli3n` | $[[8, 3, 3]]$ | $5 \times 24$ | $13 \times 24$ | $6 \times 24$ | 8 | 3 |
+| `halved_92_25_8_pauli3n` | $[[92, 25, 8]]$ | $69 \times 276$ | $161 \times 276$ | $50 \times 276$ | 92 | 8 |
+
+All three non-CSS stabilizer codes (Origins, item 11) include `_H.mtx`, `_G.mtx`, and `_L.mtx` ($L G^\top = 0$) and are
+certified at their exact quantum Pauli distances $d = 3, 3, 8$ by CC (`method=3`, $\le 8$ threads) with both `finG` and
+`finL`.
+
+---
+
+<div id="2-stim-circuits-stim_bb-stim_mitten-stim_shyps-stim_torus-stim_2bga"></div>
+
+## 2. Stim Circuits (`stim_bb/`, `stim_mitten/`, `stim_shyps/`, `stim_torus/`, `stim_2bga/`)
+
+The circuit-level distances are listed in [Section 2.6](#26-circuit-level-distances).
+
+### 2.1 Bivariate Bicycle, Gross, and Double-Gross (`benchmark/stim_bb/`)
+
+| File (`benchmark/stim_bb/`) | Repo | Noise | $p$ | Rounds | Basis | Source Pattern |
+| :---------------------- | :-------- | :------ | :---- | :----- | :---- | :------------------------ |
+| `bb_72_12_6_si1000_r6_X.stim` | `tesseract` | `si1000` | `1e-4` | 6 | `X` | `r=6,d=6,nkd=[[72,12,6]]` |
+| `bb_72_12_6_si1000_r6_Z.stim` | `tesseract` | `si1000` | `1e-4` | 6 | `Z` | `r=6,d=6,nkd=[[72,12,6]]` |
+| `bb_90_8_10_si1000_r10_X.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `X` | `r=10,d=10,nkd=[[90,8,10]]` |
+| `bb_90_8_10_si1000_r10_Z.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `Z` | `r=10,d=10,nkd=[[90,8,10]]` |
+| `bb_108_8_10_si1000_r10_X.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `X` | `r=10,d=10,nkd=[[108,8,10]]` |
+| `bb_108_8_10_si1000_r10_Z.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `Z` | `r=10,d=10,nkd=[[108,8,10]]` |
+| `gross_144_12_12_si1000_r12_X.stim` | `tesseract` | `si1000` | `1e-4` | 12 | `X` | `r=12,d=12,nkd=[[144,12,12]]` |
+| `gross_144_12_12_si1000_r12_Z.stim` | `tesseract` | `si1000` | `1e-4` | 12 | `Z` | `r=12,d=12,nkd=[[144,12,12]]` |
+| `double_gross_288_12_18_si1000_r18_X.stim` | `tesseract` | `si1000` | `1e-4` | 18 | `X` | `r=18,d=18,[[288,12,18]]` |
+| `double_gross_288_12_18_si1000_r18_Z.stim` | `tesseract` | `si1000` | `1e-4` | 18 | `Z` | `r=18,d=18,[[288,12,18]]` |
+| `bb_360_12_24_si1000_r24_X.stim` | `tesseract` | `si1000` | `1e-4` | 24 | `X` | `r=24,d=24,nkd=[[360,12,24]]` |
+| `bb_360_12_24_si1000_r24_Z.stim` | `tesseract` | `si1000` | `1e-4` | 24 | `Z` | `r=24,d=24,nkd=[[360,12,24]]` |
+| `bb_756_16_34_si1000_r34_X.stim` | `tesseract` | `si1000` | `1e-4` | 34 | `X` | `r=34,d=34,nkd=[[756,16,34]]` |
+| `bb_756_16_34_si1000_r34_Z.stim` | `tesseract` | `si1000` | `1e-4` | 34 | `Z` | `r=34,d=34,nkd=[[756,16,34]]` |
+| `bb_72_12_6_uniform_r6_X.stim` | `relay` | `uniform` | `1e-3` | 6 | `X` | `..._72_12_6_memory_X` |
+| `gross_144_12_12_uniform_r12_X.stim` | `relay` | `uniform` | `1e-3` | 12 | `X` | `..._144_12_12_memory_X` |
+| `double_gross_288_12_18_uniform_r18_X.stim` | `relay` | `uniform` | `1e-3` | 18 | `X` | `..._288_12_18_memory_X` |
+| `bb_72_12_6_uniform_r6_Z.stim` | `relay` | `uniform` | `1e-3` | 6 | `Z` | `..._72_12_6_memory_Z` |
+| `gross_144_12_12_uniform_r12_Z.stim` | `relay` | `uniform` | `1e-3` | 12 | `Z` | `..._144_12_12_memory_Z` |
+| `double_gross_288_12_18_uniform_r18_Z.stim` | `relay` | `uniform` | `1e-3` | 18 | `Z` | `..._288_12_18_memory_Z` |
+
+### 2.2 Mitten Codes (`benchmark/stim_mitten/`)
+
+| File (`benchmark/stim_mitten/`) | Source | Schedule | Depth | $p$ | Rounds | Basis |
+| :--------------------------------- | :----- | :------------------ | :---- | :---- | :----- | :---- |
+| `mitten_90_18_6_C3xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
+| `mitten_90_18_6_C3xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
+| `mitten_150_30_8_C5xS3_custom_r5_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 5 | `Z` |
+| `mitten_150_30_8_C5xS3_hef_r5_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 5 | `Z` |
+| `mitten_210_42_8_C7xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
+| `mitten_210_42_8_C7xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
+| `mitten_270_54_10_C9xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
+| `mitten_270_54_10_C9xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
+| `mitten_330_66_6_C11xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
+| `mitten_330_66_6_C11xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
+
+The `quits` Mitten circuits are $Z$-basis memory experiments, whose logical observables are flipped by $X$-type errors;
+their circuit-level distance cannot exceed the code's $d_X$, which is 6 for `mitten_210` and 4 for `mitten_330`
+(Section 1).
+
+The circuits of the codes of arXiv:2607.28795 with the published hook-free schedule (Origins, item 2) are generated by
+`make_yarn_mitten_circuits.py` in this directory: memory in both bases, $r = d$ rounds (the cycles after the first in a
+`REPEAT` block), the noise of `dist_m4ri.add_noise(p=0.001)`; the qubits are the $n$ data qubits and one ancilla per
+check.
+
+| Files (`benchmark/stim_mitten/`) | Code | Rounds | Qubits | Detectors | Observables |
+| :----------------------------------- | :------------- | -----: | -----: | -------: | ---------: |
+| `yarn_mitten_150_30_10_hookfree_r10_{X,Z}.stim` | $[[150, 30, 10]]$ | 10 | 270 | 1,200 | 30 |
+| `yarn_mitten_200_40_12_hookfree_r12_{X,Z}.stim` | $[[200, 40, 12]]$ | 12 | 360 | 1,920 | 40 |
+| `yarn_mitten_300_60_14_hookfree_r14_{X,Z}.stim` | $[[300, 60, 14]]$ | 14 | 540 | 3,360 | 60 |
+| `yarn_mitten_500_100_16_hookfree_r16_{X,Z}.stim` | $[[500, 100, 16]]$ | 16 | 900 | 6,400 | 100 |
+| `yarn_mitten_540_108_18_hookfree_r18_{X,Z}.stim` | $[[540, 108, 18]]$ | 18 | 972 | 7,776 | 108 |
+| `yarn_mitten_630_126_20_hookfree_r20_{X,Z}.stim` | $[[630, 126, 20]]$ | 20 | 1,134 | 10,080 | 126 |
+| `yarn_mitten_780_156_22_hookfree_r22_{X,Z}.stim` | $[[780, 156, 22]]$ | 22 | 1,404 | 13,728 | 156 |
+| `yarn_mitten_975_195_24_hookfree_r24_{X,Z}.stim` | $[[975, 195, 24]]$ | 24 | 1,755 | 18,720 | 195 |
+| `yarn_smitten_300_60_9_hookfree_r9_{X,Z}.stim` | $[[300, 60, 9]]$ | 9 | 540 | 2,160 | 60 |
+| `yarn_smitten_330_66_12_hookfree_r12_{X,Z}.stim` | $[[330, 66, 12]]$ | 12 | 594 | 3,168 | 66 |
+| `yarn_smitten_600_120_14_hookfree_r14_{X,Z}.stim` | $[[600, 120, 14]]$ | 14 | 1,080 | 6,720 | 120 |
+| `yarn_smitten_600_120_16_hookfree_r16_{X,Z}.stim` | $[[600, 120, 16]]$ | 16 | 1,080 | 7,680 | 120 |
+| `yarn_smitten_840_168_18_hookfree_r18_{X,Z}.stim` | $[[840, 168, 18]]$ | 18 | 1,512 | 12,096 | 168 |
+
+The code parameters are the nominal ones (Section 1 for the distances); the codes `yarn_smitten_1200_240_20` and
+`yarn_ablp_560_112_14` have no published schedule.
+
+### 2.3 2D Local Torus BB Circuits (`benchmark/stim_torus/`)
+
+| File (`benchmark/stim_torus/`) | Nominal $[[n, k, d]]$ | Basis | Notes |
+| :------------------------------------------- | :---------------- | :---- | :------------- |
+| `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim` | $[[60, 8, 14]]$ | `X` | Noiseless (`tmp/`) |
+| `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_Z.stim` | $[[60, 8, 14]]$ | `Z` | Noiseless (`tmp/`) |
+| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w12p_n120_k8_d15_X.stim` | $[[120, 8, 15]]$ | `X` | Noiseless (`tmp/`) |
+| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w12p_n120_k8_d15_Z.stim` | $[[120, 8, 15]]$ | `Z` | Noiseless (`tmp/`) |
+| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_X.stim` | $[[200, 16, 16]]$ | `X` | Noiseless (`tmp/`) |
+| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_Z.stim` | $[[200, 16, 16]]$ | `Z` | Noiseless (`tmp/`) |
+| `ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_X.stim` | $[[200, 8, 17]]$ | `X` | Noiseless (`tmp/`) |
+| `ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_Z.stim` | $[[200, 8, 17]]$ | `Z` | Noiseless (`tmp/`) |
+
+The nominal code parameters are taken from the file names; the code distances of the torus codes have not been
+verified yet (no check matrices are included).
+
+Static check matrices extracted from these four circuits are now included in `css/torus_*` (Origins, item 11, and
+Section 1), certifying their exact static CSS distances as $d_X = d_Z = 6, 6, 10, 10$ (matching the `d_code` header
+entries of the `.stim` files, whereas `d14`–`d17` in the file names reflect the routing-schedule parameter).
+
+### 2.4 SHYPS Codes (`benchmark/stim_shyps/`)
+
+| File (`benchmark/stim_shyps/`) | Code | $r$ | Rounds | Basis | Source file |
+| :--------------------- | :----------- | --: | -----: | :---- | :------------------------------- |
+| `shyps_225_16_8_r9_Z.stim` | $[[225, 16, 8]]$ | 4 | 9 | `Z` | `shyps_r4_..._Z_detectors_circuit_p_0.001.stim` |
+| `shyps_961_25_16_r17_Z.stim` | $[[961, 25, 16]]$ | 5 | 17 | `Z` | `shyps_r5_..._Z_detectors_circuit_p_0.001.stim` |
+
+SHYPS codes are subsystem codes: each round measures the $Z$- and the $X$-type gauge operators, and the circuits have
+detectors of the $Z$ type only (Origins, item 4).
+
+### 2.5 2BGA Codes (`benchmark/stim_2bga/`)
+
+| File (`benchmark/stim_2bga/`) | Code | Rounds | Qubits | Detectors | Observables | Basis |
+| :------------------------------- | :------------ | -----: | -----: | -------: | ---------: | :---- |
+| `2bga_102_20_10_C51_idlefree_r10_X.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `X` |
+| `2bga_102_20_10_C51_idlefree_r10_Z.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `Z` |
+| `2bga_120_24_10_C30xC2_idlefree_r10_X.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `X` |
+| `2bga_120_24_10_C30xC2_idlefree_r10_Z.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `Z` |
+| `2bga_162_24_16_C9xC9_folded_T1_X.stim` | $[[162, 24, 16]]$ | 1 | 324 | 162 | 24 | `X` |
+| `2bga_162_24_16_C9xC9_folded_T1_Z.stim` | $[[162, 24, 16]]$ | 1 | 324 | 162 | 24 | `Z` |
+| `2bga_162_24_16_C9xC9_folded_T16_X.stim` | $[[162, 24, 16]]$ | 16 | 324 | 2,592 | 24 | `X` |
+| `2bga_162_24_16_C9xC9_folded_T16_Z.stim` | $[[162, 24, 16]]$ | 16 | 324 | 2,592 | 24 | `Z` |
+
+The source files are `w9_102_20_10_g51_1_2859_memory_{x,z}basis_r10_idlefree_p0.001.stim` and
+`w9t_120_24_10_g60_13_48f7b6_memory_{x,z}basis_r10_idlefree_p0.001.stim` in `data/circuits/` of the database (Origins,
+item 5). The qubits are numbered as in the database: data qubit $j < |G|$ in the left block and $|G| + j$ in the right
+block, and the ancilla of check $i$ (row $i$ of `_Hx.mtx` or `_Hz.mtx` in `css/`) is $n + i$ for an $X$ check and
+$n + |G| + i$ for a $Z$ check; in the first round, the CX gates of every ancilla address exactly the support of its
+check. Each circuit has the detectors of its own basis only; the full DEM has 8,262 (`2bga_102`) or 9,720
+(`2bga_120`) error mechanisms.
+
+The noiseless Shaw–Terhal folded templates `2bga_162_24_16_C9xC9_folded_T{1,16}_{X,Z}.stim` (source prefix
+`n162_k24_d16_w55_C9xC9_T*`, Origins, item 12; wrapped to $\le 120$ columns with identical DEMs) have 1,620 ($T = 1$)
+and 186,219 / 196,911 ($T = 16$, `X` / `Z`) raw error mechanisms under `add_noise(p=0.001)`, certified model lower bound
+8, short 8-thread native brackets `[6, 9]` ($T = 1$) and `[4, 9]` ($T = 16$), and exact reference distance 9. The script
+`stim_2bga/make_folded_2bga_circuits.py` reproduces both `2bga_162` and `2bga_254_44_19_C127_folded_T{1,19}_{X,Z}.stim`
+($[[254, 44, 19]]$, $w = 12$, 508 qubits, 254 / 4,826 detectors, 44 observables, 3,048 / 440,055 raw errors).
+
+<div id="26-circuit-level-distances"></div>
+
+### 2.6 Circuit-Level Distances
+
+The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable
+logical error, i.e., the distance of the full DEM (all detectors).
+
+- Values without a mark: the full DEM, computed by `dist_m4ri` 0.14.0 in the overnight benchmark
+  ([Section 5](HISTORY.md#5-overnight-benchmark-of-0140-2026-10-11); `method=3`, 128 threads), which drops the
+  minority-basis detectors exactly (Section 3). An exact value is certified by CC: in under 6 s, except 179 s for
+  `gross` and 182 s for `mitten_270 custom`.
+- The reference bracket $[13, 16]$ of `double_gross` (`si1000`, $X$ basis) is from an external exact search (with a
+  verified weight-16 witness; [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14) gives $[12, 18]$ from a
+  code-sized model and RW). The bracket $[12, 23]$ of `bb_360` is from
+  [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14): the lower bound is certified with a code-sized model of
+  the circuit ([Section 6.3](HISTORY.md#63-certified-lower-bounds-from-a-code-sized-model)), and the upper bound 23 is a
+  codeword of the full DEM found by RW ([Section 6.1](HISTORY.md#61-rw-threads-for-the-largest-dems)).
+- The uniform-noise `gross` circuit and the torus circuits were re-run on their full DEMs with the current noise on
+  2026-10-15, and the `yarn_mitten_150` circuits, the $Z$-basis `bb_72` uniform-noise circuit, and `shyps_225` on
+  2026-10-20 (`method=3` of 0.14.7, default threads): all values certified by CC, in 0.4–168 s, and in 114 s ($X$)
+  and 291 s ($Z$) for `yarn_mitten_150` and 20 s for `shyps_225`.
+- (s): the stripped DEM (minority-basis detectors removed), computed by earlier versions in 30 s `method=3` runs on 16
+  threads. The stripped DEM keeps a subset of the detectors, so its distance is a lower bound on the circuit distance
+  (for a bracket, only its lower end applies to the circuit).
+- For the noiseless torus templates, the noise of `add_noise(p=0.001)` is added; the circuit distance depends on the
+  noise model (which faults are included), but not on $p$. Since 0.14.0, `add_noise` also adds `DEPOLARIZE2` after
+  `CZSWAP`, which these circuits use for routing; the torus values are for this noise.
+- $\le w$ (the `2bga_*` circuits, 2026-11-05): the weight of the lightest logical error found by RW of 0.15.2 in the
+  full DEM of the circuit with its own noise (8 s on 16 threads), not certified; it is the circuit-level distance 8
+  given in the headers of the files (Section 2.5).
+- "–": not computed yet; "n/a": no circuit for this basis.
+
+| Circuit (`.stim` file name without `_X`/`_Z`) | $X$ basis | $Z$ basis |
+| :------------------------------------------------------------------- | :------ | :---- |
+| `bb_72_12_6_si1000_r6` | 6 | 6 (s) |
+| `bb_90_8_10_si1000_r10` | 8 | – |
+| `bb_108_8_10_si1000_r10` | 8 | – |
+| `gross_144_12_12_si1000_r12` | 10 | – |
+| `double_gross_288_12_18_si1000_r18` | [13, 16] | – |
+| `bb_360_12_24_si1000_r24` | [12, 23] | – |
+| `bb_756_16_34_si1000_r34` | – | – |
+| `bb_72_12_6_uniform_r6` | 6 (s) | 6 |
+| `gross_144_12_12_uniform_r12` | 10 | – |
+| `double_gross_288_12_18_uniform_r18` | – | – |
+| `mitten_90_18_6_C3xS3_custom_r4` | n/a | 5 |
+| `mitten_90_18_6_C3xS3_hef_r4` | n/a | 4 |
+| `mitten_150_30_8_C5xS3_custom_r5` | n/a | 7 |
+| `mitten_150_30_8_C5xS3_hef_r5` | n/a | 5 |
+| `mitten_210_42_8_C7xS3_custom_r4` | n/a | 6 |
+| `mitten_210_42_8_C7xS3_hef_r4` | n/a | 5 |
+| `mitten_270_54_10_C9xS3_custom_r4` | n/a | 9 |
+| `mitten_270_54_10_C9xS3_hef_r4` | n/a | 7 |
+| `mitten_330_66_6_C11xS3_custom_r4` | n/a | 4 |
+| `mitten_330_66_6_C11xS3_hef_r4` | n/a | 4 |
+| `yarn_mitten_150_30_10_hookfree_r10` | **8** | **8** |
+| `yarn_mitten_*`, `yarn_smitten_*` (the other 12 codes, Section 2.2) | – | – |
+| `shyps_225_16_8_r9` | n/a | 8 |
+| `shyps_961_25_16_r17` | n/a | – |
+| `NNEESEEESEENN_L3_torus_..._n60_k8_d14` | 6 | 6 |
+| `NEENNWNWNNEEN_L3_torus_..._n120_k8_d15` | 6 | – |
+| `NEENNWNWNNEEN_L3_torus_..._n200_k16_d16` | 8 | – |
+| `ENENESESENENE_L3_torus_..._n200_k8_d17` | 8 | – |
+| `2bga_102_20_10_C51_idlefree_r10` | $\le 8$ | $\le 8$ |
+| `2bga_120_24_10_C30xC2_idlefree_r10` | $\le 8$ | $\le 8$ |
+
+The circuit-level distances are often below the code distances in the file names. For example, the gross-code circuit
+has distance 10 (also with the uniform noise), consistent with the circuit-level distance $\le 10$ reported for the IBM
+syndrome-extraction circuit, and the BB circuits with $d = 10$ have distance 8. For the Mitten codes, the
+"hook-error-free" schedule of `quits` has a lower circuit-level distance than the `custom` schedule (4 vs 5, 5 vs 7,
+5 vs 6, and 7 vs 9 for `mitten_90`, `mitten_150`, `mitten_210`, and `mitten_270`; 4 with both schedules for
+`mitten_330`). The `custom` schedule reaches the code's $d_X$ for `mitten_210` (6) and `mitten_330` (4), and $d_X - 1$
+for `mitten_90`, `mitten_150`, and `mitten_270`. With the published hook-free schedule, the circuit-level distance of
+`yarn_mitten_150_30_10` is 8 in both bases, two below the code distance 10; the paper's DEM of this circuit (Origins,
+item 2) has the same error mechanisms, and RW finds 117 distinct logical errors of weight 8 in it. A weight-8 logical
+error of the $X$-basis circuit consists of four hook errors on $Z$-check ancillas in the last cycle ($Z$ errors which
+spread to the data qubits of the later CX gates of their checks) and four single data-qubit $Z$ errors. The SHYPS
+circuit `shyps_225_16_8_r9_Z` keeps the code distance 8.
+
+### 2.7 Rotated Surface Circuits (`benchmark/stim_surface/`) and Standalone DEM Suite (`benchmark/dem/`)
+
+| File | Parameters / Mode | Qubits | Detectors | Raw errs | `dist_m4ri` ($d$) |
+| :------------------------- | :-------------------- | -----: | -------: | -----: | :------------ |
+| `stim_surface/surface_rot_d3_r3_Z.stim` | $[[9, 1, 3]]$, $r=3$ | 26 | 24 | 219 | 3 |
+| `stim_surface/surface_rot_d5_r5_Z.stim` | $[[25, 1, 5]]$, $r=5$ | 64 | 120 | 1,677 | 5 |
+| `stim_surface/surface_rot_d7_r7_Z.stim` | $[[49, 1, 7]]$, $r=7$ | 118 | 336 | 6,023 | 7 |
+| `stim_surface/surface_rot_d9_r9_Z.stim` | $[[81, 1, 9]]$, $r=9$ | 188 | 720 | 13,937 | 9 |
+| `stim_surface/surface_rot_d11_r11_Z.stim` | $[[121, 1, 11]]$, $r=11$ | 274 | 1,320 | 26,803 | 11 (ref.) |
+| `stim_surface/surface_rot_d13_r13_Z.stim` | $[[169, 1, 13]]$, $r=13$ | 376 | 2,184 | 45,821 | 13 (ref.) |
+| `dem/rep_d71_r6.dem` | 6-round rep, $k=1$ | – | 420 | 1,121 | [7, 71] (ref. 71) |
+| `dem/tagged_repeat_pmin.dem` | `pmin=0` / `0.005` / `0.02` | – | 24 | 49 | 3 / 5 / 0 ($k=0$) |
+| `dem/bb_72_dropA.dem` | `drop=auto` / `bb_72_dropA.drop` | – | 432 / 252 | 16,200 | 6 / 6 ($A \neq 0$) |
+
+All `surface_rot_d*` circuits use Stim's standard depolarizing noise at $p = 0.001$ (Origins, item 9; $d = 3..9$
+certified by native CC on $\le 8$ threads; $d = 11, 13$ reference values matching $d = L$). `rep_d71_r6.dem` has
+$|\mathcal{T}_3| = 700$ and exact distance $d = 71 > 64$ (above `RW_SHORTEN_WMAX = 64`). In `dem/` (Origins, item 10),
+`tagged_repeat_pmin.dem` exercises `[tag]` annotations, `repeat` + `shift_detectors`, self-cancelling `^` components,
+and `pmin` cuts (`d = 3`, `5` via CC, and `0 0 0` at `pmin=0.02`); `bb_72_dropA.{dem,drop}` exercises exact detector
+dropping with $A \neq 0$ (`bb_72_bad.drop` tests invalid-drop fallback), and `dem/make_large_drop_dems.py` generates the
+$> 2\text{ MB}$ `dgross_288_dropA` and `bb_756_dropA` files on demand.
+
+### 2.8 Color-Code `memory_xyz` (`stim_color/`) and Specialized Noise / High-$k$ Circuits (`stim_noise/`)
+
+| File | Parameters / Feature | Qubits | Detectors | Raw errs | `dist_m4ri` ($d$) |
+| :---------------------------- | :---------------- | -----: | -------: | -----: | :------------- |
+| `stim_color/color_d3_r3_xyz.stim` | $[[7, 1, 3]]$, $r=3$, `xyz` | 10 | 9 | 72 | 2 |
+| `stim_color/color_d5_r5_xyz.stim` | $[[19, 1, 5]]$, $r=5$, `xyz` | 28 | 45 | 1,104 | 3 |
+| `stim_color/color_d7_r7_xyz.stim` | $[[37, 1, 7]]$, $r=7$, `xyz` | 55 | 126 | 3,651 | 4 |
+| `stim_color/color_d9_r9_xyz.stim` | $[[61, 1, 9]]$, $r=9$, `xyz` | 91 | 270 | 7,683 | 5 |
+| `stim_noise/surface_rect_23_1_3_yz_biased_r5_Z.stim` | $[[23, 1, 3]]$, $Y/Z$-biased | 45 | 108 | 282 | 5 (model 3/5) |
+| `stim_noise/surface_xzzx_d5_biased_r5.stim` | $[[25, 1, 5]]$, XZZX biased | 64 | 120 | 785 | 5 (`is_rotated_css`) |
+| `stim_noise/surface_rot_d5_heralded_erase_r5_Z.stim` | $[[25, 1, 5]]$, heralded | 64 | 120 | 1,677 | 5 (`MPAD`) |
+| `stim_noise/color_d5_mpp_r5_Z.stim` | $[[19, 1, 5]]$, `MPP` + `MZZ` | 19 | 91 | 351 | 5 |
+| `stim_noise/bp_zsz_625_125_14_r2_Z.stim` | $[[625, 125]]$, $r=2, k=125$ | 1,125 | 1,000 | 46,154 | [5, 11] (`kw=2`) |
+
+Checked on $\le 8$ threads (Origins, item 12): all four `color_d*_xyz` circuits (`drop=auto` keeps all detectors) and
+the four $d = 5$ `stim_noise/` circuits are certified exact by native CC; on
+`surface_rect_23_1_3_yz_biased_r5_Z.stim`, `compute_model_lower_bound` certifies 3 with `minority=False` and 5 with
+`minority=True`.
+
+---
+
+<div id="3-full-dems-and-their-exact-reduction"></div>
+
+## 3. Full DEMs and Their Exact Reduction
+
+In circuit-level noise models using `DEPOLARIZE2(p)`, cross-term two-qubit Pauli errors (such as $X \otimes Z$,
+$Y \otimes X$, $Y \otimes Z$, $Y \otimes Y$) occur with probability $p/15 = O(p)$, the same order as single-type errors
+($X \otimes X$ or $Z \otimes Z$). Consequently, the full DEM couples $X$-detectors and $Z$-detectors into a single
+large parity-check matrix with 6–8 times more distinct error columns than a single-basis projection. Since version
+0.14.0, `dist_m4ri` merges the equal columns of a DEM and drops detectors when this is verified to be exact
+(`drop=auto`, the default; see "Dropping DEM Detectors" in the README): for every circuit below with detectors of both
+bases (all but the SHYPS circuits, whose detectors are all of the $Z$ type), it finds exactly the minority-basis
+detectors, and the matrix searched is the stripped DEM with its equal columns merged (the search for the detectors to
+drop takes 0.02–0.4 s, and 1.2 s for `bb_756`, with 0.14.0). Hence the distance of the full DEM, the circuit-level
+distance, is found as fast as that of the stripped DEM, which is only a lower bound on it.
+
+The DEMs are generated from the `.stim` files on the fly (see
+[Running `dist_m4ri` on the Inputs](#running-dist_m4ri-on-the-inputs)):
+
+| Stim circuit | Basis | Full (dets x errs) | Stripped | Searched | $k$ |
+| :--------------------------- | :---- | :--------------- | :------------- | :------------- | :-- |
+| `mitten_90_18_6_C3xS3_custom_r4_Z` | `Z` | 360 x 23,394 | 216 x 3,330 | 216 x 2,970 | 18 |
+| `mitten_90_18_6_C3xS3_hef_r4_Z` | `Z` | 360 x 22,410 | 216 x 3,330 | 216 x 2,970 | 18 |
+| `mitten_150_30_8_C5xS3_custom_r5_Z` | `Z` | 720 x 47,700 | 420 x 6,660 | 420 x 5,910 | 30 |
+| `mitten_150_30_8_C5xS3_hef_r5_Z` | `Z` | 720 x 46,130 | 420 x 6,660 | 420 x 5,910 | 30 |
+| `mitten_210_42_8_C7xS3_custom_r4_Z` | `Z` | 840 x 54,726 | 504 x 7,770 | 504 x 6,930 | 42 |
+| `mitten_210_42_8_C7xS3_hef_r4_Z` | `Z` | 840 x 52,437 | 504 x 7,665 | 504 x 6,825 | 42 |
+| `mitten_270_54_10_C9xS3_custom_r4_Z` | `Z` | 1,080 x 70,254 | 648 x 9,990 | 648 x 8,910 | 54 |
+| `mitten_270_54_10_C9xS3_hef_r4_Z` | `Z` | 1,080 x 67,482 | 648 x 9,990 | 648 x 8,910 | 54 |
+| `mitten_330_66_6_C11xS3_custom_r4_Z` | `Z` | 1,320 x 85,932 | 792 x 12,210 | 792 x 10,890 | 66 |
+| `mitten_330_66_6_C11xS3_hef_r4_Z` | `Z` | 1,320 x 81,642 | 792 x 11,880 | 792 x 10,560 | 66 |
+| `bb_72_12_6_si1000_r6_X` | `X` | 432 x 17,280 | 252 x 2,664 | 252 x 2,232 | 12 |
+| `bb_72_12_6_si1000_r6_Z` | `Z` | 432 x 17,244 | 252 x 2,664 | 252 x 2,232 | 12 |
+| `bb_90_8_10_si1000_r10_X` | `X` | 900 x 37,440 | 495 x 5,490 | 495 x 4,590 | 8 |
+| `bb_90_8_10_si1000_r10_Z` | `Z` | 900 x 37,395 | 495 x 5,490 | 495 x 4,590 | 8 |
+| `bb_108_8_10_si1000_r10_X` | `X` | 1,080 x 44,928 | 594 x 6,588 | 594 x 5,508 | 8 |
+| `bb_108_8_10_si1000_r10_Z` | `Z` | 1,080 x 44,874 | 594 x 6,588 | 594 x 5,508 | 8 |
+| `gross_144_12_12_si1000_r12_X` | `X` | 1,728 x 72,576 | 936 x 10,512 | 936 x 8,784 | 12 |
+| `gross_144_12_12_si1000_r12_Z` | `Z` | 1,728 x 72,504 | 936 x 10,512 | 936 x 8,784 | 12 |
+| `double_gross_288_12_18_si1000_r18_X` | `X` | 5,184 x 221,184 | 2,736 x 31,392 | 2,736 x 26,208 | 12 |
+| `double_gross_288_12_18_si1000_r18_Z` | `Z` | 5,184 x 221,040 | 2,736 x 31,392 | 2,736 x 26,208 | 12 |
+| `bb_360_12_24_si1000_r24_X` | `X` | 8,640 x 371,520 | 4,500 x 52,200 | 4,500 x 43,560 | 12 |
+| `bb_360_12_24_si1000_r24_Z` | `Z` | 8,640 x 371,340 | 4,500 x 52,200 | 4,500 x 43,560 | 12 |
+| `bb_756_16_34_si1000_r34_X` | `X` | 25,704 x 1,112,832 | 13,230 x 154,980 | 13,230 x 129,276 | 16 |
+| `bb_756_16_34_si1000_r34_Z` | `Z` | 25,704 x 1,112,454 | 13,230 x 154,980 | 13,230 x 129,276 | 16 |
+| `bb_72_12_6_uniform_r6_X` | `X` | 432 x 16,200 | 252 x 2,232 | 252 x 2,232 | 12 |
+| `gross_144_12_12_uniform_r12_X` | `X` | 1,728 x 67,824 | 936 x 8,784 | 936 x 8,784 | 12 |
+| `double_gross_288_12_18_uniform_r18_X` | `X` | 5,184 x 206,496 | 2,736 x 26,208 | 2,736 x 26,208 | 12 |
+| `bb_72_12_6_uniform_r6_Z` | `Z` | 432 x 16,164 | 252 x 2,232 | 252 x 2,232 | 12 |
+| `gross_144_12_12_uniform_r12_Z` | `Z` | 1,728 x 67,752 | 936 x 8,784 | 936 x 8,784 | 12 |
+| `double_gross_288_12_18_uniform_r18_Z` | `Z` | 5,184 x 206,352 | 2,736 x 26,208 | 2,736 x 26,208 | 12 |
+| `yarn_mitten_150_30_10_hookfree_r10_X` | `X` | 1,200 x 80,295 | 660 x 11,100 | 660 x 9,600 | 30 |
+| `yarn_mitten_150_30_10_hookfree_r10_Z` | `Z` | 1,200 x 80,445 | 660 x 11,250 | 660 x 9,750 | 30 |
+| `yarn_mitten_200_40_12_hookfree_r12` | `X`, `Z` | 1,920 x 130,392 | 1,040 x 17,960 | 1,040 x 15,560 | 40 |
+| `yarn_mitten_300_60_14_hookfree_r14_X` | `X` | 3,360 x 230,010 | 1,800 x 31,380 | 1,800 x 27,180 | 60 |
+| `yarn_mitten_300_60_14_hookfree_r14_Z` | `Z` | 3,360 x 230,040 | 1,800 x 31,380 | 1,800 x 27,180 | 60 |
+| `yarn_mitten_500_100_16_hookfree_r16_X` | `X` | 6,400 x 440,800 | 3,400 x 59,700 | 3,400 x 51,700 | 100 |
+| `yarn_mitten_500_100_16_hookfree_r16_Z` | `Z` | 6,400 x 440,780 | 3,400 x 59,700 | 3,400 x 51,700 | 100 |
+| `yarn_mitten_540_108_18_hookfree_r18_X` | `X` | 7,776 x 538,056 | 4,104 x 72,468 | 4,104 x 62,748 | 108 |
+| `yarn_mitten_540_108_18_hookfree_r18_Z` | `Z` | 7,776 x 538,026 | 4,104 x 72,468 | 4,104 x 62,748 | 108 |
+| `yarn_mitten_630_126_20_hookfree_r20` | `X`, `Z` | 10,080 x 700,056 | 5,292 x 93,870 | 5,292 x 81,270 | 126 |
+| `yarn_mitten_780_156_22_hookfree_r22` | `X`, `Z` | 13,728 x 956,280 | 7,176 x 127,764 | 7,176 x 110,604 | 156 |
+| `yarn_mitten_975_195_24_hookfree_r24` | `X`, `Z` | 18,720 x 1,307,265 | 9,750 x 174,135 | 9,750 x 150,735 | 195 |
+| `yarn_smitten_300_60_9_hookfree_r9` | `X`, `Z` | 2,160 x 143,940 | 1,200 x 20,280 | 1,200 x 17,580 | 60 |
+| `yarn_smitten_330_66_12_hookfree_r12` | `X`, `Z` | 3,168 x 215,160 | 1,716 x 29,634 | 1,716 x 25,674 | 66 |
+| `yarn_smitten_600_120_14_hookfree_r14` | `X`, `Z` | 6,720 x 460,080 | 3,600 x 62,760 | 3,600 x 54,360 | 120 |
+| `yarn_smitten_600_120_16_hookfree_r16` | `X`, `Z` | 7,680 x 528,960 | 4,080 x 71,640 | 4,080 x 62,040 | 120 |
+| `yarn_smitten_840_168_18_hookfree_r18` | `X`, `Z` | 12,096 x 836,976 | 6,384 x 112,728 | 6,384 x 97,608 | 168 |
+| `shyps_225_16_8_r9_Z` | `Z` | 600 x 10,125 | 600 x 10,125 | 600 x 8,325 | 16 |
+| `shyps_961_25_16_r17_Z` | `Z` | 3,596 x 81,685 | 3,596 x 81,685 | 3,596 x 66,309 | 25 |
+| `NNEESEEESEENN_..._n60_k8_d14_X` | `X` | 120 x 10,710 | 90 x 1,500 | 90 x 1,500 | 8 |
+| `NNEESEEESEENN_..._n60_k8_d14_Z` | `Z` | 120 x 10,710 | 90 x 1,500 | 90 x 1,500 | 8 |
+| `NEENNWNWNNEEN_..._n120_k8_d15_X` | `X` | 240 x 21,120 | 180 x 3,000 | 180 x 3,000 | 8 |
+| `NEENNWNWNNEEN_..._n120_k8_d15_Z` | `Z` | 240 x 21,120 | 180 x 3,000 | 180 x 3,000 | 8 |
+| `NEENNWNWNNEEN_..._n200_k16_d16_X` | `X` | 400 x 35,200 | 300 x 5,000 | 300 x 5,000 | 16 |
+| `NEENNWNWNNEEN_..._n200_k16_d16_Z` | `Z` | 400 x 35,200 | 300 x 5,000 | 300 x 5,000 | 16 |
+| `ENENESESENENE_..._n200_k8_d17_X` | `X` | 400 x 29,200 | 300 x 4,800 | 300 x 4,800 | 8 |
+| `ENENESESENENE_..._n200_k8_d17_Z` | `Z` | 400 x 29,200 | 300 x 4,800 | 300 x 4,800 | 8 |
+
+The sizes are those of the DEMs generated by `dist_m4ri.py` 0.14.0 (stim 1.16; the torus templates with the noise of
+`add_noise`, which since 0.14.0 includes `DEPOLARIZE2` after `CZSWAP`: their full DEMs have about twice as many columns
+as with the noise of the earlier versions, and the same stripped DEMs). The full DEMs of the `si1000` and Mitten
+circuits have 5–7% equal columns, and their stripped DEMs 11–16% (merged by the binary); the DEMs of the uniform-noise
+circuits and of the torus templates have none. The rows of the circuits added on 2026-10-20 are from `dist_m4ri.py`
+0.14.7 (the same DEM generation and reduction): the full DEMs of the `yarn_*` circuits have 5% equal columns (stim does
+not merge the equal errors of different repetitions of a `REPEAT` block) and their stripped DEMs 13–14%; the SHYPS
+DEMs have 18–19%, and no detector is dropped.
 
 ---
 
@@ -122,1225 +1237,157 @@ distance, is found as fast as that of the DEM with the minority-basis detectors 
      preparations and before the measurements, `DEPOLARIZE2` after the CX gates, no idle noise). The header of each
      file describes the circuit and gives the circuit-level distance 8.
 
----
-
-## 1. CSS Parity-Check and Logical Matrices (`benchmark/css/`)
-
-| Prefix | $[[n, k, d]]$ | Size ($m \times n$) | Construction / Polynomials or Group |
-| :--- | :--- | :--- | :--- |
-| `bb_72_12_6` | $[[72, 12, 6]]$ | $36 \times 72$ | $\ell=6, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
-| `bb_90_8_10` | $[[90, 8, 10]]$ | $45 \times 90$ | $\ell=15, m=3$, $A=x^9+y+y^2$, $B=1+x^2+x^7$ |
-| `bb_108_8_10` | $[[108, 8, 10]]$ | $54 \times 108$ | $\ell=9, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
-| `gross_144_12_12` | $[[144, 12, 12]]$ | $72 \times 144$ | $\ell=12, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
-| `double_gross_288_12_18` | $[[288, 12, 18]]$ | $144 \times 288$ | $\ell=12, m=12$, $A=x^3+y^2+y^7$, $B=y^3+x+x^2$ |
-| `bb_360_12_24` | $[[360, 12, 24]]$ | $180 \times 360$ | $\ell=30, m=6$, $A=x^9+y+y^2$, $B=y^3+x^{25}+x^{26}$ |
-| `bb_756_16_34` | $[[756, 16, \le 34]]$ | $378 \times 756$ | $\ell=21, m=18, A=x^3+y^{10}+y^{17}, B=y^5+x^3+x^{19}$ |
-| `mitten_90_18_6_C3xS3` | $[[90, 18, 6]]$ | $36 \times 90$ | $G = C_3 \times S_3$ ($|G|=18$, `seed=2`) |
-| `mitten_150_30_8_C5xS3` | $[[150, 30, 8]]$ | $60 \times 150$ | $G = C_5 \times S_3$ ($|G|=30$, `seed=2`) |
-| `mitten_210_42_8_C7xS3` | $[[210, 42, 6]]$ | $84 \times 210$ | $G = C_7 \times S_3$ ($|G|=42$, `seed=2`) |
-| `mitten_270_54_10_C9xS3` | $[[270, 54, 10]]$ | $108 \times 270$ | $G = C_9 \times S_3$ ($|G|=54$, `seed=2`) |
-| `mitten_330_66_6_C11xS3` | $[[330, 66, 4]]$ | $132 \times 330$ | $G = C_{11}\times S_3$ ($|G|=66$, `seed=2`) |
-| `yarn_mitten_150_30_10` | $[[150, 30, 10]]$ | $60 \times 150$ | $G = C_5 \times S_3$ |
-| `yarn_mitten_200_40_12` | $[[200, 40, 12]]$ | $80 \times 200$ | $G = C_4 \times D_{10}$ |
-| `yarn_mitten_300_60_14` | $[[300, 60, 14]]$ | $120 \times 300$ | $G = C_{10} \times S_3$ |
-| `yarn_mitten_500_100_16` | $[[500, 100, 16]]$ | $200 \times 500$ | $G = C_5 \times (C_5 \rtimes C_4)$ |
-| `yarn_mitten_540_108_18` | $[[540, 108, 18]]$ | $216 \times 540$ | $G = (C_9 \rtimes C_3) \rtimes C_4$ |
-| `yarn_mitten_630_126_20` | $[[630, 126, 20]]$ | $252 \times 630$ | $G = C_7 \rtimes C_{18}$ |
-| `yarn_mitten_780_156_22` | $[[780, 156, 22]]$ | $312 \times 780$ | $G = C_{13} \times A_4$ |
-| `yarn_mitten_975_195_24` | $[[975, 195, \le 24]]$ | $390 \times 975$ | $G = C_5 \times (C_{13} \rtimes C_3)$ |
-| `yarn_smitten_300_60_9` | $[[300, 60, 10]]$ | $120 \times 300$ | structured, $G = C_{10} \times S_3$ |
-| `yarn_smitten_330_66_12` | $[[330, 66, 12]]$ | $132 \times 330$ | structured, $G = C_{11} \times S_3$ |
-| `yarn_smitten_600_120_14` | $[[600, 120, 14]]$ | $240 \times 600$ | structured, $G = C_5 \times S_4$ |
-| `yarn_smitten_600_120_16` | $[[600, 120, 16]]$ | $240 \times 600$ | structured, $G = C_5 \times S_4$ |
-| `yarn_smitten_840_168_18` | $[[840, 168, 17]]$ | $336 \times 840$ | structured, $G = C_7 \times S_4$ |
-| `yarn_smitten_1200_240_20` | $[[1200, 240, 20]]$ | $480 \times 1200$ | structured, $|G| = 240$ |
-| `yarn_ablp_560_112_14` | $[[560, 112, 14]]$ | $224 \times 560$ | abelian lifted product, $|G| = 112$ |
-| `2bga_102_20_10_C51` | $[[102, 20, 10]]$ | $51 \times 102$ | 2BGA, $G = C_{51}$, weight 9 = 5 + 4 |
-| `2bga_120_24_10_C30xC2` | $[[120, 24, 10]]$ | $60 \times 120$ | 2BGA, $G = C_{30} \times C_2$, weight 9 = 5 + 4 |
-| `2bga_252_16_20_C7xD18` | $[[252, 16, 20]]$ | $126 \times 252$ | 2BGA, $G = C_7 \times D_{18}$, weight 7 = 4 + 3 |
-| `2bga_288_4_20_C24xS3` | $[[288, 4, 20]]$ | $144 \times 288$ | 2BGA, $G = C_{24} \times S_3$, weight 5 = 3 + 2 |
-| `2bga_288_8_22_C18xD8` | $[[288, 8, 22]]$ | $144 \times 288$ | 2BGA, $G = C_{18} \times D_8$, weight 6 = 3 + 3 |
-| `2bga_292_22_23_C146` | $[[292, 22, 23]]$ | $146 \times 292$ | 2BGA, $G = C_{146}$, weight 8 = 4 + 4 |
-| `2bga_294_24_21_SG147_5` | $[[294, 24, 21]]$ | $147 \times 294$ | 2BGA, $G = C_7^2 \rtimes C_3$, weight 9 = 6 + 3 |
-
-Distances computed with `dist_m4ri`:
-
-| Prefix | $d_X$ | $d_Z$ |
-| :--- | :--- | :--- |
-| `bb_72_12_6` | 6 | 6 |
-| `bb_90_8_10` | 10 | 10 |
-| `bb_108_8_10` | – | 10 |
-| `gross_144_12_12` | 12 | 12 |
-| `double_gross_288_12_18` | 18 | 18 |
-| `bb_360_12_24` | – | 24 |
-| `bb_756_16_34` | – | [26, 34] |
-| `mitten_90_18_6_C3xS3` | 6 | 6 |
-| `mitten_150_30_8_C5xS3` | 8 | 8 |
-| `mitten_210_42_8_C7xS3` | **6** | 8 |
-| `mitten_270_54_10_C9xS3` | 10 | 10 |
-| `mitten_330_66_6_C11xS3` | **4** | 6 |
-| `yarn_mitten_150_30_10` | 10 | 10 |
-| `yarn_mitten_200_40_12` | 12 | 12 |
-| `yarn_mitten_300_60_14` | 14 | 14 |
-| `yarn_mitten_500_100_16` | 16 | 16 |
-| `yarn_mitten_540_108_18` | 18 | 18 |
-| `yarn_mitten_630_126_20` | 20 | 20 |
-| `yarn_mitten_780_156_22` | 22 | 22 |
-| `yarn_mitten_975_195_24` | [23, 24] | 24 |
-| `yarn_smitten_300_60_9` | **10** | **10** |
-| `yarn_smitten_330_66_12` | 12 | 12 |
-| `yarn_smitten_600_120_14` | 14 | 14 |
-| `yarn_smitten_600_120_16` | 16 | 16 |
-| `yarn_smitten_840_168_18` | **17** | 18 |
-| `yarn_smitten_1200_240_20` | 20 | 20 |
-| `yarn_ablp_560_112_14` | 14 | 14 |
-| `2bga_102_20_10_C51` | $\le 10$ | $\le 10$ |
-| `2bga_120_24_10_C30xC2` | $\le 10$ | $\le 10$ |
-| `2bga_252_16_20_C7xD18` | $\le 20$ | $\le 20$ |
-| `2bga_288_4_20_C24xS3` | $\le 20$ | $\le 20$ |
-| `2bga_288_8_22_C18xD8` | $\le 22$ | $\le 22$ |
-| `2bga_292_22_23_C146` | $\le 23$ | $\le 23$ |
-| `2bga_294_24_21_SG147_5` | $\le 21$ | $\le 21$ |
-
-- $d_X$ ($d_Z$) is the minimum weight of an $X$-type ($Z$-type) logical operator, i.e., of a vector $c$ with
-  $H_Z c = 0$ ($H_X c = 0$) which is not in the row space of $H_X$ ($H_Z$); $d = \min(d_X, d_Z)$. "–": not computed
-  yet.
-- For the BB codes, $d_X = d_Z$ by the symmetry exchanging the two sectors, so one sector suffices.
-- `mitten_330_66_6_C11xS3` has distance **4**, not 6: $d_X = 4$ (132 $X$-type logical operators of weight 4 were
-  found, and those checked independently over GF(2) are valid), while $d_Z = 6$.
-- `mitten_210_42_8_C7xS3` has distance **6**, not 8: $d_X = 6$, while $d_Z = 8$.
-- The Mitten distances are certified by CC (0.14.0: under 0.04 s per sector on 128 threads), and the lightest logical
-  operator found in each run of the 0.12.1 benchmark passed an independent check over GF(2). Numbers of
-  minimum-weight logical operators ($X$ / $Z$, enumerated by CC): 66 / 90 (`mitten_90`), 180 / 120 (`mitten_150`),
-  84 / 42 (`mitten_210`), 216 / 648 (`mitten_270`), and 132 / 132 (`mitten_330`).
-- For `bb_360` and `bb_756`, the published distances are upper bounds (the codewords found by `dist_m4ri` have the
-  same weights). 0.15.0 certified $d = 24$ for `bb_360` in 3.2 min and raised the lower bound of `bb_756` from 17
-  (60 s runs) to 26 in 12 min (Section 9.3).
-- The `yarn_*` codes (2026-10-20): `method=3` of 0.14.7 with a timeout of 20 s per sector on 128 threads. The upper
-  bounds are the nominal distances, except for `yarn_smitten_840_168_18`. The codes with $d \ge 16$ were certified by
-  0.15.0 (2026-10-25, `method=3` on 128 threads, Section 9.3): from 1 s per sector for `yarn_mitten_500_100_16` to
-  59 min for $d_Z$ of `yarn_mitten_975_195_24`, whose $d_X$ is in $[23, 24]$ (the round $w = 23$ was not run).
-  - `yarn_smitten_300_60_9` has distance **10**, not 9, certified by CC in both sectors (also by the single-threaded
-    `dist_m4ri_old method=2 wmax=9`: no codeword of weight at most 9).
-  - `yarn_smitten_840_168_18` has distance **17**, not 18: RW found 7 distinct $X$-type logical operators of weight 17,
-    valid in an independent check over GF(2), and 0.15.0 certified $d_X = 17$ and $d_Z = 18$.
-- The `2bga_*` codes (2026-11-05): $\le w$ is the weight of the lightest logical operator found by RW of 0.15.2
-  (20,000 steps on 16 threads, under 0.1 s per sector), not certified by CC here. In both sectors of every code it is
-  the exact distance of the source database (Origins, item 5; $d_X = d_Z = d$ in the prefix). The `.nz` files of these
-  codes give the same upper bounds through `finC`, and the logical bases `_Lx.mtx`, `_Lz.mtx` (`finL`) the same RW
-  results as `finG`.
-
----
-
-## 2. Stim Circuits (`stim_bb/`, `stim_mitten/`, `stim_shyps/`, `stim_torus/`, `stim_2bga/`)
-
-The circuit-level distances are listed in [Section 2.6](#26-circuit-level-distances).
-
-### 2.1 Bivariate Bicycle, Gross, and Double-Gross (`benchmark/stim_bb/`)
-
-| File (`benchmark/stim_bb/`) | Repo | Noise | $p$ | Rounds | Basis | Source Pattern |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `bb_72_12_6_si1000_r6_X.stim` | `tesseract` | `si1000` | `1e-4` | 6 | `X` | `r=6,d=6,nkd=[[72,12,6]]` |
-| `bb_72_12_6_si1000_r6_Z.stim` | `tesseract` | `si1000` | `1e-4` | 6 | `Z` | `r=6,d=6,nkd=[[72,12,6]]` |
-| `bb_90_8_10_si1000_r10_X.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `X` | `r=10,d=10,nkd=[[90,8,10]]` |
-| `bb_90_8_10_si1000_r10_Z.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `Z` | `r=10,d=10,nkd=[[90,8,10]]` |
-| `bb_108_8_10_si1000_r10_X.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `X` | `r=10,d=10,nkd=[[108,8,10]]` |
-| `bb_108_8_10_si1000_r10_Z.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `Z` | `r=10,d=10,nkd=[[108,8,10]]` |
-| `gross_144_12_12_si1000_r12_X.stim` | `tesseract` | `si1000` | `1e-4` | 12 | `X` | `r=12,d=12,nkd=[[144,12,12]]` |
-| `gross_144_12_12_si1000_r12_Z.stim` | `tesseract` | `si1000` | `1e-4` | 12 | `Z` | `r=12,d=12,nkd=[[144,12,12]]` |
-| `double_gross_288_12_18_si1000_r18_X.stim` | `tesseract` | `si1000` | `1e-4` | 18 | `X` | `r=18,d=18,[[288,12,18]]` |
-| `double_gross_288_12_18_si1000_r18_Z.stim` | `tesseract` | `si1000` | `1e-4` | 18 | `Z` | `r=18,d=18,[[288,12,18]]` |
-| `bb_360_12_24_si1000_r24_X.stim` | `tesseract` | `si1000` | `1e-4` | 24 | `X` | `r=24,d=24,nkd=[[360,12,24]]` |
-| `bb_360_12_24_si1000_r24_Z.stim` | `tesseract` | `si1000` | `1e-4` | 24 | `Z` | `r=24,d=24,nkd=[[360,12,24]]` |
-| `bb_756_16_34_si1000_r34_X.stim` | `tesseract` | `si1000` | `1e-4` | 34 | `X` | `r=34,d=34,nkd=[[756,16,34]]` |
-| `bb_756_16_34_si1000_r34_Z.stim` | `tesseract` | `si1000` | `1e-4` | 34 | `Z` | `r=34,d=34,nkd=[[756,16,34]]` |
-| `bb_72_12_6_uniform_r6_X.stim` | `relay` | `uniform` | `1e-3` | 6 | `X` | `..._72_12_6_memory_X` |
-| `gross_144_12_12_uniform_r12_X.stim` | `relay` | `uniform` | `1e-3` | 12 | `X` | `..._144_12_12_memory_X` |
-| `double_gross_288_12_18_uniform_r18_X.stim` | `relay` | `uniform` | `1e-3` | 18 | `X` | `..._288_12_18_memory_X` |
-| `bb_72_12_6_uniform_r6_Z.stim` | `relay` | `uniform` | `1e-3` | 6 | `Z` | `..._72_12_6_memory_Z` |
-| `gross_144_12_12_uniform_r12_Z.stim` | `relay` | `uniform` | `1e-3` | 12 | `Z` | `..._144_12_12_memory_Z` |
-| `double_gross_288_12_18_uniform_r18_Z.stim` | `relay` | `uniform` | `1e-3` | 18 | `Z` | `..._288_12_18_memory_Z` |
-
-### 2.2 Mitten Codes (`benchmark/stim_mitten/`)
-
-| File (`benchmark/stim_mitten/`) | Source | Schedule | Depth | $p$ | Rounds | Basis |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `mitten_90_18_6_C3xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
-| `mitten_90_18_6_C3xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
-| `mitten_150_30_8_C5xS3_custom_r5_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 5 | `Z` |
-| `mitten_150_30_8_C5xS3_hef_r5_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 5 | `Z` |
-| `mitten_210_42_8_C7xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
-| `mitten_210_42_8_C7xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
-| `mitten_270_54_10_C9xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
-| `mitten_270_54_10_C9xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
-| `mitten_330_66_6_C11xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
-| `mitten_330_66_6_C11xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
-
-The `quits` Mitten circuits are $Z$-basis memory experiments, whose logical observables are flipped by $X$-type errors;
-their circuit-level distance cannot exceed the code's $d_X$, which is 6 for `mitten_210` and 4 for `mitten_330`
-(Section 1).
-
-The circuits of the codes of arXiv:2607.28795 with the published hook-free schedule (Origins, item 2) are generated by
-`make_yarn_mitten_circuits.py` in this directory: memory in both bases, $r = d$ rounds (the cycles after the first in a
-`REPEAT` block), the noise of `dist_m4ri.add_noise(p=0.001)`; the qubits are the $n$ data qubits and one ancilla per
-check.
-
-| Files (`benchmark/stim_mitten/`) | Code | Rounds | Qubits | Detectors | Observables |
-| :--- | :--- | ---: | ---: | ---: | ---: |
-| `yarn_mitten_150_30_10_hookfree_r10_{X,Z}.stim` | $[[150, 30, 10]]$ | 10 | 270 | 1,200 | 30 |
-| `yarn_mitten_200_40_12_hookfree_r12_{X,Z}.stim` | $[[200, 40, 12]]$ | 12 | 360 | 1,920 | 40 |
-| `yarn_mitten_300_60_14_hookfree_r14_{X,Z}.stim` | $[[300, 60, 14]]$ | 14 | 540 | 3,360 | 60 |
-| `yarn_mitten_500_100_16_hookfree_r16_{X,Z}.stim` | $[[500, 100, 16]]$ | 16 | 900 | 6,400 | 100 |
-| `yarn_mitten_540_108_18_hookfree_r18_{X,Z}.stim` | $[[540, 108, 18]]$ | 18 | 972 | 7,776 | 108 |
-| `yarn_mitten_630_126_20_hookfree_r20_{X,Z}.stim` | $[[630, 126, 20]]$ | 20 | 1,134 | 10,080 | 126 |
-| `yarn_mitten_780_156_22_hookfree_r22_{X,Z}.stim` | $[[780, 156, 22]]$ | 22 | 1,404 | 13,728 | 156 |
-| `yarn_mitten_975_195_24_hookfree_r24_{X,Z}.stim` | $[[975, 195, 24]]$ | 24 | 1,755 | 18,720 | 195 |
-| `yarn_smitten_300_60_9_hookfree_r9_{X,Z}.stim` | $[[300, 60, 9]]$ | 9 | 540 | 2,160 | 60 |
-| `yarn_smitten_330_66_12_hookfree_r12_{X,Z}.stim` | $[[330, 66, 12]]$ | 12 | 594 | 3,168 | 66 |
-| `yarn_smitten_600_120_14_hookfree_r14_{X,Z}.stim` | $[[600, 120, 14]]$ | 14 | 1,080 | 6,720 | 120 |
-| `yarn_smitten_600_120_16_hookfree_r16_{X,Z}.stim` | $[[600, 120, 16]]$ | 16 | 1,080 | 7,680 | 120 |
-| `yarn_smitten_840_168_18_hookfree_r18_{X,Z}.stim` | $[[840, 168, 18]]$ | 18 | 1,512 | 12,096 | 168 |
-
-The code parameters are the nominal ones (Section 1 for the distances); the codes `yarn_smitten_1200_240_20` and
-`yarn_ablp_560_112_14` have no published schedule.
-
-### 2.3 2D Local Torus BB Circuits (`benchmark/stim_torus/`)
-
-| File (`benchmark/stim_torus/`) | Nominal $[[n, k, d]]$ | Basis | Notes |
-| :--- | :--- | :--- | :--- |
-| `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim` | $[[60, 8, 14]]$ | `X` | Noiseless (`tmp/`) |
-| `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_Z.stim` | $[[60, 8, 14]]$ | `Z` | Noiseless (`tmp/`) |
-| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w12p_n120_k8_d15_X.stim` | $[[120, 8, 15]]$ | `X` | Noiseless (`tmp/`) |
-| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w12p_n120_k8_d15_Z.stim` | $[[120, 8, 15]]$ | `Z` | Noiseless (`tmp/`) |
-| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_X.stim` | $[[200, 16, 16]]$ | `X` | Noiseless (`tmp/`) |
-| `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_Z.stim` | $[[200, 16, 16]]$ | `Z` | Noiseless (`tmp/`) |
-| `ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_X.stim` | $[[200, 8, 17]]$ | `X` | Noiseless (`tmp/`) |
-| `ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_Z.stim` | $[[200, 8, 17]]$ | `Z` | Noiseless (`tmp/`) |
-
-The nominal code parameters are taken from the file names; the code distances of the torus codes have not been
-verified yet (no check matrices are included).
-
-### 2.4 SHYPS Codes (`benchmark/stim_shyps/`)
-
-| File (`benchmark/stim_shyps/`) | Code | $r$ | Rounds | Basis | Source file |
-| :--- | :--- | ---: | ---: | :--- | :--- |
-| `shyps_225_16_8_r9_Z.stim` | $[[225, 16, 8]]$ | 4 | 9 | `Z` | `shyps_r4_..._Z_detectors_circuit_p_0.001.stim` |
-| `shyps_961_25_16_r17_Z.stim` | $[[961, 25, 16]]$ | 5 | 17 | `Z` | `shyps_r5_..._Z_detectors_circuit_p_0.001.stim` |
-
-SHYPS codes are subsystem codes: each round measures the $Z$- and the $X$-type gauge operators, and the circuits have
-detectors of the $Z$ type only (Origins, item 4).
-
-### 2.5 2BGA Codes (`benchmark/stim_2bga/`)
-
-| File (`benchmark/stim_2bga/`) | Code | Rounds | Qubits | Detectors | Observables | Basis |
-| :--- | :--- | ---: | ---: | ---: | ---: | :--- |
-| `2bga_102_20_10_C51_idlefree_r10_X.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `X` |
-| `2bga_102_20_10_C51_idlefree_r10_Z.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `Z` |
-| `2bga_120_24_10_C30xC2_idlefree_r10_X.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `X` |
-| `2bga_120_24_10_C30xC2_idlefree_r10_Z.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `Z` |
-
-The source files are `w9_102_20_10_g51_1_2859_memory_{x,z}basis_r10_idlefree_p0.001.stim` and
-`w9t_120_24_10_g60_13_48f7b6_memory_{x,z}basis_r10_idlefree_p0.001.stim` in `data/circuits/` of the database (Origins,
-item 5). The qubits are numbered as in the database: data qubit $j < |G|$ in the left block and $|G| + j$ in the right
-block, and the ancilla of check $i$ (row $i$ of `_Hx.mtx` or `_Hz.mtx` in `css/`) is $n + i$ for an $X$ check and
-$n + |G| + i$ for a $Z$ check; in the first round, the CX gates of every ancilla address exactly the support of its
-check. Each circuit has the detectors of its own basis only; the full DEM has 8,262 (`2bga_102`) or 9,720
-(`2bga_120`) error mechanisms.
-
-### 2.6 Circuit-Level Distances
-
-The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable
-logical error, i.e., the distance of the full DEM (all detectors).
-- Values without a mark: the full DEM, computed by `dist_m4ri` 0.14.0 in the overnight benchmark (Section 5;
-  `method=3`, 128 threads), which drops the minority-basis detectors exactly (Section 3). An exact value is certified
-  by CC: in under 6 s, except 179 s for `gross` and 182 s for `mitten_270 custom`.
-- The brackets of `double_gross` and `bb_360` are from Section 6: the lower bounds are certified with a code-sized model
-  of the circuit (Section 6.3), and the upper bounds are codewords of the full DEM found by RW (Sections 6.1, 6.2).
-- The uniform-noise `gross` circuit and the torus circuits were re-run on their full DEMs with the current noise on
-  2026-10-15, and the `yarn_mitten_150` circuits, the $Z$-basis `bb_72` uniform-noise circuit, and `shyps_225` on
-  2026-10-20 (`method=3` of 0.14.7, default threads): all values certified by CC, in 0.4–168 s, and in 114 s ($X$)
-  and 291 s ($Z$) for `yarn_mitten_150` and 20 s for `shyps_225`.
-- (s): the stripped DEM (minority-basis detectors removed), computed by earlier versions in 30 s `method=3` runs on 16
-  threads. The stripped DEM keeps a subset of the detectors, so its distance is a lower bound on the circuit distance
-  (for a bracket, only its lower end applies to the circuit).
-- For the noiseless torus templates, the noise of `add_noise(p=0.001)` is added; the circuit distance depends on the
-  noise model (which faults are included), but not on $p$. Since 0.14.0, `add_noise` also adds `DEPOLARIZE2` after
-  `CZSWAP`, which these circuits use for routing; the torus values are for this noise.
-- $\le w$ (the `2bga_*` circuits, 2026-11-05): the weight of the lightest logical error found by RW of 0.15.2 in the
-  full DEM of the circuit with its own noise (8 s on 16 threads), not certified; it is the circuit-level distance 8
-  given in the headers of the files (Section 2.5).
-- "–": not computed yet; "n/a": no circuit for this basis.
-
-| Circuit (`.stim` file name without `_X`/`_Z`) | $X$ basis | $Z$ basis |
-| :--- | :--- | :--- |
-| `bb_72_12_6_si1000_r6` | 6 | 6 (s) |
-| `bb_90_8_10_si1000_r10` | 8 | – |
-| `bb_108_8_10_si1000_r10` | 8 | – |
-| `gross_144_12_12_si1000_r12` | 10 | – |
-| `double_gross_288_12_18_si1000_r18` | [12, 18] | – |
-| `bb_360_12_24_si1000_r24` | [12, 23] | – |
-| `bb_756_16_34_si1000_r34` | – | – |
-| `bb_72_12_6_uniform_r6` | 6 (s) | 6 |
-| `gross_144_12_12_uniform_r12` | 10 | – |
-| `double_gross_288_12_18_uniform_r18` | – | – |
-| `mitten_90_18_6_C3xS3_custom_r4` | n/a | 5 |
-| `mitten_90_18_6_C3xS3_hef_r4` | n/a | 4 |
-| `mitten_150_30_8_C5xS3_custom_r5` | n/a | 7 |
-| `mitten_150_30_8_C5xS3_hef_r5` | n/a | 5 |
-| `mitten_210_42_8_C7xS3_custom_r4` | n/a | 6 |
-| `mitten_210_42_8_C7xS3_hef_r4` | n/a | 5 |
-| `mitten_270_54_10_C9xS3_custom_r4` | n/a | 9 |
-| `mitten_270_54_10_C9xS3_hef_r4` | n/a | 7 |
-| `mitten_330_66_6_C11xS3_custom_r4` | n/a | 4 |
-| `mitten_330_66_6_C11xS3_hef_r4` | n/a | 4 |
-| `yarn_mitten_150_30_10_hookfree_r10` | **8** | **8** |
-| `yarn_mitten_*`, `yarn_smitten_*` (the other 12 codes, Section 2.2) | – | – |
-| `shyps_225_16_8_r9` | n/a | 8 |
-| `shyps_961_25_16_r17` | n/a | – |
-| `NNEESEEESEENN_L3_torus_..._n60_k8_d14` | 6 | 6 |
-| `NEENNWNWNNEEN_L3_torus_..._n120_k8_d15` | 6 | – |
-| `NEENNWNWNNEEN_L3_torus_..._n200_k16_d16` | 8 | – |
-| `ENENESESENENE_L3_torus_..._n200_k8_d17` | 8 | – |
-| `2bga_102_20_10_C51_idlefree_r10` | $\le 8$ | $\le 8$ |
-| `2bga_120_24_10_C30xC2_idlefree_r10` | $\le 8$ | $\le 8$ |
-
-The circuit-level distances are often below the code distances in the file names. For example, the gross-code circuit
-has distance 10 (also with the uniform noise), consistent with the circuit-level distance $\le 10$ reported for the IBM
-syndrome-extraction circuit, and the BB circuits with $d = 10$ have distance 8. For the Mitten codes, the
-"hook-error-free" schedule of `quits` has a lower circuit-level distance than the `custom` schedule (4 vs 5, 5 vs 7,
-5 vs 6, and 7 vs 9 for `mitten_90`, `mitten_150`, `mitten_210`, and `mitten_270`; 4 with both schedules for
-`mitten_330`). The `custom` schedule reaches the code's $d_X$ for `mitten_210` (6) and `mitten_330` (4), and $d_X - 1$
-for `mitten_90`, `mitten_150`, and `mitten_270`. With the published hook-free schedule, the circuit-level distance of
-`yarn_mitten_150_30_10` is 8 in both bases, two below the code distance 10; the paper's DEM of this circuit (Origins,
-item 2) has the same error mechanisms, and RW finds 117 distinct logical errors of weight 8 in it. A weight-8 logical
-error of the $X$-basis circuit consists of four hook errors on $Z$-check ancillas in the last cycle ($Z$ errors which
-spread to the data qubits of the later CX gates of their checks) and four single data-qubit $Z$ errors. The SHYPS
-circuit `shyps_225_16_8_r9_Z` keeps the code distance 8.
-
----
-
-## 3. Full DEMs and Their Exact Reduction
-
-In circuit-level noise models using `DEPOLARIZE2(p)`, cross-term two-qubit Pauli errors (such as $X \otimes Z$,
-$Y \otimes X$, $Y \otimes Z$, $Y \otimes Y$) occur with probability $p/15 = O(p)$, the same order as single-type errors
-($X \otimes X$ or $Z \otimes Z$). Consequently, the full DEM couples $X$-detectors and $Z$-detectors into a single
-large parity-check matrix with 6–8 times more distinct error columns than a single-basis projection. Since version
-0.14.0, `dist_m4ri` merges the equal columns of a DEM and drops detectors when this is verified to be exact
-(`drop=auto`, the default; see "Dropping DEM Detectors" in the README): for every circuit below with detectors of both
-bases (all but the SHYPS circuits, whose detectors are all of the $Z$ type), it finds exactly the minority-basis
-detectors, and the matrix searched is the stripped DEM with its equal columns merged (the search for the detectors to
-drop takes 0.02–0.4 s, and 1.2 s for `bb_756`, with 0.14.0). Hence the distance of the full DEM, the circuit-level
-distance, is found as fast as that of the stripped DEM, which is only a lower bound on it.
-
-To avoid storing large pre-generated `.dem` files in the repository, DEMs can be generated on the fly from the `.stim`
-files (noise of strength `p_noise=0.001` is added to the noiseless templates; `--force-noise` replaces the noise of a
-circuit by this uniform noise):
-```python
-import dist_m4ri
-
-# the full DEM of the circuit, reduced exactly by the binary; also save the reduced DEM and its maps to the full one
-dist, bounds = dist_m4ri.compute_dem_distance(
-    circuit="benchmark/stim_torus/NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim",
-    out_dem="tmp/torus_n60_X_full.dem", out_reduced="tmp/torus_n60_X")  # tmp/torus_n60_X_red.dem, _red.json
-```
-
-| Stim circuit | Basis | Full (dets x errs) | Stripped | Searched | $k$ |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `mitten_90_18_6_C3xS3_custom_r4_Z` | `Z` | 360 x 23,394 | 216 x 3,330 | 216 x 2,970 | 18 |
-| `mitten_90_18_6_C3xS3_hef_r4_Z` | `Z` | 360 x 22,410 | 216 x 3,330 | 216 x 2,970 | 18 |
-| `mitten_150_30_8_C5xS3_custom_r5_Z` | `Z` | 720 x 47,700 | 420 x 6,660 | 420 x 5,910 | 30 |
-| `mitten_150_30_8_C5xS3_hef_r5_Z` | `Z` | 720 x 46,130 | 420 x 6,660 | 420 x 5,910 | 30 |
-| `mitten_210_42_8_C7xS3_custom_r4_Z` | `Z` | 840 x 54,726 | 504 x 7,770 | 504 x 6,930 | 42 |
-| `mitten_210_42_8_C7xS3_hef_r4_Z` | `Z` | 840 x 52,437 | 504 x 7,665 | 504 x 6,825 | 42 |
-| `mitten_270_54_10_C9xS3_custom_r4_Z` | `Z` | 1,080 x 70,254 | 648 x 9,990 | 648 x 8,910 | 54 |
-| `mitten_270_54_10_C9xS3_hef_r4_Z` | `Z` | 1,080 x 67,482 | 648 x 9,990 | 648 x 8,910 | 54 |
-| `mitten_330_66_6_C11xS3_custom_r4_Z` | `Z` | 1,320 x 85,932 | 792 x 12,210 | 792 x 10,890 | 66 |
-| `mitten_330_66_6_C11xS3_hef_r4_Z` | `Z` | 1,320 x 81,642 | 792 x 11,880 | 792 x 10,560 | 66 |
-| `bb_72_12_6_si1000_r6_X` | `X` | 432 x 17,280 | 252 x 2,664 | 252 x 2,232 | 12 |
-| `bb_72_12_6_si1000_r6_Z` | `Z` | 432 x 17,244 | 252 x 2,664 | 252 x 2,232 | 12 |
-| `bb_90_8_10_si1000_r10_X` | `X` | 900 x 37,440 | 495 x 5,490 | 495 x 4,590 | 8 |
-| `bb_90_8_10_si1000_r10_Z` | `Z` | 900 x 37,395 | 495 x 5,490 | 495 x 4,590 | 8 |
-| `bb_108_8_10_si1000_r10_X` | `X` | 1,080 x 44,928 | 594 x 6,588 | 594 x 5,508 | 8 |
-| `bb_108_8_10_si1000_r10_Z` | `Z` | 1,080 x 44,874 | 594 x 6,588 | 594 x 5,508 | 8 |
-| `gross_144_12_12_si1000_r12_X` | `X` | 1,728 x 72,576 | 936 x 10,512 | 936 x 8,784 | 12 |
-| `gross_144_12_12_si1000_r12_Z` | `Z` | 1,728 x 72,504 | 936 x 10,512 | 936 x 8,784 | 12 |
-| `double_gross_288_12_18_si1000_r18_X` | `X` | 5,184 x 221,184 | 2,736 x 31,392 | 2,736 x 26,208 | 12 |
-| `double_gross_288_12_18_si1000_r18_Z` | `Z` | 5,184 x 221,040 | 2,736 x 31,392 | 2,736 x 26,208 | 12 |
-| `bb_360_12_24_si1000_r24_X` | `X` | 8,640 x 371,520 | 4,500 x 52,200 | 4,500 x 43,560 | 12 |
-| `bb_360_12_24_si1000_r24_Z` | `Z` | 8,640 x 371,340 | 4,500 x 52,200 | 4,500 x 43,560 | 12 |
-| `bb_756_16_34_si1000_r34_X` | `X` | 25,704 x 1,112,832 | 13,230 x 154,980 | 13,230 x 129,276 | 16 |
-| `bb_756_16_34_si1000_r34_Z` | `Z` | 25,704 x 1,112,454 | 13,230 x 154,980 | 13,230 x 129,276 | 16 |
-| `bb_72_12_6_uniform_r6_X` | `X` | 432 x 16,200 | 252 x 2,232 | 252 x 2,232 | 12 |
-| `gross_144_12_12_uniform_r12_X` | `X` | 1,728 x 67,824 | 936 x 8,784 | 936 x 8,784 | 12 |
-| `double_gross_288_12_18_uniform_r18_X` | `X` | 5,184 x 206,496 | 2,736 x 26,208 | 2,736 x 26,208 | 12 |
-| `bb_72_12_6_uniform_r6_Z` | `Z` | 432 x 16,164 | 252 x 2,232 | 252 x 2,232 | 12 |
-| `gross_144_12_12_uniform_r12_Z` | `Z` | 1,728 x 67,752 | 936 x 8,784 | 936 x 8,784 | 12 |
-| `double_gross_288_12_18_uniform_r18_Z` | `Z` | 5,184 x 206,352 | 2,736 x 26,208 | 2,736 x 26,208 | 12 |
-| `yarn_mitten_150_30_10_hookfree_r10_X` | `X` | 1,200 x 80,295 | 660 x 11,100 | 660 x 9,600 | 30 |
-| `yarn_mitten_150_30_10_hookfree_r10_Z` | `Z` | 1,200 x 80,445 | 660 x 11,250 | 660 x 9,750 | 30 |
-| `yarn_mitten_200_40_12_hookfree_r12` | `X`, `Z` | 1,920 x 130,392 | 1,040 x 17,960 | 1,040 x 15,560 | 40 |
-| `yarn_mitten_300_60_14_hookfree_r14_X` | `X` | 3,360 x 230,010 | 1,800 x 31,380 | 1,800 x 27,180 | 60 |
-| `yarn_mitten_300_60_14_hookfree_r14_Z` | `Z` | 3,360 x 230,040 | 1,800 x 31,380 | 1,800 x 27,180 | 60 |
-| `yarn_mitten_500_100_16_hookfree_r16_X` | `X` | 6,400 x 440,800 | 3,400 x 59,700 | 3,400 x 51,700 | 100 |
-| `yarn_mitten_500_100_16_hookfree_r16_Z` | `Z` | 6,400 x 440,780 | 3,400 x 59,700 | 3,400 x 51,700 | 100 |
-| `yarn_mitten_540_108_18_hookfree_r18_X` | `X` | 7,776 x 538,056 | 4,104 x 72,468 | 4,104 x 62,748 | 108 |
-| `yarn_mitten_540_108_18_hookfree_r18_Z` | `Z` | 7,776 x 538,026 | 4,104 x 72,468 | 4,104 x 62,748 | 108 |
-| `yarn_mitten_630_126_20_hookfree_r20` | `X`, `Z` | 10,080 x 700,056 | 5,292 x 93,870 | 5,292 x 81,270 | 126 |
-| `yarn_mitten_780_156_22_hookfree_r22` | `X`, `Z` | 13,728 x 956,280 | 7,176 x 127,764 | 7,176 x 110,604 | 156 |
-| `yarn_mitten_975_195_24_hookfree_r24` | `X`, `Z` | 18,720 x 1,307,265 | 9,750 x 174,135 | 9,750 x 150,735 | 195 |
-| `yarn_smitten_300_60_9_hookfree_r9` | `X`, `Z` | 2,160 x 143,940 | 1,200 x 20,280 | 1,200 x 17,580 | 60 |
-| `yarn_smitten_330_66_12_hookfree_r12` | `X`, `Z` | 3,168 x 215,160 | 1,716 x 29,634 | 1,716 x 25,674 | 66 |
-| `yarn_smitten_600_120_14_hookfree_r14` | `X`, `Z` | 6,720 x 460,080 | 3,600 x 62,760 | 3,600 x 54,360 | 120 |
-| `yarn_smitten_600_120_16_hookfree_r16` | `X`, `Z` | 7,680 x 528,960 | 4,080 x 71,640 | 4,080 x 62,040 | 120 |
-| `yarn_smitten_840_168_18_hookfree_r18` | `X`, `Z` | 12,096 x 836,976 | 6,384 x 112,728 | 6,384 x 97,608 | 168 |
-| `shyps_225_16_8_r9_Z` | `Z` | 600 x 10,125 | 600 x 10,125 | 600 x 8,325 | 16 |
-| `shyps_961_25_16_r17_Z` | `Z` | 3,596 x 81,685 | 3,596 x 81,685 | 3,596 x 66,309 | 25 |
-| `NNEESEEESEENN_..._n60_k8_d14_X` | `X` | 120 x 10,710 | 90 x 1,500 | 90 x 1,500 | 8 |
-| `NNEESEEESEENN_..._n60_k8_d14_Z` | `Z` | 120 x 10,710 | 90 x 1,500 | 90 x 1,500 | 8 |
-| `NEENNWNWNNEEN_..._n120_k8_d15_X` | `X` | 240 x 21,120 | 180 x 3,000 | 180 x 3,000 | 8 |
-| `NEENNWNWNNEEN_..._n120_k8_d15_Z` | `Z` | 240 x 21,120 | 180 x 3,000 | 180 x 3,000 | 8 |
-| `NEENNWNWNNEEN_..._n200_k16_d16_X` | `X` | 400 x 35,200 | 300 x 5,000 | 300 x 5,000 | 16 |
-| `NEENNWNWNNEEN_..._n200_k16_d16_Z` | `Z` | 400 x 35,200 | 300 x 5,000 | 300 x 5,000 | 16 |
-| `ENENESESENENE_..._n200_k8_d17_X` | `X` | 400 x 29,200 | 300 x 4,800 | 300 x 4,800 | 8 |
-| `ENENESESENENE_..._n200_k8_d17_Z` | `Z` | 400 x 29,200 | 300 x 4,800 | 300 x 4,800 | 8 |
-
-The sizes are those of the DEMs generated by `dist_m4ri.py` 0.14.0 (stim 1.16; the torus templates with the noise of
-`add_noise`, which since 0.14.0 includes `DEPOLARIZE2` after `CZSWAP`: their full DEMs have about twice as many columns
-as with the noise of the earlier versions, and the same stripped DEMs). The full DEMs of the `si1000` and Mitten
-circuits have 5–7% equal columns, and their stripped DEMs 11–16% (merged by the binary); the DEMs of the uniform-noise
-circuits and of the torus templates have none. The rows of the circuits added on 2026-10-20 are from `dist_m4ri.py`
-0.14.7 (the same DEM generation and reduction): the full DEMs of the `yarn_*` circuits have 5% equal columns (stim does
-not merge the equal errors of different repetitions of a `REPEAT` block) and their stripped DEMs 13–14%; the SHYPS
-DEMs have 18–19%, and no detector is dropped.
-
----
-
-## 4. Scaling with the Number of Threads (`benchmark/figures/`)
-
-Wall time and speedup $T(1)/T(p)$ of `dist_m4ri` for $p = 1, \dots, 128$ threads on a two-socket AMD EPYC 7B13 server
-(2 x 32 cores, 128 logical CPUs with SMT, 236 GB of memory), with `nothrottle=1`, `threads=p`, and `taskset` to the
-logical CPUs $0..p-1$ (socket 0 first, then socket 1, then the SMT siblings for $p > 64$; the gray line marks $p = 64$,
-one thread per physical core). Each run does a fixed amount of work: `method=1` a fixed number of RW `steps` with
-`min_hits=0`, `method=2` all CC rounds up to `wmax`, and `method=3` both (or, with the default parameters, the search
-for the exact distance). Versions: 0.15.2 (2026-10-28, `scratch/bench_0.15.2_scaling/`) and those of Section 5: 0.14.0,
-0.12.2, 0.9.0 (pull request #26), and the legacy single-threaded `dist_m4ri_old` (one thread; built from the 0.14.0
-sources, so that it shares the input stage, e.g., the merging of equal columns and the dropping of detectors of a DEM).
-The runs of 0.9.0 were limited to 600 s per case and method (both older versions: 400 s on the full DEM), from many
-threads to few, so that some of the runs with few threads are missing; an open marker is a run stopped at the
-wall-clock limit. The times include reading the input (median of repeated runs for the fast cases). Since 0.14.4, an RW
-step also checks pairs of non-pivot columns (Section 8): a fixed number of steps takes 1.2–1.6 times longer with 0.15.2
-than with 0.14.0, but far fewer steps are needed to find a light codeword. The text below gives the times of 0.14.0,
-then (from "0.15.2:" on) those of 0.15.2.
-
-![Scaling for the gross code](figures/scaling_gross_css.png)
-
-**gross** $[[144, 12, 12]]$, one sector (`css/gross_144_12_12_Hx.mtx` with `_Hz.mtx`; `method=1`: `steps=3000000`,
-`method=2`: `wmax=11`, `method=3`: default parameters). RW takes 50 s on one thread (as in 0.12.2; 0.9.0: 96 s) and
-scales almost linearly up to 64 threads (58x); the SMT siblings add another 40% (80x at 128 threads). CC up to $w = 11$
-takes 0.067 s on one thread, 3.3x less than 0.12.2 and 75x less than 0.9.0; beyond 8–16 threads, the run (15–25 ms) is
-limited by the start-up of the threads. 0.15.2: RW 76 s on one thread (the pairs; the same scaling), CC as with 0.14.0
-(0.067 s), and `method=3` 0.093 s on one thread instead of 0.16 s.
-
-![Scaling for the double-gross code](figures/scaling_dgross_css.png)
-
-**double-gross** $[[288, 12, 18]]$, one sector (`steps=1000000`; `wmax=15`; `steps=500000 wmax=15`). RW scales to 80x
-at 128 threads (55 s on one thread; 0.9.0: 127 s). CC up to $w = 15$ takes 10 s on one thread, 3.9x less than 0.12.2
-(the last cluster extension is now looked up in a hash table), and 0.16 s on 128 threads (speedup 62); 0.9.0 needs
-472 s for this CC run on 128 threads. `method=3`: 0.46 s on 128 threads (0.12.2: 0.75 s; 0.9.0: 551 s). 0.15.2: CC up
-to $w = 15$ takes 3.1 s on one thread, 3.2x less than 0.14.0 (the branch and bound, Section 9), and 0.072 s on 128
-threads; RW 79 s on one thread (the pairs); `method=3` (500000 steps) 43 s on one thread, as 0.14.0, and 0.63 s on 128
-threads.
-
-![Scaling for the double-gross circuit DEM](figures/scaling_dgross_dem.png)
-
-**double-gross circuit** (`stim_bb/double_gross_288_12_18_si1000_r18_X.stim`, stripped DEM $2736 \times 31392$, merged
-to 26208 columns by 0.14.0; `steps=300`; `wmax=5`; `steps=150 wmax=5`). RW takes 20.7 s on one thread, 2.8x less than
-0.12.2 (1.2x from merging the equal columns, 2.3x from the faster RW elimination on large matrices); on this large
-matrix it is limited by the memory bandwidth (dense copies of $H$ and $H^T$ per thread), at most about 15–20x, at 64
-threads on both sockets, and the SMT siblings of socket 0 ($p = 96$) make it slower. CC up to $w = 5$ takes 0.61 s on
-one thread, 21x less than 0.12.2 (1.8x from merging, 11x from the faster CC), and 0.12–0.15 s from 16 threads on.
-0.15.2: RW 25 s on one thread (the pairs), at most 11x faster on many threads (0.14.0: 18x); CC up to $w = 5$ 0.80 s on
-one thread (0.63 s with `cc_prune=0`: on such small rounds the walk is faster than the branch and bound) and 0.13–0.20 s
-from 16 threads on.
-
-![Scaling for the full DEM of the bb_72 circuit](figures/scaling_bb_dem_full.png)
-
-**bb_72 circuit, full DEM** (`stim_bb/bb_72_12_6_si1000_r6_X.stim`, $432 \times 17280$; `steps=20000`; `wmax=5`;
-default parameters, i.e., the exact distance 6). 0.14.0 reduces the full DEM exactly to $252 \times 2232$ (the stripped
-DEM, merged): RW takes 5.6 s on one thread instead of 99 s (0.12.2) and 163 s (0.9.0, two threads), and 0.18 s on 128
-threads instead of 2.1 s and 7.2 s. CC up to $w = 5$ takes 0.11 s on one thread, against 176 s for 0.12.2 on four
-threads and more than 400 s for 0.9.0 on 128 threads; on 128 threads, 0.088 s against 9.8 s for 0.12.2 (112x). The
-reduced problem is so small that more threads hardly help CC (0.08–0.11 s); the exact distance takes 0.09–0.24 s.
-0.15.2: RW 8.9 s on one thread (the pairs) and 0.27 s on 128 threads; CC as with 0.14.0 (0.12 s on one thread, 0.10 s
-on 128), the exact distance 0.34 s on one thread and 0.12 s on 128.
-
----
-
-## 5. Overnight Benchmark of 0.14.0 (2026-10-11)
-
-Versions: 0.14.0 (commit `40faf58`), 0.12.2 (`528f35f`, the version of the previous benchmark), and 0.9.0 (`1f46277`,
-pull request #26, 2026-09-18), on the server of Section 4. All versions read the same DEM files (the components of
-decomposed errors summed mod 2, so that the older DEM readers read the same matrices), identical to the inputs of the
-previous benchmark of 0.12.1; 1547 runs in 7 h, plus 40 runs of the ablation (Section 5.5). The scaling runs are in
-Section 4.
-
-### 5.1 Certified circuit distances (0.14.0, full DEMs, `method=3`, 128 threads)
-
-| Circuit | full DEM | searched | $d$ | time (s) | 0.12.1: stripped DEM |
-| :--- | :--- | :--- | :---: | ---: | :--- |
-| `mitten_90_18_6_C3xS3_custom_r4_Z` | 360 x 23394 | 216 x 2970 | 5 | 0.18 | 5 in 0.06 s |
-| `mitten_90_18_6_C3xS3_hef_r4_Z` | 360 x 22410 | 216 x 2970 | 4 | 0.18 | 4 in 0.05 s |
-| `mitten_150_30_8_C5xS3_custom_r5_Z` | 720 x 47700 | 420 x 5910 | 7 | 0.56 | 7 in 8.0 s |
-| `mitten_150_30_8_C5xS3_hef_r5_Z` | 720 x 46130 | 420 x 5910 | 5 | 0.40 | 5 in 0.15 s |
-| `mitten_210_42_8_C7xS3_custom_r4_Z` | 840 x 54726 | 504 x 6930 | 6 | 0.48 | 6 in 0.48 s |
-| `mitten_210_42_8_C7xS3_hef_r4_Z` | 840 x 52437 | 504 x 6825 | 5 | 0.50 | 5 in 0.17 s |
-| `mitten_270_54_10_C9xS3_custom_r4_Z` | 1080 x 70254 | 648 x 8910 | 9 | 182 | 9 in 7700 s |
-| `mitten_270_54_10_C9xS3_hef_r4_Z` | 1080 x 67482 | 648 x 8910 | 7 | 5.8 | 7 in 184 s |
-| `mitten_330_66_6_C11xS3_custom_r4_Z` | 1320 x 85932 | 792 x 10890 | 4 | 0.70 | 4 in 0.22 s |
-| `mitten_330_66_6_C11xS3_hef_r4_Z` | 1320 x 81642 | 792 x 10560 | 4 | 0.76 | 4 in 0.21 s |
-| `bb_72_12_6_si1000_r6_X` | 432 x 17280 | 252 x 2232 | 6 | 0.11 | |
-| `bb_90_8_10_si1000_r10_X` | 900 x 37440 | 495 x 4590 | 8 | 0.68 | |
-| `bb_108_8_10_si1000_r10_X` | 1080 x 44928 | 594 x 5508 | 8 | 0.71 | |
-| `gross_144_12_12_si1000_r12_X` | 1728 x 72576 | 936 x 8784 | 10 | 179 | |
-| `double_gross_288_12_18_si1000_r18_X` | 5184 x 221184 | 2736 x 26208 | [11, 19] | 10211 | |
-| `NNEESEEESEENN_..._n60_k8_d14_X` | 120 x 10710 | 90 x 1500 | 6 | 0.15 | |
-
-- All ten Mitten distances are now certified on the full DEMs. `mitten_270 custom` took 182 s, against 7700 s for the
-  stripped DEM with 0.12.1, when its full DEM could not be certified at all (CC on its 70254 columns did not close the
-  bracket $[9, 10]$ in 2.8 h).
-- The double-gross circuit: CC certified $d_{\min} = 11$ (all rounds up to $w = 10$) and RW found a codeword of weight
-  19; the run ended at 2.8 h, since the CC round $w = 11$ was predicted not to finish in the time left. The earlier
-  brackets were $[4, 24]$ for the stripped DEM and $[4, 53]$ for the full one. Section 6 improves the bracket to
-  $[12, 18]$.
-
-### 5.2 Full DEMs: time to a codeword of the minimum weight
-
-The time of RW (`method=1`, `wmin=d`: the run stops at the first codeword of weight at most $d$; 128 threads,
-`nothrottle=1`, timeout 300 s) on the full DEMs: 0.14.0 reduces them exactly, the older versions work on the full
-matrices. "> 300 (w)": no codeword of weight $d$ found, $w$ is the lightest weight found. The figure of Section 8.1
-shows these times together with those of 0.14.3 and 0.14.5.
-
-| Circuit | $d$ | full DEM | 0.14.0 | 0.12.2 | 0.9.0 |
-| :--- | :---: | :--- | ---: | ---: | ---: |
-| `bb_72_12_6_si1000_r6_X` | 6 | 432 x 17280 | 0.089 | 0.13 | 0.32 |
-| `mitten_90_18_6_C3xS3_custom_r4_Z` | 5 | 360 x 23394 | 0.16 | 0.21 | 0.44 |
-| `mitten_90_18_6_C3xS3_hef_r4_Z` | 4 | 360 x 22410 | 0.17 | 0.23 | 0.44 |
-| `mitten_150_30_8_C5xS3_custom_r5_Z` | 7 | 720 x 47700 | 0.36 | 52.3 | > 300 (13) |
-| `mitten_150_30_8_C5xS3_hef_r5_Z` | 5 | 720 x 46130 | 0.39 | 0.84 | 44.8 |
-| `mitten_210_42_8_C7xS3_custom_r4_Z` | 6 | 840 x 54726 | 0.42 | 0.84 | 37.2 |
-| `mitten_210_42_8_C7xS3_hef_r4_Z` | 5 | 840 x 52437 | 0.47 | 6.77 | 8.60 |
-| `mitten_270_54_10_C9xS3_custom_r4_Z` | 9 | 1080 x 70254 | 1.36 | > 300 (10) | > 300 (307) |
-| `mitten_270_54_10_C9xS3_hef_r4_Z` | 7 | 1080 x 67482 | 1.12 | > 300 (8) | > 300 (197) |
-| `mitten_330_66_6_C11xS3_custom_r4_Z` | 4 | 1320 x 85932 | 0.73 | 2.11 | 2.31 |
-| `mitten_330_66_6_C11xS3_hef_r4_Z` | 4 | 1320 x 81642 | 0.73 | 2.15 | 2.10 |
-
-0.14.0 finds a minimum-weight codeword in at most 1.4 s for all eleven circuits (including reading the DEM and the
-reduction); 0.12.2 needs up to 52 s and finds none for the two `mitten_270` circuits in 300 s, and 0.9.0 misses three.
-The reduction makes each RW step cheaper (about 8 times fewer columns, and lighter ones) and much more likely to find a
-codeword of weight $w$: the probability that an information set contains one scales roughly as $(r/n)^{w-1}$ (rank
-$r$, $n$ columns).
-
-### 5.3 Default parameters (no `threads=`, throttling on, no `taskset`)
-
-Wall time in s (median of the repeated runs for the fast cases); the arguments are those of the scaling runs
-(Section 4).
-
-| case | method | 0.14.0 | 0.12.2 | 0.9.0 |
-| :--- | :---: | ---: | ---: | ---: |
-| `QX150` $[[150,32,6]]$, one sector | 1 | 0.54 | 0.53 | 21.3 |
-| | 2 | 0.006 | 0.006 | 0.006 |
-| | 3 | 0.017 | 0.017 | 0.012 |
-| `c204H` $[204,102,8]$ | 1 | 0.49 | 0.46 | 18.8 |
-| | 2 | 0.007 | 0.009 | 0.039 |
-| | 3 | 0.018 | 0.018 | 0.034 |
-| `bb_72` circuit, stripped DEM | 1 | 0.85 | 0.92 | 7.40 |
-| | 2 | 0.025 | 0.039 | 0.29 |
-| | 3 | 0.053 | 0.092 | 0.38 |
-| `bb_72` circuit, full DEM | 1 | 0.19 | 2.21 | 6.69 |
-| | 2 | 0.095 | 9.57 | > 400 |
-| | 3 | 0.12 | 10.3 | > 400 |
-| gross, one sector | 1 | 0.66 | 0.65 | 23.9 |
-| | 2 | 0.028 | 0.033 | 1.15 |
-| | 3 | 0.031 | 0.038 | 1.17 |
-| double gross, one sector | 1 | 0.76 | 0.76 | 31.9 |
-| | 2 | 0.16 | 0.48 | 1021 |
-| | 3 | 0.47 | 0.76 | 1051 |
-| random LDPC, $n = 3000$ | 1 | 0.49 | 1.13 | 1.66 |
-| | 2 | 0.13 | 0.29 | 16.2 |
-| | 3 | 0.40 | 0.88 | 4.34 |
-| double-gross circuit, stripped DEM | 1 | 1.49 | 3.65 | 7.54 |
-| | 2 | 0.15 | 0.28 | 11.9 |
-| | 3 | 1.45 | 2.87 | 30.3 |
-
-With the default parameters, 0.9.0 uses at most four threads for the small codes (hence the slow RW), and its CC is up
-to 6000 times slower (double gross: 17 min instead of 0.16 s). Compared with 0.12.2, 0.14.0 has the same RW speed on
-the small matrices, and it is 2.3–2.5 times faster on the large ones (the LDPC code, the double-gross DEM), 1.2–3 times
-faster in CC, and 12–100 times faster on the full DEM.
-
-### 5.4 Large full DEMs (RW for 180 s, default parameters)
-
-| DEM | version | read | searched | drop=auto (s) | RW threads | s/step/thread | RW steps | lightest |
-| :--- | :--- | :--- | :--- | ---: | ---: | ---: | ---: | ---: |
-| `gross_144_12_12_si1000_r12_X` | 0.14.0 | 1728 x 72576 | 936 x 8784 | 0.07 | 128 | 0.010 | 2,216,685 | 10 |
-| `gross_144_12_12_si1000_r12_X` | 0.12.2 | 1728 x 72576 | 1728 x 72576 | | 32 | 0.70 | 8,223 | 11 |
-| `bb_360_12_24_si1000_r24_X` | 0.14.0 | 8640 x 371520 | 4500 x 43560 | 0.44 | 32 | 0.80 | 7,179 | 25 |
-| `bb_756_16_34_si1000_r34_Z` | 0.14.0 | 25704 x 1112454 | 13230 x 129276 | 1.75 | 3 | 11.3 | 46 | 58 |
-
-- On the gross circuit, a RW step of 0.14.0 is 67 times faster, and all 128 threads are used (the dense RW working
-  memory of the full matrix limits 0.12.2 to 32 threads): 270 times more steps in 180 s, and a codeword of the minimum
-  weight 10.
-- For `bb_360`, the codeword of weight 25 is an upper bound on the circuit distance (Section 2.6); Section 6.1 found
-  one of weight 23.
-- For `bb_756`, the memory throttle (dense RW working memory capped at about 1.5 GB) allows only 3 RW threads on the
-  reduced matrix ($13230 \times 129276$, about 0.4 GB per thread); on this 236 GB server, `nothrottle=1` would run
-  128 threads (about 55 GB). With 32–64 RW threads, RW runs 6.7–7.4 times more steps per second (Section 6.1); 0.14.3
-  runs 32 RW threads by default (Section 7.1).
-
-### 5.5 Where the speedups come from
-
-0.14.0 with `merge=0 drop=0` (neither merging nor dropping) and with `drop=0` (merging only), against its default
-(both) and 0.12.2, on the DEM cases of Section 4 (wall time in s; "–": not run, from the budget of 0.12.2, which took
-176 s on four threads).
-
-| case | method | $p$ | `merge=0 drop=0` | `drop=0` | default | 0.12.2 |
-| :--- | :---: | ---: | ---: | ---: | ---: | ---: |
-| `bb_72` circuit, stripped DEM | 1 | 1 | 61.2 | | 59.9 | 58.2 |
-| | 1 | 128 | 0.99 | | 0.89 | 0.93 |
-| | 2 | 1 | 0.094 | | 0.051 | 1.12 |
-| | 2 | 128 | 0.027 | | 0.026 | 0.042 |
-| `bb_72` circuit, full DEM | 1 | 1 | 48.8 | 45.7 | 5.56 | 98.9 |
-| | 1 | 128 | 1.21 | 1.20 | 0.18 | 2.14 |
-| | 2 | 1 | 28.8 | 21.7 | 0.11 | – |
-| | 2 | 128 | 0.38 | 0.32 | 0.088 | 9.84 |
-| double-gross circuit, stripped DEM | 1 | 1 | 25.5 | | 20.7 | 58.9 |
-| | 1 | 128 | 1.61 | | 1.40 | 3.27 |
-| | 2 | 1 | 1.13 | | 0.61 | 12.7 |
-| | 2 | 128 | 0.14 | | 0.15 | 0.27 |
-
-- The faster CC of 0.12.3 (the last cluster extension is looked up in a hash table): 3.3–3.9 times on the CSS codes
-  and the LDPC code, 11–12 times on the stripped DEMs, and about 25 times on the full `bb_72` DEM (estimated from the
-  four-thread run of 0.12.2); one thread.
-- The faster RW of 0.12.3 on large matrices: 2.0–2.3 times (the LDPC code, the double-gross DEM, the full `bb_72`
-  DEM); unchanged on small matrices.
-- Merging the equal columns (0.12.4): 1.0–1.2 times for RW, and 1.3–1.9 times for CC.
-- Dropping detectors (`drop=auto`, 0.14.0): 8 times for RW and 190 times for CC on the full `bb_72` DEM (one thread).
-
-The legacy `dist_m4ri_old` (one thread, built from the 0.14.0 sources) took, for the RW runs of Section 4, 66.5 s
-(`QX150`), 47.7 s (`c204H`), 203 s (`bb_72` stripped), 20.5 s (`bb_72` full, reduced), 69 s (gross), 92 s (double
-gross), 71 s (LDPC), and 85 s (double-gross DEM).
-
----
-
-## 6. Follow-up Runs of 0.14.1 (2026-10-14)
-
-`dist_m4ri` 0.14.1 (commit `68e5e02`), on the server of Section 4, with the full DEMs of Section 5. RW runs use the
-reduced DEMs (`drop=auto`, the default) and `min_hits=0`.
-
-### 6.1 RW threads for the largest DEMs
-
-RW steps per second against the number of RW threads (`method=1`, timeout 90 s for `bb_360` and 150 s for `bb_756`,
-`nothrottle=1 threads=N`; "default": the throttled run).
-
-| DEM | searched | dense RW memory per thread | RW threads | RW steps/s | s/step/thread |
-| :--- | :--- | ---: | :--- | :--- | :--- |
-| `bb_360_12_24_si1000_r24_X` | 4500 x 43560 | 49 MB | default (32) | 45.2 | 0.70 |
-| | | | 8 / 16 / 32 | 14.9 / 31.1 / 45.3 | 0.54 / 0.51 / 0.70 |
-| | | | 64 / 128 | 42.1 / 33.9 | 1.50 / 3.58 |
-| `bb_756_16_34_si1000_r34_Z` | 13230 x 129276 | 0.43 GB | default (3) | 0.23 | 12.2 |
-| | | | 8 / 16 / 32 | 0.63 / 1.12 / 1.57 | 12.0 / 13.4 / 18.8 |
-| | | | 64 / 128 | 1.72 / 1.57 | 31.0 / 49.4 |
-
-- The throughput peaks at 32 RW threads for `bb_360`, the number the throttle allows, and at 32–64 threads for
-  `bb_756`, where the throttle allows only 3: the memory bus saturates at 32–64 threads whatever the size of the matrix.
-- The run of `bb_360` on 16 threads found a codeword of weight **23** (seed 20261014); a second run with the same
-  arguments (150 s) found weight 23 again. The upper bound was 25.
-
-### 6.2 RW windows on the gross and double-gross DEMs
-
-RW with the column permutations of each step from:
-- **hybrid**: the default of 0.14.1 (`kwin=0`), an index window of $\min(512, 3n/4)$ columns on every other step
-  (0.14.3: 256 columns for a DEM, Section 7.2);
-- **uniform**: uniform permutations only (`kwin` at least $n$);
-- **idx1**, **idx2**: an index window of about one or two rounds of columns on every step (`kwin=1456` or `kwin=2912`
-  for double gross, 732 or 1464 for gross, with `win_mode=1`);
-- **bfs1**: a Tanner-graph ball of about one round on every step (`win_mode=0`).
-
-| case | hybrid | uniform | idx1 | idx2 | bfs1 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| gross: steps to weight 10 | 2.6k, 4.1k, 7.9k | 12k, 20k, 26k | 0.7k, 2.0k, 6.6k | 4.2k, 4.6k, 17k | 4.6k, 5.2k, 14k |
-| double gross: lightest in 120 s | 20, **18** | 36, 31 | **18**, **18** | **18**, **18** | 24, 26 |
-
-- gross: three seeds, 128 threads; double gross: two seeds, 32 RW threads (the default).
-- On gross, every configuration finds a codeword of the minimum weight 10 in under 3 s; the window steps need 4–10
-  times fewer steps than uniform ones.
-- On double gross, uniform steps are hopeless, index windows of one or two rounds found weight **18** in all four runs
-  (the upper bound was 19), the default hybrid in one of two, and Tanner-graph balls are much worse than the index
-  windows (time slabs).
-- A run with `kwin=1456 win_mode=1` for 180 s found three distinct codewords of weight 18. They consist of errors of the
-  final data measurements (the last error mechanisms of the DEM), i.e., a logical operator of the code (distance 18) at
-  the time boundary.
-
-### 6.3 Certified lower bounds from a code-sized model
-
-For a memory circuit, a certified lower bound needs no CC on the DEM:
-1. The checks of the measured basis are read from the detectors after the final data measurement: the final data
-   measurements in such a detector give the support of a check.
-2. One observable per check is added to the circuit: the parity of the final data measurements on its support. It is
-   deterministic, and it is flipped by an error mechanism iff the net effect of the error on the data anticommutes with
-   the check.
-3. The rows $O$ of these observables in the DEM are verified to lie in the row space of the detector matrix $H$:
-   $\mathrm{rank}([H; O]) = \mathrm{rank}(H)$. Then every codeword $x$ of the DEM ($Hx = 0$, $Lx \neq 0$) gives a
-   codeword of the model $(O, L)$ (equal columns merged) of weight at most $|x|$.
-4. The distance of the model, computed by CC with the binary, is therefore a lower bound on the circuit distance.
-
-The model has one column per net effect of a single error on the checks and the observables: about $2.5 n$ columns (the
-data qubits and the hook errors), with 3–6 nonzeros each. The verification held for all circuits below ($X$ basis).
-
-| Circuit | model | model distance | CC on the model | circuit distance |
-| :--- | :--- | :---: | :--- | :--- |
-| `bb_72_12_6_si1000_r6_X` | 36 x 180 | 5 | < 0.1 s | 6 |
-| `bb_90_8_10_si1000_r10_X` | 45 x 225 | 7 | < 0.1 s | 8 |
-| `bb_108_8_10_si1000_r10_X` | 54 x 270 | 6 | < 0.1 s | 8 |
-| `gross_144_12_12_si1000_r12_X` | 72 x 360 | 8 | 0.1 s | 10 |
-| `double_gross_288_12_18_si1000_r18_X` | 144 x 720 | 12 | $w \le 11$: 550 s; $w = 12$: 467 s | [12, 18] |
-| `bb_360_12_24_si1000_r24_X` | 180 x 900 | $\ge 12$ | $w \le 11$: 966 s | [12, 23] |
-
-- The CC runs on the double-gross and `bb_360` models used 32 threads, and 96 for the round $w = 12$ of double gross.
-- For these schedules, the model is 1–2 below the circuit distance: its lightest codewords do not lift to codewords of
-  the DEM of the same weight. It is still a certified bound, and CC on the model reaches weights which CC on the DEM
-  cannot: CC on the DEM of the double-gross circuit took 2.8 h on 128 threads to certify 11 (Section 5.1).
-- With the gaps of the smaller circuits, the true distances of the double-gross and `bb_360` circuits may be well below
-  the upper bounds 18 and 23.
-
----
-
-## 7. RW Windows and Thread Throttle of 0.14.3 (2026-10-14)
-
-`dist_m4ri` 0.14.3 (commit `741d9a1`), on the server of Section 4, with the full DEMs of Section 5; RW runs use the
-reduced DEMs (`drop=auto`, the default). The raw data and scripts are in `scratch/speedup/` (not in the repository).
-
-### 7.1 Thread throttle
-
-0.14.3: above 15 MB of dense RW memory per thread, at most 32 threads run RW, with their dense matrices within a
-quarter of the physical memory (at least 2; 1.5 GB if the physical memory is not known), instead of about 1.5 GB in
-total (Section 6.1: the memory bus saturates at 32–64 RW threads whatever the size of the matrix). Default runs
-(`method=1 min_hits=0`, no `threads=`):
-
-| DEM | searched | dense RW memory per thread | RW threads: 0.14.2 → 0.14.3 | RW steps/s: 0.14.2 → 0.14.3 |
-| :--- | :--- | ---: | :--- | :--- |
-| `bb_756_16_34_si1000_r34_Z` | 13230 x 129276 | 0.43 GB | 3 → 32 | 0.23 → **1.49** |
-| `bb_360_12_24_si1000_r24_X` | 4500 x 43560 | 49 MB | 32 → 32 | 45 → 45 |
-
-### 7.2 Window size of the hybrid RW steps
-
-With `kwin=0` and $n \ge 500$, every other RW step uses an index window of $W$ consecutive columns, and the others a
-uniform random permutation. A step finds a codeword if all but one of its columns are pivots. The window columns come
-first in the elimination order, so that they are pivots unless they depend on earlier window columns, while a column
-outside is a pivot with probability about $r/n \approx 0.1$ ($r = \mathrm{rank}\,H$). In a DEM, whose errors are in time
-order, a window is a slab of errors close in time, and its rank is at most the number of detectors they touch. Rank
-density of windows ($D$ detectors and $L$ columns per round, see below):
-
-| DEM (reduced) | $D$ | $L$ | rank / $W$ of $W$ consecutive columns, $W$ = 128 / 256 / 512 / 1024 / 2048 |
-| :--- | ---: | ---: | :--- |
-| gross | 72 | 676 | 0.73 / 0.47 / 0.28 / 0.19 / 0.15 |
-| `mitten_270_54_10_C9xS3_custom_r4_Z` | 108 | 1485 | 0.80 / 0.53 / 0.32 / 0.19 / 0.13 |
-| `mitten_150_30_8_C5xS3_custom_r5_Z` | 60 | 844 | 0.63 / 0.34 / 0.20 / 0.13 / 0.10 |
-| double gross | 144 | 1379 | 0.90 / 0.72 / 0.49 / 0.28 / 0.19 |
-| `bb_360_12_24_si1000_r24_X` | 180 | 1742 | 0.91 / 0.80 / 0.56 / 0.34 / 0.22 |
-
-A window of one round of columns ($L \approx 10 D$) touches about $2D$ detectors, so that most of its columns cannot be
-pivots. A scan of the window size (a single size, the same hybrid scheme); first, the mean number of steps to a
-codeword of the minimum weight (six seeds, 16 threads):
-
-| DEM (reduced) | 128 | 192 | 256 | 384 | 512 | 1024 | 2048 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| gross ($d = 10$) | 3.8k | **1.5k** | 1.8k | 1.8k | 4.8k | 15.5k | 22k |
-| `mitten_270` custom ($d = 9$) | 4.4k | 7.5k | **3.9k** | 7.3k | 25k | 111k | 125k |
-| `mitten_270` hef ($d = 7$) | 30k | **3.3k** | 6.2k | 9.5k | 15k | 13k | |
-| `mitten_150` custom ($d = 7$) | 286 | **133** | 352 | | 1200 | 2.0k | |
-
-Second, the distinct light codewords found in a fixed number of steps (two or three seeds, 32 RW threads, the
-default): for double gross, those of weight at most 21 in $2 \cdot 10^4$ steps (in parentheses: of weight 18); for
-`bb_360`, those of weight at most 28 in 3000 steps (in parentheses: the lightest weight found):
-
-| DEM (reduced) | 128 | 192 | 256 | 384 | 512 | $L$ | $2L$ |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| double gross | 5, 2 (1, 1) | 63, 45 (18, 14) | 58, 64 (9, 13) | 31, 18 (4, 2) | 3, 7 (0, 2) | 3, 2 (2, 0) | 0, 1 |
-| `bb_360` | 3, 12 (27, 26) | | 24, 35, 36 (26, 24, 24) | 18, 8 (25, 26) | 6, 0 (24, 29) | 0 (31) | 0 (33) |
-
-- The best window is 192–256 columns for all six DEMs (1.3–3.6 $D$; it does not grow with $D$ from 60 to 180), 2–10
-  times better than 512: on double gross, about 10 distinct codewords of weight 18 per $2 \cdot 10^4$ steps with 256
-  columns, and 0–2 with 512 or with one round. 0.14.3 uses 256 columns for a DEM (`win_hyb=0`; `win_hyb=N` sets the
-  size).
-- Windows of one and two rounds of columns, alternately, were tried first (from a round estimate): slower than 512.
-  On gross, 9.3k against 4.1k steps to weight 10 (median of five seeds); on `mitten_270` custom, 75k–86k against
-  2k–26k steps; on double gross, a similar time to weight 18; and on `bb_360`, the lightest weight in 120 s was
-  29 and 30 against 27 and 25.
-- Cycling through several sizes (e.g., $2L$ down to $L/8$, or $2D$ and $4D$) is worse than the best single size: the
-  optimum is sharp (double gross: 5, 54, and 5 codewords with 128, 192–256, and 512 columns).
-- Where the codewords are: the weight-18 codewords of double gross are errors of the final data measurements, within
-  177 columns at the end of the DEM; the weight-10 codewords of gross span 120–240 columns, anywhere in time; the
-  weight-9 codewords of `mitten_270` custom have 7 columns within about 90, and 2 columns 800–1000 columns later.
-- Matrices of codes gain nothing from 256 columns (`c1920H`: lightest weights 302–333 with 256 and 297–308 with 512
-  after $10^3$ steps; the random LDPC code with $n = 3000$: the same; `surf_d5`, `surf_d7`, and `QX900`: saturated),
-  so that 0.14.3 keeps 512 for matrices.
-- Graph distance is no restriction at the scale of the codewords: in the column graph of the reduced double-gross DEM
-  (columns adjacent if they share a detector), the balls of radius 2, 3, 12, and 18 hold about 2.2k, 8.3k (32%), 24.5k
-  (93%), and all 26208 columns (median over 20 seed columns): the spatial layer is covered within 3–4 hops, and then
-  the ball grows by about one round per hop in each time direction. The index windows work because the light
-  codewords are compact in the column order of the DEM.
-- With `debug&1`, 0.14.3 prints the rounds of a DEM (from the time translation of its errors): $D$ and $L$ as in the
-  table above, $D = 36$ and $L = 319$ for `bb_72`, $D = 378$ and $L = 3694$ for `bb_756`, and none for the torus
-  circuits with SWAP routing.
-
-### 7.3 Codewords found by the uniform and by the window steps
-
-With `debug&1`, 0.14.3 prints the distinct codewords of the three lowest weights found by each kind of RW step (half of
-the steps are uniform). Runs with `min_hits` large and `cov_cws=300`, so that the 300 lightest codewords are kept:
-
-| DEM (reduced) | RW steps | $w = d$ | $w = d + 1$ | $w = d + 2$ |
-| :--- | ---: | :--- | :--- | :--- |
-| gross | 20000 | 10: 16, all by windows | 11: 113, all by windows | 12: 271, 3 by uniform steps |
-| double gross | 30000 | 18: 10, all by windows | 19: 10, all by windows | 20: 18, all by windows |
-| `bb_360` | 4000 | 24: 3, all by windows | 25: 1, by windows | 26: 8, all by windows |
-
-The uniform steps find almost none of these codewords: with uniform random information sets, a codeword of weight 10
-of gross is found with probability about $1.5 \cdot 10^{-8}$ per step. They are kept for codewords which are not local
-in the column order (e.g., time-like codewords with one error per round), and for the information-set estimate.
-
-### 7.4 Time to a codeword of the minimum weight
-
-On the full DEMs of Section 5.2 (`method=1`, `wmin=d`, 128 threads, `nothrottle=1`, three seeds), 0.14.3 finds a
-codeword of the minimum weight within 0.53 s (median) for all eleven circuits, as 0.14.2. On gross, the steps to weight
-10 (five seeds) were 0.5k–5.7k with 256 columns (median 2.0k) against 1.3k–7.3k with 512 (median 3.0k).
-
----
-
-## 8. RW Pairs of 0.14.4 and 0.14.6, and the Model Bound of 0.14.5 (2026-10-15)
-
-`dist_m4ri` 0.14.5 (commit `6241d59`) against 0.14.3 (`741d9a1`, Section 7) and 0.14.0 (`40faf58`, Section 5), on the
-server of Section 4, with the inputs of Section 5: 476 runs in about one hour. 0.14.4 added the RW pairs (`pairs`, on
-by default): a RW step also finds the codewords with exactly two non-pivot columns (Lee–Brickell and Stern with
-$p = 2$), from the pairs of columns which agree on $l$ random pivot rows ($l \approx \log_2(n - r)$, fewer while the
-upper bound is large). 0.14.5 added `compute_model_lower_bound()` to the Python wrapper (the code-sized model of
-Section 6.3, with the minority-basis rows by default until 0.14.6). 0.14.6 bounds the work of the RW pairs per step,
-after the slow early steps found here (Section 8.7; 142 more runs). The raw data and scripts are in
-`scratch/bench_0.14.5/` (not in the repository).
-
-### 8.1 Full DEMs: time to a codeword of the minimum weight
-
-As in Section 5.2 (`method=1`, `wmin=d`, 128 threads, `nothrottle=1`), with five seeds per version (seven for gross):
-the median wall time, which includes reading the DEM, merging, and the exact reduction, and the median number of RW
-steps; 0.12.2 and 0.9.0 in the figure: the runs of Section 5.2. All runs of 0.14.x found a codeword of weight $d$.
-0.14.6: Section 8.7.
-
-![Time and RW steps to a minimum-weight codeword in the full DEMs](figures/fulldem_time.png)
-
-| Circuit | $d$ | wall (s): 0.14.0 | 0.14.3 | 0.14.5 | 0.14.6 | RW steps: 0.14.0 | 0.14.3 | 0.14.5 | 0.14.6 |
-| :--- | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `bb_72_12_6_si1000_r6_X` | 6 | 0.092 | 0.092 | 0.093 | 0.093 | 7 | 6 | 2 | 3 |
-| `mitten_90_18_6_C3xS3_custom_r4_Z` | 5 | 0.16 | 0.16 | 0.16 | 0.16 | 14 | 8 | 2 | 3 |
-| `mitten_90_18_6_C3xS3_hef_r4_Z` | 4 | 0.18 | 0.18 | 0.18 | 0.18 | 2 | 1 | 2 | 2 |
-| `mitten_150_30_8_C5xS3_custom_r5_Z` | 7 | 0.39 | 0.37 | 0.36 | 0.36 | 979 | 413 | 33 | 13 |
-| `mitten_150_30_8_C5xS3_hef_r5_Z` | 5 | 0.39 | 0.38 | 0.39 | 0.38 | 39 | 121 | 4 | 4 |
-| `mitten_210_42_8_C7xS3_custom_r4_Z` | 6 | 0.44 | 0.44 | 0.44 | 0.44 | 6 | 6 | 4 | 3 |
-| `mitten_210_42_8_C7xS3_hef_r4_Z` | 5 | 0.48 | 0.47 | 0.47 | 0.47 | 46 | 32 | 5 | 6 |
-| `mitten_270_54_10_C9xS3_custom_r4_Z` | 9 | 1.36 | 0.64 | 1.06 | **0.56** | 17.3k | 1.5k | 222 | 220 |
-| `mitten_270_54_10_C9xS3_hef_r4_Z` | 7 | 1.01 | 0.68 | 0.73 | **0.62** | 7.8k | 1.6k | 95 | 161 |
-| `mitten_330_66_6_C11xS3_custom_r4_Z` | 4 | 0.69 | 0.70 | 0.69 | 0.70 | 1 | 1 | 1 | 1 |
-| `mitten_330_66_6_C11xS3_hef_r4_Z` | 4 | 0.75 | 0.74 | 0.74 | 0.74 | 1 | 1 | 1 | 1 |
-| `gross_144_12_12_si1000_r12_X` | 10 | 0.99 | 0.53 | 0.44 | 0.45 | 7.1k | 778 | 62 | 62 |
-
-- Where many RW steps are needed (`mitten_150`, `mitten_210 hef`, `mitten_270`, gross), 0.14.5 needs 6–30 times fewer
-  than 0.14.3. The wall time is mostly the input stage (0.07–0.7 s), so that the medians hardly change (gross: 0.44 s
-  against 0.53 s). 0.14.5 with `pairs=0` behaves as 0.14.3 (gross: 0.51 s, 628 steps).
-- On the `mitten_270` circuits, 0.14.5 is slower than 0.14.3 (custom: 1.06 s against 0.64 s; RW alone, from
-  `# stopped after`, 0.60 s against 0.16 s), although it needs 7–17 times fewer steps. The first codewords found have
-  weights 100–300, and while the upper bound is above about 70, the default $l$ is 1 (with $l = 2$, a codeword of that
-  weight would be kept with a probability below 0.8), so that the steps check millions of pairs: 0.5–5.5 million per
-  step on average over these runs (0.014–0.099 s per step and thread, against 0.003–0.005 s for 0.14.3); the 128
-  threads spend about 0.1 s in such steps, until the upper bound drops below 20. With a fixed `pairs=13`
-  ($\approx \log_2(n - r)$), the upper bound drops to about 10 within a few milliseconds, and so it does with the
-  work bound of 0.14.6 ($l \ge 6$, Section 8.7):
-
-| Circuit (median wall time in s / RW time in s / RW steps) | 0.14.3 | 0.14.5 | 0.14.5, `pairs=13` | 0.14.6 |
-| :--- | :--- | :--- | :--- | :--- |
-| `mitten_270` custom ($d = 9$) | 0.64 / 0.16 / 1.5k | 1.06 / 0.60 / 222 | 0.56 / 0.12 / 182 | 0.56 / 0.12 / 220 |
-| `mitten_270` hef ($d = 7$) | 0.68 / 0.16 / 1.6k | 0.73 / 0.20 / 95 | 0.62 / 0.12 / 119 | 0.62 / 0.12 / 161 |
-| `mitten_150` custom ($d = 7$) | 0.37 / 0.059 / 413 | 0.36 / 0.056 / 33 | 0.36 / 0.055 / 20 | 0.36 / 0.058 / 13 |
-| gross ($d = 10$) | 0.53 / 0.21 / 778 | 0.44 / 0.14 / 62 | 0.45 / 0.14 / 82 | 0.45 / 0.14 / 62 |
-
-### 8.2 Large DEMs: the time to light codewords
-
-RW with the default threads (32 RW threads, Section 7.1) on the full DEMs of the double-gross circuit (`wmin=18`, three
-seeds) and of `bb_360` (`wmin=23`, two seeds, timeout 240 s). The time of the first codeword of each weight is that of
-its message "RW found new upper bound", since the start of the run (reading and reducing the DEM take about 1 s and
-2 s). The figure shows 0.14.6 (Section 8.7), which finds these codewords as soon as 0.14.5, against 0.14.3.
-
-![The lightest codeword found against time](figures/rw_pairs.png)
-
-| DEM | weight | 0.14.3: time (s)/RW steps, per seed | 0.14.5 | 0.14.6 (Section 8.7) |
-| :--- | :---: | :--- | :--- | :--- |
-| double gross | 18 | 9.6/2.1k, 11.3/2.5k, 18.8/4.9k | 1.5/85, 1.8/126, 2.7/329 | 1.9/224, 1.5/136, 2.4/355 |
-| `bb_360` | 24 | 102, 93 | 22, 58 | 8.6, 13 |
-| `bb_360` | 23 | not in 240 s (10.3k steps each) | 118/4.8k, 60/2.2k | 119/5.1k, 56/2.2k |
-
-- Double gross: the weight 18 (the lightest known) 6–7 times sooner with the same seed (RW alone: 0.5–1.7 s instead of
-  8.6–18 s), in 15–25 times fewer steps, each 1.3–1.6 times longer (0.16–0.20 s per step and thread against
-  0.12–0.13 s).
-- `bb_360`: the weight 23 (the lightest known, Section 6.1) in 60 and 118 s, while 0.14.3 found 24 (after 93 and 102 s)
-  and nothing lighter in 240 s; a step takes 4–14% longer (0.78–0.85 s per step and thread against 0.74–0.75 s).
-- In 300 s of 0.14.5 (one seed each), nothing lighter was found: double gross with `wmin=17` (94k steps; 18 after
-  2 s) and `bb_360` with `wmin=22` (12.8k steps; 24 after 4 s, 23 after 41 s).
-- `bb_756` (timeout 240 s): 0.14.3 found 55 (371 steps of 20 s per thread). 0.14.5 found 57 after 90 s, but it did
-  not stop at the timeout and was killed after 540 s. With `timeout=60`, it had completed no RW step after 32 s (the
-  last status line) and was killed after 200 s, while `pairs=0` stopped after 62 s (96 steps, weight 61). The first
-  codewords of this DEM have weights of 4000–5000, and while the upper bound is in the hundreds or thousands, the
-  default $l$ is 1–4: a step can then check up to billions of pairs (in 2–16 buckets of the 116k non-pivot columns),
-  and the stop flags are only checked between the buckets. 0.14.6 (Section 8.7) stopped at the timeout, with 55 in
-  359 steps.
-
-### 8.3 Codes with a large distance
-
-RW for 30 s (default threads: 128), three seeds: the lightest codeword found by the time $t$ (median of the seeds; the
-time includes reading the matrix), and at the end (each seed).
-
-| code | version | $t$ = 1 s | 2 s | 4 s | 8 s | 16 s | 30 s | each seed | s/step/thread |
-| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | :--- | ---: |
-| `c1920H` ($n = 1920$, $k = 641$) | 0.14.3 | 294 | 288 | 277 | 265 | 265 | 257 | 265, 253, 257 | 0.0075 |
-| | 0.14.5 | 257 | 243 | 243 | 243 | 235 | 227 | 234, 225, 227 | 0.011 |
-| | 0.14.6 | 257 | 257 | 243 | 243 | 235 | 234 | 234, 234, 227 | 0.011 |
-| random (3,6)-regular LDPC, $n = 3000$ | 0.14.3 | 446 | 434 | 432 | 428 | 428 | 422 | 426, 410, 422 | 0.013 |
-| | 0.14.5 | 420 | 414 | 402 | 402 | 402 | 402 | 402, 396, 402 | 0.044 |
-| | 0.14.6 | 420 | 414 | 402 | 402 | 402 | 402 | 402, 396, 402 | 0.046 |
-
-- For these distances the default is $l = 1$ (all pairs in two buckets): a step takes 1.5 and 3.5 times longer, and
-  the lightest codeword found is lighter at all times, by about 12% for `c1920H` (at 30 s: 225–234 against 253–265)
-  and by 3–5% for the LDPC code (396–402 against 410–426). 0.14.6 keeps $l = 1$ for both codes (Section 8.7).
-- In a fixed number of RW steps (1000 on 8 threads), `c1920H` gives 210, 275, and 277 with the pairs and 320, 321, and
-  317 without (three seeds; the RW of several threads is not reproducible: an earlier run of the first seed gave 259).
-
-### 8.4 Default parameters
-
-As in Section 5.3, but with the default parameters of `method=1` (`steps=100000`, `min_hits=5`) and of `method=3` (the
-exact distance), no `threads=` (128 threads, throttled), three seeds: median wall time in s / RW steps ("100k": the
-step limit, `min_hits` not reached). The runs of 0.14.6 were made 80 min after those of 0.14.5, when the server was
-up to 10% slower (Section 8.7).
-
-| case | $d$ | method | 0.14.0 | 0.14.3 | 0.14.5 | 0.14.6 |
-| :--- | :---: | :---: | :--- | :--- | :--- | :--- |
-| `QX150`, one sector | 6 | 1 | 0.016 / 231 | 0.016 / 232 | 0.017 / 70 | 0.016 / 61 |
-| | | 3 | 0.020 | 0.019 | 0.020 | 0.020 |
-| `QX900`, one sector | 8 | 1 | 0.051 / 1.5k | 0.050 / 1.5k | 0.057 / 214 | 0.054 / 208 |
-| | | 3 | 0.055 | 0.053 | 0.058 | 0.059 |
-| `c204H` | 8 | 1 | 0.019 / 6.7k | 0.019 / 6.4k | 0.019 / 3.7k | 0.018 / 3.5k |
-| | | 3 | 0.022 | 0.021 | 0.021 | 0.020 |
-| `surf_d5` (`surf_d5_H.mmx` with `_L.mmx`) | 5 | 1 | 0.050 / 21.5k | 0.051 / 23.1k | 0.068 / 1.8k | 0.079 / 2.2k |
-| | | 3 | 0.033 | 0.031 | 0.072 | 0.072 |
-| `surf_d7` | 7 | 1 | 0.64 / 54.6k | 0.66 / 62.7k | 1.96 / 100k | 2.19 / 100k |
-| | | 3 | 0.32 | 0.44 | 0.49 | 0.51 |
-| `bb_72` circuit, stripped DEM | 6 | 1 | 0.067 / 6.1k | 0.068 / 7.0k | 0.050 / 1.5k | 0.054 / 1.3k |
-| | | 3 | 0.057 | 0.056 | 0.057 | 0.058 |
-| `bb_72` circuit, full DEM | 6 | 1 | 0.12 / 5.9k | 0.13 / 6.6k | 0.11 / 1.2k | 0.11 / 1.3k |
-| | | 3 | 0.11 | 0.11 | 0.11 | 0.12 |
-| `mitten_150` custom circuit, full DEM | 7 | 1 | 2.31 / 100k | 2.08 / 100k | 1.46 / 43.2k | 1.64 / 45.0k |
-| | | 3 | 0.59 | 0.61 | 0.62 | 0.66 |
-| gross, one sector | 12 | 1 | 0.025 / 8.3k | 0.025 / 7.8k | 0.026 / 970 | 0.025 / 941 |
-| | | 3 | 0.033 | 0.033 | 0.031 | 0.031 |
-| double gross, one sector | 18 | 1 | 0.087 / 100k | 0.086 / 100k | 0.042 / 25.7k | 0.046 / 25.1k |
-| | | 3 | 1.36 | 1.38 | 1.37 | 1.41 |
-| gross circuit, full DEM | 10 | 1 | 8.5 / 100k | 8.2 / 100k | 10.3 / 100k | 11.0 / 100k |
-
-- With the pairs, `min_hits=5` is reached in 1.7–13 times fewer RW steps: in about the same time for the small codes,
-  and in less time where 0.14.3 ran to the step limit (double gross: 0.04 s instead of 0.09 s; `mitten_150`: 1.5 s
-  instead of 2.1 s) or for the `bb_72` DEMs (20–26%). `method=3` takes the same time (CC dominates), except for
-  `surf_d5`.
-- `surf_d5`: 0.068 s against 0.051 s, since a step takes 20 times longer with 128 threads (0.0031 s against 0.00015 s
-  per step and thread; 2.7 times on one thread in the tests of 0.14.4), probably because the codewords of the pairs,
-  about 19 per step, are recorded under the mutex of the codeword table.
-- `surf_d7` (`surf_d7_H.mmx` with `_L.mmx`: the DEM of a surface-code circuit with $d = 7$ given as matrices, which
-  the binary does not reduce, $336 \times 5473$): 2.0–2.2 s against 0.64–0.66 s, since most runs with the pairs end
-  at the step limit. The hit counts of the 100 codewords of weight 7 tracked for `min_hits` (`cov_cws`: the first
-  ones found) are strongly non-uniform in all versions (the binary warns; e.g., one codeword with 184 of 477 hits), so
-  that whether $\langle n \rangle$ reaches 5 within 100k steps depends on the codewords tracked: 0.14.3 also ran to
-  the step limit in one of the three runs, and 0.14.5 converged after 32k steps in one; with the pairs, the tracked
-  set is filled within the first steps. All runs found the distance 7, and `method=3` is not affected (CC).
-- The gross circuit (full DEM): all versions run to the step limit; 0.14.5 takes 1.26 times longer (the pairs of each
-  step).
-
-The surface-code circuits of stim (`surface_code:rotated_memory_x`, $d$ rounds, the uniform noise of $p = 0.001$) as
-DEMs, which the binary reduces exactly ($d = 7$: $192 \times 883$), with the default `method=1` (three seeds; the
-scripts and logs in `scratch/bench_0.14.5/surface/`):
-
-| circuit | 0.14.3 | 0.14.6 |
-| :--- | :--- | :--- |
-| $d = 7$ | 0.08–0.09 s (17k–22k steps) | 0.08–0.09 s (1.3k steps) |
-| $d = 9$ | step limit: 0.55–0.58 s, $\langle n \rangle$ = 1.4–2.1 | 1.0–1.4 s (23k–35k steps) |
-| $d = 11$ | step limit: 2.3 s, $\langle n \rangle$ = 1.1–1.5 | step limit: 4.1–4.3 s, $\langle n \rangle$ = 1.2–3.7 |
-
-With the pairs, `min_hits` is reached in 13 times fewer steps for $d = 7$ (in the same time), within the step limit for
-$d = 9$ (0.14.3: not), and with more hits per step for $d = 11$; all runs found the distance $d$.
-
-### 8.5 Code-sized model lower bound (0.14.5)
-
-`compute_model_lower_bound()` with the default threads, against the circuit distance (Section 2.6). With
-`minority=False`, only the model of the measured-basis chains (Section 6.3) is solved (`method=3`); with
-`minority=True` (the default of 0.14.5 and 0.14.6), the model with all rows is then searched from that bound (RW with
-`wmin` equal to the bound, then CC if needed); the times are those of the whole calls. Since 0.14.7, the minority-basis
-rows are off by default (`minority=True`, CLI `--model-minority`, to use them).
-
-| Circuit | distance | model (measured-basis rows) | bound | time (s) | model (all rows) | bound | time (s) |
-| :--- | :--- | :--- | :---: | ---: | :--- | :---: | ---: |
-| `bb_72_12_6_si1000_r6_X` | 6 | 36 x 180 | 5 | 0.44 | 72 x 2664 | 5 | 0.28 |
-| `bb_90_8_10_si1000_r10_X` | 8 | 45 x 225 | 7 | 0.39 | 90 x 3330 | 7 | 0.45 |
-| `bb_108_8_10_si1000_r10_X` | 8 | 54 x 270 | 6 | 0.52 | 108 x 3996 | 6 | 0.52 |
-| `gross_144_12_12_si1000_r12_X` | 10 | 72 x 360 | 8 | 0.81 | 144 x 5328 | 8 | 1.33 |
-| `mitten_90_18_6_C3xS3_custom_r4_Z` | 5 | 36 x 306 | 4 | 0.27 | 72 x 4941 | 4 | 0.39 |
-| `mitten_90_18_6_C3xS3_hef_r4_Z` | 4 | 36 x 306 | **4** | 0.51 | 72 x 4059 | **4** | 0.41 |
-| `mitten_150_30_8_C5xS3_custom_r5_Z` | 7 | 60 x 510 | 6 | 0.53 | 120 x 8230 | 6 | 1.04 |
-| `mitten_150_30_8_C5xS3_hef_r5_Z` | 5 | 60 x 510 | **5** | 0.63 | 120 x 6790 | **5** | 0.78 |
-| `mitten_210_42_8_C7xS3_custom_r4_Z` | 6 | 84 x 714 | 5 | 0.91 | 168 x 11802 | 5 | 1.60 |
-| `mitten_210_42_8_C7xS3_hef_r4_Z` | 5 | 84 x 693 | **5** | 0.87 | 168 x 9597 | **5** | 1.20 |
-| `mitten_270_54_10_C9xS3_custom_r4_Z` | 9 | 108 x 918 | 8 | 2.03 | 216 x 15048 | 8 | 7.76 |
-| `mitten_270_54_10_C9xS3_hef_r4_Z` | 7 | 108 x 918 | **7** | 1.14 | 216 x 12294 | **7** | 10.2 |
-| `mitten_330_66_6_C11xS3_custom_r4_Z` | 4 | 132 x 1089 | **4** | 1.08 | 264 x 18183 | **4** | 1.54 |
-| `mitten_330_66_6_C11xS3_hef_r4_Z` | 4 | 132 x 1056 | **4** | 1.11 | 264 x 14432 | **4** | 1.54 |
-| `NNEESEEESEENN_..._n60_k8_d14_X` | 6 | 30 x 360 | 4 | 0.31 | 60 x 3810 | 4 | 0.41 |
-| `NEENNWNWNNEEN_..._n120_k8_d15_X` | 6 | 60 x 720 | **6** | 0.85 | 120 x 7440 | **6** | 0.93 |
-
-- The bound (bold: equal to the circuit distance) is tight for the `hef` Mitten circuits, `mitten_330` custom, and the
-  `n120` torus circuit (its circuit distance 6 was certified on 2026-10-15, Section 2.6); it is 1 below
-  the distance for `bb_72`, `bb_90`, and the other custom Mitten circuits, and 2 below it for `bb_108`, gross, and the
-  `n60` torus circuit.
-- The minority-basis rows raised none of these bounds: the model with all rows has codewords of the same weight. They
-  cost up to 9 s more (`mitten_270`, where CC on the model with all rows was needed). Nor did they for the
-  surface-code circuits of stim (rotated, $X$ and $Z$ basis, and unrotated, $X$ basis; $d = 5$ and 7, bound $d$ with
-  and without them). With depolarizing-type noise, every net data error which flips the observable of the measured
-  basis also occurs without a component of the other basis, so that a lightest model codeword has a version which the
-  minority-basis rows do not detect; they may raise the bound for other noise models (e.g., biased noise).
-- Against CC on the full DEM (Section 8.6): gross, the bound 8 in 0.8 s against the distance 10 in 184 s; `mitten_270`
-  custom, 8 in 2.0 s against 9 in 183 s.
-
-### 8.6 Certified distances
-
-`method=3` with the arguments of Section 5.1 (128 threads), 0.14.5 and 0.14.6 against 0.14.0 (Section 5.1): about the
-same, since CC dominates (the short runs are about 0.1 s slower, `mitten_270` hef is 2 s faster).
-
-| Circuit | $d$ | 0.14.0 (s) | 0.14.5 (s) | 0.14.6 (s) |
-| :--- | :---: | ---: | ---: | ---: |
-| `mitten_150_30_8_C5xS3_custom_r5_Z` | 7 | 0.56 | 0.63 | 0.72 |
-| `bb_90_8_10_si1000_r10_X` | 8 | 0.68 | 0.82 | 0.88 |
-| `bb_108_8_10_si1000_r10_X` | 8 | 0.71 | 0.83 | 0.89 |
-| `mitten_270_54_10_C9xS3_hef_r4_Z` | 7 | 5.8 | 3.8 | 3.9 |
-| `mitten_270_54_10_C9xS3_custom_r4_Z` | 9 | 182 | 183 | |
-| `gross_144_12_12_si1000_r12_X` | 10 | 179 | 184 | |
-
-### 8.7 A work bound for the RW pairs (0.14.6)
-
-0.14.6 fixes the slow early steps of the RW pairs found above (`mitten_270` in Section 8.1, `bb_756` in Section 8.2):
-- With `pairs=-1` (auto), $l$ is at least the $l$ at which the about $(n-r)^2/2^{l+1}$ pairs of a step are within
-  about the work of its elimination, $rn/16$ pairs (or $2^{20}$ pairs for small matrices). Early in a run, while the
-  upper bound is far above the distance, the keep probability alone gives $l = 1$ (all pairs in two buckets); the
-  bound is $l \ge 6$ for the reduced DEMs of `mitten_270` ($r = 648$, $n = 8910$) and `bb_756` ($r = 13222$,
-  $n = 129276$), 5 for gross, 4 for `mitten_150` and `surf_d7`, and 1 (no change) for the codes of Section 8.3 and the
-  small matrices of Section 8.4.
-- The stop flags and the upper bound are also polled within the buckets of the pairs (every 65536 pairs), so that a
-  run ends at its timeout also with few rows (e.g., `pairs=1`).
-
-The runs of Sections 8.1–8.4 and 8.6 with 0.14.6 (the columns 0.14.6 above):
-- `mitten_270`: 0.56 s (custom) and 0.62 s (hef) to the distance, the fastest of all versions, as with `pairs=13`; RW
-  alone takes 0.12 s, against 0.60 and 0.20 s with 0.14.5 and 0.16 s with 0.14.3.
-- `bb_756` (timeout 240 s): 55 in 359 steps, stopped at the timeout (0.14.3: 55 in 371 steps). With `timeout=60`, 58
-  in 53 steps, stopped after 64 s (0.14.5: killed after 200 s; with `pairs=0`, 61 in 96 steps).
-- The double-gross and `bb_360` circuits: the weights 18 and 23 as soon as with 0.14.5, with cheaper steps for double
-  gross (0.12 s per step and thread, against 0.16–0.20 s with 0.14.5, whose early steps with large upper bounds
-  checked many pairs).
-- As with 0.14.5: the other full DEMs, gross, the codes (where $l = 1$ is kept: the same lightest weights), the RW
-  steps of the default runs, and the certified distances. The times of the default runs were 0–16% longer, as were
-  those of 0.14.5 itself at that time: on the gross circuit (full DEM, default parameters, 100k RW steps), five runs
-  of each version, alternating, took 10.7 s (0.14.6) and 11.2 s (0.14.5) in the median, against 10.3 s for 0.14.5 in
-  the runs of Section 8.4.
-
----
-
-## 9. Branch-and-Bound CC Search of 0.15.0 (2026-10-25)
-
-`dist_m4ri` 0.15.0 (commit `2edf8d7`) against 0.14.8 (`d43bf47`), on the server of Section 4 (idle), with the inputs of
-Sections 1 and 5.1: 408 runs in 2.8 hours, the two versions alternating case by case. 0.15.0 replaces the CC walk of
-the earlier versions (all columns of the first unsatisfied row; `cc_prune=0`) by a branch and bound (`cc_prune=1`, the
-default; README, Section 2): each branch forbids the columns of its earlier siblings, the branching row is the
-unsatisfied row with the fewest available columns, and the packing bound prunes the clusters which cannot be completed
-within the weight limit. `doc/cc_completeness.tex` proves that it finds every irreducible codeword up to the weight
-limit (in particular, every minimum-weight codeword). Distance only (no `outC`), `nothrottle=1` on 128 threads. Both
-versions give the same distances in all runs. The raw data and scripts are in `scratch/bench_0.15.0/` (not in the
-repository).
-
-### 9.1 Wall time
-
-`method=2` (CC alone, up to the first codeword) and `method=3` (the exact distance) on 128 threads, median of three
-runs (two for the gross and `mitten_270` custom circuits), and `method=2` on one thread (one run); in parentheses: the
-speedup of 0.15.0. The codes are given by the matrix `finH`; the circuits by their full DEMs (Section 5.1).
-
-| Input | $d$ | CC alone, 128 threads | `method=3`, 128 threads | CC alone, one thread |
-| :--- | :---: | :--- | :--- | :--- |
-| `yarn_smitten_600_120_14`, $H_X$ | 14 | 3.56 → 0.12 s (**29x**) | 3.35 → 0.14 s (24x) | 271 → 7.7 s (**35x**) |
-| `yarn_ablp_560_112_14`, $H_X$ | 14 | 3.48 → 0.19 s (18x) | 3.55 → 0.25 s (14x) | 277 → 13.4 s (21x) |
-| `yarn_mitten_300_60_14`, $H_X$ | 14 | 1.63 → 0.21 s (7.6x) | 1.68 → 0.22 s (7.5x) | 134 → 15.1 s (8.9x) |
-| `double_gross_288_12_18`, $H_X$ | 18 | 1.28 → 0.31 s (4.2x) | 1.37 → 0.34 s (4.0x) | 103 → 24.6 s (4.2x) |
-| `yarn_smitten_330_66_12`, `yarn_mitten_200_40_12` | 12 | 2.5x, 1.9x | 2.2x, 1.7x | |
-| the other codes of Section 1 with $d \le 12$ | 4–12 | 0.82–1.21x (20–30 ms) | 0.84–1.11x | gross: 0.90x (0.06 s) |
-| gross circuit | 10 | | 191 → 77 s (**2.5x**) | |
-| `mitten_270` custom circuit | 9 | | 193 → 137 s (1.4x) | |
-| `mitten_270` hef circuit | 7 | 5.34 → 2.54 s (2.1x) | 3.79 → 2.06 s (1.8x) | 475 → 151 s (3.2x) |
-| `bb_90`, `bb_108` circuits | 8 | 1.11x, 1.12x | 1.05x, 1.02x | `bb_90`: 1.14x |
-| the other circuits of Section 5.1 | 4–7 | 0.93–0.99x | 0.95–1.01x | `mitten_150` custom: 0.87x |
-
-- The gain grows with the weight of the last CC round: 4–35x for the codes with $d = 14$–18, about 2x for $d = 12$
-  and for the circuits with $d = 9$–10 (whose CC rounds dominate `method=3`).
-- The small codes take 20–30 ms, mostly the start-up: their CC work (at most 0.6 thread-s) ranges from 5x lower
-  (`yarn_smitten_300`) to 1.5x higher (`mitten_90`, about 1 ms). `yarn_mitten_150` takes about 5 ms more
-  (0.82–0.87x), although its CC work is 40% lower.
-- The circuits with $d \le 7$: 0.93–0.99x on 128 threads, except `mitten_270` hef (2.1x); on one thread,
-  `mitten_150` custom is at 0.87x (the round $w = 6$ has 1.5x fewer nodes, but they cost more).
-
-### 9.2 Threads, load balance, and predicted work
-
-- On 128 threads, the CC thread time of the same rounds is 1.41–1.50x that on one thread with 0.15.0 (double gross and
-  the three codes with $d = 14$), and 1.52–1.59x with 0.14.8 (SMT and memory): the branch and bound scales at least as
-  well as the walk. The wall-time speedups $T(1)/T(128)$ are 64–80 for 0.15.0 and 76–83 for 0.14.8 (the runs of
-  0.15.0 take only 0.12–0.31 s on 128 threads).
-- Load balance: in all CC rounds of 20 s to 42 min (Section 9.3, the gross and `mitten_270` custom circuits), the CC
-  thread time is 0.98–1.00 of 128 threads times the wall time of the round.
-- The work of a round predicted from the earlier rounds was within 1–3% of the measured one for the long rounds (e.g.,
-  `yarn_mitten_975`, $w = 23$: $3.16 \cdot 10^5$ thread-s predicted, $3.19 \cdot 10^5$ measured), so that `method=3`
-  ends a round which cannot finish before the timeout.
-- 1.7–2.9 million nodes per thread-second (0.34–0.57 µs per node), fewer for the larger codes and weights. With
-  `debug&8`, 0.15.0 prints the nodes of each CC round, which do not depend on the number of threads.
-
-### 9.3 Distances of the larger codes of Section 1
-
-`method=3` of 0.15.0 on 128 threads (`nothrottle=1`), one run per sector, with timeouts of 10–60 min. Before: the
-brackets of Section 1 (short runs of 0.14.7: 20 s per sector for the `yarn_*` codes, 60 s for the BB codes). In all
-runs, RW found the upper bound (codewords of the nominal weight, of weight 17 for $d_X$ of `yarn_smitten_840`), and CC
-the lower bound. Last CC round: of the slower sector.
-
-| Code | before | 0.15.0: $d_X$, $d_Z$ | time | last CC round: $w$, thread-s, nodes |
-| :--- | :--- | :--- | ---: | :--- |
-| `yarn_mitten_500_100_16` | [15, 16] | **16**, **16** | 1.0 s, 1.1 s | 15, 87, $2.3 \cdot 10^8$ |
-| `yarn_smitten_600_120_16` | [15, 16] | **16**, **16** | 1.2 s, 1.4 s | 15, 118, $3.0 \cdot 10^8$ |
-| `yarn_smitten_840_168_18` | [15, 17], [15, 18] | **17**, **18** | 3.3 s, 8.9 s | 17, 777, $1.7 \cdot 10^9$ |
-| `yarn_mitten_540_108_18` | [15, 18] | **18**, **18** | 9.6 s, 9.0 s | 17, 857, $2.0 \cdot 10^9$ |
-| `yarn_smitten_1200_240_20` | [14, 20] | **20**, **20** | 56 s, 58 s | 19, 4990, $1.0 \cdot 10^{10}$ |
-| `yarn_mitten_630_126_20` | [15, 20] | **20**, **20** | 91 s, 82 s | 19, 8360, $1.8 \cdot 10^{10}$ |
-| `yarn_mitten_780_156_22` | [15, 22] | **22**, **22** | 11 min, 9.3 min | 21, $6.05 \cdot 10^4$, $1.2 \cdot 10^{11}$ |
-| `yarn_mitten_975_195_24` | [14, 24] | [23, 24], **24** | 20 min, 59 min | 23, $3.19 \cdot 10^5$, $5.5 \cdot 10^{11}$ |
-| `bb_360_12_24` | [18, 24] | **24** (one sector) | 3.2 min | 23, $1.6 \cdot 10^4$, $4.4 \cdot 10^{10}$ |
-| `bb_756_16_34` | [17, 34] | [26, 34] (one sector) | 12 min | 25, $5.88 \cdot 10^4$, $1.4 \cdot 10^{11}$ |
-
-- All nominal distances are confirmed, except that of `yarn_smitten_840_168_18`, which is **17** (Section 1).
-- The work of a CC round grows by a factor of 2.8–3.5 per weight for the `yarn_*` codes (2.4–2.9 for the BB codes);
-  with the walk of 0.14.8, the nodes of the `yarn_*` codes with $d = 14$ grow by about 5 per weight (e.g.,
-  `yarn_mitten_300`, $w = 12 \to 13$: 3.7x with 0.15.0, 4.9x with 0.14.8). In the round $w = 11$ of
-  `yarn_mitten_630`, 0.15.0 visits 110x fewer nodes (1.37M against 151M).
-- `yarn_mitten_975_195_24`: for $d_X$, the round $w = 23$ (about $3.5 \cdot 10^5$ thread-s, 46 min on 128 threads)
-  did not fit in the timeout of the run.
-- `bb_756_16_34`: the rounds $w = 26$ and 27 would take about 21 and 56 min (2.7x per weight), and the distance 34 is
-  out of reach.
-
-## 10. Checks of 0.15.1 and the Per-Node Cost of 0.15.2 (2026-10-28)
-
-`dist_m4ri` 0.15.1 (commit `6d7b2c9`, with the CC search of 0.15.0) on the server of Section 4, which was not idle
-(e.g., `method=3` took 94 s instead of the 77 s of Section 9.1 for the gross circuit): 413 runs, mostly on 128
-threads with `nothrottle=1`; then 0.15.2, which lowers the cost of a node of the branch and bound. The raw data and
-scripts are in `scratch/bench_0.15.1_p0/` and `scratch/reports/m4_per_node_0.15.2.md` (not in the repository).
-
-### 10.1 The distances of Section 9.3 with the walk (`cc_prune=0`)
-
-`method=2` up to $w = d - 1$ on 128 threads: no codeword up to this weight with any value of `cc_prune`, so that the
-walk of the earlier versions, which does not rely on the proof of `doc/cc_completeness.tex`, confirms the distances
-of Section 9.3 up to $d = 18$.
-
-| Code, sector | last round $w$ | `cc_prune=1` | `cc_prune=0` | nodes of the last round, `cc_prune=0` / 1 |
-| :--- | :---: | ---: | ---: | ---: |
-| `yarn_mitten_500_100_16`, $d_X$ / $d_Z$ | 15 | 1.4 s / 1.3 s | 112 s / 107 s | 341x / 323x |
-| `yarn_smitten_600_120_16`, $d_X$ / $d_Z$ | 15 | 1.5 s / 1.7 s | 98 s / 92 s | 275x / 228x |
-| `yarn_smitten_840_168_18`, $d_X$ | 16 | 3.6 s | 566 s | 618x |
-| `yarn_smitten_840_168_18`, $d_Z$ | 17 | 10.5 s | 2319 s | 1063x |
-| `yarn_mitten_540_108_18`, $d_X$ / $d_Z$ | 17 | 10.6 s / 10.3 s | 1751 s / 1455 s | 686x / 656x |
-
-- The ratio of the nodes grows with the weight, e.g., for $d_Z$ of `yarn_smitten_840`: 2.1x at $w = 5$, 109x at
-  $w = 12$, 1063x at $w = 17$.
-- `cc_prune=0`, 1, and 2 find the same codewords (`outC`) for gross, double gross, and `yarn_mitten_300` ($w = d$),
-  and for the DEMs of `surf_d3`, `bb_72` (up to $w = 8$: 1.28M codewords), and `mitten_270` hef, also with 1, 16, and
-  128 threads and with `method=3`; the nodes of each round do not depend on the number of threads. (`cc_prune=0` did
-  not finish the codewords of the gross DEM, $w \le 10$, within 40 min.)
-
-### 10.2 Start-list exclusion
-
-`method=2` up to $w = d - 1$ on 16 threads with a start list (`start=`) of the columns $0$ and $n/2$ (the first columns
-of the two blocks of these two-block codes) or $0, \dots, 7$, against separate runs from each listed column; the ratios
-list / separate (medians of 2–3 runs):
-
-| Code | 2 columns: nodes, CC work | 8 columns: nodes, CC work |
-| :--- | :--- | :--- |
-| gross | 0.95, 0.87 | 0.69, 0.70 |
-| double gross | 0.96, 0.92 | 0.78, 0.76 |
-| `bb_360_12_24` | 0.95, 0.94 | 0.71, 0.68 |
-
-The list finds the union of the codewords of the separate runs, each once (gross, $w = 12$: 293 and 810 codewords with
-2 and 8 columns; the separate runs find 314 and 1256).
-
-### 10.3 `method=3` on the full DEMs: 0.14.7 against 0.15.1
-
-Median wall time on 128 threads (24 full DEMs of the circuits of Sections 2 and 5.1); the circuits which take more than
-1 s:
-
-| Circuit | $d$ | 0.14.7 | 0.15.1 | 0.15.1, `cc_prune=0` |
-| :--- | :---: | ---: | ---: | ---: |
-| gross, SI1000 noise | 10 | 212 s | 94.3 s (2.25x) | 226 s |
-| gross, uniform noise | 10 | 182 s | 72.0 s (2.53x) | 189 s |
-| `yarn_mitten_150` hook-free, $Z$ / $X$ | 8 | 292 s / 116 s | 154 s / 62.4 s (1.9x) | 285 s / 115 s |
-| `mitten_270` custom | 9 | 209 s | 150 s (1.39x) | 203 s |
-| `torus_n200_k16_d16` | 8 | 124 s | 67.3 s (1.84x) | 123 s |
-| `torus_n200_k8_d17` | 8 | 31.9 s | 20.3 s (1.57x) | 31.5 s |
-| `shyps_225_16_8` | 8 | 16.3 s | 8.2 s (1.99x) | 16.1 s |
-| `mitten_270` hef | 7 | 4.07 s | 2.29 s (1.78x) | 4.00 s |
-
-- With `cc_prune=0`, 0.15.1 is as fast as 0.14.7 (0.94–1.08x on all 24 circuits), and so is 0.14.5 on the gross and
-  `mitten_270` custom circuits: the code of the walk did not change, and the speedup is that of the branch and bound.
-- The other 15 circuits (0.12–0.94 s) run at 0.89–1.06x the speed of 0.14.7 (mostly the start-up).
-
-### 10.4 Per-node cost (0.15.2)
-
-0.15.2 against 0.15.1 (both built with the makefile) with `method=2` on 128 threads, on the idle server; CC work: the CC
-thread time summed over the rounds. The results are the same, and with `cc_prune=1` also the nodes of every round;
-with `cc_prune=2`, the cover bounds are used only with at least 4 columns left (with 3, after the packing bound, they
-rarely prune on DEMs and cost more than they save).
-
-| Input | rounds | `cc_prune=1`: CC work | `cc_prune=2`: CC work |
-| :--- | :---: | :--- | :--- |
-| `yarn_smitten_840_168_18`, $d_Z$ | $w \le 16$ | 379 → 364 thread-s (1.04x) | 370 → 361 thread-s (1.03x) |
-| `yarn_mitten_540_108_18`, $d_X$ | $w \le 16$ | 368 → 350 thread-s (1.05x) | 367 → 347 thread-s (1.06x) |
-| double gross, $H_X$ | $w \le 17$ | 40.3 → 40.2 thread-s (1.00x) | 52.1 → 50.0 thread-s (1.04x) |
-| gross DEM | $w \le 8$ | 792 → 712 thread-s (1.11x) | 851 → 737 thread-s (1.16x) |
-| gross DEM | $w \le 9$ | 10158 → 9060 thread-s (1.12x) | 9822 → 9173 thread-s (1.07x) |
-| `mitten_270` custom DEM | $w \le 7$ | 786 → 625 thread-s (1.26x) | 945 → 639 thread-s (1.48x) |
-| `mitten_270` hef DEM | $w \le 6$ | 142 → 122 thread-s (1.16x) | 194 → 125 thread-s (1.55x) |
-| `mitten_150` custom DEM, `outC` | $w \le 8$ | 15.2K → 12.2K thread-s (1.25x) | 18.5K → 12.5K thread-s (1.48x) |
-
-- On one thread: 1.05–1.06x on codes and 1.04–1.11x on DEMs with `cc_prune=1` (`yarn_mitten_300`, double gross, gross;
-  `bb_72`, `mitten_270` hef, `mitten_150` custom), 1.04–1.09x and 1.25–1.39x with `cc_prune=2`. On 128 threads, the
-  gain on the DEMs is larger.
-- The same codewords (`outC`) as 0.15.1 for gross, `yarn_mitten_300`, `bb_72`, `surf_d3` with a start list, and
-  `mitten_150` custom ($w \le 8$: 74195 codewords), with both values of `cc_prune`.
-- `cc_prune=2` against `cc_prune=1` with 0.15.2 (CC work): 0.89x for `yarn_mitten_630_126_20` ($d_X$, $w \le 19$:
-  11681 against 13077 thread-s), 0.96–0.99x for `yarn_mitten_780_156_22` ($d_X$, $w \le 19$), `yarn_smitten_840`, and
-  `yarn_mitten_540` ($w \le 16$, 17), 1.01–1.04x on the DEMs above (0.96–1.00x on two slices of the start columns of
-  the round $w = 10$ of the gross DEM), but 1.23–1.26x for the BB codes: double gross ($w \le 17$), `bb_360_12_24`
-  ($w \le 22$: 11619 against 9454 thread-s, 91 s against 74 s), and `bb_756_16_34` ($w \le 22$: 6651 against 5281
-  thread-s). Thus `cc_prune=1` stays the default; `cc_prune=2` can save up to about 10% in the largest rounds of the
-  `yarn_*` codes, probably because their columns have the weights 3 and 6 (the cover bounds use the actual numbers of
-  unsatisfied rows of the columns, the syndrome-weight bound only the largest column weight), while all the columns of
-  the BB codes have the weight 3. With 0.15.1, `cc_prune=2` was ahead on the gross DEM for $w \ge 9$ (0.97x the CC work
-  of `cc_prune=1` for $w \le 9$, 0.77x the time for $w \le 10$ with `outC` in Section 10.1): there, the cover bounds
-  with 3 columns left still pay off.
+6. **High-Rate Weight-12 Two-Block Group-Algebra (2BGA) Code (`2bga_270_38_23_C45xC3`)**
+   - **Provenance and construction**: from L. P. Pryadko's `hr-2bga` search over odd-order groups (`tab6_6`: check
+     weights $w_a = w_b = 6$, $g_6 = 0$; candidate `c5_n270_k38_Naa4e2cc`, key `Naa4e2cc0f5e32000`, the confirmed
+     maximum-distance code among 12,587 `(270, 38, g6=0)` candidates), following H.-K. Lin and L. P. Pryadko, *Quantum
+     two-block group algebra codes*, Phys. Rev. A **109**, 022407 (2024), arXiv:2306.16400.
+   - Defined as $H_X = (L(a) \mid R(b))$, $H_Z = (R(b)^T \mid L(a)^T)$ over the abelian group
+     $G = \text{SmallGroup}(135, 2) \cong C_{45} \times C_3$ ($\ell = 135$, $n = 270$, $k = 38$, $\mathrm{rank}\,H_X =
+     \mathrm{rank}\,H_Z = 116$, $R = 38/270 \approx 0.141$, $k d^2 / n = 74.5$). In bivariate bicycle form over
+     $\mathbb{F}_2[x, y]/(x^{45} - 1, y^3 - 1)$ ($x = \text{Elements}(G)[8]$ of order 45, $y = \text{Elements}(G)[3]$
+     of order 3), $a(x, y) = 1 + x^5 y + x^8 y^2 + x^{30} + x^{30} y^2 + x^{44} y$ and
+     $b(x, y) = 1 + x^8 + x^{18} + x^{26} y + x^{29} y + x^{39}$, with rows and columns ordered by GAP's
+     `Elements(SmallGroup(135, 2))` (`a=1,5,26,35,132,133`, `b=1,30,79,86,107,111`; full Pcgs ordering in the `.mtx`
+     headers). The files `_Lx.mtx` and `_Lz.mtx` give echelon-reduced logical bases ($\mathrm{rank}(L_X L_Z^T) = 38$).
+   - **Confirmation date**: exact $d = d_X = d_Z = 23$ confirmed on **2026-11-14** in the `hr-2bga` search campaign;
+     $d_X = d_Z = 23$ holds identically by the abelian $X \leftrightarrow Z$ duality (block swap with group inversion
+     $g \mapsto g^{-1}$).
+
+7. **Classical Linear Codes (`benchmark/classical/`) and Boundary / Small CSS Codes (`benchmark/css/`)**
+   - **Classical codes (`classical/`)**: standard algebraic constructions — Hamming $[7, 4, 3]$, extended binary Golay
+     $[24, 12, 8]$, narrow-sense primitive binary BCH $[63, 36, 11]$ and $[127, 64, 21]$, and second-order Reed–Muller
+     $\mathrm{RM}(2, 7)$ $[128, 29, 32]$ ($H = G(\mathrm{RM}(4, 7))$, F. J. MacWilliams and N. J. A. Sloane, *The
+     Theory of Error-Correcting Codes*, North-Holland, 1977) — together with Tanner's $[155, 64, 20]$ $(3, 5)$-regular
+     quasi-cyclic LDPC code ($3 \times 5$ array of $31 \times 31$ circulants with shifts $5^b \cdot 2^a \bmod 31$,
+     $\mathrm{rank}\,H = 91$, R. M. Tanner, D. Sridhara, A. Sridharan, T. E. Fuja, and D. J. Costello, *IEEE Trans.
+     Inf. Theory* **50**, 2966–2984 (2004)) and the full-rank $8 \times 8$ identity matrix `k0_classical_eye8_H.mtx`
+     ($[8, 0]$, $k = 0$).
+   - **Boundary and small CSS codes (`css/`)**: the 5-qubit GHZ CSS stabilizer state `k0_graph_ghz5` ($[[5, 0]]$,
+     $k = 0$), `tiny_d1_4_1_1` ($[[4, 1, 1]]$, 3-qubit stabilizer state plus unchecked qubit 4, $d_X = d_Z = 1$),
+     Steane's $[[7, 1, 3]]$ code (A. M. Steane, *Proc. R. Soc. Lond. A* **452**, 2551 (1996)), Shor's $[[9, 1, 3]]$
+     code (P. W. Shor, *Phys. Rev. A* **52**, R2493 (1995)), and the $\{5, 5\}$ hyperbolic surface code
+     `hyp_5_5_40_10_4` ($[[40, 10, 4]]$, N. P. Breuckmann and B. M. Terhal, *IEEE Trans. Inf. Theory* **62**, 3700
+     (2016), arXiv:1506.04029, Table III; `examples/QX40.mtx`, `QZ40.mtx` paired with echelon logical bases `_Lx.mtx`,
+     `_Lz.mtx`).
+
+8. **$(3, q)$ Hyperbolic Surface and Triangular Toric CSS Codes (`css/`) and Subsystem / Hook-Extended Matrices
+   (`subsystem/`)**
+   - **Hyperbolic $\{3, 7\}$ and $\{3, 8\}$ surface codes (`css/hyp_3_*`)**: qubits on edges, weight-3 triangular face
+     checks ($H_Z$, $2n/3$ rows) and weight-$q$ vertex checks ($H_X$, $2n/q$ rows), built from smooth finite quotients
+     of the orientation-preserving triangle group $\Delta^+(2, 3, q) = \langle x, y \mid x^2 = y^3 = (xy)^q = 1 \rangle$
+     via GAP's `LINS` package (`LowIndexNormalSubs`), following N. P. Breuckmann and B. M. Terhal, *IEEE Trans. Inf.
+     Theory* **62**, 3700 (2016), arXiv:1506.04029, and C. Vuillot et al., *New J. Phys.* **21**, 033028 (2019). For
+     $\{3, 7\}$ ($k = n/21 + 2$): Klein quartic ($\mathrm{PSL}(2, 7)$, $|Q| = 168$, $[[84, 6, 4]]$), Macbeath surface
+     ($\mathrm{PSL}(2, 8)$, $|Q| = 504$, $[[252, 14, 6]]$), and a genus-14 Hurwitz quotient ($\mathrm{PSL}(2, 13)$,
+     $|Q| = 1092$, $[[546, 28, 7]]$). For $\{3, 8\}$ ($k = n/12 + 2$): quotients of orders $|Q| = 192, 432, 1296$ giving
+     $[[96, 10, 4]]$, $[[216, 20, 5]]$, and $[[648, 56, 6]]$. On the $Z$-logical sector (`finH=Hx`, `finG=Hz`), the
+     weight-3 face checks give $|\mathcal{T}_3| = 2n/3$ ($w_G = 3$).
+   - **Euclidean $(3, 6)$ triangular-lattice toric codes (`css/toric_3_6_*`)**: $L \times L$ periodic triangulation for
+     $L \in \{6, 8, 12\}$ ($n = 3L^2$, $k = 2$, $L^2$ weight-6 vertex checks $H_X$, $2L^2$ weight-3 face checks $H_Z$,
+     $d_Z = L$, $d_X = 2L$, $|\mathcal{T}_3| = 2L^2$; K. Fujii and Y. Tokunaga, *Phys. Rev. A* **86**, 020303 (2012)).
+   - **Subsystem gauge sectors and hook-extended CSS matrices (`subsystem/`)**: the static $X$-error gauge sector of
+     the $[[225, 16, 8]]$ SHYPS subsystem code (`shyps_225_16_8_gauge`, $44 \times 225$ weight-24 stabilizers $H$,
+     $225 \times 225$ weight-3 gauge generators $G$, $|\mathcal{T}_3| = 525$, extracted from
+     `stim_shyps/shyps_225_16_8_r9_Z.stim`, Origins, item 4); $L \times L$ Bacon–Shor gauge sectors for $L \in \{5, 9\}$
+     (`bacon_shor_25_1_5_gauge` and `bacon_shor_81_1_9_gauge`, weight-$2L$ $H$, weight-2 $G$, D. Bacon, *Phys. Rev. A*
+     **73**, 012340 (2006)); single-frame hook-extended CSS matrices from `bb_72` and `gross_144` $X$-memory circuits
+     (`bb_72_hookext`, $36 \times 180$, $d = 5$; `gross_144_hookext`, $72 \times 360$, $d = 8$; $w_G = 6$ with weight-3
+     hook triangles); and the minimal $[[8, 1, 3]]$ witness `t11_8_1_3` ($w_G = 5$, $|\mathcal{T}_3| = 1$).
+
+9. **Topological $k = 1$ Surface and Color Codes, Planar Directional Rectangle, and High-Distance ($d > 64$) Instances**
+   - **Rotated planar surface codes and circuits (`css/surface_rot_*`, `stim_surface/surface_rot_*`)**: planar
+     $[[L^2, 1, L]]$ CSS codes (weight-4 bulk and weight-2 boundary checks; H. Bombin and M. A. Martin-Delgado, *Phys.
+     Rev. A* **76**, 012305 (2007); C. Horsman et al., *New J. Phys.* **14**, 123011 (2012)) and $L$-round depolarizing
+     $Z$-memory Stim circuits (`stim.Circuit.generated("surface_code:rotated_memory_z", ...)`, $p = 0.001$; C. Gidney,
+     *Quantum* **5**, 497 (2021)) for odd $L \in \{3, 5, 7, 9, 11, 13\}$.
+   - **Planar $(6.6.6)$ 2D color CSS codes (`css/color_271_1_19`, `css/color_721_1_31`) and planar directional
+     rectangle (`css/bidir_rect_261_16_9`)**: self-dual triangular honeycomb-lattice CSS codes $[[271, 1, 19]]$ and
+     $[[721, 1, 31]]$ ($n = (3d^2 + 1)/4$, $w \le 6$; H. Bombin and M. A. Martin-Delgado, *Phys. Rev. Lett.* **97**,
+     180501 (2006)), and the open-boundary directional planar rectangle CSS code `bidir_rect_261_16_9`
+     ($[[261, 16, 9]]$, `NNENWWSWWNENN` on an $L_1$ $10 \times 14$ open-boundary lattice, extracted from one
+     syndrome-extraction round).
+   - **High-distance instances above the $w = 64$ shortening / canonical-table cap (`d > 64`)**: `dem/rep_d71_r6.dem`
+     (6-round repetition-code DEM, $420 \times 1{,}121$, $|\mathcal{T}_3| = 700$, exact $d = 71$);
+     `css/rep_css_68_1_1` ($66 \times 68$ weight-2 $H_X$ and $1 \times 68$ $H_Z$, $d_Z = 67, d_X = 1$, certified exact
+     by CC at $w = 67$); `css/surface_strip_333_1_3` ($3 \times 67$ planar strip $\mathrm{HGP}(\mathrm{rep}_{67},
+     \mathrm{rep}_3)$, $[[333, 1, 3]]$ with $d_Z = 67, d_X = 3$); and `classical/bch_255_45_87_H.mtx` (narrow-sense
+     primitive binary BCH $[255, 45, 87]$, $210 \times 255$, exact $d = 87$).
+
+10. **Unmerged Identical-Column / Duplicate-Entry Matrices (`subsystem/`) and Standalone DEM / Drop Suite (`dem/`)**
+    - **Identical-column and duplicate-entry `.mtx` matrices (`subsystem/`)**: `bb_72_dup2x_{H,L}.mtx` ($H = (H_X \mid
+      H_X)$, $36 \times 144$, $L = (L_X \mid L_X)$, $12 \times 144$, $|\mathcal{T}_3| = 0$, 72 duplicated column pairs,
+      5,376 weight-6 codewords across 84 canonical classes under `rw_opt=33`); `bb_72_r3_X_unmerged_{H,L}.mtx`
+      (unmerged 3-round minority-stripped DEM of `bb_72_12_6_si1000_r6_X.stim`, $180 \times 9{,}180$ with 1,512
+      distinct columns, $|\mathcal{T}_3| = 653{,}688$, exact $d = 6$); and `dup_entries_xor_H.mtx` ($12 \times 24$
+      extended binary Golay `[24, 12, 8]` matrix with odd- and even-multiplicity duplicate `(row, col)` coordinate
+      entries summed mod 2 on read).
+    - **Standalone `.dem` and `.drop` files (`dem/`)**: `tagged_repeat_pmin.dem` (24 detectors, 49 raw errors, 1
+      observable; exercises `[tag]` annotations, `repeat 3 { ... shift_detectors ... }`, self-cancelling `^`
+      components, and probability cuts `pmin=0` $\to d = 3$, `pmin=0.005` $\to d = 5$, `pmin=0.02` $\to k = 0$);
+      `bb_72_dropA.{dem,drop}` ($432 \times 16{,}200$ DEM of `bb_72_12_6_si1000_r6_X.stim` with observables perturbed
+      by $L_j \leftarrow L_j \oplus A H_{M,j}$ on the $|M| = 180$ minority-basis detectors using `seed=12345`, so
+      `drop=auto` keeps all 432 detectors while `drop=bb_72_dropA.drop` verifies exactness with $A \neq 0$ and drops
+      180 detectors to $252 \times 2{,}232$, exact $d = 6$); `bb_72_bad.drop` (non-exact $|M| + 1 = 181$ list
+      triggering fallback to the full DEM); and `make_large_drop_dems.py` (deterministic `seed=12345` generator for the
+      large $> 2\text{ MB}$ `dgross_288_dropA` and `bb_756_dropA` instances).
+
+11. **Non-CSS Stabilizer Codes (`stabilizer/`), HGP / CPM-PP / Balanced-Product Codes, Torus Static Matrices, and
+    Non-Abelian $w = 12$ 2BGA Codes (`css/`)**
+    - **Non-CSS stabilizer codes in length-$3n$ Pauli-expanded form (`stabilizer/*_pauli3n_{H,G,L}.mtx`)**: for an
+      $[[n, k, d]]$ code with $m = n - k$ symplectic generators $(S_X \mid S_Z)$, $H = (S_Z \mid S_X \mid S_Z \oplus
+      S_X)$ ($m \times 3n$), $G$ ($(m + n) \times 3n$) stacks the $m$ stabilizer supports and the $n$ single-qubit
+      Pauli identities $(I_n \mid I_n \mid I_n)$ ($|\mathcal{T}_3| \ge n$, making Hamming weight equal to exact Pauli
+      weight), and $L$ ($2k \times 3n$) spans $\ker G / \mathrm{im}\,H$. Includes the perfect $[[5, 1, 3]]$ cyclic code
+      (`laflamme_5_1_3_pauli3n`; R. Laflamme, C. Miquel, J. P. Paz, and W. H. Zurek, *Phys. Rev. Lett.* **77**, 198
+      (1996)), Gottesman's $[[8, 3, 3]]$ code (`gottesman_8_3_3_pauli3n`; D. Gottesman, *Phys. Rev. A* **54**, 1862
+      (1996)), and the high-rate symplectic-halved non-CSS pair-partition qLDPC code `halved_92_25_8_pauli3n`
+      ($[[92, 25, 8]]$, $R \approx 0.272$, reverse-folded from `kasai_cpm_184_50_10` via Prop. 4 & App. D.4 of J. Y.
+      Lee, K. Okada, N. Maskara, K. Kasai, and H. Zhou, arXiv:2609.30069).
+    - **Hypergraph-product, CPM pair-partition, and ZSZ balanced-product CSS codes (`css/`)**: `hgp_585_112_5`
+      ($\mathrm{HGP}(H_{[15,7,5]}, H_{[31,16,7]})$, $[[585, 112, 5]]$ with $k = 112 > 64$ and $d_X = 7, d_Z = 5$;
+      J.-P. Tillich and G. Zémor, *IEEE Trans. Inf. Theory* **60**, 1193 (2014)); `kasai_cpm_184_50_10` ($[[184, 50,
+      10]]$, $69 \times 184$, $w = 8$, $\mathrm{rank} = 67$, Lee et al., arXiv:2609.30069, App. D.2); and two
+      rate-$1/5$ balanced-product CSS codes over non-abelian metacyclic ZSZ groups
+      $C_\ell \rtimes C_5$ ($w = 9$; N. P. Breuckmann and J. N. Eberhardt, *IEEE Trans. Inf. Theory* **67**, 6653
+      (2021), arXiv:2012.09271; Y. Hong, arXiv:2607.27644): `bp_zsz_275_55_10` ($[[275, 55, 10]]$ over $C_{11} \rtimes
+      C_5$, $d_X = 12, d_Z = 10$) and `bp_zsz_625_125_14` ($[[625, 125, \le 14]]$ over $C_{25} \rtimes C_5$,
+      $k = 125 > 64$).
+    - **Small BB anchors, 2D torus static check matrices, and non-abelian $w = 12$ 2BGA codes (`css/`)**: `bb_18_4_4`
+      ($[[18, 4, 4]]$, $\ell = 3, m = 3$) and `bb_30_4_6` ($[[30, 4, 6]]$, $\ell = 3, m = 5$) small bivariate bicycle
+      codes; static check matrices `torus_60_8_6`, `torus_120_8_6`,
+      `torus_200_16_10`, and `torus_200_8_10` extracted from the four `stim_torus/` circuits (Origins, item 3),
+      certifying their exact code distances $d = 6, 6, 10, 10$; and two non-abelian $w = 12$ 2BGA codes from L. P.
+      Pryadko's `hr-2bga` project (`AsSSortedList(SmallGroup(o, i))` GAP ordering): `2bga_270_38_21_SG135_4`
+      ($[[270, 38, 21]]$ over $\text{SmallGroup}(135, 4) \cong C_5 \times (C_9 \rtimes C_3)$, `tna6_6` key
+      `Nab35efc9222302d6`, exact $d_X = d_Z = 21$) and `2bga_310_36_21_SG155_1` (`sg155_1_n310_k36_a`,
+      $[[310, 36, \le 21]]$ over $\text{SmallGroup}(155, 1) \cong C_{31} \rtimes C_5$ with trivial Tanner automorphism
+      group, $d_X \in [18, 21]$, $d_Z \in [18, 27]$).
+
+12. **Color-Code `memory_xyz` (`stim_color/`), Biased / Heralded / XZZX / `MPP` / High-$k$ Circuits (`stim_noise/`),
+    and Folded Shaw–Terhal 2BGA Circuits (`stim_2bga/`)**
+    - **Color-code `memory_xyz` circuits (`stim_color/color_d{3,5,7,9}_r{d}_xyz.stim`)**: generated via
+      `stim.Circuit.generated("color_code:memory_xyz", distance=d, rounds=d, ...)` at $p = 0.001$ (C. Gidney and C.
+      Jones, *Quantum* **7**, 1141 (2023)); cycling $X \to Y \to Z$
+      detectors couple all bases (`drop=auto` keeps all detectors) with hook-reduced exact
+      $d_{\mathrm{circ}} = 2, 3, 4, 5$ (`color_d5_r5_xyz.stim` corresponds to `color_xyz_d5` in
+      [Section 11.1](HISTORY.md#111-stage-ablation-16-threads)).
+    - **Biased Pauli, XZZX, heralded erasure, `MPP`, and high-$k$ circuits (`stim_noise/`)**:
+      `surface_rect_23_1_3_yz_biased_r5_Z.stim` ($3 \times 5$ planar surface code $[[23, 1, 3]]$, $d_X = 3, d_Z = 5$,
+      under $Y/Z$-biased `PAULI_CHANNEL_1` noise, exercising `approximate_disjoint_errors=True` and raising
+      `compute_model_lower_bound` from $3$ with `minority=False` to exact $5$ with `minority=True`);
+      `surface_xzzx_d5_biased_r5.stim` ($[[25, 1, 5]]$ XZZX rotated surface code, J. P. Bonilla Ataides et al., *Nat.
+      Commun.* **12**, 2172 (2021), under $Z$-biased `PAULI_CHANNEL_1/2` noise, exercising `is_rotated_css=True` in
+      `classify_qubits_thorough`); `surface_rot_d5_heralded_erase_r5_Z.stim` (`HERALDED_ERASE` and
+      `HERALDED_PAULI_CHANNEL_1`, replaced by `MPAD` on `strip_noise()` without shifting `rec[-k]` offsets);
+      `color_d5_mpp_r5_Z.stim` (ancilla-free $[[19, 1, 5]]$ color code using multi-target `MPP` and `MZZ`); and
+      `bp_zsz_625_125_14_r2_Z.stim` (2-round CSS $Z$-memory circuit with $k = 125 > 64$ observables, `maskL->kw = 2`,
+      gating off Stage 4 sparse-dual on a circuit DEM).
+    - **Folded Shaw–Terhal 2BGA circuits (`stim_2bga/2bga_162_*_folded_*` and `make_folded_2bga_circuits.py`)**:
+      noiseless sequential syndrome-extraction templates with alternating forward and mirror-backward rounds ($T = 1$
+      and $T = d$ have identical circuit-level distance; M. H. Shaw and B. M. Terhal, arXiv:2604.09797) from L. P.
+      Pryadko's `hr-2bga` `optcirc` campaign: `2bga_162_24_16_C9xC9_folded_T{1,16}_{X,Z}.stim` ($[[162, 24, 16]]$ over
+      $C_9 \times C_9$, $w = 10$, model lower bound 8, exact $d_{\mathrm{circ}} = 9$), and
+      `make_folded_2bga_circuits.py`, which deterministically generates both `2bga_162` and the $w = 12$
+      `2bga_254_44_19_C127_folded_T{1,19}_{X,Z}.stim` circuits ($[[254, 44, 19]]$ over $C_{127}$,
+      $d_{\mathrm{circ}} \in [9, 17]$).

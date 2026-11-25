@@ -1,0 +1,2137 @@
+{
+  "schema": "dm4ri-bench-manifest/1",
+  "id": "certify",
+  "version": "1.0",
+  "created": "2026-11-24",
+  "description": "Certification benchmark suite v1 for dist-m4ri (51 instances, T0-T3; REVIEW.md 3.2).",
+  "tiers": {
+    "T0": {
+      "range_s": [
+        0,
+        1
+      ],
+      "budget_s": 60,
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "threads": [
+        128
+      ]
+    },
+    "T1": {
+      "range_s": [
+        1,
+        60
+      ],
+      "budget_s": 300,
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "threads": [
+        128,
+        64
+      ]
+    },
+    "T2": {
+      "range_s": [
+        60,
+        1800
+      ],
+      "budget_s": 1800,
+      "seeds": [
+        1,
+        2,
+        3
+      ],
+      "threads": [
+        128,
+        64
+      ]
+    },
+    "T3": {
+      "range_s": [
+        1800,
+        null
+      ],
+      "budget_s": 3600,
+      "seeds": [
+        1
+      ],
+      "threads": [
+        128
+      ]
+    }
+  },
+  "canary_instance": "css/yarn_mitten_540_108_18:Z",
+  "scaling_instances": [
+    "css/yarn_mitten_540_108_18:Z",
+    "dem/gross_144_12_12_si1000_r12_X.full",
+    "dem/shyps_225_16_8_r9_Z.full"
+  ],
+  "instances": [
+    {
+      "id": "css/gross_144_12_12:Z",
+      "kind": "css_sector",
+      "tier": "T0",
+      "sector": "Z",
+      "d_ref": 12,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1069-1071 (HISTORY 5.3)",
+        "dist_m4ri 0.14.0",
+        "HISTORY 12.3 (O3_m3)"
+      ],
+      "t_best_s": 0.014,
+      "t_best_note": "0.17.3, 16 threads (5 seeds; 0.031 s in 0.14.0)",
+      "compare3_id": "css_gross_144_12_12_Z",
+      "tags": {
+        "n": 144,
+        "m": 72,
+        "m_G": 72,
+        "k": 12,
+        "family": "BB",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/gross_144_12_12_Hx.mtx",
+          "sha256": "5d5473a4da69fef961d0d31e6a3086efc4c744e83a9597687da86c00cec2debf"
+        },
+        "G": {
+          "path": "benchmark/css/gross_144_12_12_Hz.mtx",
+          "sha256": "74cbed2eaa83e53c5e82b04dcbedad7c2c19021405b5f15e493e992176cfa881"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/double_gross_288_12_18:Z",
+      "kind": "css_sector",
+      "tier": "T0",
+      "sector": "Z",
+      "d_ref": 18,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1597 (HISTORY 9.1)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 0.145,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [0.142, 0.160] s)",
+      "compare3_id": "css_double_gross_288_12_18_Z",
+      "tags": {
+        "n": 288,
+        "m": 144,
+        "m_G": 144,
+        "k": 12,
+        "family": "BB",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/double_gross_288_12_18_Hx.mtx",
+          "sha256": "f845c825b9e9b7132693e240ef785fcbbbae5c0d02b02113ef0b064be1c9c461"
+        },
+        "G": {
+          "path": "benchmark/css/double_gross_288_12_18_Hz.mtx",
+          "sha256": "cb41ec8fdb0e09c4fa0a9be79bc955426205bfa0c39e530823234fc5e4bde59e"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_mitten_300_60_14:Z",
+      "kind": "css_sector",
+      "tier": "T0",
+      "sector": "Z",
+      "d_ref": 14,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1596 (HISTORY 9.1)",
+        "dist_m4ri 0.15.0"
+      ],
+      "t_best_s": 0.22,
+      "t_best_note": "0.15.0, 128 threads",
+      "compare3_id": "css_yarn_mitten_300_60_14_Z",
+      "tags": {
+        "n": 300,
+        "m": 120,
+        "m_G": 120,
+        "k": 60,
+        "family": "Yarn Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_300_60_14_Hx.mtx",
+          "sha256": "d9e77c5cf88ab2b3fe2a502d4214a629779a4c0d20e817ee323a76cbb35f0a09"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_300_60_14_Hz.mtx",
+          "sha256": "d2d3d8a1580bdc9825fa2e1b7e5991614d6659d1b267c4db3193ae5b4261519b"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_smitten_600_120_14:Z",
+      "kind": "css_sector",
+      "tier": "T0",
+      "sector": "Z",
+      "d_ref": 14,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1594 (HISTORY 9.1)",
+        "dist_m4ri 0.15.0"
+      ],
+      "t_best_s": 0.14,
+      "t_best_note": "0.15.0, 128 threads",
+      "compare3_id": null,
+      "tags": {
+        "n": 600,
+        "m": 240,
+        "m_G": 240,
+        "k": 120,
+        "family": "Yarn Smitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_smitten_600_120_14_Hx.mtx",
+          "sha256": "30bd836492d4ff444904a89174db999ea4b4886edaebc2ff6f06427d53ba2580"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_smitten_600_120_14_Hz.mtx",
+          "sha256": "d3fff6a32ba0f6166cf5fba4835f3942d9102ceff24d5059994b301a6b15cdd3"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/mitten_270_54_10_C9xS3:Z",
+      "kind": "css_sector",
+      "tier": "T0",
+      "sector": "Z",
+      "d_ref": 10,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:463 (Section 1)",
+        "dist_m4ri 0.14.0"
+      ],
+      "t_best_s": 0.04,
+      "t_best_note": "< 0.04 s (0.14.0, 128 threads)",
+      "compare3_id": null,
+      "tags": {
+        "n": 270,
+        "m": 108,
+        "m_G": 108,
+        "k": 54,
+        "family": "Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/mitten_270_54_10_C9xS3_Hx.mtx",
+          "sha256": "664519c2850e6f4483d438ab391e3636ef04ec4a38e40cd3275b06c1cf0e5461"
+        },
+        "G": {
+          "path": "benchmark/css/mitten_270_54_10_C9xS3_Hz.mtx",
+          "sha256": "14cbc6426dcb29f6b6a061b56e77f50ffa024f041be236f11bdc09731dbc56c6"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/kasai_cpm_184_50_10:Z",
+      "kind": "css_sector",
+      "tier": "T0",
+      "sector": "Z",
+      "d_ref": 10,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1",
+        "HISTORY 12 (S1)"
+      ],
+      "t_best_s": 0.015,
+      "t_best_note": "0.17.3, 16 threads (0.02 s CC on 64 threads)",
+      "compare3_id": "css_kasai_184_50_10_Z",
+      "tags": {
+        "n": 184,
+        "m": 69,
+        "m_G": 69,
+        "k": 50,
+        "family": "CPM-PP",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/kasai_cpm_184_50_10_Hx.mtx",
+          "sha256": "6a88917a80f032267d7ffa7c6cd59d6f015dd7129a4dda80e73c733181987ec0"
+        },
+        "G": {
+          "path": "benchmark/css/kasai_cpm_184_50_10_Hz.mtx",
+          "sha256": "5ecb231411bf518f21856704c0300504b2d60e1218f0c0761f70839628184fdf"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/hyp_3_7_546_28_7:Z",
+      "kind": "css_sector",
+      "tier": "T0",
+      "sector": "Z",
+      "d_ref": 7,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:490-494 (Section 1)",
+        "dist_m4ri CC",
+        "HISTORY 12 (S1)"
+      ],
+      "t_best_s": 0.014,
+      "t_best_note": "0.17.3, 16 threads",
+      "compare3_id": null,
+      "tags": {
+        "n": 546,
+        "m": 156,
+        "m_G": 364,
+        "k": 28,
+        "family": "Hyperbolic (3,7)",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/hyp_3_7_546_28_7_Hx.mtx",
+          "sha256": "7cbd76906c6701c7dd8142a7afacaf6bc207e1afb33e2fcbdca843e9fd18c01f"
+        },
+        "G": {
+          "path": "benchmark/css/hyp_3_7_546_28_7_Hz.mtx",
+          "sha256": "6e744566e480da23ef333071c2da22a939922147d6fe023ff61b1e6d5b6488e2"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "classical/tanner_155_64_20",
+      "kind": "classical",
+      "tier": "T0",
+      "sector": null,
+      "d_ref": 20,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:517 (Section 1.1)",
+        "run_final.py:1695 (S1)",
+        "HISTORY 12.3 (O3_m3)"
+      ],
+      "t_best_s": 0.284,
+      "t_best_note": "0.17.3, 16 threads (5 seeds)",
+      "compare3_id": null,
+      "tags": {
+        "n": 155,
+        "m": 93,
+        "k": 64,
+        "family": "QC-LDPC"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/classical/tanner_155_64_20_H.mtx",
+          "sha256": "d609990065f0371bf840d98cfb8510c1aeb51f3fcf0aa6b9bf822d4a4c45aed3"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "dem/bb_72_12_6_si1000_r6_X.full",
+      "kind": "dem",
+      "tier": "T0",
+      "sector": null,
+      "d_ref": 6,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:979-982,1008 (HISTORY 5.1)",
+        "dist_m4ri 0.14.0"
+      ],
+      "t_best_s": 0.11,
+      "t_best_note": "0.14.0, 128 threads",
+      "compare3_id": null,
+      "tags": {
+        "n": 17280,
+        "m": 432,
+        "k": 12,
+        "family": "BB SI1000",
+        "basis": "X",
+        "code_n": 72,
+        "code_k": 12,
+        "rounds": 6,
+        "noise": "si1000"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "bb_72_12_6_si1000_r6_X.full.dem",
+          "sha256": "e438c13aaf45fdc18ddc62cdbb64b4db292efbdc9d832f71a894ca43c5393828"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_bb/bb_72_12_6_si1000_r6_X.stim",
+          "sha256": "7510f2632282cd04845a59f734c6446e8e102fd26c200ffde0c75b6b29d66734"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/mitten_150_30_8_C5xS3_custom_r5_Z.full",
+      "kind": "dem",
+      "tier": "T0",
+      "sector": null,
+      "d_ref": 7,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1000 (HISTORY 5.1)",
+        "dist_m4ri 0.14.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 0.659,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [0.608, 0.674] s; 0.56 s in 0.14.0)",
+      "compare3_id": null,
+      "tags": {
+        "n": 47700,
+        "m": 720,
+        "k": 30,
+        "family": "Mitten custom",
+        "basis": "Z",
+        "code_n": 150,
+        "code_k": 30,
+        "rounds": 5,
+        "noise": "custom"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "mitten_150_30_8_C5xS3_custom_r5_Z.full.dem",
+          "sha256": "14367077bb3669f900ed18ff84f76e649a66c0186a8d6167a2cff40cee6e7e03"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_mitten/mitten_150_30_8_C5xS3_custom_r5_Z.stim",
+          "sha256": "267a7bfa13fac07cc1a1954b12d0ef9660c10c55ed5876bb871a2db330d72a6e"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/bb_90_8_10_si1000_r10_X.full",
+      "kind": "dem",
+      "tier": "T0",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1009 (HISTORY 5.1)",
+        "dist_m4ri 0.14.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 0.88,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [0.850, 0.913] s; 0.68 s in 0.14.0)",
+      "compare3_id": null,
+      "tags": {
+        "n": 37440,
+        "m": 900,
+        "k": 8,
+        "family": "BB SI1000",
+        "basis": "X",
+        "code_n": 90,
+        "code_k": 8,
+        "rounds": 10,
+        "noise": "si1000"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "bb_90_8_10_si1000_r10_X.full.dem",
+          "sha256": "9e28339a7647f166ebbd526148dd5854323e719f45a1ed377c0a7f16cacc799c"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_bb/bb_90_8_10_si1000_r10_X.stim",
+          "sha256": "d5455fe56fe6d5c19a31328187d2e994460e68da29978879ac80f58cc947cb1a"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/torus_n60_k8_d14_X.full",
+      "kind": "dem",
+      "tier": "T0",
+      "sector": null,
+      "d_ref": 6,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1013 (HISTORY 5.1)",
+        "dist_m4ri 0.14.0"
+      ],
+      "t_best_s": 0.15,
+      "t_best_note": "0.14.0, 128 threads",
+      "compare3_id": null,
+      "tags": {
+        "n": 10710,
+        "m": 120,
+        "k": 8,
+        "family": "2D Torus dynamic",
+        "basis": "X",
+        "code_n": 60,
+        "code_k": 8,
+        "rounds": 1,
+        "noise": "add_noise(0.001)"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "torus_n60_k8_d14_X.full.dem",
+          "sha256": "e2389e85e9c55a990e880650774ed9474c55643d48e93cfd484fb5bc595015eb"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_torus/NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim",
+          "sha256": "55117293c2af756cca545064950845f462df97e77242bf6dfb47ef09930bb963"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": {
+          "p": 0.001,
+          "when": "if_noiseless"
+        },
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "circ/surface_rot_d7_r7_Z",
+      "kind": "circuit",
+      "tier": "T0",
+      "sector": null,
+      "d_ref": 7,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 2.7",
+        "dist_m4ri CC"
+      ],
+      "t_best_s": 0.716,
+      "t_best_note": "0.17.3, 64 threads (dist_m4ri.py)",
+      "compare3_id": "circ_surface_rot_d7_r7_Z",
+      "tags": {
+        "n": 6023,
+        "m": 336,
+        "k": 1,
+        "family": "Rotated Surface",
+        "basis": "Z",
+        "code_n": 49,
+        "code_k": 1,
+        "rounds": 7,
+        "noise": "stim_depol(0.001)"
+      },
+      "files": {
+        "circuit": {
+          "path": "benchmark/stim_surface/surface_rot_d7_r7_Z.stim",
+          "sha256": "65314ed6668d7e248d5489f4bdd02e29ad3fb3d0798ce6a552b942cf6f4b2671"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_surface/surface_rot_d7_r7_Z.stim",
+          "sha256": "65314ed6668d7e248d5489f4bdd02e29ad3fb3d0798ce6a552b942cf6f4b2671"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "css/yarn_mitten_500_100_16:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 16,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1637 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 1.11,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [1.09, 1.12] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 500,
+        "m": 200,
+        "m_G": 200,
+        "k": 100,
+        "family": "Yarn Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_500_100_16_Hx.mtx",
+          "sha256": "c98d32f73a5ab2768d175a159ea7a17ec131015b20c2d19f82c6a8897369d540"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_500_100_16_Hz.mtx",
+          "sha256": "89418fcce294abae035348b5056a2fc8d367d1b1b20bb7e932b538af7664b16c"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_smitten_600_120_16:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 16,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1638 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 1.52,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [1.47, 1.52] s; 1.4 s in 0.15.0)",
+      "compare3_id": null,
+      "tags": {
+        "n": 600,
+        "m": 240,
+        "m_G": 240,
+        "k": 120,
+        "family": "Yarn Smitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_smitten_600_120_16_Hx.mtx",
+          "sha256": "f346178f161848bdedb27509d56e755c10dcbd805957f4a864294fff696b9ae9"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_smitten_600_120_16_Hz.mtx",
+          "sha256": "13fbdf57a25260eb92fce46d7261e811b3e8f94114d788fc03432888d44312d7"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_smitten_840_168_18:X",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "X",
+      "d_ref": 17,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1639 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0"
+      ],
+      "t_best_s": 3.3,
+      "t_best_note": "0.15.0, 128 threads",
+      "compare3_id": null,
+      "tags": {
+        "n": 840,
+        "m": 336,
+        "m_G": 336,
+        "k": 168,
+        "family": "Yarn Smitten",
+        "sector": "X"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_smitten_840_168_18_Hz.mtx",
+          "sha256": "d9f03a1c667839fd5b9cf61b3237cf55615258e74d810405c087cf6ba95965e4"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_smitten_840_168_18_Hx.mtx",
+          "sha256": "fa074b52512d5378eafbe937f8f5e1036bea10c415f0f4ec3c0461af9f76e01a"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_smitten_840_168_18:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 18,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1639 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 8.98,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [8.89, 9.22] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 840,
+        "m": 336,
+        "m_G": 336,
+        "k": 168,
+        "family": "Yarn Smitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_smitten_840_168_18_Hx.mtx",
+          "sha256": "fa074b52512d5378eafbe937f8f5e1036bea10c415f0f4ec3c0461af9f76e01a"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_smitten_840_168_18_Hz.mtx",
+          "sha256": "d9f03a1c667839fd5b9cf61b3237cf55615258e74d810405c087cf6ba95965e4"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_mitten_540_108_18:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 18,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1640 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 8.85,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [8.69, 9.09] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 540,
+        "m": 216,
+        "m_G": 216,
+        "k": 108,
+        "family": "Yarn Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_540_108_18_Hx.mtx",
+          "sha256": "3e0be78cd7bfff1c8a3c8848e8b6bcd5a1c11b03f4bf79c3284b63f42095aafd"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_540_108_18_Hz.mtx",
+          "sha256": "02735b969ea79d66bac4295837e796ecbf2f2f64e78fa97a4752c3b041b4a47f"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_smitten_1200_240_20:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 20,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1641 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 59.5,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [57.3, 60.5] s)",
+      "compare3_id": "css_yarn_smitten_1200_240_20_Z",
+      "tags": {
+        "n": 1200,
+        "m": 480,
+        "m_G": 480,
+        "k": 240,
+        "family": "Yarn Smitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_smitten_1200_240_20_Hx.mtx",
+          "sha256": "ab44e773d6dd5153ee55d7d87e7f766c5a19938b255b6417138410358468cfe9"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_smitten_1200_240_20_Hz.mtx",
+          "sha256": "23b251b858d8b0bdd311750ac1cd1673a041d755df465660bac9687b821e12da"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/2bga_288_4_20_C24xS3:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 20,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 1.3,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [1.27, 1.31] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 288,
+        "m": 144,
+        "m_G": 144,
+        "k": 4,
+        "family": "2BGA",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/2bga_288_4_20_C24xS3_Hx.mtx",
+          "sha256": "83180c1dd9317d5172e4557f768ac836e35da50be675f50c7c3858ffb7c50bde"
+        },
+        "G": {
+          "path": "benchmark/css/2bga_288_4_20_C24xS3_Hz.mtx",
+          "sha256": "13bc04af23112d2ea31d36e776e8810f1dc59fa247932ccaef4526812e8342c2"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/2bga_252_16_20_C7xD18:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 20,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 6.9,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [6.74, 6.94] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 252,
+        "m": 126,
+        "m_G": 126,
+        "k": 16,
+        "family": "2BGA",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/2bga_252_16_20_C7xD18_Hx.mtx",
+          "sha256": "854e2fdfbdb9e2c3eb096df1aca51ffdec1a7d1b492ae6e4b5540f9a15e870c0"
+        },
+        "G": {
+          "path": "benchmark/css/2bga_252_16_20_C7xD18_Hz.mtx",
+          "sha256": "ce21509a9b1c03bca3e4333b7697b8fe5cb803b37305bc496868a95d4b1b74f9"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/2bga_288_8_22_C18xD8:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 22,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1",
+        "dist_m4ri 0.16.1"
+      ],
+      "t_best_s": 33.0,
+      "t_best_note": "0.16.1 CC, 64 threads",
+      "compare3_id": "css_2bga_288_8_22_Z",
+      "tags": {
+        "n": 288,
+        "m": 144,
+        "m_G": 144,
+        "k": 8,
+        "family": "2BGA",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/2bga_288_8_22_C18xD8_Hx.mtx",
+          "sha256": "32df56513891a011bfb9bb5cb353b0ed9911d22bbd91219ecd41a848f4d90ff7"
+        },
+        "G": {
+          "path": "benchmark/css/2bga_288_8_22_C18xD8_Hz.mtx",
+          "sha256": "a68f882a91ce8ff2daef62413df05d9cb669f6588c1d240837680da453f65cae"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "dem/mitten_270_54_10_C9xS3_hef_r4_Z.full",
+      "kind": "dem",
+      "tier": "T1",
+      "sector": null,
+      "d_ref": 7,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1715 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 2.02,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [2.00, 2.12] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 67482,
+        "m": 1080,
+        "k": 54,
+        "family": "Mitten hef",
+        "basis": "Z",
+        "code_n": 270,
+        "code_k": 54,
+        "rounds": 4,
+        "noise": "hef"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "mitten_270_54_10_C9xS3_hef_r4_Z.full.dem",
+          "sha256": "bf873b9d235847816d3ac8f77addf913ef614dfce0056b680c5209c8e89a9e4d"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_mitten/mitten_270_54_10_C9xS3_hef_r4_Z.stim",
+          "sha256": "43d2b8fef4f7221220bdebca07665914c2e224a0b7772eae8173665cb5e47507"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/shyps_225_16_8_r9_Z.full",
+      "kind": "dem",
+      "tier": "T1",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1714 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 6.72,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [6.69, 6.88] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 10125,
+        "m": 600,
+        "k": 16,
+        "family": "SHYPS",
+        "basis": "Z",
+        "code_n": 225,
+        "code_k": 16,
+        "rounds": 9,
+        "noise": "circuit"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "shyps_225_16_8_r9_Z.full.dem",
+          "sha256": "250514a7a19326936c772b5319b6c1d189dbcd09faa270393e5ab832207cd16f"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_shyps/shyps_225_16_8_r9_Z.stim",
+          "sha256": "968558908a60b790e26c2835b00c6698e44739adbc85190174a98324760ee339"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/torus_n200_k8_d17_X.full",
+      "kind": "dem",
+      "tier": "T1",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1713 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 17.1,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [16.7, 17.4] s)",
+      "compare3_id": "circ_torus_200_d17_X",
+      "tags": {
+        "n": 29200,
+        "m": 400,
+        "k": 8,
+        "family": "2D Torus dynamic",
+        "basis": "X",
+        "code_n": 200,
+        "code_k": 8,
+        "rounds": 1,
+        "noise": "add_noise(0.001)"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "torus_n200_k8_d17_X.full.dem",
+          "sha256": "895d3318a62011275e64d7d7c6a6475a706887035acec562102fd6b6ffda6f6a"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_torus/ENENESESENENE_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k8_d17_X.stim",
+          "sha256": "94a9a87894863eaee24ecc8dea4c467c4e05942a6005d5a0b92862483ea50aa4"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": {
+          "p": 0.001,
+          "when": "if_noiseless"
+        },
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "css/bb_360_12_24:Z",
+      "kind": "css_sector",
+      "tier": "T1",
+      "sector": "Z",
+      "d_ref": 24,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1645 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 53.5,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [51.7, 53.9] s; 3.2 min in 0.15.0)",
+      "compare3_id": "css_bb_360_12_24_Z",
+      "tags": {
+        "n": 360,
+        "m": 180,
+        "m_G": 180,
+        "k": 12,
+        "family": "BB",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/bb_360_12_24_Hx.mtx",
+          "sha256": "4b656f4f8678a604c3719fe80a9edbada235fade14b807ea94a6f7713092be3c"
+        },
+        "G": {
+          "path": "benchmark/css/bb_360_12_24_Hz.mtx",
+          "sha256": "7c2ff7fbb8c110bcfa574b6dfffca50b7cd8ce25006ca75468fb2411a5a09bc3"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "dem/torus_n200_k16_d16_X.full",
+      "kind": "dem",
+      "tier": "T1",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1712 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 50.8,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [50.6, 53.3] s; 67.3 s in 0.15.1)",
+      "compare3_id": null,
+      "tags": {
+        "n": 35200,
+        "m": 400,
+        "k": 16,
+        "family": "2D Torus dynamic",
+        "basis": "X",
+        "code_n": 200,
+        "code_k": 16,
+        "rounds": 1,
+        "noise": "add_noise(0.001)"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "torus_n200_k16_d16_X.full.dem",
+          "sha256": "4365d66be167936f457c275d57c35c029867694d14c85b1b88900c7675ecccef"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_torus/NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_X.stim",
+          "sha256": "14f8f952cd1fe0663c431adcd5c0b8d9133c5b228940467a233611529b814667"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": {
+          "p": 0.001,
+          "when": "if_noiseless"
+        },
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/yarn_mitten_150_30_10_hookfree_r10_X.full",
+      "kind": "dem",
+      "tier": "T1",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1710 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 57.6,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [56.2, 59.0] s; 62.4 s in 0.15.1)",
+      "compare3_id": null,
+      "tags": {
+        "n": 80295,
+        "m": 1200,
+        "k": 30,
+        "family": "Yarn Mitten hookfree",
+        "basis": "X",
+        "code_n": 150,
+        "code_k": 30,
+        "rounds": 10,
+        "noise": "hookfree"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "yarn_mitten_150_30_10_hookfree_r10_X.full.dem",
+          "sha256": "fbef83c6279538f0ad7dc59134b052184ce1ad407dd7f4348a776938d614ac11"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_mitten/yarn_mitten_150_30_10_hookfree_r10_X.stim",
+          "sha256": "c0f39d774a3d87174abd2dd19ac94797dec3b9937392e91026021c1ecc41b23c"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "css/yarn_mitten_630_126_20:Z",
+      "kind": "css_sector",
+      "tier": "T2",
+      "sector": "Z",
+      "d_ref": 20,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1642 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 90.0,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [86.5, 93.4] s; 82 s in 0.15.0)",
+      "compare3_id": "css_yarn_mitten_630_126_20_Z",
+      "tags": {
+        "n": 630,
+        "m": 252,
+        "m_G": 252,
+        "k": 126,
+        "family": "Yarn Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_630_126_20_Hx.mtx",
+          "sha256": "b5b85699107ab0e082437b173c282320cdf2c6e2fd51cdfc5b1aca47f5d8b841"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_630_126_20_Hz.mtx",
+          "sha256": "b085555f1e8b52c5b299d0249ed4a5ff03a423ecea04ac0b6406e8811d64f0bc"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_mitten_780_156_22:Z",
+      "kind": "css_sector",
+      "tier": "T2",
+      "sector": "Z",
+      "d_ref": 22,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1643 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 570.0,
+      "t_best_note": "0.17.3, 128 threads (3 seeds [564, 572] s; 9.3 min in 0.15.0)",
+      "compare3_id": "css_yarn_mitten_780_156_22_Z",
+      "tags": {
+        "n": 780,
+        "m": 312,
+        "m_G": 312,
+        "k": 156,
+        "family": "Yarn Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_780_156_22_Hx.mtx",
+          "sha256": "7b9ce7f7fefe64a2740e26cb0459fa430d7b247a723958ea99463b129ff67926"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_780_156_22_Hz.mtx",
+          "sha256": "e039cf260e29edda9b32bd1f207050dca4d874e7348cb45c6c0efd8d5265376f"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/2bga_292_22_23_C146:Z",
+      "kind": "css_sector",
+      "tier": "T2",
+      "sector": "Z",
+      "d_ref": 23,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 1697.0,
+      "t_best_note": "0.17.3, 128 threads (2 seeds [1666, 1728] s)",
+      "compare3_id": "css_2bga_292_22_23_Z",
+      "tags": {
+        "n": 292,
+        "m": 146,
+        "m_G": 146,
+        "k": 22,
+        "family": "2BGA",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/2bga_292_22_23_C146_Hx.mtx",
+          "sha256": "6173bdbba55cbfa9810652d0ee59482d2d22418f89c4efa6bf9d46162376bd68"
+        },
+        "G": {
+          "path": "benchmark/css/2bga_292_22_23_C146_Hz.mtx",
+          "sha256": "a0b4aabcec897f72f75aee772f02dd18daff16c960658392d8622bb74a216bb3"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/2bga_294_24_21_SG147_5:Z",
+      "kind": "css_sector",
+      "tier": "T2",
+      "sector": "Z",
+      "d_ref": 21,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1"
+      ],
+      "t_best_s": null,
+      "t_best_note": "to calibrate",
+      "compare3_id": "css_2bga_294_24_21_Z",
+      "tags": {
+        "n": 294,
+        "m": 147,
+        "m_G": 147,
+        "k": 24,
+        "family": "2BGA",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/2bga_294_24_21_SG147_5_Hx.mtx",
+          "sha256": "6db2f6f5322c49b29272e90e297817a98255d56397360bdfcdbfe2abaca42734"
+        },
+        "G": {
+          "path": "benchmark/css/2bga_294_24_21_SG147_5_Hz.mtx",
+          "sha256": "ef34672083c387db3d5031371ce3096b5ce26cd1fa9f3cdc33ae5944f1f7fd69"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "dem/gross_144_12_12_si1000_r12_X.full",
+      "kind": "dem",
+      "tier": "T2",
+      "sector": null,
+      "d_ref": 10,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1600,1708 (HISTORY 9.1, 10.3)",
+        "dist_m4ri 0.15.0/0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 77.6,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [76.0, 81.3] s)",
+      "compare3_id": "circ_gross_144_si1000_r12_X",
+      "tags": {
+        "n": 72576,
+        "m": 1728,
+        "k": 12,
+        "family": "BB SI1000",
+        "basis": "X",
+        "code_n": 144,
+        "code_k": 12,
+        "rounds": 12,
+        "noise": "si1000"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "gross_144_12_12_si1000_r12_X.full.dem",
+          "sha256": "1f69b3c1fd2f79a801c3ae241d37659298dfdb281fe2c1458305e1ea67b0b1c4"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_bb/gross_144_12_12_si1000_r12_X.stim",
+          "sha256": "0bee0335e20a4c8a0d3fed59fe19eae31ca03184ecfab7952eb2017c69628fa6"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": true
+      }
+    },
+    {
+      "id": "dem/gross_144_12_12_uniform_r12_X.full",
+      "kind": "dem",
+      "tier": "T2",
+      "sector": null,
+      "d_ref": 10,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1709 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 66.4,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [64.7, 68.9] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 67824,
+        "m": 1728,
+        "k": 12,
+        "family": "BB uniform",
+        "basis": "X",
+        "code_n": 144,
+        "code_k": 12,
+        "rounds": 12,
+        "noise": "uniform"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "gross_144_12_12_uniform_r12_X.full.dem",
+          "sha256": "56bbaa90bbea68d5988e3ecda225fda1d641c4bbd611a97f616dcedf9c10102c"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_bb/gross_144_12_12_uniform_r12_X.stim",
+          "sha256": "a354a0bff24ac02d0f37bc63f28072063da2592c6115d8b900728b4789d0c06b"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": true
+      }
+    },
+    {
+      "id": "dem/yarn_mitten_150_30_10_hookfree_r10_Z.full",
+      "kind": "dem",
+      "tier": "T2",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1710 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 147.0,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [137, 176] s)",
+      "compare3_id": "circ_yarn_mitten_150_r10_Z",
+      "tags": {
+        "n": 80445,
+        "m": 1200,
+        "k": 30,
+        "family": "Yarn Mitten hookfree",
+        "basis": "Z",
+        "code_n": 150,
+        "code_k": 30,
+        "rounds": 10,
+        "noise": "hookfree"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "yarn_mitten_150_30_10_hookfree_r10_Z.full.dem",
+          "sha256": "159529bf5aeb6fde49e72f48fec64ab873e3a6336b7a1014a73bfc2b47551398"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_mitten/yarn_mitten_150_30_10_hookfree_r10_Z.stim",
+          "sha256": "e991227d5b5ea7eceb4e97cc37f4110bb590979ea71ddebe590907dc2ac5d5b3"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/mitten_270_54_10_C9xS3_custom_r4_Z.full",
+      "kind": "dem",
+      "tier": "T2",
+      "sector": null,
+      "d_ref": 9,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1601,1711 (HISTORY 9.1, 10.3)",
+        "dist_m4ri 0.15.0/0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 122.0,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [119, 123] s)",
+      "compare3_id": null,
+      "tags": {
+        "n": 70254,
+        "m": 1080,
+        "k": 54,
+        "family": "Mitten custom",
+        "basis": "Z",
+        "code_n": 270,
+        "code_k": 54,
+        "rounds": 4,
+        "noise": "custom"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "mitten_270_54_10_C9xS3_custom_r4_Z.full.dem",
+          "sha256": "3554b46d68c22f563df1cd9e99afe4323cc5332980d168376bdec9822f6e9bef"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_mitten/mitten_270_54_10_C9xS3_custom_r4_Z.stim",
+          "sha256": "05f7bbf9a6f4453ed393d28963cf01d6d07ed76f2505f9a599e21ece492b3c46"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "css/yarn_mitten_975_195_24:Z",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "Z",
+      "d_ref": 24,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1644 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0"
+      ],
+      "t_best_s": 3540.0,
+      "t_best_note": "59 min (0.15.0, 128 threads)",
+      "compare3_id": "css_yarn_mitten_975_195_24_Z",
+      "tags": {
+        "n": 975,
+        "m": 390,
+        "m_G": 390,
+        "k": 195,
+        "family": "Yarn Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_975_195_24_Hx.mtx",
+          "sha256": "0c618962e90f4d15e26dae490ecdbee8bf7dd27abccba0e009631cc007d0a019"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_975_195_24_Hz.mtx",
+          "sha256": "195f5e0507950fd2b1528d975aba38a85ea96e24d56b74582c3e95c6d9d4082c"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/yarn_mitten_975_195_24:X",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "X",
+      "d_ref": null,
+      "bracket_ref": [
+        23,
+        24
+      ],
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1644,1653 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0"
+      ],
+      "t_best_s": null,
+      "t_best_note": "open after 20 min; w=23 round ~46 min",
+      "compare3_id": null,
+      "tags": {
+        "n": 975,
+        "m": 390,
+        "m_G": 390,
+        "k": 195,
+        "family": "Yarn Mitten",
+        "sector": "X"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_975_195_24_Hz.mtx",
+          "sha256": "195f5e0507950fd2b1528d975aba38a85ea96e24d56b74582c3e95c6d9d4082c"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_975_195_24_Hx.mtx",
+          "sha256": "0c618962e90f4d15e26dae490ecdbee8bf7dd27abccba0e009631cc007d0a019"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/bb_756_16_34:Z",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "Z",
+      "d_ref": null,
+      "bracket_ref": [
+        26,
+        34
+      ],
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1646,1655 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0"
+      ],
+      "t_best_s": null,
+      "t_best_note": "open after 12 min (0.15.0)",
+      "compare3_id": "css_bb_756_16_34_Z",
+      "tags": {
+        "n": 756,
+        "m": 378,
+        "m_G": 378,
+        "k": 16,
+        "family": "BB",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/bb_756_16_34_Hx.mtx",
+          "sha256": "7c8c158069994d289a98fe2deda64e9117a1abdfca63b76fa34e9401a451e6be"
+        },
+        "G": {
+          "path": "benchmark/css/bb_756_16_34_Hz.mtx",
+          "sha256": "3fea174810ecbfd4f0a086260147e54cae3cc507b18bb23a78f27336d0c5cb07"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/2bga_270_38_23_C45xC3:Z",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "Z",
+      "d_ref": 23,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1 (Origins 6)",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "external exact; dist_m4ri [18, 23] at 936 s (0.17.3, 128 thr)",
+      "compare3_id": null,
+      "tags": {
+        "n": 270,
+        "m": 135,
+        "m_G": 135,
+        "k": 38,
+        "family": "2BGA",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/2bga_270_38_23_C45xC3_Hx.mtx",
+          "sha256": "bc2ee7a286eadc397651fa812dfac85e9decd44b8b3aab6054ed0ba736f1cebf"
+        },
+        "G": {
+          "path": "benchmark/css/2bga_270_38_23_C45xC3_Hz.mtx",
+          "sha256": "469162711f30e86dfce44bd6e7e353149b700cb31506a2db2e0309854f744fb1"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/2bga_270_38_21_SG135_4:Z",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "Z",
+      "d_ref": 21,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1 (Origins 11)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "external exact; dist_m4ri [13, 21]",
+      "compare3_id": null,
+      "tags": {
+        "n": 270,
+        "m": 135,
+        "m_G": 135,
+        "k": 38,
+        "family": "2BGA",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/2bga_270_38_21_SG135_4_Hx.mtx",
+          "sha256": "4b503382008b3a88b6da3624f8aa53b819790d02cccfb25f286dffa00b16df92"
+        },
+        "G": {
+          "path": "benchmark/css/2bga_270_38_21_SG135_4_Hz.mtx",
+          "sha256": "1ff50afedffb3d9a8202a465b0e749c2ad2552b67e06788df2d9b09bf8624858"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/color_721_1_31:Z",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "Z",
+      "d_ref": 31,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1 (Origins 9)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "construction exact; dist_m4ri [13, 31]",
+      "compare3_id": "css_color_cc_d31",
+      "tags": {
+        "n": 721,
+        "m": 360,
+        "m_G": 360,
+        "k": 1,
+        "family": "2D Color (6.6.6)",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/color_721_1_31_Hx.mtx",
+          "sha256": "5a11391bd95ca04fa839b796577ef8cdec9af96fec38d9bc16f25210bd1ffa80"
+        },
+        "G": {
+          "path": "benchmark/css/color_721_1_31_Hz.mtx",
+          "sha256": "64d13e3fd84e7dbafc724918ef6cb32586c2f0feed46e084b14c428b45df1d1d"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/toric_3_6_432_2_12:X",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "X",
+      "d_ref": 24,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1 (Origins 8)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "construction exact (2L); dist_m4ri [18, 24]",
+      "compare3_id": null,
+      "tags": {
+        "n": 432,
+        "m": 288,
+        "m_G": 144,
+        "k": 2,
+        "family": "Triangular Toric (3,6)",
+        "sector": "X"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/toric_3_6_432_2_12_Hz.mtx",
+          "sha256": "ccb97f14219b6633b1d686980bc31a78025f01ebefdcbae18c468b1837ec6902"
+        },
+        "G": {
+          "path": "benchmark/css/toric_3_6_432_2_12_Hx.mtx",
+          "sha256": "ae06900b3cb12d10b42eafe5a6d08dc5a1169eb1095f0d9f874e1899559f89d6"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "css/surface_strip_333_1_3:Z",
+      "kind": "css_sector",
+      "tier": "T3",
+      "sector": "Z",
+      "d_ref": 67,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 1 (Origins 9)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "construction exact; dist_m4ri [11, 78]",
+      "compare3_id": null,
+      "tags": {
+        "n": 333,
+        "m": 198,
+        "m_G": 134,
+        "k": 1,
+        "family": "Surface Strip",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/surface_strip_333_1_3_Hx.mtx",
+          "sha256": "4bb653684fe35d9d81d2927d9377b119e6c497a10883ed712d23ce0458b03d60"
+        },
+        "G": {
+          "path": "benchmark/css/surface_strip_333_1_3_Hz.mtx",
+          "sha256": "3af3ee2d40603191779a50777dc04f2766a3d8cae4873a7d1a9d87db85cdb274"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "dem/double_gross_288_12_18_si1000_r18_X.full",
+      "kind": "dem",
+      "tier": "T3",
+      "sector": null,
+      "d_ref": null,
+      "bracket_ref": [
+        13,
+        16
+      ],
+      "ref_source": [
+        "BENCHMARK.md Section 2.6",
+        "HISTORY 5.1, 6.3"
+      ],
+      "t_best_s": null,
+      "t_best_note": "external ref. [13, 16]; dist_m4ri [11, 19] in 2.8 h",
+      "compare3_id": "circ_double_gross_288_si1000_r18_X",
+      "tags": {
+        "n": 221184,
+        "m": 5184,
+        "k": 12,
+        "family": "BB SI1000",
+        "basis": "X",
+        "code_n": 288,
+        "code_k": 12,
+        "rounds": 18,
+        "noise": "si1000"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "double_gross_288_12_18_si1000_r18_X.full.dem",
+          "sha256": "0105e1cf38b0f7473d98532c7b1ed7cc5fcc7c2804ac8f3bd38e4a7c3d92a0cb"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_bb/double_gross_288_12_18_si1000_r18_X.stim",
+          "sha256": "6993cb8bbc6b5c87a8e2d485132e08a4c6c7e0167689de1f40999fdb221bc71b"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": true
+      }
+    },
+    {
+      "id": "dem/double_gross_288_si1000_X.T1",
+      "kind": "dem",
+      "tier": "T3",
+      "sector": null,
+      "d_ref": null,
+      "bracket_ref": [
+        14,
+        16
+      ],
+      "ref_source": [
+        "HISTORY 11.1, 12.3"
+      ],
+      "t_best_s": null,
+      "t_best_note": "external ref. [14, 16]; RW auto-slabs find 16",
+      "compare3_id": null,
+      "tags": {
+        "n": 1728,
+        "m": 288,
+        "k": 12,
+        "family": "BB SI1000 T1",
+        "basis": "X",
+        "code_n": 288,
+        "code_k": 12,
+        "rounds": 1,
+        "noise": "si1000"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "double_gross_288_si1000_X.T1.dem",
+          "sha256": "6161c8012187f3f01aca35e2479702e6ae84f30e3fcbb68bed41247e488edc2d"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_bb/double_gross_288_12_18_si1000_r18_X.stim",
+          "sha256": "6993cb8bbc6b5c87a8e2d485132e08a4c6c7e0167689de1f40999fdb221bc71b"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": 0,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/bb_360_12_24_si1000_r24_X.full",
+      "kind": "dem",
+      "tier": "T3",
+      "sector": null,
+      "d_ref": null,
+      "bracket_ref": [
+        12,
+        23
+      ],
+      "ref_source": [
+        "BENCHMARK.md@7de1817:730 (Section 2.6, HISTORY 6)",
+        "dist_m4ri model + RW"
+      ],
+      "t_best_s": null,
+      "t_best_note": "model lower bound 12 and RW 23",
+      "compare3_id": "circ_bb_360_si1000_r24_X",
+      "tags": {
+        "n": 371520,
+        "m": 8640,
+        "k": 12,
+        "family": "BB SI1000",
+        "basis": "X",
+        "code_n": 360,
+        "code_k": 12,
+        "rounds": 24,
+        "noise": "si1000"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "bb_360_12_24_si1000_r24_X.full.dem",
+          "sha256": "56e39fe43e63b0ca88dc2df1e73fe0bb9d226829d25418479d05e4a35d5babcf"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_bb/bb_360_12_24_si1000_r24_X.stim",
+          "sha256": "cd9063941f134587cd37b2ed6d7e975f74200703f1ac17ef55bd2f5860451624"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": true
+      }
+    },
+    {
+      "id": "circ/surface_rot_d11_r11_Z",
+      "kind": "circuit",
+      "tier": "T3",
+      "sector": null,
+      "d_ref": 11,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 2.7 (Origins 9)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "construction exact (d = L)",
+      "compare3_id": "circ_surface_rot_d11_r11_Z",
+      "tags": {
+        "n": 26803,
+        "m": 1320,
+        "k": 1,
+        "family": "Rotated Surface",
+        "basis": "Z",
+        "code_n": 121,
+        "code_k": 1,
+        "rounds": 11,
+        "noise": "stim_depol(0.001)"
+      },
+      "files": {
+        "circuit": {
+          "path": "benchmark/stim_surface/surface_rot_d11_r11_Z.stim",
+          "sha256": "85f74a31c9084954668f7b8a958470f8c16b4d130c08eff81e4d53fc6b30f5d0"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_surface/surface_rot_d11_r11_Z.stim",
+          "sha256": "85f74a31c9084954668f7b8a958470f8c16b4d130c08eff81e4d53fc6b30f5d0"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "circ/surface_rot_d13_r13_Z",
+      "kind": "circuit",
+      "tier": "T3",
+      "sector": null,
+      "d_ref": 13,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 2.7 (Origins 9)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "construction exact (d = L)",
+      "compare3_id": "circ_surface_rot_d13_r13_Z",
+      "tags": {
+        "n": 45821,
+        "m": 2184,
+        "k": 1,
+        "family": "Rotated Surface",
+        "basis": "Z",
+        "code_n": 169,
+        "code_k": 1,
+        "rounds": 13,
+        "noise": "stim_depol(0.001)"
+      },
+      "files": {
+        "circuit": {
+          "path": "benchmark/stim_surface/surface_rot_d13_r13_Z.stim",
+          "sha256": "83e3e5be8ca278d653fe1743a18f0411f81dd8f14131b3fb993c6de2b889a5ab"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_surface/surface_rot_d13_r13_Z.stim",
+          "sha256": "83e3e5be8ca278d653fe1743a18f0411f81dd8f14131b3fb993c6de2b889a5ab"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/rep_d71_r6",
+      "kind": "dem",
+      "tier": "T3",
+      "sector": null,
+      "d_ref": 71,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md Section 2.7 (Origins 9)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "construction exact; dist_m4ri [7, 71]",
+      "compare3_id": null,
+      "tags": {
+        "n": 1121,
+        "m": 420,
+        "k": 1,
+        "family": "Repetition DEM",
+        "rounds": 6
+      },
+      "files": {
+        "dem": {
+          "path": "benchmark/dem/rep_d71_r6.dem",
+          "sha256": "b192ec0ac3849e446137b65a56caeeb263a63b645871e879ea0074b7b0f5c79a"
+        }
+      },
+      "recipe": null
+    },
+    {
+      "id": "circ/yarn_mitten_300_60_14_hookfree_r14_X",
+      "kind": "circuit",
+      "tier": "T3",
+      "sector": null,
+      "d_ref": null,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:746,872 (Section 2.6)"
+      ],
+      "t_best_s": null,
+      "t_best_note": "not computed yet (compare3 has Z basis)",
+      "compare3_id": null,
+      "tags": {
+        "n": 230010,
+        "m": 3360,
+        "k": 60,
+        "family": "Yarn Mitten hookfree",
+        "basis": "X",
+        "code_n": 300,
+        "code_k": 60,
+        "rounds": 14,
+        "noise": "hookfree"
+      },
+      "files": {
+        "circuit": {
+          "path": "benchmark/stim_mitten/yarn_mitten_300_60_14_hookfree_r14_X.stim",
+          "sha256": "6142cc3fd36697408f1b4a2a3cc2b3b142d0d4b4aaf5860ea000187fd2261fad"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_mitten/yarn_mitten_300_60_14_hookfree_r14_X.stim",
+          "sha256": "6142cc3fd36697408f1b4a2a3cc2b3b142d0d4b4aaf5860ea000187fd2261fad"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": true
+      }
+    }
+  ]
+}

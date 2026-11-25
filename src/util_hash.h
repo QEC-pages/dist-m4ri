@@ -38,7 +38,9 @@ extern "C"{
     int weight;
     int cnt;   /** number of hits (all sources) */
     int cnt_u; /** hits in the RW steps with a uniform random permutation */
-    int cnt_w; /** hits in the RW steps with a window (kwin, or the hybrid windows) */
+    int cnt_w; /** hits in the RW steps with a window (kwin, or the hybrid index windows) */
+    int cnt_s; /** hits in the row-slab RW steps of rw_opt 4; the hits of the `min_hits` statistic <n> are
+                *  cnt - cnt_w - cnt_s (the uniform steps, CC, finC), see codeword_hit_stats() */
     int arr[0];
   };
 

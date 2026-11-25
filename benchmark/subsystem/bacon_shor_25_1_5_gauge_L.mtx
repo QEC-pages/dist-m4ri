@@ -1,0 +1,8 @@
+%%MatrixMarket matrix coordinate integer general
+% Bacon-Shor [[25, 1, 5]] X-error gauge sector (wt-10 H, wt-2 G): L
+1 25 5
+1 5 1
+1 10 1
+1 15 1
+1 20 1
+1 25 1
