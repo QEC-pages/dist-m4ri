@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.1</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -99,6 +99,7 @@ $(function() {
 <code>#include &lt;time.h&gt;</code><br />
 <code>#include &lt;stdio.h&gt;</code><br />
 <code>#include &lt;limits.h&gt;</code><br />
+<code>#include &lt;stdatomic.h&gt;</code><br />
 <code>#include &lt;m4ri/m4ri.h&gt;</code><br />
 <code>#include &quot;<a class="el" href="mmio_8h_source.html">mmio.h</a>&quot;</code><br />
 <code>#include &quot;<a class="el" href="uthash_8h_source.html">uthash.h</a>&quot;</code><br />
@@ -109,29 +110,31 @@ Include dependency graph for util_io.h:</div>
 <div class="dyncontent">
 <div class="center"><img src="util__io_8h__incl.png" border="0" usemap="#asrc_2util__io_8h" loading="lazy" alt=""/></div>
 <map name="asrc_2util__io_8h" id="asrc_2util__io_8h">
-<area shape="rect" title=" " alt="" coords="358,5,454,33"/>
+<area shape="rect" title=" " alt="" coords="367,5,463,33"/>
 <area shape="rect" title=" " alt="" coords="5,81,92,109"/>
-<area shape="poly" title=" " alt="" coords="357,32,108,83,106,78,358,27"/>
+<area shape="poly" title=" " alt="" coords="365,32,108,83,106,78,367,27"/>
 <area shape="rect" title=" " alt="" coords="115,81,192,109"/>
-<area shape="poly" title=" " alt="" coords="359,35,209,80,207,75,363,32"/>
+<area shape="poly" title=" " alt="" coords="367,36,209,81,206,76,370,32"/>
 <area shape="rect" title=" " alt="" coords="174,308,243,336"/>
-<area shape="poly" title=" " alt="" coords="362,35,326,55,292,83,273,108,258,135,235,193,221,249,213,294,209,291,216,247,230,191,253,133,269,105,288,79,323,50,366,32"/>
+<area shape="poly" title=" " alt="" coords="388,35,361,56,332,83,293,137,261,196,219,295,215,292,256,193,288,134,328,79,358,52,393,32"/>
 <area shape="rect" title=" " alt="" coords="537,81,600,109"/>
-<area shape="poly" title=" " alt="" coords="435,31,529,74,523,75,435,36"/>
+<area shape="poly" title=" " alt="" coords="443,31,530,74,525,74,442,36"/>
 <area shape="rect" title=" " alt="" coords="554,308,620,336"/>
-<area shape="poly" title=" " alt="" coords="415,31,574,295,569,295,412,35"/>
+<area shape="poly" title=" " alt="" coords="430,31,454,53,476,79,511,136,540,196,580,295,575,293,536,198,506,139,472,83,450,56,430,36"/>
 <area shape="rect" title=" " alt="" coords="624,81,694,109"/>
-<area shape="poly" title=" " alt="" coords="451,31,612,78,606,80,451,36"/>
+<area shape="poly" title=" " alt="" coords="459,31,612,78,607,79,459,36"/>
 <area shape="rect" title=" " alt="" coords="718,81,816,109"/>
-<area shape="poly" title=" " alt="" coords="454,28,706,79,701,82,454,33"/>
-<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="840,81,911,109"/>
-<area shape="poly" title=" " alt="" coords="454,23,615,43,827,80,822,81,615,48,455,28"/>
+<area shape="poly" title=" " alt="" coords="464,28,705,79,700,81,464,33"/>
+<area shape="rect" title=" " alt="" coords="840,81,937,109"/>
+<area shape="poly" title=" " alt="" coords="463,24,621,45,827,80,822,81,620,51,464,29"/>
+<area shape="rect" href="mmio_8h.html" title=" " alt="" coords="961,81,1032,109"/>
+<area shape="poly" title=" " alt="" coords="464,21,670,39,806,55,948,80,943,81,805,61,670,44,464,26"/>
 <area shape="rect" href="uthash_8h.html" title=" " alt="" coords="267,232,344,260"/>
-<area shape="poly" title=" " alt="" coords="364,35,334,54,320,67,308,82,296,116,293,152,295,187,300,218,296,216,290,188,287,152,291,115,303,80,316,63,331,50,368,32"/>
-<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h." alt="" coords="318,81,411,109"/>
-<area shape="poly" title=" " alt="" coords="393,32,373,69,369,65,390,35"/>
-<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="363,157,454,184"/>
-<area shape="poly" title=" " alt="" coords="412,31,426,81,426,113,420,143,415,140,420,112,421,81,409,36"/>
+<area shape="poly" title=" " alt="" coords="397,32,373,56,351,82,334,117,323,153,310,218,306,216,317,152,329,115,346,80,369,52,393,35"/>
+<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h." alt="" coords="369,81,461,109"/>
+<area shape="poly" title=" " alt="" coords="409,31,409,67,404,64,407,36"/>
+<area shape="rect" href="util__m4ri_8h.html" title=" " alt="" coords="362,157,453,184"/>
+<area shape="poly" title=" " alt="" coords="398,32,376,56,359,82,357,98,361,114,383,146,377,145,356,117,351,99,354,80,372,52,394,35"/>
 <area shape="poly" title=" " alt="" coords="291,260,239,301,236,296,286,261"/>
 <area shape="rect" title=" " alt="" coords="460,308,530,336"/>
 <area shape="poly" title=" " alt="" coords="340,258,450,302,445,302,339,263"/>
@@ -139,14 +142,14 @@ Include dependency graph for util_io.h:</div>
 <area shape="poly" title=" " alt="" coords="307,259,307,294,303,291,304,262"/>
 <area shape="rect" title=" " alt="" coords="365,308,436,336"/>
 <area shape="poly" title=" " alt="" coords="324,258,374,299,369,298,322,263"/>
-<area shape="poly" title=" " alt="" coords="377,79,397,49,401,45,381,82"/>
-<area shape="poly" title=" " alt="" coords="373,107,396,144,390,143,372,112"/>
-<area shape="rect" href="sort_8h.html" title=" " alt="" coords="379,232,438,260"/>
-<area shape="poly" title=" " alt="" coords="410,183,411,218,406,215,407,187"/>
-<area shape="poly" title=" " alt="" coords="382,258,259,305,257,300,376,259"/>
-<area shape="poly" title=" " alt="" coords="439,257,544,302,538,302,437,262"/>
-<area shape="poly" title=" " alt="" coords="425,258,471,299,466,297,423,263"/>
-<area shape="poly" title=" " alt="" coords="409,259,406,294,402,291,405,262"/>
+<area shape="poly" title=" " alt="" coords="420,79,423,51,425,46,425,82"/>
+<area shape="poly" title=" " alt="" coords="415,107,413,142,408,140,412,111"/>
+<area shape="rect" href="sort_8h.html" title=" " alt="" coords="378,232,436,260"/>
+<area shape="poly" title=" " alt="" coords="409,183,409,218,405,215,405,187"/>
+<area shape="poly" title=" " alt="" coords="380,258,259,305,257,300,375,259"/>
+<area shape="poly" title=" " alt="" coords="437,257,544,302,539,302,436,262"/>
+<area shape="poly" title=" " alt="" coords="424,258,471,299,465,297,422,263"/>
+<area shape="poly" title=" " alt="" coords="408,259,405,294,401,291,404,262"/>
 </map>
 </div>
 </div><div class="textblock"><div class="dynheader">
@@ -154,25 +157,30 @@ This graph shows which files directly or indirectly include this file:</div>
 <div class="dyncontent">
 <div class="center"><img src="util__io_8h__dep__incl.png" border="0" usemap="#asrc_2util__io_8hdep" loading="lazy" alt=""/></div>
 <map name="asrc_2util__io_8hdep" id="asrc_2util__io_8hdep">
-<area shape="rect" title=" " alt="" coords="167,5,264,33"/>
-<area shape="rect" href="dist__cc_8c.html" title=" " alt="" coords="5,232,106,260"/>
-<area shape="poly" title=" " alt="" coords="150,28,125,36,98,47,73,62,54,83,44,101,39,121,37,163,44,202,53,232,48,232,39,203,32,163,33,120,39,99,49,79,70,58,96,42,124,31,154,25"/>
-<area shape="rect" href="dist__cc_8h.html" title=" " alt="" coords="144,157,245,184"/>
-<area shape="poly" title=" " alt="" coords="214,46,199,157,194,155,210,50"/>
-<area shape="rect" href="dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri)." alt="" coords="136,232,252,260"/>
-<area shape="poly" title=" " alt="" coords="233,44,249,74,261,109,267,148,259,185,240,213,216,234,214,229,236,210,254,183,261,148,256,111,244,76,231,49"/>
-<area shape="rect" href="dist__rw_8c.html" title=" " alt="" coords="320,81,421,109"/>
-<area shape="poly" title=" " alt="" coords="257,37,345,80,340,81,257,43"/>
-<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h." alt="" coords="63,81,178,109"/>
-<area shape="poly" title=" " alt="" coords="178,44,132,82,129,79,181,40"/>
-<area shape="rect" href="util__io_8c.html" title=" " alt="" coords="445,81,540,109"/>
-<area shape="poly" title=" " alt="" coords="278,34,447,80,442,82,278,40"/>
-<area shape="poly" title=" " alt="" coords="158,193,81,234,79,230,154,190"/>
-<area shape="poly" title=" " alt="" coords="196,198,196,233,192,230,192,202"/>
-<area shape="poly" title=" " alt="" coords="155,70,207,32,204,35,159,74"/>
-<area shape="poly" title=" " alt="" coords="107,120,90,158,62,233,57,231,85,156,104,124"/>
-<area shape="poly" title=" " alt="" coords="145,117,184,156,179,157,144,123"/>
-<area shape="poly" title=" " alt="" coords="121,122,125,154,134,183,153,210,177,232,172,232,149,213,129,186,120,155,118,127"/>
+<area shape="rect" title=" " alt="" coords="165,5,261,33"/>
+<area shape="rect" href="dist__cc_8c.html" title=" " alt="" coords="21,232,122,260"/>
+<area shape="poly" title=" " alt="" coords="152,41,114,59,72,84,36,117,22,136,11,158,8,171,11,183,30,210,53,231,48,233,26,213,6,185,3,171,6,156,17,133,32,113,69,80,111,54,155,37"/>
+<area shape="rect" href="dist__cc_8h.html" title=" " alt="" coords="21,157,122,184"/>
+<area shape="poly" title=" " alt="" coords="154,41,126,59,99,83,88,101,81,121,75,157,70,156,76,119,83,98,95,79,122,55,157,37"/>
+<area shape="rect" href="dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri)." alt="" coords="177,232,294,260"/>
+<area shape="poly" title=" " alt="" coords="226,45,238,80,243,124,244,167,239,233,235,231,239,167,238,124,233,82,224,50"/>
+<area shape="rect" href="dist__rw_8c.html" title=" " alt="" coords="440,81,541,109"/>
+<area shape="poly" title=" " alt="" coords="276,34,443,79,438,82,276,40"/>
+<area shape="rect" href="rw__triplet_8h.html" title="The stages of the Random Window (RW) search selected by rw_opt (see RW_OPT_T3 etc...." alt="" coords="298,81,416,109"/>
+<area shape="poly" title=" " alt="" coords="252,38,334,80,329,81,252,43"/>
+<area shape="rect" href="util__hash_8h.html" title="Utility functions for use with uthash.h." alt="" coords="109,81,224,109"/>
+<area shape="poly" title=" " alt="" coords="190,43,170,82,165,79,187,48"/>
+<area shape="rect" href="util__io_8c.html" title=" " alt="" coords="565,81,661,109"/>
+<area shape="poly" title=" " alt="" coords="276,29,553,78,568,83,562,84,552,84,276,34"/>
+<area shape="poly" title=" " alt="" coords="73,198,74,233,69,231,70,202"/>
+<area shape="poly" title=" " alt="" coords="115,188,209,231,204,233,114,194"/>
+<area shape="poly" title=" " alt="" coords="340,120,248,234,244,230,334,121"/>
+<area shape="rect" href="rw__triplet_8c.html" title="The stages of the RW search selected by rw_opt: the weight&#45;3 degeneracies T_3 (Stage 1),..." alt="" coords="349,157,466,184"/>
+<area shape="poly" title=" " alt="" coords="376,119,401,157,396,156,374,124"/>
+<area shape="poly" title=" " alt="" coords="188,67,210,36,213,31,193,70"/>
+<area shape="poly" title=" " alt="" coords="161,122,152,155,136,186,114,213,90,234,87,230,110,209,132,183,147,153,158,126"/>
+<area shape="poly" title=" " alt="" coords="136,120,90,158,87,154,139,116"/>
+<area shape="poly" title=" " alt="" coords="180,121,232,232,227,232,177,125"/>
 </map>
 </div>
 </div>
@@ -180,6 +188,8 @@ This graph shows which files directly or indirectly include this file:</div>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
 Classes</h2></td></tr>
+<tr class="memitem:rw_5Fcanon_5Fstats_5Ft" id="r_rw_5Fcanon_5Fstats_5Ft"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structrw__canon__stats__t.html">rw_canon_stats_t</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stage 5 (RW_OPT_CANON): the statistics of the canonical classes of the minimum weight w in the uniform RW steps, see <a class="el" href="structrw__canon__tab__t.html" title="The table of the canonical classes of the minimum weight in the uniform RW steps (Stage 5; under the ...">rw_canon_tab_t</a> in <a class="el" href="rw__triplet_8h.html" title="The stages of the Random Window (RW) search selected by rw_opt (see RW_OPT_T3 etc....">rw_triplet.h</a> (each class counted at most once per step).  <a href="structrw__canon__stats__t.html#details">More...</a><br /></td></tr>
 <tr class="memitem:params_5Ft" id="r_params_5Ft"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structparams__t.html">params_t</a></td></tr>
 <tr class="memitem:cw_5Fhit_5Fstats_5Ft" id="r_cw_5Fhit_5Fstats_5Ft"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcw__hit__stats__t.html">cw_hit_stats_t</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Hit statistics for the <span class="tt"><a class="el" href="structcw__hit__stats__t.html#a37983d3b4ea47b240a58dcd23a57e782">min_hits</a></span> stopping criterion, see <a class="el" href="util__io_8c.html#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>.  <a href="structcw__hit__stats__t.html#details">More...</a><br /></td></tr>
@@ -202,6 +212,17 @@ Macros</h2></td></tr>
 <tr class="memitem:af34c3c30400c83a97dd0deadaead479c" id="r_af34c3c30400c83a97dd0deadaead479c"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af34c3c30400c83a97dd0deadaead479c">DBG_DEFAULT</a>&#160;&#160;&#160;(<a class="el" href="#a5ac66a32a67ae20e9f05e5b07349a0e9">DBG_SUMMARY</a> | <a class="el" href="#a434d33350a7d7626f74ad405657f2306">DBG_PROGRESS</a>)</td></tr>
 <tr class="memitem:a70e645ad2ed5f08e4b8394dd6111e045" id="r_a70e645ad2ed5f08e4b8394dd6111e045"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a70e645ad2ed5f08e4b8394dd6111e045">DBG_CW_MAX</a>&#160;&#160;&#160;25</td></tr>
 <tr class="memitem:adcca6d4018f9243be00ac4f9059d8a5f" id="r_adcca6d4018f9243be00ac4f9059d8a5f"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#adcca6d4018f9243be00ac4f9059d8a5f">MAX_W</a>&#160;&#160;&#160;100</td></tr>
+<tr class="memitem:a0c736b0e4a231e2d58a7b61bf19398c4" id="r_a0c736b0e4a231e2d58a7b61bf19398c4"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0c736b0e4a231e2d58a7b61bf19398c4">RW_OPT_T3</a>&#160;&#160;&#160;0x01</td></tr>
+<tr class="memitem:a827c00e13e0c2f5b5f14fb4e8f83a03f" id="r_a827c00e13e0c2f5b5f14fb4e8f83a03f"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a827c00e13e0c2f5b5f14fb4e8f83a03f">RW_OPT_GEN</a>&#160;&#160;&#160;0x02</td></tr>
+<tr class="memitem:a124d70f7f3ac7a6f2a9b14cb17f4090e" id="r_a124d70f7f3ac7a6f2a9b14cb17f4090e"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a124d70f7f3ac7a6f2a9b14cb17f4090e">RW_OPT_SLAB</a>&#160;&#160;&#160;0x04</td></tr>
+<tr class="memitem:a99befc24ee5873e37440ee3264a0b4ec" id="r_a99befc24ee5873e37440ee3264a0b4ec"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a99befc24ee5873e37440ee3264a0b4ec">RW_OPT_DUAL</a>&#160;&#160;&#160;0x08</td></tr>
+<tr class="memitem:a731c53911ae5ba037d56dc3f25ba1d09" id="r_a731c53911ae5ba037d56dc3f25ba1d09"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a731c53911ae5ba037d56dc3f25ba1d09">RW_OPT_CANON</a>&#160;&#160;&#160;0x10</td></tr>
+<tr class="memitem:aa94af4e89411342fc20b5c1790af8179" id="r_aa94af4e89411342fc20b5c1790af8179"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa94af4e89411342fc20b5c1790af8179">RW_OPT_EXPAND</a>&#160;&#160;&#160;0x20</td></tr>
+<tr class="memitem:a2ccfe9b48d71ab7d1a653a59fde455ed" id="r_a2ccfe9b48d71ab7d1a653a59fde455ed"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2ccfe9b48d71ab7d1a653a59fde455ed">RW_OPT_ALL</a>&#160;&#160;&#160;0x3f</td></tr>
+<tr class="memitem:a4841557f6264082e36ecc1d71e10fa6c" id="r_a4841557f6264082e36ecc1d71e10fa6c"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4841557f6264082e36ecc1d71e10fa6c">CW_SRC_ALL</a>&#160;&#160;&#160;((1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da989432694f48e1b061f3666ffe542fbd">CW_SRC_OTHER</a>) | (1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7daccd625b95628b65addbc6510a796b1f3">CW_SRC_RW_UNIFORM</a>) | (1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da1729a329c577e9b6a540201e4f44e4af">CW_SRC_RW_WINDOW</a>) | (1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da07f66447c770bbd6483a989998187160">CW_SRC_RW_SLAB</a>))</td></tr>
+<tr class="memdesc:a4841557f6264082e36ecc1d71e10fa6c"><td class="mdescLeft">&#160;</td><td class="mdescRight">All sources (p-&gt;nhits_src: all hits count for &lt;n&gt;, as in version 0.16.1).  <br /></td></tr>
+<tr class="memitem:a9c923879d3f4f01ebe29df520d8f4e18" id="r_a9c923879d3f4f01ebe29df520d8f4e18"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9c923879d3f4f01ebe29df520d8f4e18">RW_SLAB_AUTO_MMAX</a>&#160;&#160;&#160;640</td></tr>
+<tr class="memdesc:a9c923879d3f4f01ebe29df520d8f4e18"><td class="mdescLeft">&#160;</td><td class="mdescRight">The most detectors of a DEM without round structure with the row slabs in the automatic rw_opt, see rw_slab_auto() (the default slab height m/2 is then at most 320, as in the row-slab study).  <br /></td></tr>
 <tr class="memitem:aaf9b8d288deb03b3997cb8d4a2feada6" id="r_aaf9b8d288deb03b3997cb8d4a2feada6"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aaf9b8d288deb03b3997cb8d4a2feada6">RW_PAIRS_MAX_BITS</a>&#160;&#160;&#160;64</td></tr>
 <tr class="memdesc:aaf9b8d288deb03b3997cb8d4a2feada6"><td class="mdescLeft">&#160;</td><td class="mdescRight">The largest number of random pivot rows of the buckets of the RW pairs (<span class="tt">pairs</span>, a 64-bit key).  <br /></td></tr>
 <tr class="memitem:aca7e0ad98da8a2f8a3c78ed39d8cf3b4" id="r_aca7e0ad98da8a2f8a3c78ed39d8cf3b4"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aca7e0ad98da8a2f8a3c78ed39d8cf3b4">RW_PAIRS_KEEP</a>&#160;&#160;&#160;0.8</td></tr>
@@ -210,7 +231,7 @@ Macros</h2></td></tr>
 <tr class="memdesc:ab906de270d1045fdf3dff19f8fe664da"><td class="mdescLeft">&#160;</td><td class="mdescRight">The elimination of a RW step (rank r, n columns) takes about r^2 n / (64 RW_PAIRS_WORK) word operations, the scale of the work of its RW pairs with <span class="tt">pairs=-1</span> (auto), see rw_pairs_min_bits(). (Measured with l = 1: the pairs took 0.5 and 2.5 times the time of the elimination for c1920H and a random LDPC code with n = 3000, against 0.67 and 2.0 times from this estimate.).  <br /></td></tr>
 <tr class="memitem:a83963ffb6de122488cdaeab2c8efc5e2" id="r_a83963ffb6de122488cdaeab2c8efc5e2"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a83963ffb6de122488cdaeab2c8efc5e2">RW_PAIRS_FREE</a>&#160;&#160;&#160;1048576.0</td></tr>
 <tr class="memdesc:a83963ffb6de122488cdaeab2c8efc5e2"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of pairs of a RW step allowed with <span class="tt">pairs=-1</span> (auto) whatever the work of its elimination (small matrices), see rw_pairs_min_bits().  <br /></td></tr>
-<tr class="memitem:a3f3d8600177e9da2e2b6f9ec1099b90a" id="r_a3f3d8600177e9da2e2b6f9ec1099b90a"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3f3d8600177e9da2e2b6f9ec1099b90a">DIST_M4RI_VERSION</a>&#160;&#160;&#160;&quot;0.16.1&quot;</td></tr>
+<tr class="memitem:a3f3d8600177e9da2e2b6f9ec1099b90a" id="r_a3f3d8600177e9da2e2b6f9ec1099b90a"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3f3d8600177e9da2e2b6f9ec1099b90a">DIST_M4RI_VERSION</a>&#160;&#160;&#160;&quot;0.17.4&quot;</td></tr>
 <tr class="memitem:a2f7fcedd9dd4e25fceb137e859db806f" id="r_a2f7fcedd9dd4e25fceb137e859db806f"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2f7fcedd9dd4e25fceb137e859db806f">SHORT_HELP</a></td></tr>
 <tr class="memitem:a56fe9bff0a1be75aae2da3e593053e2c" id="r_a56fe9bff0a1be75aae2da3e593053e2c"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a56fe9bff0a1be75aae2da3e593053e2c">USAGE</a></td></tr>
 <tr class="memitem:a4bb660c2e956c3b7425d345b4adb9a0b" id="r_a4bb660c2e956c3b7425d345b4adb9a0b"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4bb660c2e956c3b7425d345b4adb9a0b">MORE_HELP</a></td></tr>
@@ -225,8 +246,14 @@ Enumerations</h2></td></tr>
 <tr class="memitem:aaaa9f622a0ca45f7441e4a112066ed7d" id="r_aaaa9f622a0ca45f7441e4a112066ed7d"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom">{ <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da989432694f48e1b061f3666ffe542fbd">CW_SRC_OTHER</a> = 0
 , <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7daccd625b95628b65addbc6510a796b1f3">CW_SRC_RW_UNIFORM</a> = 1
 , <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da1729a329c577e9b6a540201e4f44e4af">CW_SRC_RW_WINDOW</a> = 2
+, <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da07f66447c770bbd6483a989998187160">CW_SRC_RW_SLAB</a> = 3
  }</td></tr>
-<tr class="memdesc:aaaa9f622a0ca45f7441e4a112066ed7d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The source of a codeword added to the hash, see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>.  <a href="#aaaa9f622a0ca45f7441e4a112066ed7d">More...</a><br /></td></tr>
+<tr class="memdesc:aaaa9f622a0ca45f7441e4a112066ed7d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The source of a codeword added to the hash, see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>: CC, finC, and the other sources; the RW steps with a uniform random permutation, with a window (kwin, the hybrid index windows), and the row slabs of rw_opt 4.  <a href="#aaaa9f622a0ca45f7441e4a112066ed7d">More...</a><br /></td></tr>
+<tr class="memitem:a5a4c82c39c0610e8eed1a7a5770890a3" id="r_a5a4c82c39c0610e8eed1a7a5770890a3"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom">{ <a class="el" href="#a5a4c82c39c0610e8eed1a7a5770890a3a6167b449538bb210bd72535be102a5e7">MIN_HITS_OFF</a> = 0
+, <a class="el" href="#a5a4c82c39c0610e8eed1a7a5770890a3a8e5db4091073b925ac96997514082e67">MIN_HITS_VECTOR</a> = 1
+, <a class="el" href="#a5a4c82c39c0610e8eed1a7a5770890a3ac82ad3868ee3058d7a8f93929ee8cf42">MIN_HITS_CANON</a> = 2
+ }</td></tr>
+<tr class="memdesc:a5a4c82c39c0610e8eed1a7a5770890a3"><td class="mdescLeft">&#160;</td><td class="mdescRight">The rule of the <span class="tt">min_hits</span> stop, see <a class="el" href="#a6a3ed92f1313a303a0d6eb14283d14ac" title="The rule of the min_hits stop of check_min_hits_convergence(): MIN_HITS_OFF (min_hits &lt;= 0),...">min_hits_rule()</a>.  <a href="#a5a4c82c39c0610e8eed1a7a5770890a3">More...</a><br /></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
 Functions</h2></td></tr>
@@ -234,6 +261,13 @@ Functions</h2></td></tr>
 <tr class="memdesc:afcbd3259101211b5c4cb297016587d42"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize parameters and load matrices from command line arguments.  <br /></td></tr>
 <tr class="memitem:a77a264684f8a4e347db2f21fc36305d7" id="r_a77a264684f8a4e347db2f21fc36305d7"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a77a264684f8a4e347db2f21fc36305d7">var_kill</a> (<a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
 <tr class="memdesc:a77a264684f8a4e347db2f21fc36305d7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clean up and free memory allocated in the <a class="el" href="structparams__t.html">params_t</a> structure.  <br /></td></tr>
+<tr class="memitem:a7dc880c2ae5285ff26236964da844e50" id="r_a7dc880c2ae5285ff26236964da844e50"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7dc880c2ae5285ff26236964da844e50">k_zero_note</a> (const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>, const char *const result)</td></tr>
+<tr class="memdesc:a7dc880c2ae5285ff26236964da844e50"><td class="mdescLeft">&#160;</td><td class="mdescRight">The note on stderr (at any debug level) for k = 0 (p-&gt;k_zero, see <a class="el" href="#afcbd3259101211b5c4cb297016587d42" title="Initialize parameters and load matrices from command line arguments.">var_init()</a>): "# Note: k=0: no logical
+codeword (&lt;reason&gt;); the result is &lt;result&gt;".  <br /></td></tr>
+<tr class="memitem:a0d2b3d32723fc69158b96312d8bda98e" id="r_a0d2b3d32723fc69158b96312d8bda98e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0d2b3d32723fc69158b96312d8bda98e">print_window_summary</a> (FILE *stream, const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a0d2b3d32723fc69158b96312d8bda98e"><td class="mdescLeft">&#160;</td><td class="mdescRight">DBG_SUMMARY: the line of the hybrid RW windows of the input summary (see rw_hybrid_on()); <a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> prints it after resolving an automatic rw_opt to 0.  <br /></td></tr>
+<tr class="memitem:a2c25a20b2a1fa421512e034bceabd3b0" id="r_a2c25a20b2a1fa421512e034bceabd3b0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2c25a20b2a1fa421512e034bceabd3b0">k_zero_rank</a> (const <a class="el" href="structcsr__t.html">csr_t</a> *const H, const <a class="el" href="structcsr__t.html">csr_t</a> *const L, char *const reason, const size_t len, atomic_int *const stop)</td></tr>
+<tr class="memdesc:a2c25a20b2a1fa421512e034bceabd3b0"><td class="mdescLeft">&#160;</td><td class="mdescRight">The rank check of k = 0 (when not known at once, p-&gt;k_zero = -1 after <a class="el" href="#afcbd3259101211b5c4cb297016587d42" title="Initialize parameters and load matrices from command line arguments.">var_init()</a>): the row echelon form of a dense copy of H (a classical code: rank H = n), then the rows of L reduced by it (every row of L in the row space of H). Thread-safe: it reads only H and L, writes only <span class="tt">reason</span>, and allocates with malloc() only (M4RI's memory cache is not thread-safe); the dense copy has m*n bits (see the help of the output format).  <br /></td></tr>
 <tr class="memitem:a0d24c5677bd19ec529d6d6cbccd4ff9b" id="r_a0d24c5677bd19ec529d6d6cbccd4ff9b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0d24c5677bd19ec529d6d6cbccd4ff9b">read_dem_file</a> (char *fnam, <a class="el" href="structcsr__t.html">csr_t</a> **p_spaH, <a class="el" href="structcsr__t.html">csr_t</a> **p_spaL, double pmin, int debug)</td></tr>
 <tr class="memdesc:a0d24c5677bd19ec529d6d6cbccd4ff9b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read a Detector Error Model (DEM) file and construct H and L matrices.  <br /></td></tr>
 <tr class="memitem:a81a4ac93ecba5300f65aba3583774319" id="r_a81a4ac93ecba5300f65aba3583774319"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a81a4ac93ecba5300f65aba3583774319">nzlist_read</a> (const char fnam[], <a class="el" href="structparams__t.html">params_t</a> *<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
@@ -242,8 +276,10 @@ Functions</h2></td></tr>
 <tr class="memdesc:ad58cad2a5548c79a52c08f733345a20b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Write the collected codewords from the hash table to a .nz file.  <br /></td></tr>
 <tr class="memitem:adfc42716c2d0f66629190b7cf83451ae" id="r_adfc42716c2d0f66629190b7cf83451ae"><td class="memItemLeft" align="right" valign="top"><a class="el" href="#a50e34f71352a0fa228c4754ae1fa610d">cw_vec_t</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#adfc42716c2d0f66629190b7cf83451ae">codeword_add_maybe</a> (<a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>, const int arr[], int weight, int src)</td></tr>
 <tr class="memdesc:adfc42716c2d0f66629190b7cf83451ae"><td class="mdescLeft">&#160;</td><td class="mdescRight">Add a candidate codeword to the hash table, or count one more hit of a known codeword.  <br /></td></tr>
+<tr class="memitem:abd6ef18373ceca7d3c8155d29a8721a4" id="r_abd6ef18373ceca7d3c8155d29a8721a4"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abd6ef18373ceca7d3c8155d29a8721a4">codeword_count</a> (const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>, const int arr[], const int weight)</td></tr>
+<tr class="memdesc:abd6ef18373ceca7d3c8155d29a8721a4"><td class="mdescLeft">&#160;</td><td class="mdescRight">The hits of a codeword in the hash (see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>), 0 if it is not there (for steplog=FILE).  <br /></td></tr>
 <tr class="memitem:acf772607b3b424bb087d8f6351c86ef6" id="r_acf772607b3b424bb087d8f6351c86ef6"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acf772607b3b424bb087d8f6351c86ef6">print_rw_step_stats</a> (FILE *stream, const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
-<tr class="memdesc:acf772607b3b424bb087d8f6351c86ef6"><td class="mdescLeft">&#160;</td><td class="mdescRight">DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform random permutation and by those with a window (the distinct codewords and their hits), e.g., to see whether some codewords are found only by the uniform steps (not local in the column order).  <br /></td></tr>
+<tr class="memdesc:acf772607b3b424bb087d8f6351c86ef6"><td class="mdescLeft">&#160;</td><td class="mdescRight">DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform random permutation, by those with a window (index windows, kwin), and by the row slabs of rw_opt 4: the distinct codewords and their hits, e.g., to see whether some codewords are found only by the uniform steps (not local in the column order). Only the codewords in hash are counted: without outC and maxC, at most cov_cws codewords of the minimum weight (the first ones found) and heavier ones only for the representative set of min_hits (see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>); "both" counts the codewords found by the uniform steps and by the window or slab steps, and "of N cws" all codewords of the weight in hash (also those found only by CC or read with finC).  <br /></td></tr>
 <tr class="memitem:a15af777f1361db9bebd3fdfe45020f10" id="r_a15af777f1361db9bebd3fdfe45020f10"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a15af777f1361db9bebd3fdfe45020f10">codeword_window_count</a> (const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
 <tr class="memdesc:a15af777f1361db9bebd3fdfe45020f10"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of codewords in the collection window (weight up to min_w + dW with outC or maxC, otherwise weight min_w): the codewords exported with outC and counted for maxC.  <br /></td></tr>
 <tr class="memitem:a9712441a35e23d206ae525781a3c2353" id="r_a9712441a35e23d206ae525781a3c2353"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9712441a35e23d206ae525781a3c2353">codeword_maxc_reached</a> (const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
@@ -254,6 +290,10 @@ Functions</h2></td></tr>
 <tr class="memdesc:a55aee8ddd490ef462187d94b0d7aac7e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the hit statistics of the <span class="tt">min_hits</span> stopping criterion.  <br /></td></tr>
 <tr class="memitem:a7093e256915dbaca3bb2cc985393daaf" id="r_a7093e256915dbaca3bb2cc985393daaf"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7093e256915dbaca3bb2cc985393daaf">check_min_hits_convergence</a> (const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
 <tr class="memdesc:a7093e256915dbaca3bb2cc985393daaf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check whether the QDistRnd-style hit count stopping condition is met.  <br /></td></tr>
+<tr class="memitem:a6a3ed92f1313a303a0d6eb14283d14ac" id="r_a6a3ed92f1313a303a0d6eb14283d14ac"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6a3ed92f1313a303a0d6eb14283d14ac">min_hits_rule</a> (const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a6a3ed92f1313a303a0d6eb14283d14ac"><td class="mdescLeft">&#160;</td><td class="mdescRight">The rule of the <span class="tt">min_hits</span> stop of <a class="el" href="#a7093e256915dbaca3bb2cc985393daaf" title="Check whether the QDistRnd-style hit count stopping condition is met.">check_min_hits_convergence()</a>: MIN_HITS_OFF (min_hits &lt;= 0), MIN_HITS_CANON (the canonical classes of rw_opt bit 16, <a class="el" href="#a89e17c2316ed27da41b8f800ede9160d" title="The canonical stopping rule of rw_opt (RW_OPT_CANON, Sec. 7.3 of doc/rw_triplet_degeneracies....">rw_canon_converged()</a>, unless their table is full), or MIN_HITS_VECTOR (the average hits &lt;n&gt; of <a class="el" href="#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>). With MIN_HITS_CANON, only the codewords of the minimum weight found in the uniform RW steps count: while there is none (e.g., when only the window steps find codewords of the minimum weight), the stop cannot fire (the status line and the summary say so).  <br /></td></tr>
+<tr class="memitem:a89e17c2316ed27da41b8f800ede9160d" id="r_a89e17c2316ed27da41b8f800ede9160d"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a89e17c2316ed27da41b8f800ede9160d">rw_canon_converged</a> (const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
+<tr class="memdesc:a89e17c2316ed27da41b8f800ede9160d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The canonical stopping rule of rw_opt (RW_OPT_CANON, Sec. 7.3 of doc/rw_triplet_degeneracies.tex): with the statistics p-&gt;canon of the canonical classes of the minimum weight in the uniform RW steps (each class counted at most once per step), returns 1 if N_unif &gt;= max(15, 3 min_hits), N_unif / C_obs &gt;= min_hits, the Good-Turing estimate of the unseen probability mass p_GT = Q1 / N_unif &lt;= min(0.02, 3 exp(-min_hits)), and the unseen fraction C0 / (C_obs + C0) &lt;= 0.05 of the bias-corrected Chao2 estimate C0 = Q1 (Q1 - 1) / (2 (Q2 + 1)) of the unseen classes.  <br /></td></tr>
 <tr class="memitem:aca79e5ee9d56e635eef0ed2584be190a" id="r_aca79e5ee9d56e635eef0ed2584be190a"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aca79e5ee9d56e635eef0ed2584be190a">codeword_hit_check</a> (FILE *stream, const <a class="el" href="structparams__t.html">params_t</a> *const <a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>)</td></tr>
 <tr class="memdesc:aca79e5ee9d56e635eef0ed2584be190a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check the uniformity of the hit counts within each weight class of the representative set.  <br /></td></tr>
 <tr class="memitem:a800b315a9c34f17efdcd12c94b65eb1e" id="r_a800b315a9c34f17efdcd12c94b65eb1e"><td class="memItemLeft" align="right" valign="top">double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a800b315a9c34f17efdcd12c94b65eb1e">rw_infoset_find_prob</a> (const int n, const int rank, const int w, const int pairs_l)</td></tr>
@@ -288,7 +328,7 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00024">24</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00025">25</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -304,7 +344,25 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l01019">1019</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l01451">1451</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+</div>
+</div>
+<a id="a4841557f6264082e36ecc1d71e10fa6c" name="a4841557f6264082e36ecc1d71e10fa6c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4841557f6264082e36ecc1d71e10fa6c">&#9670;&#160;</a></span>CW_SRC_ALL</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CW_SRC_ALL&#160;&#160;&#160;((1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da989432694f48e1b061f3666ffe542fbd">CW_SRC_OTHER</a>) | (1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7daccd625b95628b65addbc6510a796b1f3">CW_SRC_RW_UNIFORM</a>) | (1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da1729a329c577e9b6a540201e4f44e4af">CW_SRC_RW_WINDOW</a>) | (1 &lt;&lt; <a class="el" href="#aaaa9f622a0ca45f7441e4a112066ed7da07f66447c770bbd6483a989998187160">CW_SRC_RW_SLAB</a>))</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>All sources (p-&gt;nhits_src: all hits count for &lt;n&gt;, as in version 0.16.1). </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00362">362</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -321,9 +379,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>command-line arguments, rng seed, files read </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00037">37</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00038">38</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01728">read_dem_file()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02133">read_dem_file()</a>, and <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -340,9 +398,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>support of each new lightest codeword (RW, CC, finC) </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00036">36</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00037">37</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00172">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="util__io_8c_source.html#l03578">nzlist_read()</a>.</p>
 
 </div>
 </div>
@@ -359,9 +417,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>without DBG_LARGE, at most this many positions of a codeword support are printed </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00043">43</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00044">44</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03691">print_codeword_support()</a>.</p>
 
 </div>
 </div>
@@ -378,9 +436,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>dump all codewords in hash with their hit counts at the end </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00039">39</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00040">40</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -396,7 +454,7 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00042">42</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00043">43</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -413,9 +471,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>no size cutoff for the matrices, codeword supports, and per-weight cw statistics </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00040">40</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00041">41</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00186">csr_dump()</a>, <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>, and <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00284">csr_dump()</a>, <a class="el" href="dist__cc_8c_source.html#l00172">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>, and <a class="el" href="util__io_8c_source.html#l03691">print_codeword_support()</a>.</p>
 
 </div>
 </div>
@@ -432,7 +490,7 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>dist_m4ri_old only: CC recursion and confinement hash traces </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00041">41</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00042">42</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
 
@@ -451,9 +509,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>dump the matrices H, G, L (if n &lt; 150 unless DBG_LARGE) </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00038">38</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00039">39</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00186">csr_dump()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00284">csr_dump()</a>.</p>
 
 </div>
 </div>
@@ -470,9 +528,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>code parameters rank(H), rank(L) or rank(G), k (dense elimination at startup) </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00035">35</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00036">36</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -489,9 +547,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>run plan, finished CC rounds, new upper bounds, bounds changes, RW convergence </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00032">32</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00033">33</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00172">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -508,7 +566,7 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>periodic status (after 1, 2, 4, ... s, then every 60 s); legacy: every 1000 RW steps </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00033">33</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00034">34</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>.</p>
 
@@ -527,9 +585,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>input summary, warnings, stop reason, codeword and hit statistics, export </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00031">31</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00032">32</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00172">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, <a class="el" href="util__io_8c_source.html#l03578">nzlist_read()</a>, and <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -546,9 +604,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 <p>thread allocation and timing: throttling, CC round planning and work, waits </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00034">34</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00035">35</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -559,14 +617,14 @@ Variables</h2></td></tr>
 <div class="memproto">
       <table class="memname">
         <tr>
-          <td class="memname">#define DIST_M4RI_VERSION&#160;&#160;&#160;&quot;0.16.1&quot;</td>
+          <td class="memname">#define DIST_M4RI_VERSION&#160;&#160;&#160;&quot;0.17.4&quot;</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00544">544</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00735">735</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00095">print_short_help()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00112">print_short_help()</a>, and <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -582,9 +640,9 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00047">47</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00048">48</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -600,9 +658,140 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00629">629</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00828">828</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
+
+</div>
+</div>
+<a id="a2ccfe9b48d71ab7d1a653a59fde455ed" name="a2ccfe9b48d71ab7d1a653a59fde455ed"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2ccfe9b48d71ab7d1a653a59fde455ed">&#9670;&#160;</a></span>RW_OPT_ALL</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_OPT_ALL&#160;&#160;&#160;0x3f</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>all stages </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00063">63</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+</div>
+</div>
+<a id="a731c53911ae5ba037d56dc3f25ba1d09" name="a731c53911ae5ba037d56dc3f25ba1d09"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a731c53911ae5ba037d56dc3f25ba1d09">&#9670;&#160;</a></span>RW_OPT_CANON</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_OPT_CANON&#160;&#160;&#160;0x10</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>Stage 5: canonical classes, coalesced hits, Good-Turing / Chao2 stopping (the Harris-FKG score is printed with any stage, on the dense full-matrix steps with pairs) </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00060">60</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
+
+</div>
+</div>
+<a id="a99befc24ee5873e37440ee3264a0b4ec" name="a99befc24ee5873e37440ee3264a0b4ec"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a99befc24ee5873e37440ee3264a0b4ec">&#9670;&#160;</a></span>RW_OPT_DUAL</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_OPT_DUAL&#160;&#160;&#160;0x08</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>Stage 4: sparse-dual m x m inverse elimination </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00059">59</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
+
+</div>
+</div>
+<a id="aa94af4e89411342fc20b5c1790af8179" name="aa94af4e89411342fc20b5c1790af8179"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa94af4e89411342fc20b5c1790af8179">&#9670;&#160;</a></span>RW_OPT_EXPAND</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_OPT_EXPAND&#160;&#160;&#160;0x20</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>the expansion of the collected codewords by T_3 before the export (outC) </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00062">62</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
+
+</div>
+</div>
+<a id="a827c00e13e0c2f5b5f14fb4e8f83a03f" name="a827c00e13e0c2f5b5f14fb4e8f83a03f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a827c00e13e0c2f5b5f14fb4e8f83a03f">&#9670;&#160;</a></span>RW_OPT_GEN</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_OPT_GEN&#160;&#160;&#160;0x02</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>Stage 2b: shortening by the rows of G (finG) and the realized-generator filter </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00057">57</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
+
+</div>
+</div>
+<a id="a124d70f7f3ac7a6f2a9b14cb17f4090e" name="a124d70f7f3ac7a6f2a9b14cb17f4090e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a124d70f7f3ac7a6f2a9b14cb17f4090e">&#9670;&#160;</a></span>RW_OPT_SLAB</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_OPT_SLAB&#160;&#160;&#160;0x04</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>Stage 3: row-slab windows of a DEM with MIS push-back order </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00058">58</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
+
+</div>
+</div>
+<a id="a0c736b0e4a231e2d58a7b61bf19398c4" name="a0c736b0e4a231e2d58a7b61bf19398c4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0c736b0e4a231e2d58a7b61bf19398c4">&#9670;&#160;</a></span>RW_OPT_T3</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_OPT_T3&#160;&#160;&#160;0x01</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>Stage 1 (T_3 enumeration) and 2a (contraction, hoisted L syndromes, Stern filter) </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00056">56</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -620,7 +809,7 @@ Variables</h2></td></tr>
 
 <p>The number of pairs of a RW step allowed with <span class="tt">pairs=-1</span> (auto) whatever the work of its elimination (small matrices), see rw_pairs_min_bits(). </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00292">292</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00455">455</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -638,7 +827,7 @@ Variables</h2></td></tr>
 
 <p>The smallest chance to keep a codeword of the weight of the upper bound in the buckets of the RW pairs with <span class="tt">pairs=-1</span> (auto), see rw_pairs_bits(). </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00282">282</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00445">445</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -656,9 +845,9 @@ Variables</h2></td></tr>
 
 <p>The largest number of random pivot rows of the buckets of the RW pairs (<span class="tt">pairs</span>, a 64-bit key). </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00278">278</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00441">441</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -676,7 +865,27 @@ Variables</h2></td></tr>
 
 <p>The elimination of a RW step (rank r, n columns) takes about r^2 n / (64 RW_PAIRS_WORK) word operations, the scale of the work of its RW pairs with <span class="tt">pairs=-1</span> (auto), see rw_pairs_min_bits(). (Measured with l = 1: the pairs took 0.5 and 2.5 times the time of the elimination for c1920H and a random LDPC code with n = 3000, against 0.67 and 2.0 times from this estimate.). </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00288">288</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00451">451</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+</div>
+</div>
+<a id="a9c923879d3f4f01ebe29df520d8f4e18" name="a9c923879d3f4f01ebe29df520d8f4e18"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9c923879d3f4f01ebe29df520d8f4e18">&#9670;&#160;</a></span>RW_SLAB_AUTO_MMAX</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define RW_SLAB_AUTO_MMAX&#160;&#160;&#160;640</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The most detectors of a DEM without round structure with the row slabs in the automatic rw_opt, see rw_slab_auto() (the default slab height m/2 is then at most 320, as in the row-slab study). </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00406">406</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -694,18 +903,20 @@ Variables</h2></td></tr>
 <b>Value:</b><div class="fragment"><div class="line">  <span class="stringliteral">&quot;%s (version %s): calculate distance of a classical or quantum CSS code\n&quot;</span> \</div>
 <div class="line">  <span class="stringliteral">&quot;Usage: %s [method=1|2|3] [parameter=value ...]\n\n&quot;</span> \</div>
 <div class="line">  <span class="stringliteral">&quot;Allowed parameters:\n&quot;</span> \</div>
-<div class="line">  <span class="stringliteral">&quot;  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, classical, css,\n&quot;</span> \</div>
-<div class="line">  <span class="stringliteral">&quot;  steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax, start, start_scan,\n&quot;</span> \</div>
-<div class="line">  <span class="stringliteral">&quot;  sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout, nothrottle,\n&quot;</span> \</div>
-<div class="line">  <span class="stringliteral">&quot;  chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs, min_hits,\n&quot;</span> \</div>
-<div class="line">  <span class="stringliteral">&quot;  cov_cws, refresh, finC, outC, maxC, dW, irred, ortho, seed, debug\n\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;  method, finH, finG, finL, fin, fdem, pmin, merge, drop, outD, dem_rounds,\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;  classical, css, steps, wmin, wmax, dmin, dmax, dstop, dexp (dest), smax,\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;  start, start_scan, sort_rows, cc_prune, cbeg, cend, noscan, threads, timeout,\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;  nothrottle, chunk_size (batch), ksub, kwin (win), win_mode, win_hyb, pairs,\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;  rw_opt, min_hits (max_hits), cov_cws, refresh, finC, outC, maxC, dW, irred,\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;  ortho, seed, debug, stamp, json, steplog, slab_rows, slab_bnd, slab_var,\n&quot;</span> \</div>
+<div class="line">  <span class="stringliteral">&quot;  slab_every\n\n&quot;</span> \</div>
 <div class="line">  <span class="stringliteral">&quot;Help options:\n&quot;</span> \</div>
 <div class="line">  <span class="stringliteral">&quot;  -h, --help    : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)\n&quot;</span> \</div>
 <div class="line">  <span class="stringliteral">&quot;  --morehelp    : display full help for all available parameters (or for TOPIC: --morehelp TOPIC)\n&quot;</span></div>
 </div><!-- fragment -->
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00553">553</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00744">744</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00095">print_short_help()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00112">print_short_help()</a>.</p>
 
 </div>
 </div>
@@ -721,9 +932,9 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00566">566</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00759">759</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
 
 </div>
 </div>
@@ -756,7 +967,7 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00049">49</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00050">50</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -773,14 +984,38 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p>The source of a codeword added to the hash, see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>. </p>
+<p>The source of a codeword added to the hash, see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>: CC, finC, and the other sources; the RW steps with a uniform random permutation, with a window (kwin, the hybrid index windows), and the row slabs of rw_opt 4. </p>
 <table class="fieldtable">
 <tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="aaaa9f622a0ca45f7441e4a112066ed7da989432694f48e1b061f3666ffe542fbd" name="aaaa9f622a0ca45f7441e4a112066ed7da989432694f48e1b061f3666ffe542fbd"></a>CW_SRC_OTHER&#160;</td><td class="fielddoc"></td></tr>
 <tr><td class="fieldname"><a id="aaaa9f622a0ca45f7441e4a112066ed7daccd625b95628b65addbc6510a796b1f3" name="aaaa9f622a0ca45f7441e4a112066ed7daccd625b95628b65addbc6510a796b1f3"></a>CW_SRC_RW_UNIFORM&#160;</td><td class="fielddoc"></td></tr>
 <tr><td class="fieldname"><a id="aaaa9f622a0ca45f7441e4a112066ed7da1729a329c577e9b6a540201e4f44e4af" name="aaaa9f622a0ca45f7441e4a112066ed7da1729a329c577e9b6a540201e4f44e4af"></a>CW_SRC_RW_WINDOW&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="aaaa9f622a0ca45f7441e4a112066ed7da07f66447c770bbd6483a989998187160" name="aaaa9f622a0ca45f7441e4a112066ed7da07f66447c770bbd6483a989998187160"></a>CW_SRC_RW_SLAB&#160;</td><td class="fielddoc"></td></tr>
 </table>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00253">253</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00359">359</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+</div>
+</div>
+<a id="a5a4c82c39c0610e8eed1a7a5770890a3" name="a5a4c82c39c0610e8eed1a7a5770890a3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5a4c82c39c0610e8eed1a7a5770890a3">&#9670;&#160;</a></span>anonymous enum</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">anonymous enum</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The rule of the <span class="tt">min_hits</span> stop, see <a class="el" href="#a6a3ed92f1313a303a0d6eb14283d14ac" title="The rule of the min_hits stop of check_min_hits_convergence(): MIN_HITS_OFF (min_hits &lt;= 0),...">min_hits_rule()</a>. </p>
+<table class="fieldtable">
+<tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="a5a4c82c39c0610e8eed1a7a5770890a3a6167b449538bb210bd72535be102a5e7" name="a5a4c82c39c0610e8eed1a7a5770890a3a6167b449538bb210bd72535be102a5e7"></a>MIN_HITS_OFF&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a5a4c82c39c0610e8eed1a7a5770890a3a8e5db4091073b925ac96997514082e67" name="a5a4c82c39c0610e8eed1a7a5770890a3a8e5db4091073b925ac96997514082e67"></a>MIN_HITS_VECTOR&#160;</td><td class="fielddoc"></td></tr>
+<tr><td class="fieldname"><a id="a5a4c82c39c0610e8eed1a7a5770890a3ac82ad3868ee3058d7a8f93929ee8cf42" name="a5a4c82c39c0610e8eed1a7a5770890a3ac82ad3868ee3058d7a8f93929ee8cf42"></a>MIN_HITS_CANON&#160;</td><td class="fielddoc"></td></tr>
+</table>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00604">604</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
 </div>
 </div>
@@ -801,7 +1036,7 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Check whether the QDistRnd-style hit count stopping condition is met. </p>
-<p>Returns 1 if p-&gt;min_hits &gt; 0 and the average number of hits &lt;n&gt; (see <a class="el" href="#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>) reaches p-&gt;min_hits, both for the codewords of weight p-&gt;min_w and for the representative set of up to p-&gt;cov_cws lowest-weight codewords. A single codeword (e.g., for a classical code with k=1) suffices. Otherwise returns 0.</p>
+<p>Returns 1 if p-&gt;min_hits &gt; 0 and the average number of hits &lt;n&gt; (see <a class="el" href="#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>) reaches p-&gt;min_hits, both for the codewords of weight p-&gt;min_w and for the representative set of up to p-&gt;cov_cws lowest-weight codewords. A single codeword (e.g., for a classical code with k=1) suffices. Otherwise returns 0. With the canonical classes of rw_opt (RW_OPT_CANON, p-&gt;canon.active), the rule of <a class="el" href="#a89e17c2316ed27da41b8f800ede9160d" title="The canonical stopping rule of rw_opt (RW_OPT_CANON, Sec. 7.3 of doc/rw_triplet_degeneracies....">rw_canon_converged()</a> is used instead (see <a class="el" href="#a6a3ed92f1313a303a0d6eb14283d14ac" title="The rule of the min_hits stop of check_min_hits_convergence(): MIN_HITS_OFF (min_hits &lt;= 0),...">min_hits_rule()</a>).</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure. </td></tr>
@@ -810,9 +1045,9 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>1 if convergence criterion is met, 0 otherwise. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02906">2906</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03391">3391</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00568">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, <a class="el" href="util__io_8h_source.html#l00560">cw_hit_stats_t::min_cws</a>, <a class="el" href="util__io_8h_source.html#l00604">MIN_HITS_CANON</a>, <a class="el" href="util__io_8c_source.html#l03400">min_hits_rule()</a>, <a class="el" href="util__io_8h_source.html#l00604">MIN_HITS_VECTOR</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, <a class="el" href="util__io_8c_source.html#l03405">rw_canon_converged()</a>, and <a class="el" href="util__io_8h_source.html#l00562">cw_hit_stats_t::set_cws</a>.</p>
 
 <p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>.</p>
 
@@ -859,17 +1094,58 @@ Variables</h2></td></tr>
     <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure. </td></tr>
     <tr><td class="paramname">arr</td><td>Array of indices representing the support of the codeword (sorted). </td></tr>
     <tr><td class="paramname">weight</td><td>Weight of the codeword (length of arr). </td></tr>
-    <tr><td class="paramname">src</td><td>Where the codeword was found, for the hit counts of each kind of RW step (CW_SRC_RW_UNIFORM, CW_SRC_RW_WINDOW; CW_SRC_OTHER for CC and finC), see <a class="el" href="#acf772607b3b424bb087d8f6351c86ef6" title="DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform r...">print_rw_step_stats()</a>. </td></tr>
+    <tr><td class="paramname">src</td><td>Where the codeword was found, for the hit counts of each kind of RW step (CW_SRC_RW_UNIFORM, CW_SRC_RW_WINDOW, CW_SRC_RW_SLAB; CW_SRC_OTHER for CC and finC), see <a class="el" href="#acf772607b3b424bb087d8f6351c86ef6" title="DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform r...">print_rw_step_stats()</a>; the hits of the sources in p-&gt;nhits_src are counted for the <span class="tt">min_hits</span> statistic &lt;n&gt; (see <a class="el" href="#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>). </td></tr>
   </table>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The codeword hash (<span class="tt">p-&gt;codewords</span>). </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02693">2693</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03143">3143</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::arr</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::cnt_u</a>, <a class="el" href="util__hash_8h_source.html#l00041">CW_VEC_T::cnt_w</a>, <a class="el" href="util__io_8c_source.html#l02644">codeword_maxc_reached()</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_RW_UNIFORM</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_RW_WINDOW</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00427">HASH_ADD</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00044">CW_VEC_T::arr</a>, <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::cnt_s</a>, <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::cnt_u</a>, <a class="el" href="util__hash_8h_source.html#l00041">CW_VEC_T::cnt_w</a>, <a class="el" href="util__io_8c_source.html#l03082">codeword_maxc_reached()</a>, <a class="el" href="util__io_8h_source.html#l00359">CW_SRC_RW_SLAB</a>, <a class="el" href="util__io_8h_source.html#l00359">CW_SRC_RW_UNIFORM</a>, <a class="el" href="util__io_8h_source.html#l00359">CW_SRC_RW_WINDOW</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00427">HASH_ADD</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00172">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03578">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
+
+</div>
+</div>
+<a id="abd6ef18373ceca7d3c8155d29a8721a4" name="abd6ef18373ceca7d3c8155d29a8721a4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abd6ef18373ceca7d3c8155d29a8721a4">&#9670;&#160;</a></span>codeword_count()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int codeword_count </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structparams__t.html">params_t</a> *const</td>          <td class="paramname"><span class="paramname"><em>p</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int</td>          <td class="paramname"><span class="paramname"><em>arr</em></span>[], </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const int</td>          <td class="paramname"><span class="paramname"><em>weight</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The hits of a codeword in the hash (see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>), 0 if it is not there (for steplog=FILE). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure. </td></tr>
+    <tr><td class="paramname">arr</td><td>The support of the codeword (sorted). </td></tr>
+    <tr><td class="paramname">weight</td><td>Its weight (length of arr). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The hit count <span class="tt">cnt</span> of the codeword in hash, or 0. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03207">3207</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, and <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
 
 </div>
 </div>
@@ -891,11 +1167,11 @@ Variables</h2></td></tr>
 <p>Weight limit (exclusive) of RW codewords needed for the <span class="tt">min_hits</span> statistic. </p>
 <p>Returns 0 if min_hits &lt;= 0, the weight min_w + 1 if only the minimum-weight codewords are used (cov_cws &lt;= 0), INT_MAX (any weight) while the representative set is not filled, and otherwise the maximum weight in hash plus one. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02648">2648</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03086">3086</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -919,7 +1195,7 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Check the uniformity of the hit counts within each weight class of the representative set. </p>
-<p>Codewords of the same weight found with the same probability per RW step have (zero-truncated) Poisson-distributed hit counts. For each weight class of the representative set with at least 2 codewords, the variance of the hit counts is compared with the Poisson variance. A warning is printed if it is significantly larger (p-value &lt; 0.001), the spread (standard deviation) of the hit rates is at least their mean, and, for hit rates with this relative spread (gamma distribution), the probability to miss a lighter codeword is at least 3 times larger than exp(-mu) with equal hit rates (mu: average hits): some codewords are found much more often than others of the same weight, and the estimate exp(-&lt;n&gt;) is optimistic. Takes a single pass over the hash.</p>
+<p>Codewords of the same weight found with the same probability per RW step have (zero-truncated) Poisson-distributed hit counts. For each weight class of the representative set with at least 2 codewords, the variance of the hit counts is compared with the Poisson variance. A warning is printed if it is significantly larger (p-value &lt; 0.001), the spread (standard deviation) of the hit rates is at least their mean, and, for hit rates with this relative spread (gamma distribution), the probability to miss a lighter codeword is at least 3 times larger than exp(-mu) with equal hit rates (mu: average hits): some codewords are found much more often than others of the same weight, and the estimate exp(-&lt;n&gt;) is optimistic. Takes a single pass over the hash. Only the hits counted for &lt;n&gt; (see <a class="el" href="#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>) and the codewords with such a hit are tested.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">stream</td><td>Output stream for the warnings (typically stderr). </td></tr>
@@ -929,11 +1205,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Number of weight classes with non-uniform hit counts. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02939">2939</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03444">3444</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, <a class="el" href="util__io_8c_source.html#l02785">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8c_source.html#l02784">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l02786">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l03256">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l03256">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, <a class="el" href="util__io_8c_source.html#l03254">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8c_source.html#l03253">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, <a class="el" href="util__io_8h_source.html#l00562">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l03255">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00567">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00566">cw_hit_stats_t::w_lo</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -957,7 +1233,7 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Compute the hit statistics of the <span class="tt">min_hits</span> stopping criterion. </p>
-<p>The representative set consists of the lowest weight classes (starting with min_w) in hash with at least cov_cws codewords in total (all classes if fewer; only min_w if cov_cws &lt;= 0 or min_hits &lt;= 0). As in QDistRnd, &lt;n&gt; estimates the average number of times a codeword is found; a lighter codeword is missed with probability about exp(-&lt;n&gt;), assuming lighter codewords are found at least as often. Heavier codewords make the estimate more conservative.</p>
+<p>The representative set consists of the lowest weight classes (starting with min_w) in hash with at least cov_cws codewords in total (all classes if fewer; only min_w if cov_cws &lt;= 0 or min_hits &lt;= 0). As in QDistRnd, &lt;n&gt; estimates the average number of times a codeword is found; a lighter codeword is missed with probability about exp(-&lt;n&gt;), assuming lighter codewords are found at least as often. Heavier codewords make the estimate more conservative. Only the hits of the sources in p-&gt;nhits_src count, over the codewords with such a hit: with a nonzero resolved rw_opt, not the hits of the row slabs and of the window steps, which find the same codewords over and over (unless every RW step has a window, kwin &gt; 0), see rw_nhits_sources() in <a class="el" href="dist__m4ri_8c.html" title="Multithreaded distance calculation and bracketing (dist_m4ri).">dist_m4ri.c</a>.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure. </td></tr>
@@ -966,11 +1242,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02809">2809</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03281">3281</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8h_source.html#l00397">cw_hit_stats_t::min_cws</a>, <a class="el" href="util__io_8h_source.html#l00398">cw_hit_stats_t::min_hits</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8h_source.html#l00400">cw_hit_stats_t::set_hits</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00564">cw_hit_stats_t::all_cws</a>, <a class="el" href="util__io_8h_source.html#l00568">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8h_source.html#l00565">cw_hit_stats_t::excl_hits</a>, <a class="el" href="util__io_8h_source.html#l00560">cw_hit_stats_t::min_cws</a>, <a class="el" href="util__io_8h_source.html#l00561">cw_hit_stats_t::min_hits</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, <a class="el" href="util__io_8h_source.html#l00562">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8h_source.html#l00563">cw_hit_stats_t::set_hits</a>, <a class="el" href="util__io_8h_source.html#l00567">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00566">cw_hit_stats_t::w_lo</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02906">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l02939">codeword_hit_check()</a>, and <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03391">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l03444">codeword_hit_check()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>.</p>
 
 </div>
 </div>
@@ -991,11 +1267,11 @@ Variables</h2></td></tr>
 
 <p>Returns 1 if maxC &gt; 0 and maxC codewords of the collection window are collected. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02644">2644</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03082">3082</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l02635">codeword_window_count()</a>, and <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l03073">codeword_window_count()</a>, and <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="dist__cc_8c_source.html#l00172">do_CC_dist()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="util__io_8c_source.html#l03578">nzlist_read()</a>, and <a class="el" href="dist__cc_8c_source.html#l00055">start_CC_recurs()</a>.</p>
 
 </div>
 </div>
@@ -1016,11 +1292,11 @@ Variables</h2></td></tr>
 
 <p>Number of codewords in the collection window (weight up to min_w + dW with outC or maxC, otherwise weight min_w): the codewords exported with outC and counted for maxC. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02635">2635</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03073">3073</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02644">codeword_maxc_reached()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03082">codeword_maxc_reached()</a>.</p>
 
 </div>
 </div>
@@ -1070,9 +1346,9 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02745">2745</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03214">3214</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00039">CW_VEC_T::cnt</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
 </div>
 </div>
@@ -1117,11 +1393,126 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00186">186</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00284">284</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00122">csr_t::cols</a>, <a class="el" href="util__io_8h_source.html#l00040">DBG_LARGE</a>, <a class="el" href="util__io_8h_source.html#l00038">DBG_MATRICES</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00186">mzd_from_csr()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00121">csr_t::rows</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00122">csr_t::cols</a>, <a class="el" href="util__io_8h_source.html#l00041">DBG_LARGE</a>, <a class="el" href="util__io_8h_source.html#l00039">DBG_MATRICES</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00175">mzd_from_csr()</a>, and <a class="el" href="util__m4ri_8h_source.html#l00121">csr_t::rows</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00173">do_CC_dist()</a>, and <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__cc_8c_source.html#l00172">do_CC_dist()</a>, and <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
+
+</div>
+</div>
+<a id="a7dc880c2ae5285ff26236964da844e50" name="a7dc880c2ae5285ff26236964da844e50"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7dc880c2ae5285ff26236964da844e50">&#9670;&#160;</a></span>k_zero_note()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void k_zero_note </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structparams__t.html">params_t</a> *const</td>          <td class="paramname"><span class="paramname"><em>p</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *const</td>          <td class="paramname"><span class="paramname"><em>result</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The note on stderr (at any debug level) for k = 0 (p-&gt;k_zero, see <a class="el" href="#afcbd3259101211b5c4cb297016587d42" title="Initialize parameters and load matrices from command line arguments.">var_init()</a>): "# Note: k=0: no logical
+codeword (&lt;reason&gt;); the result is &lt;result&gt;". </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">p</td><td>Pointer to the <a class="el" href="structparams__t.html">params_t</a> structure (p-&gt;k0_reason). </td></tr>
+    <tr><td class="paramname">result</td><td>The result line of the binary ("0 0 0" for <a class="el" href="namespacedist__m4ri.html">dist_m4ri</a>, "0" for dist_m4ri_old). </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l01041">1041</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
+
+</div>
+</div>
+<a id="a2c25a20b2a1fa421512e034bceabd3b0" name="a2c25a20b2a1fa421512e034bceabd3b0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2c25a20b2a1fa421512e034bceabd3b0">&#9670;&#160;</a></span>k_zero_rank()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int k_zero_rank </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structcsr__t.html">csr_t</a> *const</td>          <td class="paramname"><span class="paramname"><em>H</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const <a class="el" href="structcsr__t.html">csr_t</a> *const</td>          <td class="paramname"><span class="paramname"><em>L</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">char *const</td>          <td class="paramname"><span class="paramname"><em>reason</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const size_t</td>          <td class="paramname"><span class="paramname"><em>len</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">atomic_int *const</td>          <td class="paramname"><span class="paramname"><em>stop</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The rank check of k = 0 (when not known at once, p-&gt;k_zero = -1 after <a class="el" href="#afcbd3259101211b5c4cb297016587d42" title="Initialize parameters and load matrices from command line arguments.">var_init()</a>): the row echelon form of a dense copy of H (a classical code: rank H = n), then the rows of L reduced by it (every row of L in the row space of H). Thread-safe: it reads only H and L, writes only <span class="tt">reason</span>, and allocates with malloc() only (M4RI's memory cache is not thread-safe); the dense copy has m*n bits (see the help of the output format). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">H</td><td>The matrix H (at least one row and one column). </td></tr>
+    <tr><td class="paramname">L</td><td>The matrix L, NULL for a classical code. </td></tr>
+    <tr><td class="paramname">reason</td><td>Why k = 0 (written only if k = 0), for p-&gt;k0_reason. </td></tr>
+    <tr><td class="paramname">len</td><td>The size of <span class="tt">reason</span>. </td></tr>
+    <tr><td class="paramname">stop</td><td>If not NULL: the check ends early (returns -1) once *stop is nonzero. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>1 if k = 0, 0 if k &gt; 0, -1 if stopped. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00959">959</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__m4ri_8h_source.html#l00122">csr_t::cols</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, and <a class="el" href="util__m4ri_8h_source.html#l00121">csr_t::rows</a>.</p>
+
+</div>
+</div>
+<a id="a6a3ed92f1313a303a0d6eb14283d14ac" name="a6a3ed92f1313a303a0d6eb14283d14ac"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6a3ed92f1313a303a0d6eb14283d14ac">&#9670;&#160;</a></span>min_hits_rule()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int min_hits_rule </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structparams__t.html">params_t</a> *const</td>          <td class="paramname"><span class="paramname"><em>p</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The rule of the <span class="tt">min_hits</span> stop of <a class="el" href="#a7093e256915dbaca3bb2cc985393daaf" title="Check whether the QDistRnd-style hit count stopping condition is met.">check_min_hits_convergence()</a>: MIN_HITS_OFF (min_hits &lt;= 0), MIN_HITS_CANON (the canonical classes of rw_opt bit 16, <a class="el" href="#a89e17c2316ed27da41b8f800ede9160d" title="The canonical stopping rule of rw_opt (RW_OPT_CANON, Sec. 7.3 of doc/rw_triplet_degeneracies....">rw_canon_converged()</a>, unless their table is full), or MIN_HITS_VECTOR (the average hits &lt;n&gt; of <a class="el" href="#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>). With MIN_HITS_CANON, only the codewords of the minimum weight found in the uniform RW steps count: while there is none (e.g., when only the window steps find codewords of the minimum weight), the stop cannot fire (the status line and the summary say so). </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03400">3400</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00604">MIN_HITS_CANON</a>, <a class="el" href="util__io_8h_source.html#l00604">MIN_HITS_OFF</a>, <a class="el" href="util__io_8h_source.html#l00604">MIN_HITS_VECTOR</a>, and <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03391">check_min_hits_convergence()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>.</p>
 
 </div>
 </div>
@@ -1155,11 +1546,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Number of valid codewords successfully read and added, or -1 on error. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03073">3073</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03578">3578</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::arr</a>, <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l02644">codeword_maxc_reached()</a>, <a class="el" href="util__m4ri_8c_source.html#l01022">cols_ws_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l01011">cols_ws_init()</a>, <a class="el" href="util__m4ri_8c_source.html#l00522">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00163">csr_transpose()</a>, <a class="el" href="util__io_8h_source.html#l00253">CW_SRC_OTHER</a>, <a class="el" href="util__io_8h_source.html#l00036">DBG_CODEWORDS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l02566">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l02546">nzlist_r_open()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00044">CW_VEC_T::arr</a>, <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l03082">codeword_maxc_reached()</a>, <a class="el" href="util__m4ri_8c_source.html#l01072">cols_ws_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l01061">cols_ws_init()</a>, <a class="el" href="util__m4ri_8c_source.html#l00504">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00152">csr_transpose()</a>, <a class="el" href="util__io_8h_source.html#l00359">CW_SRC_OTHER</a>, <a class="el" href="util__io_8h_source.html#l00037">DBG_CODEWORDS</a>, <a class="el" href="util__io_8h_source.html#l00032">DBG_SUMMARY</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="uthash_8h_source.html#l00165">HASH_FIND</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l02999">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l02979">nzlist_r_open()</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, <a class="el" href="util__io_8c_source.html#l03691">print_codeword_support()</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1199,11 +1590,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Number of codewords written, or -1 on error. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03197">3197</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03702">3702</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8c_source.html#l02534">nzlist_w_append()</a>, <a class="el" href="util__io_8c_source.html#l02522">nzlist_w_new()</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00037">CW_VEC_T::hh</a>, <a class="el" href="uthash_8h_source.html#l01129">UT_hash_handle::next</a>, <a class="el" href="util__io_8c_source.html#l02967">nzlist_w_append()</a>, <a class="el" href="util__io_8c_source.html#l02955">nzlist_w_new()</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1236,11 +1627,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02828">2828</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03303">3303</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00403">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l02787">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, <a class="el" href="util__io_8h_source.html#l00040">DBG_LARGE</a>, <a class="el" href="util__io_8c_source.html#l02785">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8c_source.html#l02784">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8h_source.html#l00399">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l02786">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00402">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00401">cw_hit_stats_t::w_lo</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00568">cw_hit_stats_t::avg</a>, <a class="el" href="util__io_8c_source.html#l03256">cw_class_stats_t::c_max</a>, <a class="el" href="util__io_8c_source.html#l03256">cw_class_stats_t::c_min</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, <a class="el" href="util__io_8h_source.html#l00041">DBG_LARGE</a>, <a class="el" href="util__io_8h_source.html#l00565">cw_hit_stats_t::excl_hits</a>, <a class="el" href="util__io_8c_source.html#l03254">cw_class_stats_t::hits</a>, <a class="el" href="util__io_8h_source.html#l00604">MIN_HITS_CANON</a>, <a class="el" href="util__io_8c_source.html#l03400">min_hits_rule()</a>, <a class="el" href="util__io_8c_source.html#l03253">cw_class_stats_t::n</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, <a class="el" href="util__io_8h_source.html#l00562">cw_hit_stats_t::set_cws</a>, <a class="el" href="util__io_8c_source.html#l03255">cw_class_stats_t::sumsq</a>, <a class="el" href="util__io_8h_source.html#l00567">cw_hit_stats_t::w_hi</a>, and <a class="el" href="util__io_8h_source.html#l00566">cw_hit_stats_t::w_lo</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1291,11 +1682,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03186">3186</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03691">3691</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00043">DBG_CW_MAX</a>, <a class="el" href="util__io_8h_source.html#l00040">DBG_LARGE</a>, and <a class="el" href="util__io_8c_source.html#l00008">prm</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00044">DBG_CW_MAX</a>, <a class="el" href="util__io_8h_source.html#l00041">DBG_LARGE</a>, and <a class="el" href="util__io_8c_source.html#l00008">prm</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03578">nzlist_read()</a>.</p>
 
 </div>
 </div>
@@ -1354,7 +1745,9 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Print the information-set estimate of the probability that RW missed a codeword lighter than the upper bound found. </p>
-<p>Among the weights w_lo..w_hi (not excluded by CC), the weight w with the smallest P1(w) (see <a class="el" href="#a800b315a9c34f17efdcd12c94b65eb1e" title="Information-set estimate of the probability that a RW step finds a given codeword of weight w.">rw_infoset_find_prob()</a>) is used: a single codeword of this weight is missed in <span class="tt">steps</span> RW steps with uniform random permutations with probability (1 - P1)^steps. Also prints the total number of RW steps for a 1% miss probability (with the fraction steps / steps_total of uniform steps, as in this run; localized windows, used in about half of the steps for n &gt;= 500, are not counted) and, if <span class="tt">t_step</span> &gt; 0, the corresponding time.</p>
+<p>Among the weights w_lo..w_hi (not excluded by CC), the weight w with the smallest probability P(w) = P1(w) + P2(w) (see <a class="el" href="#a800b315a9c34f17efdcd12c94b65eb1e" title="Information-set estimate of the probability that a RW step finds a given codeword of weight w.">rw_infoset_find_prob()</a>; P2 = 0 without pairs) is used: a single codeword of this weight is missed in <span class="tt">steps</span> RW steps with uniform random permutations with probability (1 - P)^steps. Also prints the total number of RW steps for a 1% miss probability (with the fraction steps / steps_total of uniform steps, as in this run; the window steps, i.e., the index windows of kwin or win_hyb and the row slabs of rw_opt 4, are not counted) and, if <span class="tt">t_step</span> </p><blockquote class="doxtable">
+<p>0, the corresponding time. </p>
+</blockquote>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">stream</td><td>Output stream (typically stderr). </td></tr>
@@ -1370,11 +1763,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03010">3010</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03515">3515</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l02990">rw_infoset_find_prob()</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l03495">rw_infoset_find_prob()</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1397,13 +1790,13 @@ Variables</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p>DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform random permutation and by those with a window (the distinct codewords and their hits), e.g., to see whether some codewords are found only by the uniform steps (not local in the column order). </p>
+<p>DBG_SUMMARY: the codewords of the lowest three weights in hash found by the RW steps with a uniform random permutation, by those with a window (index windows, kwin), and by the row slabs of rw_opt 4: the distinct codewords and their hits, e.g., to see whether some codewords are found only by the uniform steps (not local in the column order). Only the codewords in hash are counted: without outC and maxC, at most cov_cws codewords of the minimum weight (the first ones found) and heavier ones only for the representative set of min_hits (see <a class="el" href="#adfc42716c2d0f66629190b7cf83451ae" title="Add a candidate codeword to the hash table, or count one more hit of a known codeword.">codeword_add_maybe()</a>); "both" counts the codewords found by the uniform steps and by the window or slab steps, and "of N cws" all codewords of the weight in hash (also those found only by CC or read with finC). </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02881">2881</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03360">3360</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::cnt_u</a>, <a class="el" href="util__hash_8h_source.html#l00041">CW_VEC_T::cnt_w</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
+<p class="reference">References <a class="el" href="util__hash_8h_source.html#l00042">CW_VEC_T::cnt_s</a>, <a class="el" href="util__hash_8h_source.html#l00040">CW_VEC_T::cnt_u</a>, <a class="el" href="util__hash_8h_source.html#l00041">CW_VEC_T::cnt_w</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, and <a class="el" href="util__hash_8h_source.html#l00038">CW_VEC_T::weight</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1430,11 +1823,41 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00095">95</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00112">112</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8h_source.html#l00544">DIST_M4RI_VERSION</a>, and <a class="el" href="util__io_8h_source.html#l00553">SHORT_HELP</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00735">DIST_M4RI_VERSION</a>, and <a class="el" href="util__io_8h_source.html#l00744">SHORT_HELP</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
+
+</div>
+</div>
+<a id="a0d2b3d32723fc69158b96312d8bda98e" name="a0d2b3d32723fc69158b96312d8bda98e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0d2b3d32723fc69158b96312d8bda98e">&#9670;&#160;</a></span>print_window_summary()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void print_window_summary </td>
+          <td>(</td>
+          <td class="paramtype">FILE *</td>          <td class="paramname"><span class="paramname"><em>stream</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const <a class="el" href="structparams__t.html">params_t</a> *const</td>          <td class="paramname"><span class="paramname"><em>p</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>DBG_SUMMARY: the line of the hybrid RW windows of the input summary (see rw_hybrid_on()); <a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> prints it after resolving an automatic rw_opt to 0. </p>
+<p>DBG_SUMMARY: the line of the hybrid RW windows of the input summary (see rw_hybrid_on()); <a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> prints it after resolving an automatic rw_opt to 0. </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00325">325</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1485,11 +1908,36 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l01728">1728</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02133">2133</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00597">csr_from_pairs()</a>, <a class="el" href="util__io_8h_source.html#l00037">DBG_ARGS</a>, and <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00627">csr_from_pairs()</a>, <a class="el" href="util__io_8h_source.html#l00038">DBG_ARGS</a>, and <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l00766">var_init()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l01045">var_init()</a>.</p>
+
+</div>
+</div>
+<a id="a89e17c2316ed27da41b8f800ede9160d" name="a89e17c2316ed27da41b8f800ede9160d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a89e17c2316ed27da41b8f800ede9160d">&#9670;&#160;</a></span>rw_canon_converged()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int rw_canon_converged </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structparams__t.html">params_t</a> *const</td>          <td class="paramname"><span class="paramname"><em>p</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The canonical stopping rule of rw_opt (RW_OPT_CANON, Sec. 7.3 of doc/rw_triplet_degeneracies.tex): with the statistics p-&gt;canon of the canonical classes of the minimum weight in the uniform RW steps (each class counted at most once per step), returns 1 if N_unif &gt;= max(15, 3 min_hits), N_unif / C_obs &gt;= min_hits, the Good-Turing estimate of the unseen probability mass p_GT = Q1 / N_unif &lt;= min(0.02, 3 exp(-min_hits)), and the unseen fraction C0 / (C_obs + C0) &lt;= 0.05 of the bias-corrected Chao2 estimate C0 = Q1 (Q1 - 1) / (2 (Q2 + 1)) of the unseen classes. </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03405">3405</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+
+<p class="reference">References <a class="el" href="util__io_8h_source.html#l00071">rw_canon_stats_t::classes</a>, <a class="el" href="util__io_8h_source.html#l00074">rw_canon_stats_t::f1</a>, <a class="el" href="util__io_8h_source.html#l00074">rw_canon_stats_t::f2</a>, <a class="el" href="util__io_8h_source.html#l00073">rw_canon_stats_t::n_unif</a>, and <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03391">check_min_hits_convergence()</a>.</p>
 
 </div>
 </div>
@@ -1535,11 +1983,11 @@ Variables</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>P1(w) + P2(w). </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l02990">2990</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l03495">3495</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
+<p class="reference">References <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03010">print_rw_infoset_estimate()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03515">print_rw_infoset_estimate()</a>.</p>
 
 </div>
 </div>
@@ -1568,7 +2016,7 @@ Variables</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Initialize parameters and load matrices from command line arguments. </p>
-<p>Parses command line arguments, sets up the parameter structure, loads matrices from specified files (Matrix Market or DEM), constructs logical matrices if needed, and performs consistency checks.</p>
+<p>Parses command line arguments, sets up the parameter structure, loads matrices from specified files (Matrix Market or DEM), constructs logical matrices if needed, and performs consistency checks. If k = 0, i.e., there is no codeword (rank H = n for a classical code; for a quantum code or a DEM, every row of L is in the row space of H, also if L has no rows, e.g., a DEM with no L left after the pmin cut, merge, and drop), and this is known at once (L without rows, also L computed from H and G, or L = 0), it sets p-&gt;k_zero = 1 and returns before the warnings for the search options: the binaries then print the note of <a class="el" href="#a7dc880c2ae5285ff26236964da844e50" title="The note on stderr (at any debug level) for k = 0 (p-&gt;k_zero, see var_init()): &quot;# Note: k=0: no logic...">k_zero_note()</a> and the result 0 0 0. If k is not known at once, it sets p-&gt;k_zero = -1: the binaries then run <a class="el" href="#a2c25a20b2a1fa421512e034bceabd3b0" title="The rank check of k = 0 (when not known at once, p-&gt;k_zero = -1 after var_init()): the row echelon fo...">k_zero_rank()</a> (<a class="el" href="namespacedist__m4ri.html">dist_m4ri</a> in its own thread during the search).</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">argc</td><td>Number of command line arguments. </td></tr>
@@ -1588,14 +2036,20 @@ Variables</h2></td></tr>
 <p><span class="tt">start=a,b,c</span> list of CC start columns</p>
 <p>clusters from a listed start column c use only columns &gt; c</p>
 <p><span class="tt">dstop</span>: stop once CC certifies dmin &gt;= dstop</p>
+<p><span class="tt">rw_opt</span>: the RW stages (-1: automatic, 0: none, or a bitmask)</p>
+<p>study options: the row slabs of rw_opt 4</p>
+<p>the rounds of a DEM if known, see rw_slab_auto()</p>
+<p>study option: the log of the RW steps</p>
+<p>opt-in time stamps on progress and stop lines</p>
+<p>opt-in machine-readable JSON summary (0, 1, or FILE)</p>
 <p>create <span class="tt">Lx</span></p>
 <p>WARNING: this does not necessarily have minimal row weights</p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00766">766</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l01045">1045</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l00985">colmask_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00342">csr_csr_mul_non_zero()</a>, <a class="el" href="util__io_8c_source.html#l00186">csr_dump()</a>, <a class="el" href="util__m4ri_8c_source.html#l00522">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00655">csr_mm_read()</a>, <a class="el" href="util__io_8h_source.html#l00037">DBG_ARGS</a>, <a class="el" href="util__io_8h_source.html#l00035">DBG_PARAMS</a>, <a class="el" href="util__io_8h_source.html#l00031">DBG_SUMMARY</a>, <a class="el" href="util__io_8h_source.html#l00544">DIST_M4RI_VERSION</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00934">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00047">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00629">MORE_HELP</a>, <a class="el" href="util__io_8c_source.html#l00093">p</a>, <a class="el" href="util__io_8c_source.html#l00095">print_short_help()</a>, <a class="el" href="util__io_8c_source.html#l01728">read_dem_file()</a>, <a class="el" href="util__io_8h_source.html#l00278">RW_PAIRS_MAX_BITS</a>, and <a class="el" href="util__io_8h_source.html#l00566">USAGE</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l01035">colmask_from_csr()</a>, <a class="el" href="util__m4ri_8c_source.html#l00324">csr_csr_mul_non_zero()</a>, <a class="el" href="util__io_8c_source.html#l00284">csr_dump()</a>, <a class="el" href="util__m4ri_8c_source.html#l00504">csr_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00688">csr_mm_read()</a>, <a class="el" href="util__io_8h_source.html#l00038">DBG_ARGS</a>, <a class="el" href="util__io_8h_source.html#l00036">DBG_PARAMS</a>, <a class="el" href="util__io_8h_source.html#l00032">DBG_SUMMARY</a>, <a class="el" href="util__io_8h_source.html#l00735">DIST_M4RI_VERSION</a>, <a class="el" href="util__m4ri_8h_source.html#l00013">ERROR</a>, <a class="el" href="util__m4ri_8c_source.html#l00984">Lx_for_CSS_code()</a>, <a class="el" href="util__io_8h_source.html#l00048">MAX_W</a>, <a class="el" href="util__io_8h_source.html#l00828">MORE_HELP</a>, <a class="el" href="util__io_8c_source.html#l00110">p</a>, <a class="el" href="util__io_8c_source.html#l00112">print_short_help()</a>, <a class="el" href="util__io_8c_source.html#l02133">read_dem_file()</a>, <a class="el" href="util__io_8h_source.html#l00441">RW_PAIRS_MAX_BITS</a>, <a class="el" href="util__io_8h_source.html#l00406">RW_SLAB_AUTO_MMAX</a>, and <a class="el" href="util__io_8h_source.html#l00759">USAGE</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1623,11 +2077,11 @@ Variables</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l01492">1492</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l01880">1880</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l01003">colmask_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00522">csr_free()</a>, <a class="el" href="uthash_8h_source.html#l00507">HASH_DEL</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, and <a class="el" href="util__io_8c_source.html#l00093">p</a>.</p>
+<p class="reference">References <a class="el" href="util__m4ri_8c_source.html#l01053">colmask_free()</a>, <a class="el" href="util__m4ri_8c_source.html#l00504">csr_free()</a>, <a class="el" href="uthash_8h_source.html#l00507">HASH_DEL</a>, <a class="el" href="uthash_8h_source.html#l01060">HASH_ITER</a>, and <a class="el" href="util__io_8c_source.html#l00110">p</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -1654,7 +2108,7 @@ Variables</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__io_8c_source.html#l00008">8</a> of file <a class="el" href="util__io_8c_source.html">util_io.c</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, <a class="el" href="util__m4ri_8c_source.html#l00213">mzd_generator_from_csr()</a>, <a class="el" href="util__io_8c_source.html#l02534">nzlist_w_append()</a>, and <a class="el" href="util__io_8c_source.html#l03186">print_codeword_support()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, <a class="el" href="util__io_8c_source.html#l02967">nzlist_w_append()</a>, and <a class="el" href="util__io_8c_source.html#l03691">print_codeword_support()</a>.</p>
 
 </div>
 </div>

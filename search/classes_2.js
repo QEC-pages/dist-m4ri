@@ -1,9 +1,13 @@
 var searchData=
 [
-  ['dem_5fcol_5fhash_5ft_0',['dem_col_hash_t',['../structdem__col__hash__t.html',1,'']]],
-  ['dem_5fprogram_5ft_1',['dem_program_t',['../structdem__program__t.html',1,'']]],
-  ['distanceresult_2',['DistanceResult',['../classdist__m4ri_1_1DistanceResult.html',1,'dist_m4ri']]],
-  ['distfork_5fctx_5ft_3',['distfork_ctx_t',['../structdistfork__ctx__t.html',1,'']]],
-  ['drop_5fgroup_5ft_4',['drop_group_t',['../structdrop__group__t.html',1,'']]],
-  ['drop_5fqueue_5ft_5',['drop_queue_t',['../structdrop__queue__t.html',1,'']]]
+  ['cc_5fhash_5fcol_5ft_0',['cc_hash_col_t',['../structcc__hash__col__t.html',1,'']]],
+  ['cc_5fhash_5fslot_5ft_1',['cc_hash_slot_t',['../structcc__hash__slot__t.html',1,'']]],
+  ['cc_5fhash_5ft_2',['cc_hash_t',['../structcc__hash__t.html',1,'']]],
+  ['cc_5fwalk_5ft_3',['cc_walk_t',['../structcc__walk__t.html',1,'']]],
+  ['colmask_5ft_4',['colmask_t',['../structcolmask__t.html',1,'']]],
+  ['cols_5fws_5ft_5',['cols_ws_t',['../structcols__ws__t.html',1,'']]],
+  ['csr_5ft_6',['csr_t',['../structcsr__t.html',1,'']]],
+  ['cw_5fclass_5fstats_5ft_7',['cw_class_stats_t',['../structcw__class__stats__t.html',1,'']]],
+  ['cw_5fhit_5fstats_5ft_8',['cw_hit_stats_t',['../structcw__hit__stats__t.html',1,'']]],
+  ['cw_5fvec_5ft_9',['CW_VEC_T',['../structCW__VEC__T.html',1,'']]]
 ];

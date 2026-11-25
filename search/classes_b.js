@@ -1,0 +1,20 @@
+var searchData=
+[
+  ['res_5fev_5ft_0',['res_ev_t',['../structres__ev__t.html',1,'']]],
+  ['res_5fround_5ft_1',['res_round_t',['../structres__round__t.html',1,'']]],
+  ['res_5fsummary_5ft_2',['res_summary_t',['../structres__summary__t.html',1,'']]],
+  ['res_5ft_3',['res_t',['../structres__t.html',1,'']]],
+  ['rw_5fbfs_5ft_4',['rw_bfs_t',['../structrw__bfs__t.html',1,'']]],
+  ['rw_5fcanon_5fstats_5ft_5',['rw_canon_stats_t',['../structrw__canon__stats__t.html',1,'']]],
+  ['rw_5fcanon_5ftab_5ft_6',['rw_canon_tab_t',['../structrw__canon__tab__t.html',1,'']]],
+  ['rw_5fdual_5ft_7',['rw_dual_t',['../structrw__dual__t.html',1,'']]],
+  ['rw_5felim_5ft_8',['rw_elim_t',['../structrw__elim__t.html',1,'']]],
+  ['rw_5fgdb_5ft_9',['rw_gdb_t',['../structrw__gdb__t.html',1,'']]],
+  ['rw_5fpair_5ft_10',['rw_pair_t',['../structrw__pair__t.html',1,'']]],
+  ['rw_5fpairs_5fws_5ft_11',['rw_pairs_ws_t',['../structrw__pairs__ws__t.html',1,'']]],
+  ['rw_5frec_5ft_12',['rw_rec_t',['../structrw__rec__t.html',1,'']]],
+  ['rw_5ft3_5ft_13',['rw_t3_t',['../structrw__t3__t.html',1,'']]],
+  ['rw_5fthr_5ft_14',['rw_thr_t',['../structrw__thr__t.html',1,'']]],
+  ['rw_5ftws_5ft_15',['rw_tws_t',['../structrw__tws__t.html',1,'']]],
+  ['rw_5fview_5ft_16',['rw_view_t',['../structrw__view__t.html',1,'']]]
+];

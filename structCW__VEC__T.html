@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.1</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -112,6 +112,7 @@ Public Attributes</h2></td></tr>
 <tr class="memitem:ab74061fc402881847d6e68c4aa743564" id="r_ab74061fc402881847d6e68c4aa743564"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab74061fc402881847d6e68c4aa743564">cnt</a></td></tr>
 <tr class="memitem:a4f62ccdce7b0421496ab0fdc323c29b0" id="r_a4f62ccdce7b0421496ab0fdc323c29b0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4f62ccdce7b0421496ab0fdc323c29b0">cnt_u</a></td></tr>
 <tr class="memitem:af3d7ffb6f18833a7cc60ebf6e8ce9ab1" id="r_af3d7ffb6f18833a7cc60ebf6e8ce9ab1"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af3d7ffb6f18833a7cc60ebf6e8ce9ab1">cnt_w</a></td></tr>
+<tr class="memitem:a5987b8d985a4b78791dae6dcb26924fd" id="r_a5987b8d985a4b78791dae6dcb26924fd"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5987b8d985a4b78791dae6dcb26924fd">cnt_s</a></td></tr>
 <tr class="memitem:a4c30a39a9f5e151be61422a6406b0605" id="r_a4c30a39a9f5e151be61422a6406b0605"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4c30a39a9f5e151be61422a6406b0605">arr</a> [0]</td></tr>
 </table>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
@@ -129,11 +130,11 @@ Public Attributes</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>hits in the RW steps with a window (kwin, or the hybrid windows) </p>
+<p>hits in the row-slab RW steps of rw_opt 4; the hits of the <span class="tt">min_hits</span> statistic &lt;n&gt; are cnt - cnt_w - cnt_s (the uniform steps, CC, finC), see <a class="el" href="util__io_8c.html#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a> </p>
 
-<p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00042">42</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00044">44</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, <a class="el" href="util__io_8c_source.html#l02566">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, and <a class="el" href="util__io_8c_source.html#l02534">nzlist_w_append()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, <a class="el" href="util__io_8c_source.html#l02999">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l03578">nzlist_read()</a>, and <a class="el" href="util__io_8c_source.html#l02967">nzlist_w_append()</a>.</p>
 
 </div>
 </div>
@@ -151,7 +152,26 @@ Public Attributes</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00039">39</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l02745">compute_min_w_hit_stats()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, and <a class="el" href="util__io_8c_source.html#l02566">nzlist_r_one()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l03207">codeword_count()</a>, <a class="el" href="util__io_8c_source.html#l03214">compute_min_w_hit_stats()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l02999">nzlist_r_one()</a>.</p>
+
+</div>
+</div>
+<a id="a5987b8d985a4b78791dae6dcb26924fd" name="a5987b8d985a4b78791dae6dcb26924fd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5987b8d985a4b78791dae6dcb26924fd">&#9670;&#160;</a></span>cnt_s</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int CW_VEC_T::cnt_s</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>hits in the RW steps with a window (kwin, or the hybrid index windows) </p>
+
+<p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00042">42</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03360">print_rw_step_stats()</a>.</p>
 
 </div>
 </div>
@@ -170,7 +190,7 @@ Public Attributes</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00040">40</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, and <a class="el" href="util__io_8c_source.html#l02881">print_rw_step_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03360">print_rw_step_stats()</a>.</p>
 
 </div>
 </div>
@@ -189,7 +209,7 @@ Public Attributes</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00041">41</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, and <a class="el" href="util__io_8c_source.html#l02881">print_rw_step_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03360">print_rw_step_stats()</a>.</p>
 
 </div>
 </div>
@@ -207,7 +227,7 @@ Public Attributes</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00037">37</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, and <a class="el" href="util__io_8c_source.html#l03197">nzlist_write()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03702">nzlist_write()</a>.</p>
 
 </div>
 </div>
@@ -225,7 +245,7 @@ Public Attributes</h2></td></tr>
 
 <p class="definition">Definition at line <a class="el" href="util__hash_8h_source.html#l00038">38</a> of file <a class="el" href="util__hash_8h_source.html">util_hash.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02693">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l02745">compute_min_w_hit_stats()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l03396">main()</a>, <a class="el" href="util__io_8c_source.html#l02566">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l03073">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l02534">nzlist_w_append()</a>, <a class="el" href="util__io_8c_source.html#l03197">nzlist_write()</a>, and <a class="el" href="util__io_8c_source.html#l02881">print_rw_step_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03143">codeword_add_maybe()</a>, <a class="el" href="util__io_8c_source.html#l03214">compute_min_w_hit_stats()</a>, <a class="el" href="dist__rw_8c_source.html#l00038">do_RW_dist()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, <a class="el" href="util__io_8c_source.html#l02999">nzlist_r_one()</a>, <a class="el" href="util__io_8c_source.html#l03578">nzlist_read()</a>, <a class="el" href="util__io_8c_source.html#l02967">nzlist_w_append()</a>, <a class="el" href="util__io_8c_source.html#l03702">nzlist_write()</a>, and <a class="el" href="util__io_8c_source.html#l03360">print_rw_step_stats()</a>.</p>
 
 </div>
 </div>

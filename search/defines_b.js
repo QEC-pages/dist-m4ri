@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['push_5fnext_0',['PUSH_NEXT',['../sort_8h.html#a1e747d6c4466f87a589f32a4be91bcaf',1,'sort.h']]]
+  ['new_0',['NEW',['../dist__rw_8c.html#ab6bca16ed021b1e211fde8669758f199',1,'dist_rw.c']]]
 ];

@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=11"/>
 <meta name="generator" content="Doxygen 1.15.0"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Dist m4ri: Agent Guidelines for dist-m4ri</title>
+<title>Dist m4ri: AGENTS</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.1</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -79,29 +79,37 @@ $(function() {
 </div><!-- top -->
 <div id="doc-content">
 <div><div class="header">
-  <div class="headertitle"><div class="title">Agent Guidelines for dist-m4ri </div></div>
+  <div class="headertitle"><div class="title">AGENTS </div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><p><a class="anchor" id="autotoc_md0"></a></p>
-<h1 class="doxsection"><a class="anchor" id="autotoc_md1"></a>
-Interaction Rules</h1>
+<div class="textblock"><h2 class="doxsection"><a class="anchor" id="autotoc_md0"></a>
+autotoc_md0</h2>
+<p>geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in" header-includes:</p><ul>
+<li>| \makeatletter \DeclareRobustCommand{_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi} \makeatother </li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md1"></a>
+\setlength{\emergencystretch}{1.5em}</h2>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md2"></a>
+Agent Guidelines for dist-m4ri</h1>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
+Interaction Rules</h2>
 <ul>
 <li><b>No unsolicited code edits on questions</b>: When the user asks a question, requests an explanation, discusses architecture, or asks for advice, provide a clear, concise answer first. Do NOT edit code or modify repository files without explicit instructions from the user to proceed.</li>
 <li><b>Clarifying questions</b>: if in doubt about the prompt meaning or intent, ask clarifying questions. Better ask early to save time.</li>
 </ul>
-<h1 class="doxsection"><a class="anchor" id="autotoc_md2"></a>
-Code and Formatting Standards</h1>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md4"></a>
+Code and Formatting Standards</h2>
 <ul>
 <li><b>Line Length</b>: Wrap all lines in source code (C, Python), documentation (Markdown), workflow files (YAML), and test scripts to a maximum of 120 columns.</li>
 <li><b>Documentation Integrity</b>: Maintain documentation integrity. Keep comments, docstrings, and help messages up-to-date and consistent between the C binary and the Python library.</li>
 </ul>
-<h1 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
-Temporary files</h1>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md5"></a>
+Temporary files</h2>
 <ul>
 <li><b>Reports, scripts, and intermediate results</b> should all be created in the <span class="tt">scratch/</span> directory within the repository. You can also remove or update those files when needed.</li>
 </ul>
-<h1 class="doxsection"><a class="anchor" id="autotoc_md4"></a>
-Version Management</h1>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md6"></a>
+Version Management</h2>
 <ul>
 <li><b>Synchronized Versioning</b>: When the version is incremented, ensure it is updated consistently across all four project metadata files:<ol type="1">
 <li><span class="tt">CITATION.cff</span> (<span class="tt">version: vX.Y.Z</span>)</li>

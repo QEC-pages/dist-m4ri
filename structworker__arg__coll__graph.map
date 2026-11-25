@@ -1,28 +1,32 @@
 <map id="worker_arg" name="worker_arg">
-<area shape="rect" id="Node000001" title=" " alt="" coords="501,472,595,500"/>
-<area shape="rect" id="Node000002" href="$structdistfork__ctx__t.html" title=" " alt="" coords="432,372,542,399"/>
-<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="504,410,542,473,537,471,501,414"/>
-<area shape="rect" id="Node000003" href="$structparams__t.html" title=" " alt="" coords="392,271,475,299"/>
-<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="449,310,482,372,477,370,446,314"/>
-<area shape="rect" id="Node000004" href="$structCW__VEC__T.html" title=" " alt="" coords="468,126,559,153"/>
-<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="506,166,492,208,470,249,449,273,446,269,466,245,487,206,503,170"/>
-<area shape="rect" id="Node000005" href="$structUT__hash__handle.html" title=" " alt="" coords="125,15,254,43"/>
-<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="243,45,476,124,472,127,243,51"/>
-<area shape="poly" id="edge9_Node000005_Node000005" title=" " alt="" coords="268,18,280,29,272,39,255,42,252,38,270,34,275,29,269,23"/>
-<area shape="rect" id="Node000006" href="$structUT__hash__table.html" title=" " alt="" coords="60,271,177,299"/>
-<area shape="poly" id="edge8_Node000006_Node000005" title=" " alt="" coords="119,51,92,63,63,80,37,101,16,127,9,147,10,167,18,188,31,207,66,243,101,270,96,272,63,247,27,211,13,190,5,169,4,146,11,124,33,97,60,76,90,59,123,46"/>
-<area shape="rect" id="Node000007" href="$structUT__hash__bucket.html" title=" " alt="" coords="55,126,182,153"/>
-<area shape="poly" id="edge7_Node000007_Node000005" title=" " alt="" coords="165,57,151,78,126,126,121,124,147,75,167,52"/>
-<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="163,261,179,245,200,207,212,165,215,121,209,77,197,46,198,40,215,76,220,120,217,165,205,209,183,249,167,264"/>
-<area shape="poly" id="edge6_Node000006_Node000007" title=" " alt="" coords="120,167,121,271,116,270,118,172"/>
-<area shape="rect" id="Node000008" href="$structcsr__t.html" title=" " alt="" coords="279,126,332,153"/>
-<area shape="poly" id="edge10_Node000003_Node000008" title=" " alt="" coords="314,166,333,207,345,227,360,245,376,258,397,270,391,271,373,263,356,249,340,230,328,209,313,171"/>
-<area shape="rect" id="Node000009" href="$structcolmask__t.html" title=" " alt="" coords="356,126,444,153"/>
-<area shape="poly" id="edge11_Node000003_Node000009" title=" " alt="" coords="404,167,410,206,420,246,429,271,424,270,414,248,405,207,401,171"/>
-<area shape="rect" id="Node000010" href="$structcc__hash__t.html" title=" " alt="" coords="565,271,651,299"/>
-<area shape="poly" id="edge12_Node000002_Node000010" title=" " alt="" coords="583,307,504,373,502,369,578,309"/>
-<area shape="rect" id="Node000011" href="$structcc__hash__slot__t.html" title=" " alt="" coords="583,126,700,153"/>
-<area shape="poly" id="edge13_Node000010_Node000011" title=" " alt="" coords="637,167,613,272,609,269,633,170"/>
-<area shape="rect" id="Node000012" href="$structcols__ws__t.html" title=" " alt="" coords="566,372,650,399"/>
-<area shape="poly" id="edge14_Node000001_Node000012" title=" " alt="" coords="595,411,558,474,554,470,590,414"/>
+<area shape="rect" id="Node000001" title=" " alt="" coords="678,472,772,500"/>
+<area shape="rect" id="Node000002" href="$structdistfork__ctx__t.html" title=" " alt="" coords="548,372,659,399"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="632,406,711,472,706,471,630,411"/>
+<area shape="rect" id="Node000003" href="$structparams__t.html" title=" " alt="" coords="509,271,592,299"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="566,310,599,372,594,370,563,314"/>
+<area shape="rect" id="Node000004" href="$structCW__VEC__T.html" title=" " alt="" coords="307,126,399,153"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="355,166,364,209,373,228,386,245,406,256,438,265,511,279,506,280,436,270,404,261,383,249,369,231,359,210,353,171"/>
+<area shape="rect" id="Node000005" href="$structUT__hash__handle.html" title=" " alt="" coords="153,15,281,43"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="245,50,339,124,334,126,245,55"/>
+<area shape="poly" id="edge9_Node000005_Node000005" title=" " alt="" coords="296,18,308,29,300,39,283,42,280,38,297,34,303,29,297,23"/>
+<area shape="rect" id="Node000006" href="$structUT__hash__table.html" title=" " alt="" coords="122,271,240,299"/>
+<area shape="poly" id="edge8_Node000006_Node000005" title=" " alt="" coords="223,55,228,76,232,125,233,164,227,202,210,248,195,272,191,269,205,246,221,201,227,164,227,126,222,77,222,61"/>
+<area shape="rect" id="Node000007" href="$structUT__hash__bucket.html" title=" " alt="" coords="5,126,133,153"/>
+<area shape="poly" id="edge7_Node000007_Node000005" title=" " alt="" coords="145,51,123,63,101,79,84,102,75,126,70,124,80,99,97,75,120,58,148,46"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="181,254,197,125,214,46,215,41,203,126,187,256"/>
+<area shape="poly" id="edge6_Node000006_Node000007" title=" " alt="" coords="72,166,85,208,94,228,106,245,122,258,141,270,136,271,119,263,102,249,89,230,80,209,72,172"/>
+<area shape="rect" id="Node000008" href="$structcsr__t.html" title=" " alt="" coords="430,126,482,153"/>
+<area shape="poly" id="edge10_Node000003_Node000008" title=" " alt="" coords="465,166,482,206,506,245,532,271,527,270,502,249,478,208,463,171"/>
+<area shape="rect" id="Node000009" href="$structcolmask__t.html" title=" " alt="" coords="506,126,594,153"/>
+<area shape="poly" id="edge11_Node000003_Node000009" title=" " alt="" coords="552,167,553,272,548,269,549,171"/>
+<area shape="rect" id="Node000010" href="$structrw__canon__stats__t.html" title="Stage 5 (RW_OPT_CANON): the statistics of the canonical classes of the minimum weight w in the unifor..." alt="" coords="619,126,754,153"/>
+<area shape="poly" id="edge12_Node000003_Node000010" title=" " alt="" coords="673,165,645,208,608,249,575,273,573,268,605,245,641,205,669,168"/>
+<area shape="rect" id="Node000011" href="$structcc__hash__t.html" title=" " alt="" coords="704,271,789,299"/>
+<area shape="poly" id="edge13_Node000002_Node000011" title=" " alt="" coords="718,307,624,373,622,369,713,308"/>
+<area shape="rect" id="Node000012" href="$structcc__hash__slot__t.html" title=" " alt="" coords="778,126,894,153"/>
+<area shape="poly" id="edge14_Node000011_Node000012" title=" " alt="" coords="822,165,756,272,753,268,817,168"/>
+<area shape="rect" id="Node000013" href="$structcols__ws__t.html" title=" " alt="" coords="683,372,767,399"/>
+<area shape="poly" id="edge15_Node000001_Node000013" title=" " alt="" coords="727,413,727,473,723,470,723,417"/>
+<area shape="rect" id="Node000014" href="$structsteplog__thr.html" title=" " alt="" coords="791,372,886,399"/>
+<area shape="poly" id="edge16_Node000001_Node000014" title=" " alt="" coords="819,410,779,450,746,474,744,469,775,446,814,412"/>
 </map>

@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.16.1</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.4</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -97,6 +97,8 @@ Public Attributes</h2></td></tr>
 <tr class="memitem:a37983d3b4ea47b240a58dcd23a57e782" id="r_a37983d3b4ea47b240a58dcd23a57e782"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a37983d3b4ea47b240a58dcd23a57e782">min_hits</a></td></tr>
 <tr class="memitem:aa4d3462efbe2243e4e8eb42a3f1c881f" id="r_aa4d3462efbe2243e4e8eb42a3f1c881f"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa4d3462efbe2243e4e8eb42a3f1c881f">set_cws</a></td></tr>
 <tr class="memitem:af4af49fc503228c73c3cf4c5ddc1bcaa" id="r_af4af49fc503228c73c3cf4c5ddc1bcaa"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af4af49fc503228c73c3cf4c5ddc1bcaa">set_hits</a></td></tr>
+<tr class="memitem:af2e131ceeb641b7e5247d53070f77aed" id="r_af2e131ceeb641b7e5247d53070f77aed"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af2e131ceeb641b7e5247d53070f77aed">all_cws</a></td></tr>
+<tr class="memitem:ae4de753bb5f2f6d5430e06e576183510" id="r_ae4de753bb5f2f6d5430e06e576183510"><td class="memItemLeft" align="right" valign="top">long long int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae4de753bb5f2f6d5430e06e576183510">excl_hits</a></td></tr>
 <tr class="memitem:acded25528a9372adfa55b237e23ca4aa" id="r_acded25528a9372adfa55b237e23ca4aa"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acded25528a9372adfa55b237e23ca4aa">w_lo</a></td></tr>
 <tr class="memitem:a26a1dea64244cd14d0ea8f0d396d8713" id="r_a26a1dea64244cd14d0ea8f0d396d8713"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a26a1dea64244cd14d0ea8f0d396d8713">w_hi</a></td></tr>
 <tr class="memitem:a55e988be9e750d57f45aaf9667d4eab1" id="r_a55e988be9e750d57f45aaf9667d4eab1"><td class="memItemLeft" align="right" valign="top">double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a55e988be9e750d57f45aaf9667d4eab1">avg</a></td></tr>
@@ -104,8 +106,27 @@ Public Attributes</h2></td></tr>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>Hit statistics for the <span class="tt"><a class="el" href="#a37983d3b4ea47b240a58dcd23a57e782">min_hits</a></span> stopping criterion, see <a class="el" href="util__io_8c.html#a55aee8ddd490ef462187d94b0d7aac7e" title="Compute the hit statistics of the min_hits stopping criterion.">codeword_hit_stats()</a>. </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00396">396</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00559">559</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 </div><a name="doc-variable-members" id="doc-variable-members"></a><h2 id="header-doc-variable-members" class="groupheader">Member Data Documentation</h2>
+<a id="af2e131ceeb641b7e5247d53070f77aed" name="af2e131ceeb641b7e5247d53070f77aed"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af2e131ceeb641b7e5247d53070f77aed">&#9670;&#160;</a></span>all_cws</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long long int cw_hit_stats_t::all_cws</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>number of all codewords in the representative set (also those without a counted hit) </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00564">564</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
+
+</div>
+</div>
 <a id="a55e988be9e750d57f45aaf9667d4eab1" name="a55e988be9e750d57f45aaf9667d4eab1"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a55e988be9e750d57f45aaf9667d4eab1">&#9670;&#160;</a></span>avg</h2>
 
@@ -117,11 +138,30 @@ Public Attributes</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>&lt;n&gt;: the smaller of the average hits per codeword of weight min_w and of the representative set (0 if no codewords) </p>
+<p>&lt;n&gt;: the smaller of the average counted hits per codeword (with a counted hit) of weight min_w and of the representative set (0 if no codeword of weight min_w has one) </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00403">403</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00568">568</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02906">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, and <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03391">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, and <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>.</p>
+
+</div>
+</div>
+<a id="ae4de753bb5f2f6d5430e06e576183510" name="ae4de753bb5f2f6d5430e06e576183510"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae4de753bb5f2f6d5430e06e576183510">&#9670;&#160;</a></span>excl_hits</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long long int cw_hit_stats_t::excl_hits</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+<p>the hits of the representative set not counted (sources not in p-&gt;nhits_src) </p>
+
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00565">565</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>.</p>
 
 </div>
 </div>
@@ -136,11 +176,11 @@ Public Attributes</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>number of codewords of the minimum weight min_w </p>
+<p>number of codewords of the minimum weight min_w with a counted hit </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00397">397</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00560">560</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03391">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, and <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>.</p>
 
 </div>
 </div>
@@ -155,11 +195,11 @@ Public Attributes</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>their total number of hits </p>
+<p>their total number of counted hits </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00398">398</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00561">561</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>.</p>
 
 </div>
 </div>
@@ -174,11 +214,11 @@ Public Attributes</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>number of codewords in the representative set (weights w_lo..w_hi) </p>
+<p>number of codewords in the representative set (weights w_lo..w_hi) with a counted hit </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00399">399</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00562">562</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02906">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l02939">codeword_hit_check()</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, and <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03391">check_min_hits_convergence()</a>, <a class="el" href="util__io_8c_source.html#l03444">codeword_hit_check()</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, and <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>.</p>
 
 </div>
 </div>
@@ -193,11 +233,11 @@ Public Attributes</h2></td></tr>
         </tr>
       </table>
 </div><div class="memdoc">
-<p>their total number of hits </p>
+<p>their total number of counted hits </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00400">400</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00563">563</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>.</p>
 
 </div>
 </div>
@@ -214,9 +254,9 @@ Public Attributes</h2></td></tr>
 </div><div class="memdoc">
 <p>largest weight in the representative set </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00402">402</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00567">567</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02939">codeword_hit_check()</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, and <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03444">codeword_hit_check()</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, and <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>.</p>
 
 </div>
 </div>
@@ -233,9 +273,9 @@ Public Attributes</h2></td></tr>
 </div><div class="memdoc">
 <p>smallest weight in the representative set (min_w) </p>
 
-<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00401">401</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
+<p class="definition">Definition at line <a class="el" href="util__io_8h_source.html#l00566">566</a> of file <a class="el" href="util__io_8h_source.html">util_io.h</a>.</p>
 
-<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l02939">codeword_hit_check()</a>, <a class="el" href="util__io_8c_source.html#l02809">codeword_hit_stats()</a>, and <a class="el" href="util__io_8c_source.html#l02828">print_codeword_stats()</a>.</p>
+<p class="reference">Referenced by <a class="el" href="util__io_8c_source.html#l03444">codeword_hit_check()</a>, <a class="el" href="util__io_8c_source.html#l03281">codeword_hit_stats()</a>, <a class="el" href="dist__m4ri_8c_source.html#l05585">main()</a>, and <a class="el" href="util__io_8c_source.html#l03303">print_codeword_stats()</a>.</p>
 
 </div>
 </div>

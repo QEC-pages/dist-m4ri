@@ -1,0 +1,5 @@
+<map id="rw_tws_t" name="rw_tws_t">
+<area shape="rect" id="Node000001" title="The workspace of a thread for the RW stages (see rw_tws_init())." alt="" coords="8,106,87,134"/>
+<area shape="rect" id="Node000002" href="$structcols__ws__t.html" title=" " alt="" coords="5,5,90,33"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="50,47,50,106,45,105,45,50"/>
+</map>

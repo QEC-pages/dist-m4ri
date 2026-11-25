@@ -1,3 +1,13 @@
 <map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
-<area shape="rect" id="Node000000" href="$structcc__hash__col__t.html" title=" " alt="" coords="5,5,117,33"/>
+<area shape="rect" id="Node000000" title=" " alt="" coords="5,118,54,146"/>
+<area shape="rect" id="Node000001" href="$classadapters_1_1Adapter.html" title=" " alt="" coords="102,118,235,146"/>
+<area shape="poly" id="edge1_Node000000_Node000001" title=" " alt="" coords="68,129,104,130,99,133,70,134"/>
+<area shape="rect" id="Node000002" href="$classadapters_1_1dist__m4ri__bin_1_1DistM4riBinAdapter.html" title=" " alt="" coords="291,5,470,50"/>
+<area shape="poly" id="edge2_Node000001_Node000002" title=" " alt="" coords="201,107,282,60,313,49,308,52,284,65,204,111"/>
+<area shape="rect" id="Node000003" href="$classadapters_1_1dist__m4ri__py_1_1DistM4riPyAdapter.html" title=" " alt="" coords="296,75,465,119"/>
+<area shape="poly" id="edge3_Node000001_Node000003" title=" " alt="" coords="249,116,299,110,294,112,251,121"/>
+<area shape="rect" id="Node000004" href="$classadapters_1_1qec__cert_1_1QecCertAdapter.html" title=" " alt="" coords="284,144,477,189"/>
+<area shape="poly" id="edge4_Node000001_Node000004" title=" " alt="" coords="250,142,286,150,281,151,251,148"/>
+<area shape="rect" id="Node000005" href="$classadapters_1_1tropidist_1_1TropidistAdapter.html" title=" " alt="" coords="283,213,478,258"/>
+<area shape="poly" id="edge5_Node000001_Node000005" title=" " alt="" coords="204,152,284,199,313,213,308,213,282,203,202,157"/>
 </map>
