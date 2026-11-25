@@ -86,10 +86,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1069-1071 (HISTORY 5.3)",
-        "dist_m4ri 0.14.0"
+        "dist_m4ri 0.14.0",
+        "HISTORY 12.3 (O3_m3)"
       ],
-      "t_best_s": 0.031,
-      "t_best_note": "0.14.0, default threads",
+      "t_best_s": 0.014,
+      "t_best_note": "0.17.3, 16 threads (5 seeds; 0.031 s in 0.14.0)",
       "compare3_id": "css_gross_144_12_12_Z",
       "tags": {
         "n": 144,
@@ -120,10 +121,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1597 (HISTORY 9.1)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 0.34,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 0.145,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [0.142, 0.160] s)",
       "compare3_id": "css_double_gross_288_12_18_Z",
       "tags": {
         "n": 288,
@@ -256,10 +258,11 @@
       "bracket_ref": null,
       "ref_source": [
         "qec-cert/bench/README_baselines.md",
-        "BENCHMARK.md@7de1817:502"
+        "BENCHMARK.md@7de1817:502",
+        "HISTORY 12 (S1)"
       ],
-      "t_best_s": 0.02,
-      "t_best_note": "CC, 64 threads",
+      "t_best_s": 0.015,
+      "t_best_note": "0.17.3, 16 threads (0.02 s CC on 64 threads)",
       "compare3_id": "css_kasai_184_50_10_Z",
       "tags": {
         "n": 184,
@@ -290,10 +293,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:490-494 (Section 1)",
-        "dist_m4ri CC"
+        "dist_m4ri CC",
+        "HISTORY 12 (S1)"
       ],
-      "t_best_s": null,
-      "t_best_note": "to calibrate (<= 8 threads)",
+      "t_best_s": 0.014,
+      "t_best_note": "0.17.3, 16 threads",
       "compare3_id": null,
       "tags": {
         "n": 546,
@@ -324,10 +328,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:517 (Section 1.1)",
-        "run_final.py:1695 (S1)"
+        "run_final.py:1695 (S1)",
+        "HISTORY 12.3 (O3_m3)"
       ],
-      "t_best_s": null,
-      "t_best_note": "to calibrate",
+      "t_best_s": 0.284,
+      "t_best_note": "0.17.3, 16 threads (5 seeds)",
       "compare3_id": null,
       "tags": {
         "n": 155,
@@ -401,10 +406,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1000 (HISTORY 5.1)",
-        "dist_m4ri 0.14.0"
+        "dist_m4ri 0.14.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 0.56,
-      "t_best_note": "0.14.0, 128 threads",
+      "t_best_s": 0.659,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [0.608, 0.674] s; 0.56 s in 0.14.0)",
       "compare3_id": null,
       "tags": {
         "n": 47700,
@@ -450,10 +456,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1009 (HISTORY 5.1)",
-        "dist_m4ri 0.14.0"
+        "dist_m4ri 0.14.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 0.68,
-      "t_best_note": "0.14.0, 128 threads",
+      "t_best_s": 0.88,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [0.850, 0.913] s; 0.68 s in 0.14.0)",
       "compare3_id": null,
       "tags": {
         "n": 37440,
@@ -551,10 +558,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:775,783-784 (Section 2.7)",
-        "dist_m4ri CC"
+        "dist_m4ri CC",
+        "HISTORY 12.4 (R7)"
       ],
-      "t_best_s": null,
-      "t_best_note": "to calibrate (<= 8 threads)",
+      "t_best_s": 0.716,
+      "t_best_note": "0.17.3, 64 threads (dist_m4ri.py)",
       "compare3_id": "circ_surface_rot_d7_r7_Z",
       "tags": {
         "n": 6023,
@@ -599,10 +607,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1637 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 1.1,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 1.11,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [1.09, 1.12] s)",
       "compare3_id": null,
       "tags": {
         "n": 500,
@@ -633,10 +642,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1638 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 1.4,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 1.52,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [1.47, 1.52] s; 1.4 s in 0.15.0)",
       "compare3_id": null,
       "tags": {
         "n": 600,
@@ -701,10 +711,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1639 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 8.9,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 8.98,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [8.89, 9.22] s)",
       "compare3_id": null,
       "tags": {
         "n": 840,
@@ -735,10 +746,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1640 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 9.0,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 8.85,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [8.69, 9.09] s)",
       "compare3_id": null,
       "tags": {
         "n": 540,
@@ -769,10 +781,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1641 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 58.0,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 59.5,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [57.3, 60.5] s)",
       "compare3_id": "css_yarn_smitten_1200_240_20_Z",
       "tags": {
         "n": 1200,
@@ -803,10 +816,11 @@
       "bracket_ref": null,
       "ref_source": [
         "scratch/bench_0.17/tables_portfolio.md",
-        "dist_m4ri 0.17.0"
+        "dist_m4ri 0.17.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 2.6,
-      "t_best_note": "0.17.0, 64 threads",
+      "t_best_s": 1.3,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [1.27, 1.31] s)",
       "compare3_id": null,
       "tags": {
         "n": 288,
@@ -837,10 +851,11 @@
       "bracket_ref": null,
       "ref_source": [
         "scratch/bench_0.17/tables_portfolio.md",
-        "dist_m4ri 0.17.0"
+        "dist_m4ri 0.17.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 14.0,
-      "t_best_note": "0.17.0, 64 threads",
+      "t_best_s": 6.9,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [6.74, 6.94] s)",
       "compare3_id": null,
       "tags": {
         "n": 252,
@@ -905,10 +920,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1715 (HISTORY 10.3)",
-        "dist_m4ri 0.15.1"
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 2.29,
-      "t_best_note": "0.15.1, 128 threads",
+      "t_best_s": 2.02,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [2.00, 2.12] s)",
       "compare3_id": null,
       "tags": {
         "n": 67482,
@@ -954,10 +970,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1714 (HISTORY 10.3)",
-        "dist_m4ri 0.15.1"
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 8.2,
-      "t_best_note": "0.15.1, 128 threads",
+      "t_best_s": 6.72,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [6.69, 6.88] s)",
       "compare3_id": null,
       "tags": {
         "n": 10125,
@@ -1003,10 +1020,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1713 (HISTORY 10.3)",
-        "dist_m4ri 0.15.1"
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 20.3,
-      "t_best_note": "0.15.1, 128 threads",
+      "t_best_s": 17.1,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [16.7, 17.4] s)",
       "compare3_id": "circ_torus_200_d17_X",
       "tags": {
         "n": 29200,
@@ -1047,52 +1065,19 @@
       }
     },
     {
-      "id": "css/yarn_mitten_630_126_20:Z",
-      "kind": "css_sector",
-      "tier": "T2",
-      "sector": "Z",
-      "d_ref": 20,
-      "bracket_ref": null,
-      "ref_source": [
-        "BENCHMARK.md@7de1817:1642 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
-      ],
-      "t_best_s": 82.0,
-      "t_best_note": "0.15.0, 128 threads",
-      "compare3_id": "css_yarn_mitten_630_126_20_Z",
-      "tags": {
-        "n": 630,
-        "m": 252,
-        "m_G": 252,
-        "k": 126,
-        "family": "Yarn Mitten",
-        "sector": "Z"
-      },
-      "files": {
-        "H": {
-          "path": "benchmark/css/yarn_mitten_630_126_20_Hx.mtx",
-          "sha256": "b5b85699107ab0e082437b173c282320cdf2c6e2fd51cdfc5b1aca47f5d8b841"
-        },
-        "G": {
-          "path": "benchmark/css/yarn_mitten_630_126_20_Hz.mtx",
-          "sha256": "b085555f1e8b52c5b299d0249ed4a5ff03a423ecea04ac0b6406e8811d64f0bc"
-        }
-      },
-      "recipe": null
-    },
-    {
       "id": "css/bb_360_12_24:Z",
       "kind": "css_sector",
-      "tier": "T2",
+      "tier": "T1",
       "sector": "Z",
       "d_ref": 24,
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1645 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 192.0,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 53.5,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [51.7, 53.9] s; 3.2 min in 0.15.0)",
       "compare3_id": "css_bb_360_12_24_Z",
       "tags": {
         "n": 360,
@@ -1115,6 +1100,144 @@
       "recipe": null
     },
     {
+      "id": "dem/torus_n200_k16_d16_X.full",
+      "kind": "dem",
+      "tier": "T1",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1712 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 50.8,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [50.6, 53.3] s; 67.3 s in 0.15.1)",
+      "compare3_id": null,
+      "tags": {
+        "n": 35200,
+        "m": 400,
+        "k": 16,
+        "family": "2D Torus dynamic",
+        "basis": "X",
+        "code_n": 200,
+        "code_k": 16,
+        "rounds": 1,
+        "noise": "add_noise(0.001)"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "torus_n200_k16_d16_X.full.dem",
+          "sha256": "4365d66be167936f457c275d57c35c029867694d14c85b1b88900c7675ecccef"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_torus/NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_X.stim",
+          "sha256": "14f8f952cd1fe0663c431adcd5c0b8d9133c5b228940467a233611529b814667"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": {
+          "p": 0.001,
+          "when": "if_noiseless"
+        },
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "dem/yarn_mitten_150_30_10_hookfree_r10_X.full",
+      "kind": "dem",
+      "tier": "T1",
+      "sector": null,
+      "d_ref": 8,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1710 (HISTORY 10.3)",
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 57.6,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [56.2, 59.0] s; 62.4 s in 0.15.1)",
+      "compare3_id": null,
+      "tags": {
+        "n": 80295,
+        "m": 1200,
+        "k": 30,
+        "family": "Yarn Mitten hookfree",
+        "basis": "X",
+        "code_n": 150,
+        "code_k": 30,
+        "rounds": 10,
+        "noise": "hookfree"
+      },
+      "files": {
+        "dem": {
+          "generated": true,
+          "cache_name": "yarn_mitten_150_30_10_hookfree_r10_X.full.dem",
+          "sha256": "fbef83c6279538f0ad7dc59134b052184ce1ad407dd7f4348a776938d614ac11"
+        }
+      },
+      "recipe": {
+        "type": "canonical_dem_v1",
+        "source_stim": {
+          "path": "benchmark/stim_mitten/yarn_mitten_150_30_10_hookfree_r10_X.stim",
+          "sha256": "c0f39d774a3d87174abd2dd19ac94797dec3b9937392e91026021c1ecc41b23c"
+        },
+        "stim_version": "1.16.0",
+        "dist_m4ri_py_version": "0.17.3",
+        "remove_empty_detectors": true,
+        "rounds": null,
+        "add_noise": null,
+        "decompose_errors": false,
+        "approximate_disjoint_errors": false,
+        "canonical_format": "run_bench_0.14.0",
+        "large": false
+      }
+    },
+    {
+      "id": "css/yarn_mitten_630_126_20:Z",
+      "kind": "css_sector",
+      "tier": "T2",
+      "sector": "Z",
+      "d_ref": 20,
+      "bracket_ref": null,
+      "ref_source": [
+        "BENCHMARK.md@7de1817:1642 (HISTORY 9.3)",
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
+      ],
+      "t_best_s": 90.0,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [86.5, 93.4] s; 82 s in 0.15.0)",
+      "compare3_id": "css_yarn_mitten_630_126_20_Z",
+      "tags": {
+        "n": 630,
+        "m": 252,
+        "m_G": 252,
+        "k": 126,
+        "family": "Yarn Mitten",
+        "sector": "Z"
+      },
+      "files": {
+        "H": {
+          "path": "benchmark/css/yarn_mitten_630_126_20_Hx.mtx",
+          "sha256": "b5b85699107ab0e082437b173c282320cdf2c6e2fd51cdfc5b1aca47f5d8b841"
+        },
+        "G": {
+          "path": "benchmark/css/yarn_mitten_630_126_20_Hz.mtx",
+          "sha256": "b085555f1e8b52c5b299d0249ed4a5ff03a423ecea04ac0b6406e8811d64f0bc"
+        }
+      },
+      "recipe": null
+    },
+    {
       "id": "css/yarn_mitten_780_156_22:Z",
       "kind": "css_sector",
       "tier": "T2",
@@ -1123,10 +1246,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1643 (HISTORY 9.3)",
-        "dist_m4ri 0.15.0"
+        "dist_m4ri 0.15.0",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 558.0,
-      "t_best_note": "0.15.0, 128 threads",
+      "t_best_s": 570.0,
+      "t_best_note": "0.17.3, 128 threads (3 seeds [564, 572] s; 9.3 min in 0.15.0)",
       "compare3_id": "css_yarn_mitten_780_156_22_Z",
       "tags": {
         "n": 780,
@@ -1157,10 +1281,11 @@
       "bracket_ref": null,
       "ref_source": [
         "scratch/bench_0.17/tables_portfolio.md (HISTORY 11.3)",
-        "qec_cert"
+        "qec_cert",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": null,
-      "t_best_note": "> 45 s (0.17.0, 64 thr; qec-cert: 42 s)",
+      "t_best_s": 1697.0,
+      "t_best_note": "0.17.3, 128 threads (2 seeds [1666, 1728] s; qec-cert: 30.8 s on 64 thr)",
       "compare3_id": "css_2bga_292_22_23_Z",
       "tags": {
         "n": 292,
@@ -1225,10 +1350,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1600,1708 (HISTORY 9.1, 10.3)",
-        "dist_m4ri 0.15.0/0.15.1"
+        "dist_m4ri 0.15.0/0.15.1",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 85.0,
-      "t_best_note": "77-94 s (0.15.0, 0.15.1, 128 threads)",
+      "t_best_s": 77.6,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [76.0, 81.3] s)",
       "compare3_id": "circ_gross_144_si1000_r12_X",
       "tags": {
         "n": 72576,
@@ -1274,10 +1400,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1709 (HISTORY 10.3)",
-        "dist_m4ri 0.15.1"
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 72.0,
-      "t_best_note": "0.15.1, 128 threads",
+      "t_best_s": 66.4,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [64.7, 68.9] s)",
       "compare3_id": null,
       "tags": {
         "n": 67824,
@@ -1315,107 +1442,6 @@
       }
     },
     {
-      "id": "dem/torus_n200_k16_d16_X.full",
-      "kind": "dem",
-      "tier": "T2",
-      "sector": null,
-      "d_ref": 8,
-      "bracket_ref": null,
-      "ref_source": [
-        "BENCHMARK.md@7de1817:1712 (HISTORY 10.3)",
-        "dist_m4ri 0.15.1"
-      ],
-      "t_best_s": 67.3,
-      "t_best_note": "0.15.1, 128 threads",
-      "compare3_id": null,
-      "tags": {
-        "n": 35200,
-        "m": 400,
-        "k": 16,
-        "family": "2D Torus dynamic",
-        "basis": "X",
-        "code_n": 200,
-        "code_k": 16,
-        "rounds": 1,
-        "noise": "add_noise(0.001)"
-      },
-      "files": {
-        "dem": {
-          "generated": true,
-          "cache_name": "torus_n200_k16_d16_X.full.dem",
-          "sha256": "4365d66be167936f457c275d57c35c029867694d14c85b1b88900c7675ecccef"
-        }
-      },
-      "recipe": {
-        "type": "canonical_dem_v1",
-        "source_stim": {
-          "path": "benchmark/stim_torus/NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w20p_n200_k16_d16_X.stim",
-          "sha256": "14f8f952cd1fe0663c431adcd5c0b8d9133c5b228940467a233611529b814667"
-        },
-        "stim_version": "1.16.0",
-        "dist_m4ri_py_version": "0.17.3",
-        "remove_empty_detectors": true,
-        "rounds": null,
-        "add_noise": {
-          "p": 0.001,
-          "when": "if_noiseless"
-        },
-        "decompose_errors": false,
-        "approximate_disjoint_errors": false,
-        "canonical_format": "run_bench_0.14.0",
-        "large": false
-      }
-    },
-    {
-      "id": "dem/yarn_mitten_150_30_10_hookfree_r10_X.full",
-      "kind": "dem",
-      "tier": "T2",
-      "sector": null,
-      "d_ref": 8,
-      "bracket_ref": null,
-      "ref_source": [
-        "BENCHMARK.md@7de1817:1710 (HISTORY 10.3)",
-        "dist_m4ri 0.15.1"
-      ],
-      "t_best_s": 62.4,
-      "t_best_note": "0.15.1, 128 threads",
-      "compare3_id": null,
-      "tags": {
-        "n": 80295,
-        "m": 1200,
-        "k": 30,
-        "family": "Yarn Mitten hookfree",
-        "basis": "X",
-        "code_n": 150,
-        "code_k": 30,
-        "rounds": 10,
-        "noise": "hookfree"
-      },
-      "files": {
-        "dem": {
-          "generated": true,
-          "cache_name": "yarn_mitten_150_30_10_hookfree_r10_X.full.dem",
-          "sha256": "fbef83c6279538f0ad7dc59134b052184ce1ad407dd7f4348a776938d614ac11"
-        }
-      },
-      "recipe": {
-        "type": "canonical_dem_v1",
-        "source_stim": {
-          "path": "benchmark/stim_mitten/yarn_mitten_150_30_10_hookfree_r10_X.stim",
-          "sha256": "c0f39d774a3d87174abd2dd19ac94797dec3b9937392e91026021c1ecc41b23c"
-        },
-        "stim_version": "1.16.0",
-        "dist_m4ri_py_version": "0.17.3",
-        "remove_empty_detectors": true,
-        "rounds": null,
-        "add_noise": null,
-        "decompose_errors": false,
-        "approximate_disjoint_errors": false,
-        "canonical_format": "run_bench_0.14.0",
-        "large": false
-      }
-    },
-    {
       "id": "dem/yarn_mitten_150_30_10_hookfree_r10_Z.full",
       "kind": "dem",
       "tier": "T2",
@@ -1424,10 +1450,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1710 (HISTORY 10.3)",
-        "dist_m4ri 0.15.1"
+        "dist_m4ri 0.15.1",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 154.0,
-      "t_best_note": "0.15.1, 128 threads",
+      "t_best_s": 147.0,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [137, 176] s)",
       "compare3_id": "circ_yarn_mitten_150_r10_Z",
       "tags": {
         "n": 80445,
@@ -1473,10 +1500,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:1601,1711 (HISTORY 9.1, 10.3)",
-        "dist_m4ri 0.15.0/0.15.1"
+        "dist_m4ri 0.15.0/0.15.1",
+        "HISTORY 12.1 (N2)"
       ],
-      "t_best_s": 145.0,
-      "t_best_note": "137-150 s (0.15.0, 0.15.1, 128 threads)",
+      "t_best_s": 122.0,
+      "t_best_note": "0.17.3, 128 threads (5 seeds [119, 123] s)",
       "compare3_id": null,
       "tags": {
         "n": 70254,
@@ -1630,10 +1658,11 @@
       "bracket_ref": null,
       "ref_source": [
         "BENCHMARK.md@7de1817:483-486 (Section 1)",
-        "qec_cert 2026-11-14"
+        "qec_cert 2026-11-14",
+        "HISTORY 12.1 (N2)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert 19,671 s (48 thr); dist_m4ri [14, 23]",
+      "t_best_note": "qec-cert 19,671 s (48 thr); dist_m4ri [18, 23] at 936 s (0.17.3, 128 thr)",
       "compare3_id": null,
       "tags": {
         "n": 270,

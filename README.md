@@ -1485,11 +1485,12 @@ interoperability without manual threading overhead.
     once per process, since 0.17.2), the binary runs with the whole timeout. The stages are recorded in
     `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and `--verbose`). Until 0.16.1, `'auto'` handed every
     eligible request (classical codes too) to `qec_cert`.
-    Benchmark (35 codes, circuits, and classical codes, `timeout=45`, 64 threads, Section 11.3 of the
+    Benchmark (35 codes, circuits, and classical codes, `timeout=45`, 64 threads, Sections 11.3 and 12.4 of the
     [benchmark history](benchmark/HISTORY.md)): in 0.17.0, `'auto'` certified 31 instances against 26 for the binary
     alone and 32 for `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against
     0.443 s for the delegation of 0.16.1, which imports `qec_cert` in every call); the shorter Stage-A budget and
-    wide-bracket `use_ub` gate of 0.17.1 follow directly from that benchmark.
+    wide-bracket `use_ub` gate of 0.17.1 save 40 s on the portfolio, and the 0.17.4 `force_dom=1` Stage-B fix cuts
+    `bb_360` `'auto'` from 8.2 s to 3.2 s and certifies `2bga_292` in 33.8 s (32/35 exact, matching `'cert'`).
   - Hand-off scope: the hand-off covers distance-only requests. Codeword output (`do_cws=True` or `outC`), `finC`,
     `smax > 0`, an explicit `dW >= 0` (the Python default `dW=-1` means not set), `maxC > 0`, `start`, `outD`,
     `out_reduced`, `pmin > 0`, and `method=1` or `2` stay on the native `dist_m4ri` binary with `'auto'` (which also
@@ -1620,10 +1621,13 @@ reading and reducing the DEM), it finds the weight 18 of the double-gross circui
 the weight 23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and it finds lighter codewords of codes with a
 large distance. Sections 9 and 10 of the history measure the branch-and-bound CC search of 0.15.0 (4-35 times faster for
 the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of `bb_360` certified, up to $d = 24$, and
-those up to $d = 18$ confirmed with the walk of the earlier versions) and the lower cost per node of 0.15.2. Section 11
-of the history measures the RW stages of 0.17.0 (`rw_opt`: a stage ablation on 22 inputs, the thread scaling, e.g., RW
-on the double-gross DEM 34 times faster on 64 threads than on one, instead of 11 times) and the two-stage
-`engine="auto"` with `qec_cert` on 35 instances.
+those up to $d = 18$ confirmed with the walk of the earlier versions) and the lower cost per node of 0.15.2. Sections 11
+and 12 of the history measure the RW stages of 0.17.0–0.17.4 (`rw_opt`: a stage ablation on 22 inputs, sustained
+sparse-dual scaling at 9.9–13.5x on `bb_360` and 5.3–7.7x on `bb_756`, and automatic row slabs reaching weight 16 in
+11/11 seeds on single-round double gross), the two-stage `engine="auto"` with `qec_cert` (32/35 exact in 45 s on 64
+threads), long-running `method=2`/`method=3` scaling (58–65x on 64 cores, 63–84x on 128 threads), and 128-thread
+certification of 24 of 25 multi-round circuits and CSS codes in 0.145–1,697 s (`bb_360` code in 53.5 s, `gross` SI1000
+circuit in 77.6 s).
 
 ![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/time_to_d_full_dems.png)
 

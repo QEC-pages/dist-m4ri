@@ -100,11 +100,12 @@ one layer (e.g., the weight 16 of the double-gross DEM with one round); they are
 round (`dem_rounds=1`; `dist_m4ri.py` passes the rounds of a Stim circuit) or without round structure (no
 time translation of its errors by one round of detectors, which needs at least three detector layers) and with at most
 640 detectors. Such steps find the same codewords over and over: with any stage on, the hits of the row slabs and of
-the hybrid index windows do not count for `min_hits` (see Convergence below). On the benchmark of version 0.17.0
-(Section 11 of `benchmark/HISTORY.md`, without the automatic row slabs), the automatic mode records 1.1 to 8 times
-more minimum-weight hits per second (of the at most 100 codewords kept) on 13 of 15 circuit DEMs and code-sized models,
-and reaches the weights 24 of the `bb_360` DEM and 18 of the double-gross DEM 3.5 and 2.1 times sooner (medians of 2
-and 3 seeds; the lightest known codewords of these DEMs have the weights 23 and 16).
+the hybrid index windows do not count for `min_hits` (see Convergence below). On the benchmarks of versions
+0.17.0–0.17.3 (Sections 11 and 12 of `benchmark/HISTORY.md`), the automatic mode records 1.1 to 8 times more
+minimum-weight hits per second (of the at most 100 codewords kept; up to 25 times without that cap) on 13 of 15 circuit
+DEMs and code-sized models, reaches weight 16 on the single-round double-gross DEM in median 0.08–0.14 s across 11/11
+seeds (0/11 without row slabs), and reaches the weights 24 of the `bb_360` DEM and 18 of the double-gross DEM 5.2 and
+1.8–2.1 times sooner (the lightest known codewords of these DEMs have the weights 23 and 16).
 
 RW ends after `steps` steps (default: 100000), at the `timeout`, as soon as a codeword of weight at most `wmin` is
 found, or when the hit-count criterion `min_hits` is met (see Convergence below).
