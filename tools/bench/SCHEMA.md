@@ -1,12 +1,21 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # Record Schemas of the Certification Benchmark (`tools/bench/`)
 
 This file defines the JSON written by `harness.py` and read by `verify.py` and `analyze.py`: the run record
 `dm4ri-bench-run/1`, the environment `dm4ri-bench-env/1`, and the plan `dm4ri-bench-plan/1`. The instance manifest
 `dm4ri-bench-manifest/1` is described in [`benchmark/manifest/README.md`](../../benchmark/manifest/README.md). The
-design is that of `scratch/bench_review/REVIEW.md`, Sections 3.3-3.5. The field names follow qec-cert's `compare3`
-(`qec-cert/bench/compare3/results.json`, schema `qec-cert-compare3-results/v1`) where it has them: `lb`, `ub`,
+design is that of `scratch/bench_review/REVIEW.md`, Sections 3.3-3.5. Standard result fields include `lb`, `ub`,
 `exact`, `wall_sec`, `cap_sec`, `threads`, `lock_wait_sec`, `witness`, `witness_weight`, `witness_verified_numpy`,
-`witness_check_detail`, and the `tools` block (here: `engine`).
+`witness_check_detail`, and the `engine` block.
 
 ## 1. Session directory
 
@@ -26,6 +35,7 @@ One JSON object per run. Times are in seconds, sizes `[m, n]` are rows x columns
 field that does not apply, or is unknown, is `null`; `harness.py` writes every field listed here.
 
 **Top level**
+
 - `schema`: `"dm4ri-bench-run/1"`.
 - `run_id`: sha1 (hex) of the canonical JSON (sorted keys, no spaces) of `key`.
 - `key`: `manifest` (`"certify/1.0"`), `instance`, `engine`, `config`, `league`, `threads`, `budget_s`, `seed`,
@@ -45,6 +55,7 @@ field that does not apply, or is unknown, is `null`; `harness.py` writes every f
 - `raw`: `dir`, `stdout`, `stderr` (paths relative to the session directory), `argv` (list of str).
 
 **`result`**
+
 - `status`: the final status, `certified`, `bracket`, `timeout`, `error`, or `wrong` (after `verify`).
 - `status_engine`: the status from the engine's output alone (never `wrong`).
 - `lb`, `ub`: the bounds the engine reported (a killed run: the last ones it printed); `ub` null: none found.
@@ -76,6 +87,7 @@ field that does not apply, or is unknown, is `null`; `harness.py` writes every f
 - `error`: null, or {`kind`: `engine` or `harness`, `msg`}.
 
 **Status rules** (the adapter, then `verify.py`)
+
 - `certified`: the engine reported `lb == ub > 0` before it ended, and no check failed.
 - `bracket`: the engine ended by itself before the budget with `lb < ub` (e.g. the binary's `cc_slow` stop).
 - `timeout`: the engine stopped at its own time limit, or the harness killed it; its bracket is the last one reported.
@@ -87,6 +99,7 @@ A run is **solved** if its final status is `certified`. PAR-2 scores a solved ru
 run by 2 T (T = `options.budget_s`).
 
 **`verify`** (written by `verify.py`, outside the timed region)
+
 - `witness_weight`: the weight of the witness checked (null: none).
 - `witness_verified_numpy`: the GF(2) check passed (null: no witness, or an incomplete one).
 - `witness_check_detail`: as in compare3: `ok`, `weight`, `H_syndrome_weight`, `L_syndrome_weight`,
@@ -107,6 +120,7 @@ The cross-run audit (`verify.py --audit`, and Table C) adds: the `lb` of any run
 witness of the same instance (from any engine or run).
 
 **`env`** (per run)
+
 - `env_id`: sha1 of the canonical JSON of the session's `env.json`.
 - `busy_cpu_s`: the busy CPU time of the machine over the run (`/proc/stat`: user, nice, system, irq, softirq, steal).
 - `child_cpu_s`: `cpu_user_s + cpu_sys_s`; `harness_cpu_s`: the CPU time of the harness process over the run.

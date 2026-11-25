@@ -1,3 +1,13 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # Benchmark Manifests (`benchmark/manifest/`)
 
 This directory holds versioned instance manifests for the `dist-m4ri` certification benchmark (`tools/bench/`) and
@@ -5,8 +15,7 @@ the deterministic input generator `make_inputs.py`. The design follows `scratch/
 
 ## Files
 
-- `certify_v1.json`: manifest `certify` v1.0 (51 instances from `benchmark/`, tiers T0-T3, 22 linked to `qec-cert`'s
-  `compare3` suite).
+- `certify_v1.json`: manifest `certify` v1.0 (51 instances from `benchmark/`, tiers T0-T3).
 - `make_inputs.py`: generates canonical DEMs into a content-addressed cache outside git (default
   `scratch/bench_cache/`, or `DM4RI_BENCH_CACHE`) and verifies every sha256. Refuses to proceed on any mismatch or
   unpinned Stim version.
@@ -14,6 +23,7 @@ the deterministic input generator `make_inputs.py`. The design follows `scratch/
 ## Manifest schema (`dm4ri-bench-manifest/1`)
 
 Top-level object:
+
 - `schema`: `"dm4ri-bench-manifest/1"`.
 - `id`, `version`, `created`, `description`: manifest identity (tiers are frozen within a version).
 - `tiers`: map `"T0".."T3"` to `{range_s: [lo, hi|null], budget_s, seeds: [int], threads: [int]}`:
@@ -26,6 +36,7 @@ Top-level object:
 - `instances`: list of instance objects.
 
 Instance object:
+
 - `id`: unique identifier:
   - `css/<name>:Z` (`finH=Hx finG=Hz`, giving $d_Z$) or `css/<name>:X` (`finH=Hz finG=Hx`, giving $d_X$);
   - `classical/<name>` (`finH=H classical=1`);
@@ -38,7 +49,7 @@ Instance object:
 - `d_ref`: known exact distance (`int` or `null`), and `bracket_ref`: `[lo, hi]` or `null` when exact $d$ is open.
 - `ref_source`: list of references (sections of `BENCHMARK.md` / `HISTORY.md`, engine, date).
 - `t_best_s`, `t_best_note`: baseline calibration time (seconds, or `null`) and provenance note.
-- `compare3_id`: exact matching id in `qec-cert/bench/compare3/instances.json`, or `null`.
+- `compare3_id`: optional external benchmark cross-reference id, or `null`.
 - `tags`: `{n, m, k, family, ...}` (for DEMs/circuits: `m` detectors, `n` errors in the canonical DEM, `k`
   observables, plus `code_n`, `code_k`, `rounds`, `basis`, `noise`).
 - `files`: map of role (`H`, `G`, `L`, `dem`, `circuit`) to either:

@@ -1,3 +1,13 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # Contributing 
 
 We invite everyone to contribute by submitting patches, pull requests,

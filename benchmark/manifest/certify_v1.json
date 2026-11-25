@@ -257,8 +257,7 @@
       "d_ref": 10,
       "bracket_ref": null,
       "ref_source": [
-        "qec-cert/bench/README_baselines.md",
-        "BENCHMARK.md@7de1817:502",
+        "BENCHMARK.md Section 1",
         "HISTORY 12 (S1)"
       ],
       "t_best_s": 0.015,
@@ -557,9 +556,8 @@
       "d_ref": 7,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:775,783-784 (Section 2.7)",
-        "dist_m4ri CC",
-        "HISTORY 12.4 (R7)"
+        "BENCHMARK.md Section 2.7",
+        "dist_m4ri CC"
       ],
       "t_best_s": 0.716,
       "t_best_note": "0.17.3, 64 threads (dist_m4ri.py)",
@@ -815,8 +813,7 @@
       "d_ref": 20,
       "bracket_ref": null,
       "ref_source": [
-        "scratch/bench_0.17/tables_portfolio.md",
-        "dist_m4ri 0.17.0",
+        "BENCHMARK.md Section 1",
         "HISTORY 12.1 (N2)"
       ],
       "t_best_s": 1.3,
@@ -850,8 +847,7 @@
       "d_ref": 20,
       "bracket_ref": null,
       "ref_source": [
-        "scratch/bench_0.17/tables_portfolio.md",
-        "dist_m4ri 0.17.0",
+        "BENCHMARK.md Section 1",
         "HISTORY 12.1 (N2)"
       ],
       "t_best_s": 6.9,
@@ -885,7 +881,7 @@
       "d_ref": 22,
       "bracket_ref": null,
       "ref_source": [
-        "qec-cert/bench/README_baselines.md",
+        "BENCHMARK.md Section 1",
         "dist_m4ri 0.16.1"
       ],
       "t_best_s": 33.0,
@@ -1280,12 +1276,11 @@
       "d_ref": 23,
       "bracket_ref": null,
       "ref_source": [
-        "scratch/bench_0.17/tables_portfolio.md (HISTORY 11.3)",
-        "qec_cert",
+        "BENCHMARK.md Section 1",
         "HISTORY 12.1 (N2)"
       ],
       "t_best_s": 1697.0,
-      "t_best_note": "0.17.3, 128 threads (2 seeds [1666, 1728] s; qec-cert: 30.8 s on 64 thr)",
+      "t_best_note": "0.17.3, 128 threads (2 seeds [1666, 1728] s)",
       "compare3_id": "css_2bga_292_22_23_Z",
       "tags": {
         "n": 292,
@@ -1315,8 +1310,7 @@
       "d_ref": 21,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:339 (Section 1)",
-        "qec-cert compare3"
+        "BENCHMARK.md Section 1"
       ],
       "t_best_s": null,
       "t_best_note": "to calibrate",
@@ -1657,12 +1651,11 @@
       "d_ref": 23,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:483-486 (Section 1)",
-        "qec_cert 2026-11-14",
+        "BENCHMARK.md Section 1 (Origins 6)",
         "HISTORY 12.1 (N2)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert 19,671 s (48 thr); dist_m4ri [18, 23] at 936 s (0.17.3, 128 thr)",
+      "t_best_note": "external exact; dist_m4ri [18, 23] at 936 s (0.17.3, 128 thr)",
       "compare3_id": null,
       "tags": {
         "n": 270,
@@ -1692,11 +1685,10 @@
       "d_ref": 21,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:453,502 (Section 1)",
-        "qec_cert"
+        "BENCHMARK.md Section 1 (Origins 11)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert exact; dist_m4ri [13, 21]",
+      "t_best_note": "external exact; dist_m4ri [13, 21]",
       "compare3_id": null,
       "tags": {
         "n": 270,
@@ -1726,11 +1718,10 @@
       "d_ref": 31,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:497 (Section 1)",
-        "qec-cert compare3"
+        "BENCHMARK.md Section 1 (Origins 9)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert rank-DP; tropidist 10.9 s (64 thr)",
+      "t_best_note": "construction exact; dist_m4ri [13, 31]",
       "compare3_id": "css_color_cc_d31",
       "tags": {
         "n": 721,
@@ -1760,11 +1751,10 @@
       "d_ref": 24,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:431,493 (Section 1)",
-        "qec_cert"
+        "BENCHMARK.md Section 1 (Origins 8)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert exact; dist_m4ri [18, 24]",
+      "t_best_note": "construction exact (2L); dist_m4ri [18, 24]",
       "compare3_id": null,
       "tags": {
         "n": 432,
@@ -1794,11 +1784,10 @@
       "d_ref": 67,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:442,497 (Section 1)",
-        "qec_cert"
+        "BENCHMARK.md Section 1 (Origins 9)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert exact; dist_m4ri [11, 78]",
+      "t_best_note": "construction exact; dist_m4ri [11, 78]",
       "compare3_id": null,
       "tags": {
         "n": 333,
@@ -1831,11 +1820,11 @@
         16
       ],
       "ref_source": [
-        "BENCHMARK.md@7de1817:729,1012 (Section 2.6, HISTORY 5.1)",
-        "qec_cert / dist_m4ri"
+        "BENCHMARK.md Section 2.6",
+        "HISTORY 5.1, 6.3"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert [13, 16]; dist_m4ri [11, 19] in 2.8 h",
+      "t_best_note": "external ref. [13, 16]; dist_m4ri [11, 19] in 2.8 h",
       "compare3_id": "circ_double_gross_288_si1000_r18_X",
       "tags": {
         "n": 221184,
@@ -1883,11 +1872,10 @@
         16
       ],
       "ref_source": [
-        "BENCHMARK.md@7de1817:1971 (HISTORY 11.1, 11.3)",
-        "slab-defaults #303"
+        "HISTORY 11.1, 12.3"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert [14, 16]; RW auto-slabs find 16",
+      "t_best_note": "external ref. [14, 16]; RW auto-slabs find 16",
       "compare3_id": null,
       "tags": {
         "n": 1728,
@@ -1984,11 +1972,10 @@
       "d_ref": 11,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:777 (Section 2.7)",
-        "qec_cert"
+        "BENCHMARK.md Section 2.7 (Origins 9)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert / engine='auto'",
+      "t_best_note": "construction exact (d = L)",
       "compare3_id": "circ_surface_rot_d11_r11_Z",
       "tags": {
         "n": 26803,
@@ -2032,11 +2019,10 @@
       "d_ref": 13,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:778 (Section 2.7)",
-        "qec_cert"
+        "BENCHMARK.md Section 2.7 (Origins 9)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert / engine='auto'",
+      "t_best_note": "construction exact (d = L)",
       "compare3_id": "circ_surface_rot_d13_r13_Z",
       "tags": {
         "n": 45821,
@@ -2080,11 +2066,10 @@
       "d_ref": 71,
       "bracket_ref": null,
       "ref_source": [
-        "BENCHMARK.md@7de1817:779 (Section 2.7)",
-        "qec_cert"
+        "BENCHMARK.md Section 2.7 (Origins 9)"
       ],
       "t_best_s": null,
-      "t_best_note": "qec-cert exact; dist_m4ri [7, 71]",
+      "t_best_note": "construction exact; dist_m4ri [7, 71]",
       "compare3_id": null,
       "tags": {
         "n": 1121,

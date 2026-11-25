@@ -1,3 +1,13 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # dist-m4ri - Distance of a Classical or Quantum CSS Code
 
 ## Overview
@@ -11,9 +21,9 @@ The program implements three main methods (with `method=3` as the default):
   low-weight non-trivial codewords and establish an **upper distance bound** $d_{\max}$.
 - **Method 2 (`method=2`) - Connected Cluster (CC) Algorithm**: Multithreaded exhaustive depth-first cluster
   enumeration to compute **exact distance** or establish a certified **lower distance bound** $d_{\min}$.
-- **Method 3 (`method=3`, default) - Bracketing Mode (Artillery Fork / Вилка)**: Concurrently runs CC and RW on multiple
-  threads, dynamically balancing CPU cores between CC and RW based on current bounds $[d_{\min}, d_{\max}]$, distance
-  estimate (`dexp`/`dest`), remaining RW steps and their measured time, timeout, and the measured scaling
+- **Method 3 (`method=3`, default) - Bracketing Mode (Artillery Fork / *Vilka*)**: Concurrently runs CC and RW on
+  multiple threads, dynamically balancing CPU cores between CC and RW based on current bounds $[d_{\min}, d_{\max}]$,
+  distance estimate (`dexp`/`dest`), remaining RW steps and their measured time, timeout, and the measured scaling
   characteristics of CC.
 
 For a classical binary linear code, only the parity-check matrix $H$ is needed.
@@ -97,6 +107,8 @@ bound. A row or column index out of range is an error (before, e.g., a row index
 
 ## How the Methods Work
 
+<div id="1-multithreaded-rw-algorithm-method1"></div>
+
 ### 1. Multithreaded RW Algorithm (`method=1`)
 Searches for low-weight non-trivial binary codewords $c$ such that $Hc = 0$ and $Lc \neq 0$.
 Threads independently generate random column permutations, compute Gaussian elimination to find information sets,
@@ -127,6 +139,7 @@ codewords are disjoint: their sum is a reducible codeword (see [Codeword Export]
 extra cost (the weight of the sum is then the sum of the two weights).
 
 Relevant parameters:
+
 - `steps=[int]`: Total number of information sets / RW rounds across all threads (default: 100000).
 - `min_hits=[int]` (alias: `max_hits=[int]`): QDistRnd-style automatic convergence stopping criterion (default: 5; 0:
   off, and then the hits are not counted either: without `outC` or `maxC`, RW records only the codewords lighter than
@@ -298,6 +311,8 @@ Relevant parameters:
   specified).
 - `timeout=[sec]`: Maximum execution time in seconds (default: 60.0).
 
+<div id="2-multithreaded-cc-algorithm-method2"></div>
+
 ### 2. Multithreaded CC Algorithm (`method=2`)
 Recursively explores connected clusters starting from each column $i \in [0, n-1]$; a cluster started at column $i$
 is grown using only columns $j > i$, so that every codeword is found starting from its smallest column. Start columns
@@ -324,6 +339,7 @@ maximum column weight of $H$.
 **Branch and bound (`cc_prune=1`, the default since version 0.15.0)**, after J. Y. Lee, K. Okada, N. Maskara, K.
 Kasai, and H. Zhou, arXiv:2609.30069 (App. B), as used by G. Lee, arXiv:2610.13880 (App. C.4); the proof that it
 finds the same codewords is in [`doc/cc_completeness.tex`](doc/cc_completeness.tex):
+
 - A column is *available* if it is larger than the start column, and neither in the cluster nor forbidden. A cluster
   is extended by the available columns of the unsatisfied row (a row of its syndrome) with the fewest available
   columns, the first such row in the row order; with `sort_rows`, the order of the rows only breaks ties.
@@ -370,6 +386,7 @@ $[4, 100]$, or 16; a note is printed): a round which cannot be completed may sti
 $w = d_{\min}$, i.e., the exact distance.
 
 Relevant parameters:
+
 - `wmax=[int]`: Maximum cluster weight to search (optional with `timeout>0`, the default, with `dmax>0`, where the
   rounds end once $d_{\min} = d_{\max}$, or with `dstop>0`, where they end once $d_{\min} \ge$ `dstop`; otherwise
   required for `method=2`; at most 99, also the largest weight searched without `wmax`).
@@ -385,6 +402,7 @@ Relevant parameters:
 
 Expert parameters (each prints a `# WARNING:` to `stderr`; see
 [Restricting the CC Search](#restricting-the-cc-search-expert-options) below):
+
 - `noscan=[0|1]`: If set to 1 (`method=2` only), run CC only at weight $w = w_{\max}$, without scanning smaller
   weights. The result is **not** a lower bound unless `dmin=wmax` is also supplied.
 - `start=[list]`: Comma-separated list of CC start columns (0-based), e.g., `start=0,48,96`. Clusters grown from a
@@ -460,6 +478,8 @@ distance. The reported $d_{\max}$ is the weight of an actual codeword, and it is
   codeword is found once, from the first listed column it contains (see
   [`doc/cc_completeness.tex`](doc/cc_completeness.tex)).
 
+<div id="3-bracketing-mode-method3-default"></div>
+
 ### 3. Bracketing Mode (`method=3`, default)
 Dynamically partitions the available thread pool between CC (pushing $d_{\min}$ up) and RW (pulling $d_{\max}$ down) to
 determine the exact code distance as quickly as possible.
@@ -518,6 +538,7 @@ determine the exact code distance as quickly as possible.
      to finish.
 
 Relevant parameters:
+
 - `dexp=[int]` (alias: `dest=[int]`): Expected code distance, a hint for the thread allocation before RW finds a
   codeword (see above).
 - `dstop=[int]`: Stop target for the lower bound (default: 0, off; see above, also for `method=2`). Unlike `dmax`, it is
@@ -551,11 +572,14 @@ Relevant parameters:
 - `dW=[int]`: Extra weight window above the minimum weight found, $w_{\min}$, to continue collecting codewords
   ($w \le w_{\min} + \text{dW}$; since 0.17.2, a negative value is read as 0, with a warning).
 
+<div id="4-multithreading-throttling--batch-sizing"></div>
+
 ### 4. Multithreading, Throttling & Batch Sizing
 The parameter `threads=[int]` specifies the **maximum** number of worker threads to allocate (default: all logical CPUs
 available to the process, i.e., its CPU affinity mask, so that `taskset -c 0-15 dist_m4ri ...` runs 16 threads; with
 SMT, the sibling hyperthreads typically add 10-50% to the throughput of a fully loaded CPU, more for RW than for CC).
 By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid overhead and resource thrashing:
+
 - **Small-Code Throttling** (`method=1` and `method=3`, all threads), to avoid the thread creation and lock contention
   overhead on tiny workloads; with $m$ the number of rows of $H$ and $W_{\text{RW}} = m \cdot n \cdot \text{steps}$ the
   RW workload: at most 4 threads for $n < 60$, or for $m \cdot n < 2 \cdot 10^4$ with $W_{\text{RW}} < 5 \cdot 10^7$;
@@ -607,6 +631,8 @@ periodic status line shows the progress of the current CC round. While RW steps 
 two steps (since 0.17.4; before, the round waited until their batches were done, as it still does for the last batches
 once all steps are claimed), and `debug&8` reports how many joined each round this way
 (`# CC round w=...: joined by ... RW threads which left their RW batch between two steps`).
+
+<div id="5-rw-convergence-empirical-test-and-probability-to-find-a-codeword"></div>
 
 ### 5. RW Convergence: Empirical Test and Probability to Find a Codeword
 
@@ -766,6 +792,8 @@ With `debug=1`, detailed per-weight lines are printed to `stderr`:
 ```
 
 ---
+
+<div id="codeword-export-outc--finc"></div>
 
 ## Codeword Export (`outC` / `finC`)
 
@@ -1144,6 +1172,8 @@ $ ./src/dist_m4ri method=2 finH=./examples/surf_d5_H.mmx finL=./examples/surf_d5
 
 ---
 
+<div id="python-wrapper-dist_m4ripy"></div>
+
 ## Python Wrapper (`dist_m4ri.py`)
 
 A Python module [`dist_m4ri.py`](dist_m4ri.py) is included for high-level scripting, NumPy/SciPy integration, and Stim
@@ -1290,8 +1320,8 @@ interoperability without manual threading overhead.
     distance of the model certified by CC is a lower bound on the circuit distance. It ignores the timing within the
     rounds: it is tight for the surface-code circuits of stim, the `hef` Mitten circuits, and the `n120` torus
     circuit, but 1-2 below the distance of the BB circuits `bb_72` (5, distance 6) and gross (8, distance 10), at least
-    1 below that of double gross (12; its distance is in $[13, 16]$, verified by `qec_cert`), and 1-2 below that of the
-    custom Mitten circuits (`mitten_270`: 8, distance 9) and of the `n60` torus circuit (4, distance 6).
+    1 below that of double gross (12; its distance is in $[13, 16]$), and 1-2 below that of the custom Mitten circuits
+    (`mitten_270`: 8, distance 9) and of the `n60` torus circuit (4, distance 6).
   - The binary runs on the model with the measured-basis rows first, then (with `minority=True`) with all rows starting
     from that bound: RW first, which ends as soon as it finds a model codeword of that weight, and only otherwise CC
     from `dmin` (CC on all rows alone would be much slower: gross 75 s for 7, instead of 1.8 s for 8). The bound is
@@ -1462,10 +1492,11 @@ interoperability without manual threading overhead.
 - Solver / engine selection (`solver=` or `engine=` in the `compute_*_distance()` functions and the CLI, where `engine`
   takes precedence if both are given):
   - `'dist_m4ri'` (default; also `engine='native'` or `'off'`): uses the native multithreaded `dist_m4ri` binary.
-  - `'cert'` (also `'qec_cert'` or `'qec-cert'`) and `'auto'`: hand off distance-only requests to `qec_cert`
-    (`qec_cert.pipeline.certify`, `certify_dem`, or `certify_circuit`). To make `qec_cert` importable, install the
-    `qec-cert` package in the active Python environment (e.g., `pip install -e /path/to/qec-cert` after building its
-    native library with `make`) or add its repository root to `PYTHONPATH`.
+  - `'cert'` (also `'qec_cert'` or `'qec-cert'`) and `'auto'`: hand off distance-only requests to the optional
+    external `qec_cert` package (`qec_cert.pipeline.certify`, `certify_dem`, or `certify_circuit`) when installed. To
+    make `qec_cert` importable, install the `qec-cert` package in the active Python environment (e.g.,
+    `pip install -e /path/to/qec-cert` after building its native library with `make`) or add its repository root to
+    `PYTHONPATH`.
   - `'auto'` (since 0.17.0): a two-stage portfolio for distance-only `method=3` requests. Classical codes always run
     the native binary (without importing `qec_cert`). A DEM or Stim circuit with more than 25,000 raw error mechanisms
     (and a timeout of at least 3 s, or none) goes to `qec_cert` first, whose exact reductions of large DEMs come before
@@ -1479,18 +1510,11 @@ interoperability without manual threading overhead.
     `dmin_A` certified by CC discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; since 0.17.4, a floor
     `wmin > 1` is passed with `search_opts={"force_dom": 1}`, so that `qec_cert` keeps the stabilizer half-weight
     dominance of its search on (by default, it switches it off for `wmin > 1`, although the rule is sound when `wmin`
-    is a certified lower bound, Sec. 8 of `doc/soundness_search.md` of `qec-cert`; an older `qec_cert` without this
-    option is called as before); if `qec_cert` ends early with an open bracket, the binary continues with the time
-    left, and if `qec_cert` is not installed or not usable (e.g., without its library `libqeccert.so`; then a warning,
-    once per process, since 0.17.2), the binary runs with the whole timeout. The stages are recorded in
-    `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and `--verbose`). Until 0.16.1, `'auto'` handed every
-    eligible request (classical codes too) to `qec_cert`.
-    Benchmark (35 codes, circuits, and classical codes, `timeout=45`, 64 threads, Sections 11.3 and 12.4 of the
-    [benchmark history](benchmark/HISTORY.md)): in 0.17.0, `'auto'` certified 31 instances against 26 for the binary
-    alone and 32 for `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against
-    0.443 s for the delegation of 0.16.1, which imports `qec_cert` in every call); the shorter Stage-A budget and
-    wide-bracket `use_ub` gate of 0.17.1 save 40 s on the portfolio, and the 0.17.4 `force_dom=1` Stage-B fix cuts
-    `bb_360` `'auto'` from 8.2 s to 3.2 s and certifies `2bga_292` in 33.8 s (32/35 exact, matching `'cert'`).
+    is a certified lower bound; an older `qec_cert` without this option is called as before); if `qec_cert` ends early
+    with an open bracket, the binary continues with the time left, and if `qec_cert` is not installed or not usable
+    (e.g., without its library `libqeccert.so`; then a warning, once per process, since 0.17.2), the binary runs with
+    the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
+    `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
   - Hand-off scope: the hand-off covers distance-only requests. Codeword output (`do_cws=True` or `outC`), `finC`,
     `smax > 0`, an explicit `dW >= 0` (the Python default `dW=-1` means not set), `maxC > 0`, `start`, `outD`,
     `out_reduced`, `pmin > 0`, and `method=1` or `2` stay on the native `dist_m4ri` binary with `'auto'` (which also
@@ -1624,10 +1648,9 @@ the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of `b
 those up to $d = 18$ confirmed with the walk of the earlier versions) and the lower cost per node of 0.15.2. Sections 11
 and 12 of the history measure the RW stages of 0.17.0–0.17.4 (`rw_opt`: a stage ablation on 22 inputs, sustained
 sparse-dual scaling at 9.9–13.5x on `bb_360` and 5.3–7.7x on `bb_756`, and automatic row slabs reaching weight 16 in
-11/11 seeds on single-round double gross), the two-stage `engine="auto"` with `qec_cert` (32/35 exact in 45 s on 64
-threads), long-running `method=2`/`method=3` scaling (58–65x on 64 cores, 63–84x on 128 threads), and 128-thread
-certification of 24 of 25 multi-round circuits and CSS codes in 0.145–1,697 s (`bb_360` code in 53.5 s, `gross` SI1000
-circuit in 77.6 s).
+11/11 seeds on single-round double gross), long-running `method=2`/`method=3` scaling (58–65x on 64 cores, 63–84x on
+128 threads), and 128-thread certification of 24 of 25 multi-round circuits and CSS codes in 0.145–1,697 s (`bb_360`
+code in 53.5 s, `gross` SI1000 circuit in 77.6 s).
 
 ![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/time_to_d_full_dems.png)
 

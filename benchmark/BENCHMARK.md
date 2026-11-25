@@ -1,3 +1,13 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # Benchmark Suite for `dist-m4ri`
 
 This directory contains quantum LDPC CSS parity-check matrices (`.mtx`) and Stim circuit-level fault-tolerance files
@@ -62,7 +72,7 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
   so that the binary uses all $p$ threads). The wall time is that of the whole run of the binary: it includes reading
   the input and, for a DEM, merging and reducing it (the input stage). The fast cases were repeated, and the figures
   show the medians. The speedup is $T(1)/T(p)$, the time on one thread over the time on $p$ threads, of the same
-  version; the ideal speedup is $p$. Rates such as RW steps per second (Figure 10) use the RW time reported by the
+  version; the ideal speedup is $p$. Rates such as RW steps per second (Figure 9) use the RW time reported by the
   binary instead, without the input stage.
 - **The default thread throttle.** Without `nothrottle=1`, the binary may run RW on fewer threads than given: for
   example, on a large matrix whose dense RW working copies take more than 15 MB per thread, at most 32 threads run RW
@@ -70,15 +80,14 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
   ($\lceil\texttt{steps}/10\rceil$).
 - **The sparse elimination** (0.17.0). On wide DEMs, with many more columns than detectors, an RW step of 0.17.0
   eliminates with an $m \times m$ inverse per thread ($m$ detectors) instead of dense copies of the whole
-  $m \times n$ matrix and of its transpose, which lifts the memory-bandwidth limit (Figures 5 and 10).
-- **The Python wrapper and the engines.** `dist_m4ri.py` is the Python interface of the binary: it also builds the
-  DEMs of Stim circuits and adds noise. Its option `engine=` selects how a distance is computed: the binary alone
-  (`"off"`, the default), `qec_cert` alone (`"cert"`; `qec_cert` is the Python package of `qec-cert`, a separate
-  project with its own exact certification methods), or both (`"auto"`: since 0.17.0, the binary first and then
-  `qec_cert` on what remains open).
+  $m \times n$ matrix and of its transpose, which lifts the memory-bandwidth limit (Figures 4 and 9).
+- **The Python wrapper and reference values.** `dist_m4ri.py` is the Python interface of the binary: it also builds the
+  DEMs of Stim circuits and adds noise. All figures in this document measure the native `dist_m4ri` binary; for
+  instances in Sections 1–2 and T3 whose `dist_m4ri` bracket remains open, known exact distances or tighter brackets
+  from external exact certification or published constructions are noted as reference values.
 - **The server.** All runs used a two-socket AMD EPYC 7B13 server: 2 x 32 cores, i.e., 64 physical cores and 128
   logical CPUs with SMT (two hardware threads per core), and 236 GiB of memory. In the thread-scaling runs (Figures
-  3–7 and 10), a run with $p$ threads is pinned with `taskset` to the logical CPUs $0..p-1$, in this order: 0–31 are
+  2–6 and 9), a run with $p$ threads is pinned with `taskset` to the logical CPUs $0..p-1$, in this order: 0–31 are
   the cores of socket 0, 32–63 those of socket 1, and 64–95 and 96–127 their SMT siblings (the second hardware threads
   of the cores of socket 0 and 1). Up to $p = 64$, each thread has a core of its own; beyond, the threads share cores.
   The gray line in the figures marks $p = 64$.
@@ -91,36 +100,32 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
 
 - **Hardware.** One server, a virtual machine (KVM) with two AMD EPYC 7B13 sockets: 2 x 32 cores, 128 logical CPUs
   with SMT, and 236 GiB of memory; NUMA node 0 holds the CPUs 0–31 and 64–95, node 1 the CPUs 32–63 and 96–127.
-- **Software.** Each version of `dist_m4ri` named in a figure, built from its own sources with its makefile, and
-  `dist_m4ri.py` of the same version; `dist_m4ri_old` built from the 0.14.0 sources. The DEMs of the circuits are
-  generated from the `.stim` files with stim 1.16 (Section 3). Figure 2 also uses `qec_cert`, whose version was not
-  recorded in the 0.17.0 run.
-- **Wall time.** The time of the whole process: for the binary (Figures 1 and 3–9), from its start to its exit,
-  including reading the input and, for a DEM, merging and reducing it; for Figure 2, the fresh Python process,
-  including its start-up and imports (the `qec_cert` curve without the import of `qec_cert`). Figure 10 shows rates per
-  second of the RW time reported by the binary.
-- **Exclusive runs.** Within each benchmark, one run at a time, except in Figure 2 (two runs at once, one per NUMA
-  node). The runs of 0.17.3 (Figures 1 and 7) and 0.17.0 (Figures 2 and 10, and the 0.17.0 curves of Figures 3–6) were
-  made on a server without other jobs, with the load recorded; for the earlier runs, the load was not recorded.
+- **Software.** Each version of `dist_m4ri` named in a figure, built from its own sources with its makefile;
+  `dist_m4ri_old` built from the 0.14.0 sources. The DEMs of the circuits are generated from the `.stim` files with
+  `dist_m4ri.py` and stim 1.16 (Section 3).
+- **Wall time.** The time of the whole process: for Figures 1–8, from the binary's start to its exit, including reading
+  the input and, for a DEM, merging and reducing it. Figure 9 shows rates per second of the RW time reported by the
+  binary.
+- **Exclusive runs.** Within each benchmark, one run at a time. The runs of 0.17.3 (Figures 1 and 6) and 0.17.0
+  (Figure 9, and the 0.17.0 curves of Figures 2–5) were made on a server without other jobs, with the load recorded;
+  for the earlier runs, the load was not recorded.
 - **Protocol of each figure:**
   - Figure 1: `method=3` with the default parameters on 128 threads (`nothrottle=1`, `timeout=1800`); 5 seeds (3 or 2
     where a run exceeds 300 or 900 s).
-  - Figure 2: `method=3`, the exact distance or the bracket at the time limit of 45 s; 64 threads on one NUMA node;
-    one run per instance and configuration.
-  - Figures 3–6: fixed work (RW `steps` with `min_hits=0`, CC up to `wmax`, or both); $p = 1, \dots, 128$ threads on
+  - Figures 2–5: fixed work (RW `steps` with `min_hits=0`, CC up to `wmax`, or both); $p = 1, \dots, 128$ threads on
     the CPUs $0..p-1$, with `nothrottle=1`; no time limit (`timeout=0`), except 600 s per case and method for 0.9.0
-    (400 s on the full DEM of Figure 6, also for 0.12.2); the same seed for every version; the median of three runs
+    (400 s on the full DEM of Figure 5, also for 0.12.2); the same seed for every version; the median of three runs
     for the fast cases, one run otherwise.
-  - Figure 7: long-running CC up to `wmax` (`method=2`, fixed work) and exact certification (`method=3`, default
+  - Figure 6: long-running CC up to `wmax` (`method=2`, fixed work) and exact certification (`method=3`, default
     parameters, `timeout=0`); $p = 1, \dots, 128$ threads on the CPUs $0..p-1$ (`p >= 4` for `gross` `method=3`), with
     `nothrottle=1`; median of three runs where $\le 150$ s, one run otherwise.
-  - Figure 8: until a codeword of weight $d$ (`wmin=d`, `min_hits=0`, `steps=10^9`); 128 threads, not pinned, with
+  - Figure 7: until a codeword of weight $d$ (`wmin=d`, `min_hits=0`, `steps=10^9`); 128 threads, not pinned, with
     `nothrottle=1`; a time limit of 300 s (120 s for gross); five seeds for 0.14.x (seven for gross), one run for
     0.12.2 and 0.9.0.
-  - Figure 9: the lightest codeword found against time; the default threads (32 RW threads on the two DEMs, 128 on the
+  - Figure 8: the lightest codeword found against time; the default threads (32 RW threads on the two DEMs, 128 on the
     codes), not pinned; until weight 18 (time limit 180 s) or 23 (240 s) on the DEMs, and 30 s on the codes; three
     seeds (two for `bb_360`).
-  - Figure 10: RW with a fixed step limit; $p = 1, \dots, 128$ threads on the CPUs $0..p-1$, with `nothrottle=1` and
+  - Figure 9: RW with a fixed step limit; $p = 1, \dots, 128$ threads on the CPUs $0..p-1$, with `nothrottle=1` and
     with the default throttle; a time limit of 25–30 s; one run per point.
 
 ---
@@ -129,8 +134,8 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
 
 Each figure below has a one-line statement of what is measured (with the versions and the run dates), a caption (the
 runs, the axes, how to read them, the main result), and a link to the details in [HISTORY.md](HISTORY.md). The
-figures are grouped: the certification of distances (Figures 1 and 2), the scaling with the number of threads (Figures
-3–7), and diagnostics of the RW search (Figures 8–10). The protocols are summarized in [Methods](#methods).
+figures are grouped: the certification of distances (Figure 1), the scaling with the number of threads (Figures
+2–6), and diagnostics of the RW search (Figures 7–9). The protocols are summarized in [Methods](#methods).
 
 ### Certification
 
@@ -156,38 +161,9 @@ figures are grouped: the certification of distances (Figures 1 and 2), the scali
   bracket $[18, 23]$.
 - *Details:* [HISTORY.md, Section 12.1](HISTORY.md#121-exact-certification-on-128-threads).
 
-#### Figure 2: Certification portfolio
-
-**Instances (of 35) certified exact within a given wall time per instance, by engine configuration; 0.17.0,
-2026-11-13.**
-
-![Instances certified against wall time](figures/portfolio_certified.png)
-
-- *Run:* 35 instances (18 CSS codes, one sector each; 14 circuits, with one or more rounds; 3 classical LDPC codes),
-  `method=3`, `timeout=45`, `threads=64` on one NUMA node (two runs at once), each run in a fresh Python process with
-  the distance cache disabled.
-- *Curves:* the binary alone (`engine="off"`); `qec_cert` alone (`engine="cert"`, timed without the import of
-  `qec_cert`); the `engine="auto"` of 0.16.1, which handed every call to `qec_cert`; and the two-stage
-  `engine="auto"` of 0.17.0, which runs the binary first, for up to $\tau_1 = 22.5$ s (in the fifth curve, 2 s), and
-  then `qec_cert`, while circuits with more than 25,000 raw error mechanisms go to `qec_cert` first.
-- *Axes:* a curve at height $k$ at time $t$ means that $k$ instances were certified exact, each within $t$ seconds of
-  wall time of its Python process (logarithmic time axis; gray line: the timeout).
-- *Result:* the two-stage `auto` certified 31 instances, against 26 for the binary alone and 32 for `qec_cert` alone,
-  and on the 20 easy instances it is as fast as the binary (median 0.087 s, against 0.443 s for the delegation of
-  0.16.1, which imports `qec_cert` in every call).
-- *Caveats and 0.17.3–0.17.4 updates:* the budget is 45 s per instance, with two runs sharing the server at once (one
-  per NUMA node). Since 0.17.1, the default Stage-A budget is $\tau_1 = \min(\max(2, \texttt{timeout}/10), 10)$ s:
-  re-measured in 0.17.3 (`2026-11-24`), `auto` ($\tau_1 = 4.5$ s) certifies 31/35 in 258.6–261.2 s total (vs 301.0 s
-  at $\tau_1 = 22.5$ s, and 250.2 s at $\tau_1 = 2.0$ s) with easy median 0.079 s. Since 0.17.4, Stage B passes
-  `search_opts={"force_dom": 1}` when handing a certified `wmin > 1` to `qec_cert`: on exclusive 64 threads, this cuts
-  `bb_360` `auto` from 8.2 s to 3.2 s, certifies `2bga_292` ($d = 23$) in 33.8 s (lifting `auto` to **32/35**, matching
-  `cert`), and raises the `double_gross` $T = 1$ bracket in `auto` from $[13, 16]$ to $[14, 16]$.
-- *Details:* [HISTORY.md, Sections 11.3](HISTORY.md#113-two-stage-certification-portfolio-with-qec_cert) and
-  [12.4](HISTORY.md#124-portfolio-re-measurement-and-stage-b-force_dom-fix).
-
 ### Thread Scaling with Fixed Work and Certification
 
-#### Figure 3: Gross code, RW with fixed work
+#### Figure 2: Gross code, RW with fixed work
 
 **Wall time of 3,000,000 RW steps on one sector of the gross code $[[144, 12, 12]]$ against the number of threads;
 versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
@@ -196,21 +172,21 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
 
 - *Run:* `method=1 steps=3000000 min_hits=0` on `css/gross_144_12_12_Hx.mtx` with `_Hz.mtx`, for $p = 1, \dots, 128$.
   With `min_hits=0`, RW does not stop when it has found the distance, so every run does the same work: the time
-  measures how fast the RW steps run, not how fast the distance is found (Figures 8 and 9 measure that).
+  measures how fast the RW steps run, not how fast the distance is found (Figures 7 and 8 measure that).
 - *Axes:* left, the wall time against $p$ (both axes logarithmic); right, the speedup $T(1)/T(p)$ of each version,
   with the ideal speedup $p$ dotted. The star is the legacy single-threaded `dist_m4ri_old` (one thread).
 - *Reading:* with perfect scaling, the time halves with each doubling of $p$.
 - *Result:* RW scales almost linearly up to 64 threads, and the SMT siblings ($p > 64$) add more: 0.17.0 takes 80 s
   on one thread, with a speedup of 57x at 64 threads and 76x at 128 (0.14.0: 50 s, 58x, and 80x). A step of 0.15.2 or
-  0.17.0 takes longer than one of 0.14.0, since it also checks pairs of columns (since 0.14.4); the pairs find light
-  codewords in far fewer steps (Figures 8 and 9).
+  0.17.0 takes ~1.6x longer than one of 0.12.2 or 0.14.0 because it also scans pairs of non-pivot columns (added in
+  0.14.4; with `pairs=0`, 0.17.x matches 0.14.0); the pairs find light codewords in far fewer steps (Figures 7 and 8).
 - *Not shown:* CC up to weight 11 and the exact distance (`method=2 wmax=11` and `method=3`), which take a fraction of
-  a second with 0.14.0 and later and are dominated by the start-up of the threads (Figure 7 measures multi-second to
+  a second with 0.14.0 and later and are dominated by the start-up of the threads (Figure 6 measures multi-second to
   multi-minute CC and `method=3` runs); their times are in HISTORY.md.
 - *Versions (run dates):* 0.17.0 (2026-11-13), 0.15.2 (2026-10-28), and 0.14.0, 0.12.2, and 0.9.0 (2026-10-11).
 - *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
 
-#### Figure 4: Double-gross code, RW, CC, and both with fixed work
+#### Figure 3: Double-gross code, RW, CC, and both with fixed work
 
 **Wall time of fixed-work RW, CC, and RW + CC on the double-gross code $[[288, 12, 18]]$ against the threads;
 versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
@@ -225,11 +201,11 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
   version to version: up to weight 15, 0.17.0 takes 0.83 s on one thread, 3.8x less than 0.15.2 (3.1 s), and 0.14.0
   took 10 s, while 0.9.0 needs 472 s on 128 threads. On 64–128 threads, 0.17.0 takes only 0.035–0.047 s, and more
   threads hardly help. RW + CC: 42 s on one thread and 0.59 s on 128 with 0.17.0.
-- *Versions:* as in Figure 3; 0.9.0 ran CC and RW + CC on 128 threads only (it was limited to 600 s per case and
+- *Versions:* as in Figure 2; 0.9.0 ran CC and RW + CC on 128 threads only (it was limited to 600 s per case and
   method).
 - *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
 
-#### Figure 5: Double-gross circuit, RW and RW + CC with fixed work
+#### Figure 4: Double-gross circuit, RW and RW + CC with fixed work
 
 **Wall time of fixed-work RW and RW + CC on the DEM of the double-gross circuit against the number of threads;
 versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
@@ -241,20 +217,20 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
   $2736 \times 31392$ (merged to 26208 distinct columns since 0.14.0). Left, RW with 300 steps
   (`method=1 steps=300 min_hits=0`); right, RW with 150 steps and CC up to weight 5
   (`method=3 steps=150 wmax=5 min_hits=0`).
-- *Axes:* as in Figure 4.
+- *Axes:* as in Figure 3.
 - *Result:* until 0.15.2, RW on this large matrix is limited by the memory bandwidth (each thread works on dense
   copies of the matrix and of its transpose): at most about 15–20x faster with 0.14.0 and 11x with 0.15.2, and the SMT
   siblings make it slower. 0.17.0 instead uses the sparse elimination (see [How to Read](#how-to-read-the-results))
   and scales almost linearly to 32 threads (25x): 21.6 s on one thread and 0.63 s on 64 threads, 3.7 times less than
   0.15.2 (2.36 s). RW + CC: 12.9 s on one thread and 0.75 s on 64 (0.15.2: 15.4 s and 1.17 s).
 - *Not shown:* CC alone up to weight 5 (`method=2 wmax=5`), which takes under one second with 0.14.0 and later (Figure
-  7 shows deeper CC rounds); its times are in HISTORY.md.
-- *Versions:* as in Figure 3; 0.9.0 ran RW + CC from $p = 2$ on only (600 s per case), so it has no speedup curve
+  6 shows deeper CC rounds); its times are in HISTORY.md.
+- *Versions:* as in Figure 2; 0.9.0 ran RW + CC from $p = 2$ on only (600 s per case), so it has no speedup curve
   there.
 - *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details) (and
   [Section 11.2](HISTORY.md#112-thread-scaling-of-the-rw-stages) for 0.17.0).
 
-#### Figure 6: bb_72 circuit, RW with fixed work on the full DEM
+#### Figure 5: bb_72 circuit, RW with fixed work on the full DEM
 
 **Wall time of 20,000 RW steps on the full DEM of the `bb_72` circuit, reduction included, against the threads;
 versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
@@ -264,7 +240,7 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
 - *Run:* the $X$-basis memory circuit of the $[[72, 12, 6]]$ bivariate bicycle code with `si1000` noise and 6 rounds
   (`stim_bb/bb_72_12_6_si1000_r6_X.stim`), as its full DEM with 432 detectors and 17280 error mechanisms;
   `method=1 steps=20000 min_hits=0`: a fixed 20,000 RW steps. This is the RW throughput, not the time to find a
-  codeword of the minimum weight 6, which takes 0.092 s on 128 threads (Figure 8).
+  codeword of the minimum weight 6, which takes 0.092 s on 128 threads (Figure 7).
 - *Input stage:* every time includes reading the full DEM and, since 0.14.0, reducing it exactly to $252 \times 2232$
   (the stripped DEM with its equal columns merged); 0.12.2 and 0.9.0 search the full matrix.
 - *Axes:* left, the wall time against $p$; right, the speedup $T(1)/T(p)$ of each version (dotted: ideal).
@@ -275,11 +251,11 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
   ([HISTORY.md, Section 11.1](HISTORY.md#111-stage-ablation-16-threads)).
 - *Not shown:* the complete CC search up to weight 5 (`method=2 wmax=5`, which finds nothing, since $d = 6$) and the
   exact distance with the default parameters (`method=3`), which take a fraction of a second with 0.14.0 and later,
-  mostly the input stage (see Figure 7 for larger DEMs); their times are in HISTORY.md.
-- *Versions:* as in Figure 3; 0.9.0 ran from $p = 2$ on only, so it has no speedup curve.
+  mostly the input stage (see Figure 6 for larger DEMs); their times are in HISTORY.md.
+- *Versions:* as in Figure 2; 0.9.0 ran from $p = 2$ on only, so it has no speedup curve.
 - *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
 
-#### Figure 7: Long-running CC and exact certification against threads
+#### Figure 6: Long-running CC and exact certification against threads
 
 **Wall time and speedup of long-running CC (`method=2`) and exact distance certification (`method=3`) on one CSS code
 and three full circuit DEMs; 0.17.3 and 0.16.1, 2026-11-24.**
@@ -304,7 +280,7 @@ and three full circuit DEMs; 0.17.3 and 0.16.1, 2026-11-24.**
 
 ### Diagnostics of the RW Search
 
-#### Figure 8: Full DEMs, time to a minimum-weight codeword
+#### Figure 7: Full DEMs, time to a minimum-weight codeword
 
 **Wall time and RW steps until RW finds a codeword of the minimum weight in the full DEMs of 12 circuits; versions
 0.9.0–0.14.6, run 2026-10-11 and 2026-10-15.**
@@ -328,7 +304,7 @@ and three full circuit DEMs; 0.17.3 and 0.16.1, 2026-11-24.**
   [8.1](HISTORY.md#81-full-dems-time-to-a-codeword-of-the-minimum-weight), and
   [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146).
 
-#### Figure 9: Lightest codeword against time, with and without the RW pairs
+#### Figure 8: Lightest codeword against time, with and without the RW pairs
 
 **Weight of the lightest codeword found by RW against time, without (0.14.3) and with (0.14.6) the RW pairs;
 2026-10-15.**
@@ -347,15 +323,14 @@ and three full circuit DEMs; 0.17.3 and 0.16.1, 2026-11-24.**
   1.5–2.4 s instead of 9.6–18.8 s, and weight 23 of `bb_360` after 56 and 119 s, while 0.14.3 found only 24 in 240 s.
   For the two classical codes, the lightest codeword found is lighter at all times; at 30 s, 227–234 against 253–265
   for `c1920H`, and 396–402 against 410–426 for the LDPC code.
-- *Note:* 18 is not the distance of the double-gross circuit: `qec_cert` later found a codeword of weight 16 and the
-  bracket $[13, 16]$ ([HISTORY.md, Section 11.3](HISTORY.md#113-two-stage-certification-portfolio-with-qec_cert); on
-  one round, row slabs find weight 16 in 0.08–0.14 s,
-  [Section 12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174)).
+- *Note:* 18 is not the distance of the double-gross circuit: an external exact search verified a codeword of weight 16
+  and the bracket $[13, 16]$ (Section 2.6; on one round, row slabs find weight 16 in 0.08–0.14 s,
+  [HISTORY.md, Section 12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174)).
 - *Versions:* 0.14.3 and 0.14.6 (2026-10-15).
 - *Details:* [HISTORY.md, Sections 8.2](HISTORY.md#82-large-dems-the-time-to-light-codewords),
   [8.3](HISTORY.md#83-codes-with-a-large-distance), and [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146).
 
-#### Figure 10: RW stages of 0.17.0 against threads
+#### Figure 9: RW stages of 0.17.0 against threads
 
 **RW steps and minimum-weight hits per second against the threads: the RW of 0.16.1 and the RW stages of 0.17.0;
 2026-11-13.**
@@ -402,13 +377,12 @@ input and the deterministic recipe of every generated DEM; the best known times 
   of Section 2 with all its detectors (the noiseless templates with `add_noise(p=0.001)`; the binary reduces the DEM
   exactly).
 - Best known: the median wall time of `dist_m4ri` alone on 128 threads, with the version that measured it, unless noted
-  otherwise. The sources are the sections of this file and of [HISTORY.md](HISTORY.md) ("H" below), and the
-  baselines of `qec-cert` (`bench/README_baselines.md` there).
+  otherwise. The sources are the sections of this file and of [HISTORY.md](HISTORY.md) ("H" below).
 
 **T0: under 1 s** (13 instances, budget 60 s).
 
 | Instance | $d$ | Best known (s) | Source |
-| :--- | :-: | :--- | :--- |
+| :----------------------------- | :-: | :----------------------------- | :---------------- |
 | `css/gross_144_12_12:Z` | 12 | 0.014 (0.17.3, 16 threads; 0.031 in 0.14.0) | H 5.3, 12.3 |
 | `css/double_gross_288_12_18:Z` | 18 | 0.145 (0.17.3; 0.34 in 0.15.0) | H 9.1, 12.1 |
 | `css/yarn_mitten_300_60_14:Z` | 14 | 0.22 (0.15.0) | H 9.1 |
@@ -421,12 +395,12 @@ input and the deterministic recipe of every generated DEM; the best known times 
 | `dem/mitten_150_30_8_C5xS3_custom_r5_Z.full` | 7 | 0.659 (0.17.3; 0.56 in 0.14.0) | H 5.1, 12.1 |
 | `dem/bb_90_8_10_si1000_r10_X.full` | 8 | 0.880 (0.17.3; 0.68 in 0.14.0) | H 5.1, 12.1 |
 | `dem/torus_n60_k8_d14_X.full` | 6 | 0.15 (0.14.0) | H 5.1 |
-| `circ/surface_rot_d7_r7_Z` | 7 | 0.716 (0.17.3, 64 threads, `dist_m4ri.py`) | Section 2.7, H 12.4 |
+| `circ/surface_rot_d7_r7_Z` | 7 | 0.716 (0.17.3, 64 threads, `dist_m4ri.py`) | Section 2.7 |
 
 **T1: 1–60 s** (15 instances, budget 300 s).
 
 | Instance | $d$ | Best known (s) | Source |
-| :--- | :-: | :--- | :--- |
+| :------------------------------------- | :-: | :--------------------------- | :---------- |
 | `css/yarn_mitten_500_100_16:Z` | 16 | 1.11 (0.17.3) | H 9.3, 12.1 |
 | `css/yarn_smitten_600_120_16:Z` | 16 | 1.52 (0.17.3; 1.4 in 0.15.0) | H 9.3, 12.1 |
 | `css/yarn_smitten_840_168_18:X` | 17 | 3.3 (0.15.0) | H 9.3 |
@@ -435,7 +409,7 @@ input and the deterministic recipe of every generated DEM; the best known times 
 | `css/yarn_smitten_1200_240_20:Z` | 20 | 59.5 (0.17.3; 58 in 0.15.0) | H 9.3, 12.1 |
 | `css/2bga_288_4_20_C24xS3:Z` | 20 | 1.30 (0.17.3) | H 12.1 |
 | `css/2bga_252_16_20_C7xD18:Z` | 20 | 6.90 (0.17.3) | H 12.1 |
-| `css/2bga_288_8_22_C18xD8:Z` | 22 | 33 (CC of 0.16.1, 64 threads) | `qec-cert` baselines |
+| `css/2bga_288_8_22_C18xD8:Z` | 22 | 33 (CC of 0.16.1, 64 threads) | Section 1 |
 | `css/bb_360_12_24:Z` | 24 | 53.5 (0.17.3; 3.2 min in 0.15.0) | H 9.3, 12.1 |
 | `dem/mitten_270_54_10_C9xS3_hef_r4_Z.full` | 7 | 2.02 (0.17.3) | H 10.3, 12.1 |
 | `dem/shyps_225_16_8_r9_Z.full` | 8 | 6.72 (0.17.3) | H 10.3, 12.1 |
@@ -446,10 +420,10 @@ input and the deterministic recipe of every generated DEM; the best known times 
 **T2: 1–30 min** (8 instances, budget 1800 s).
 
 | Instance | $d$ | Best known | Source |
-| :--- | :-: | :--- | :--- |
+| :--------------------------------- | :-: | :--------------------------- | :-------------- |
 | `css/yarn_mitten_630_126_20:Z` | 20 | 90.0 s (0.17.3; 82 s in 0.15.0) | H 9.3, 12.1 |
 | `css/yarn_mitten_780_156_22:Z` | 22 | 570 s (0.17.3; 9.3 min in 0.15.0) | H 9.3, 12.1 |
-| `css/2bga_292_22_23_C146:Z` | 23 | 1,697 s (0.17.3; `qec_cert`: 30.8 s, 64 threads) | H 12.1, 12.4 |
+| `css/2bga_292_22_23_C146:Z` | 23 | 1,697 s (0.17.3) | H 12.1 |
 | `css/2bga_294_24_21_SG147_5:Z` | 21 | to calibrate | Section 1 |
 | `dem/gross_144_12_12_si1000_r12_X.full` | 10 | 77.6 s (0.17.3) | H 9.1, 10.3, 12.1 |
 | `dem/gross_144_12_12_uniform_r12_X.full` | 10 | 66.4 s (0.17.3) | H 10.3, 12.1 |
@@ -460,20 +434,20 @@ input and the deterministic recipe of every generated DEM; the best known times 
 budget).
 
 | Instance | $d$ or bracket | Known | Source |
-| :--- | :-: | :--- | :--- |
+| :------------------------------ | :-------: | :--------------------------- | :----------- |
 | `css/yarn_mitten_975_195_24:Z` | 24 | 59 min (0.15.0) | H 9.3 |
 | `css/yarn_mitten_975_195_24:X` | [23, 24] | open after 20 min; the round $w = 23$ takes about 46 min | H 9.3 |
 | `css/bb_756_16_34:Z` | [26, 34] | open after 12 min (0.15.0) | H 9.3 |
-| `css/2bga_270_38_23_C45xC3:Z` | 23 | `qec_cert`: 19,671 s (48 thr); `dist_m4ri`: [18, 23] | Section 1, H 12.1 |
-| `css/2bga_270_38_21_SG135_4:Z` | 21 | `qec_cert`; `dist_m4ri`: [13, 21] | Section 1 |
-| `css/color_721_1_31:Z` | 31 | `qec_cert` (rank-DP) | Section 1 |
-| `css/toric_3_6_432_2_12:X` | 24 | `qec_cert`; `dist_m4ri`: [18, 24] | Section 1 |
-| `css/surface_strip_333_1_3:Z` | 67 | `qec_cert`; `dist_m4ri`: [11, 78] | Section 1 |
-| `dem/double_gross_288_12_18_si1000_r18_X.full` | [13, 16] | `qec_cert`; `dist_m4ri`: [11, 19] in 2.8 h | Section 2.6 |
-| `dem/double_gross_288_si1000_X.T1` ($T = 1$) | [14, 16] | `qec_cert` / `auto`; RW slabs find 16 | H 11.1, 12.3, 12.4 |
+| `css/2bga_270_38_23_C45xC3:Z` | 23 | external exact; `dist_m4ri`: [18, 23] at 936 s | Section 1, H 12.1 |
+| `css/2bga_270_38_21_SG135_4:Z` | 21 | external exact; `dist_m4ri`: [13, 21] | Section 1 |
+| `css/color_721_1_31:Z` | 31 | construction; `dist_m4ri`: [13, 31] | Section 1 |
+| `css/toric_3_6_432_2_12:X` | 24 | construction ($2L$); `dist_m4ri`: [18, 24] | Section 1 |
+| `css/surface_strip_333_1_3:Z` | 67 | construction; `dist_m4ri`: [11, 78] | Section 1 |
+| `dem/double_gross_288_12_18_si1000_r18_X.full` | [13, 16] | ref.; `dist_m4ri`: [11, 19] in 2.8 h | Section 2.6 |
+| `dem/double_gross_288_si1000_X.T1` ($T = 1$) | [14, 16] | external ref.; RW slabs find 16 | H 11.1, 12.3 |
 | `dem/bb_360_12_24_si1000_r24_X.full` | [12, 23] | the code-sized model bound and RW | Section 2.6 |
-| `circ/surface_rot_d11_r11_Z`, `circ/surface_rot_d13_r13_Z` | 11, 13 | `qec_cert` (`engine="auto"`) | Section 2.7 |
-| `dem/rep_d71_r6` | 71 | `qec_cert`; `dist_m4ri`: [7, 71] | Section 2.7 |
+| `circ/surface_rot_d11_r11_Z`, `circ/surface_rot_d13_r13_Z` | 11, 13 | construction ($d = L$) | Section 2.7 |
+| `dem/rep_d71_r6` | 71 | construction; `dist_m4ri`: [7, 71] | Section 2.7 |
 | `circ/yarn_mitten_300_60_14_hookfree_r14_X` | – | not computed yet | Section 2.6 |
 
 ---
@@ -511,9 +485,8 @@ budget).
 - `figures/`: the figures of the [Key Results](#key-results): 128-thread certification and long-running CC/`method=3`
   scaling (Section 12 of [HISTORY.md](HISTORY.md)), fixed-work scaling across versions (Section 4), the time to a
   minimum-weight codeword in the full DEMs of the circuits (Sections 5 and 8), the lightest codeword found against time
-  with and without the RW pairs (Section 8), and the RW scaling of the stages of 0.17.0 and the certification portfolio
-  with `qec_cert` (Section 11); made by `scratch/bench_doc/make_doc_figures.py` and
-  `scratch/bench_fold/make_phase2_figures.py` (not in the repository).
+  with and without the RW pairs (Section 8), and the RW scaling of the stages of 0.17.0 (Section 11); made by
+  `scratch/bench_doc/make_doc_figures.py` and `scratch/bench_fold/make_phase2_figures.py` (not in the repository).
 
 ### Running `dist_m4ri` on the Inputs
 
@@ -548,9 +521,8 @@ the version-by-version results, are in [HISTORY.md](HISTORY.md).
 > overnight benchmark of `dist_m4ri` 0.14.0 (128 threads,
 > [Section 5](HISTORY.md#5-overnight-benchmark-of-0140-2026-10-11)), the bracket of the `bb_360` circuit is from the
 > follow-up runs of 0.14.1 ([Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14)), and that of the double-gross
-> circuit ($[13, 16]$, tightening $[12, 18]$ of [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14)) is from
-> `qec_cert` via `dist_m4ri.py` in
-> 0.17.0 ([Section 11.3](HISTORY.md#113-two-stage-certification-portfolio-with-qec_cert)); the values marked "(s)" are
+> circuit ($[13, 16]$, tightening $[12, 18]$ of [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14)) is a
+> reference bracket from an external exact search (with a verified weight-16 witness); the values marked "(s)" are
 > from shorter runs of earlier versions on the stripped DEMs, and they are provisional. The values of the codes and
 > circuits added on 2026-10-20 (the `yarn_*` Mitten codes and circuits, the SHYPS circuits, the $Z$-basis uniform-noise
 > BB circuits) and the re-runs of the uniform-noise gross circuit and of the torus circuits (Section 2.6) are from short
@@ -558,17 +530,19 @@ the version-by-version results, are in [HISTORY.md](HISTORY.md).
 > `bb_756`) are from the branch-and-bound CC search of
 > 0.15.0 ([Section 9](HISTORY.md#9-branch-and-bound-cc-search-of-0150-2026-10-25); those up to $d = 18$ confirmed with
 > the walk of the earlier versions, [Section 10.1](HISTORY.md#101-the-distances-of-section-93-with-the-walk-cc_prune0)).
-> The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were only checked in short RW runs of 0.15.2:
-> the distances in their prefixes are the exact values of their source database. The high-rate 2BGA code
-> `2bga_270_38_23_C45xC3` added on 2026-11-16 (Origins, item 6) was certified at $d = 23$ with `qec_cert` on
-> 2026-11-14 and checked here in short runs.
+> The `2bga_*` codes and circuits added on 2026-11-05 (Origins, item 5) were checked in short RW runs of 0.15.2 and
+> 128-thread `method=3` runs of 0.17.3: the distances in their prefixes are the exact values of their source database.
+> The high-rate 2BGA code `2bga_270_38_23_C45xC3` added on 2026-11-16 (Origins, item 6) has exact distance $d = 23$ from
+> its source search and is checked here in fixed-work and 128-thread runs.
 
 ---
+
+<div id="1-css-parity-check-and-logical-matrices-benchmarkcss"></div>
 
 ## 1. CSS Parity-Check and Logical Matrices (`benchmark/css/`)
 
 | Prefix | $[[n, k, d]]$ | Size ($m \times n$) | Construction / Polynomials or Group |
-| :--- | :--- | :--- | :--- |
+| :--------------------- | :--------------- | :---------- | :------------------------------ |
 | `bb_72_12_6` | $[[72, 12, 6]]$ | $36 \times 72$ | $\ell=6, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
 | `bb_90_8_10` | $[[90, 8, 10]]$ | $45 \times 90$ | $\ell=15, m=3$, $A=x^9+y+y^2$, $B=1+x^2+x^7$ |
 | `bb_108_8_10` | $[[108, 8, 10]]$ | $54 \times 108$ | $\ell=9, m=6$, $A=x^3+y+y^2$, $B=y^3+x+x^2$ |
@@ -751,8 +725,8 @@ Distances computed with `dist_m4ri`:
   certified `2bga_288_8` ($d_Z = 22$, 33 s on 64 threads). In both sectors of every code it is the exact distance of
   the source database ($d_X = d_Z = d$ in the prefix). The `.nz` files of these codes give the same upper bounds
   through `finC`, and the logical bases `_Lx.mtx`, `_Lz.mtx` (`finL`) the same RW results as `finG`.
-- `2bga_270_38_23_C45xC3` (2026-11-16, Origins, item 6): certified at $d_X = d_Z = 23$ by `qec_cert` on 2026-11-14
-  (48 threads, 19,671 s). Fixed-work runs of `dist_m4ri` (`method=3 wmax=13 steps=50000` on 8 threads, `finG`) certify
+- `2bga_270_38_23_C45xC3` (2026-11-16, Origins, item 6): exact distance $d_X = d_Z = 23$ from its source search
+  (2026-11-14). Fixed-work runs of `dist_m4ri` (`method=3 wmax=13 steps=50000` on 8 threads, `finG`) certify
   $d_{\min} = 14$ and find valid weight-23 logical operators in both sectors (`[14, 23]`, verified over GF(2)), and a
   128-thread `method=3` run in 0.17.3 reaches $[18, 23]$ at 936 s
   ([Section 12.1](HISTORY.md#121-exact-certification-on-128-threads)); `_Lx.mtx`, `_Lz.mtx` (`finL`) give the same RW
@@ -763,24 +737,24 @@ Distances computed with `dist_m4ri`:
 - $(3, q)$ hyperbolic surface and $(3, 6)$ triangular-lattice toric codes (Origins, item 8): on the $Z$-logical sector
   (`finH=Hx`, `finG=Hz`), the weight-3 triangular face checks give $|\mathcal{T}_3| = 2n/3$ ($w_G = 3$), exercising
   Stage 1 (`0x01`), `rw_opt=2` ($w_G = 3$), and bit-32 (`0x20`) codeword expansion. All sectors above are certified by
-  CC ($\le 8$ threads), except $d_X$ of `toric_3_6_432_2_12` (`[18, 24]` at `wmax=16`, certified exact 24 by
-  `qec_cert`).
+  CC ($\le 8$ threads), except $d_X$ of `toric_3_6_432_2_12` (`[18, 24]` at `wmax=16`; exact $d_X = 2L = 24$).
 - Topological $k = 1$, planar rectangle, and $d > 64$ CSS codes (Origins, item 9): `surface_rot_*` ($d = 3..13$),
   `bidir_rect_261_16_9` ($d_X = d_Z = 9$), and `rep_css_68_1_1` ($d_Z = 67 > 64$, $d_X = 1$) are certified by native CC
   ($\le 8$ threads); `color_271_1_19` ($d = 19$), `color_721_1_31` ($d = 31$), and $d_Z$ of `surface_strip_333_1_3`
-  ($d_Z = 67 > 64$) are certified exact by `qec_cert` rank-DP (with short native `wmax=10..12` brackets above).
+  ($d_Z = 67 > 64$) have short native `wmax=10..12` brackets above (exact distances from their topological/product
+  constructions).
 - HGP, CPM pair-partition, ZSZ balanced-product, small BB, 2D torus, and non-abelian $w = 12$ 2BGA CSS codes (Origins,
   item 11): `hgp_585_112_5` ($k = 112 > 64$, $d_X = 7, d_Z = 5$), `kasai_cpm_184_50_10` ($d = 10$), `bp_zsz_275_55_10`
   ($d_X = 12, d_Z = 10$), `bb_18_4_4` ($d = 4$), `bb_30_4_6` ($d = 6$), and the four `torus_*` static codes ($d = 6, 6,
-  10, 10$) are certified exact by native CC ($\le 8$ threads). `2bga_270_38_21_SG135_4` is certified exact at
-  $d_X = d_Z = 21$ by `qec_cert` in `hr-2bga` (short `wmax=12` brackets above), while `bp_zsz_625_125_14` ($k = 125 >
-  64$) and `2bga_310_36_21_SG155_1` ($d_X \in [18, 21]$, $d_Z \in [18, 27]$ in 64-thread baselines) report short
-  8-thread brackets.
+  10, 10$) are certified exact by native CC ($\le 8$ threads). `2bga_270_38_21_SG135_4` has exact distance
+  $d_X = d_Z = 21$ from the `hr-2bga` search (short `wmax=12` brackets above), while `bp_zsz_625_125_14` ($k = 125 >
+  64$) and `2bga_310_36_21_SG155_1` ($d_X \in [18, 21]$, $d_Z \in [18, 27]$ in 64-thread runs) report short 8-thread
+  brackets.
 
 ### 1.1 Classical Linear Codes (`benchmark/classical/`)
 
 | File (`benchmark/classical/`) | $[n, k, d]$ | Size ($m \times n$) | `dist_m4ri` ($d$) | Construction / Source |
-| :--- | :--- | :--- | :--- | :--- |
+| :------------------- | :--------- | :--------- | :----------- | :--------------------------- |
 | `k0_classical_eye8_H.mtx` | $[8, 0, \text{–}]$ | $8 \times 8$ | 0 ($k=0$) | $I_8$, full-rank check ($k = 0$) |
 | `hamming_7_4_3_H.mtx` | $[7, 4, 3]$ | $3 \times 7$ | 3 | Binary Hamming code |
 | `golay_24_12_8_H.mtx` | $[24, 12, 8]$ | $12 \times 24$ | 8 | Extended binary Golay ($[I_{12} \mid B_{12}]$, even-wt) |
@@ -798,7 +772,7 @@ and short-run brackets (`wmax=12` and `wmax=14`, `steps=5000`) matching the exac
 ### 1.2 Subsystem Gauge and Hook-Extended Matrices (`benchmark/subsystem/`)
 
 | Prefix (`subsystem/`) | $[[n, k, d]]$ | $H$ ($m \times n$) | $G$ ($m_G \times n, w_G$) | $\|\mathcal{T}_3\|$ | $d$ |
-| :--- | :--- | :--- | :--- | ---: | :--- |
+| :-------------------------- | :-------------- | :--------- | :------------------ | -----: | :-- |
 | `shyps_225_16_8_gauge` | $[[225, 16, 8]]$ | $44 \times 225$ | $225 \times 225$, $w_G=3$ | 525 | 8 |
 | `bacon_shor_25_1_5_gauge` | $[[25, 1, 5]]$ | $4 \times 25$ | $20 \times 25$, $w_G=2$ | 0 | 5 |
 | `bacon_shor_81_1_9_gauge` | $[[81, 1, 9]]$ | $8 \times 81$ | $72 \times 81$, $w_G=2$ | 0 | 9 |
@@ -813,7 +787,7 @@ columns within each column of the $L \times L$ grid identical in $(H, L)$.
 ### 1.3 Unmerged Identical-Column and Duplicate-Entry Matrices (`benchmark/subsystem/`)
 
 | Files (`subsystem/`) | Mode | $H$ ($m \times n$) | $L$ ($k \times n$) | Unique | $\|\mathcal{T}_3\|$ | $d$ |
-| :--- | :--- | :--- | :--- | ---: | ---: | :--- |
+| :----------------------------- | :---------- | :----------- | :---------- | -----: | ------: | :-- |
 | `bb_72_dup2x_{H,L}.mtx` | `finH`, `finL` | $36 \times 144$ | $12 \times 144$ | 72 | 0 | 6 |
 | `bb_72_r3_X_unmerged_{H,L}.mtx` | `finH`, `finL` | $180 \times 9{,}180$ | $12 \times 9{,}180$ | 1,512 | 653,688 | 6 |
 | `dup_entries_xor_H.mtx` | `classical=1` | $12 \times 24$ | – ($k = 12$) | 24 | – | 8 |
@@ -827,7 +801,7 @@ at $d = 6$ by CC (`method=3`, 3.9–4.2 s on 16 threads with default parameters 
 ### 1.4 Non-CSS Stabilizer Codes in Length-$3n$ Pauli Form (`benchmark/stabilizer/`)
 
 | Prefix (`stabilizer/`) | $[[n, k, d]]$ | $H$ | $G$ | $L$ | $\|\mathcal{T}_3\|$ | $d$ |
-| :--- | :--- | :--- | :--- | :--- | ---: | :--- |
+| :-------------------------- | :-------------- | :-------- | :---------- | :-------- | -----: | :-- |
 | `laflamme_5_1_3_pauli3n` | $[[5, 1, 3]]$ | $4 \times 15$ | $9 \times 15$ | $2 \times 15$ | 5 | 3 |
 | `gottesman_8_3_3_pauli3n` | $[[8, 3, 3]]$ | $5 \times 24$ | $13 \times 24$ | $6 \times 24$ | 8 | 3 |
 | `halved_92_25_8_pauli3n` | $[[92, 25, 8]]$ | $69 \times 276$ | $161 \times 276$ | $50 \times 276$ | 92 | 8 |
@@ -838,6 +812,8 @@ certified at their exact quantum Pauli distances $d = 3, 3, 8$ by CC (`method=3`
 
 ---
 
+<div id="2-stim-circuits-stim_bb-stim_mitten-stim_shyps-stim_torus-stim_2bga"></div>
+
 ## 2. Stim Circuits (`stim_bb/`, `stim_mitten/`, `stim_shyps/`, `stim_torus/`, `stim_2bga/`)
 
 The circuit-level distances are listed in [Section 2.6](#26-circuit-level-distances).
@@ -845,7 +821,7 @@ The circuit-level distances are listed in [Section 2.6](#26-circuit-level-distan
 ### 2.1 Bivariate Bicycle, Gross, and Double-Gross (`benchmark/stim_bb/`)
 
 | File (`benchmark/stim_bb/`) | Repo | Noise | $p$ | Rounds | Basis | Source Pattern |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :---------------------- | :-------- | :------ | :---- | :----- | :---- | :------------------------ |
 | `bb_72_12_6_si1000_r6_X.stim` | `tesseract` | `si1000` | `1e-4` | 6 | `X` | `r=6,d=6,nkd=[[72,12,6]]` |
 | `bb_72_12_6_si1000_r6_Z.stim` | `tesseract` | `si1000` | `1e-4` | 6 | `Z` | `r=6,d=6,nkd=[[72,12,6]]` |
 | `bb_90_8_10_si1000_r10_X.stim` | `tesseract` | `si1000` | `1e-4` | 10 | `X` | `r=10,d=10,nkd=[[90,8,10]]` |
@@ -870,7 +846,7 @@ The circuit-level distances are listed in [Section 2.6](#26-circuit-level-distan
 ### 2.2 Mitten Codes (`benchmark/stim_mitten/`)
 
 | File (`benchmark/stim_mitten/`) | Source | Schedule | Depth | $p$ | Rounds | Basis |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :--------------------------------- | :----- | :------------------ | :---- | :---- | :----- | :---- |
 | `mitten_90_18_6_C3xS3_custom_r4_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 4 | `Z` |
 | `mitten_90_18_6_C3xS3_hef_r4_Z.stim` | `quits` | `hook_error_free` | 24 | `1e-3` | 4 | `Z` |
 | `mitten_150_30_8_C5xS3_custom_r5_Z.stim` | `quits` | `custom` (interleaved) | 12 | `1e-3` | 5 | `Z` |
@@ -892,7 +868,7 @@ The circuits of the codes of arXiv:2607.28795 with the published hook-free sched
 check.
 
 | Files (`benchmark/stim_mitten/`) | Code | Rounds | Qubits | Detectors | Observables |
-| :--- | :--- | ---: | ---: | ---: | ---: |
+| :----------------------------------- | :------------- | -----: | -----: | -------: | ---------: |
 | `yarn_mitten_150_30_10_hookfree_r10_{X,Z}.stim` | $[[150, 30, 10]]$ | 10 | 270 | 1,200 | 30 |
 | `yarn_mitten_200_40_12_hookfree_r12_{X,Z}.stim` | $[[200, 40, 12]]$ | 12 | 360 | 1,920 | 40 |
 | `yarn_mitten_300_60_14_hookfree_r14_{X,Z}.stim` | $[[300, 60, 14]]$ | 14 | 540 | 3,360 | 60 |
@@ -913,7 +889,7 @@ The code parameters are the nominal ones (Section 1 for the distances); the code
 ### 2.3 2D Local Torus BB Circuits (`benchmark/stim_torus/`)
 
 | File (`benchmark/stim_torus/`) | Nominal $[[n, k, d]]$ | Basis | Notes |
-| :--- | :--- | :--- | :--- |
+| :------------------------------------------- | :---------------- | :---- | :------------- |
 | `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_X.stim` | $[[60, 8, 14]]$ | `X` | Noiseless (`tmp/`) |
 | `NNEESEEESEENN_L3_torus_s1_NW_w10p_s2_SW_w6p_n60_k8_d14_Z.stim` | $[[60, 8, 14]]$ | `Z` | Noiseless (`tmp/`) |
 | `NEENNWNWNNEEN_L3_torus_s1_NW_w10p_s2_SW_w12p_n120_k8_d15_X.stim` | $[[120, 8, 15]]$ | `X` | Noiseless (`tmp/`) |
@@ -933,7 +909,7 @@ entries of the `.stim` files, whereas `d14`–`d17` in the file names reflect th
 ### 2.4 SHYPS Codes (`benchmark/stim_shyps/`)
 
 | File (`benchmark/stim_shyps/`) | Code | $r$ | Rounds | Basis | Source file |
-| :--- | :--- | ---: | ---: | :--- | :--- |
+| :--------------------- | :----------- | --: | -----: | :---- | :------------------------------- |
 | `shyps_225_16_8_r9_Z.stim` | $[[225, 16, 8]]$ | 4 | 9 | `Z` | `shyps_r4_..._Z_detectors_circuit_p_0.001.stim` |
 | `shyps_961_25_16_r17_Z.stim` | $[[961, 25, 16]]$ | 5 | 17 | `Z` | `shyps_r5_..._Z_detectors_circuit_p_0.001.stim` |
 
@@ -943,7 +919,7 @@ detectors of the $Z$ type only (Origins, item 4).
 ### 2.5 2BGA Codes (`benchmark/stim_2bga/`)
 
 | File (`benchmark/stim_2bga/`) | Code | Rounds | Qubits | Detectors | Observables | Basis |
-| :--- | :--- | ---: | ---: | ---: | ---: | :--- |
+| :------------------------------- | :------------ | -----: | -----: | -------: | ---------: | :---- |
 | `2bga_102_20_10_C51_idlefree_r10_X.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `X` |
 | `2bga_102_20_10_C51_idlefree_r10_Z.stim` | $[[102, 20, 10]]$ | 10 | 204 | 561 | 20 | `Z` |
 | `2bga_120_24_10_C30xC2_idlefree_r10_X.stim` | $[[120, 24, 10]]$ | 10 | 240 | 660 | 24 | `X` |
@@ -964,26 +940,27 @@ check. Each circuit has the detectors of its own basis only; the full DEM has 8,
 The noiseless Shaw–Terhal folded templates `2bga_162_24_16_C9xC9_folded_T{1,16}_{X,Z}.stim` (source prefix
 `n162_k24_d16_w55_C9xC9_T*`, Origins, item 12; wrapped to $\le 120$ columns with identical DEMs) have 1,620 ($T = 1$)
 and 186,219 / 196,911 ($T = 16$, `X` / `Z`) raw error mechanisms under `add_noise(p=0.001)`, certified model lower bound
-8, short 8-thread native brackets `[6, 9]` ($T = 1$) and `[4, 9]` ($T = 16$), and exact distance 9 certified via
-`engine="auto"` / `qec_cert` (7.8 and 10.3 s on 64 threads). The script
+8, short 8-thread native brackets `[6, 9]` ($T = 1$) and `[4, 9]` ($T = 16$), and exact reference distance 9. The script
 `stim_2bga/make_folded_2bga_circuits.py` reproduces both `2bga_162` and `2bga_254_44_19_C127_folded_T{1,19}_{X,Z}.stim`
 ($[[254, 44, 19]]$, $w = 12$, 508 qubits, 254 / 4,826 detectors, 44 observables, 3,048 / 440,055 raw errors).
+
+<div id="26-circuit-level-distances"></div>
 
 ### 2.6 Circuit-Level Distances
 
 The circuit-level distance is the minimum number of faults (error mechanisms of the DEM) which cause an undetectable
 logical error, i.e., the distance of the full DEM (all detectors).
+
 - Values without a mark: the full DEM, computed by `dist_m4ri` 0.14.0 in the overnight benchmark
   ([Section 5](HISTORY.md#5-overnight-benchmark-of-0140-2026-10-11); `method=3`, 128 threads), which drops the
   minority-basis detectors exactly (Section 3). An exact value is certified by CC: in under 6 s, except 179 s for
   `gross` and 182 s for `mitten_270 custom`.
-- The bracket $[13, 16]$ of `double_gross` (`si1000`, $X$ basis) is from `qec_cert` via `dist_m4ri.py`
-  ([Section 11.3](HISTORY.md#113-two-stage-certification-portfolio-with-qec_cert), with a verified weight-16 witness;
-  [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14) gives $[12, 18]$ from a code-sized model and RW). The
-  bracket $[12, 23]$ of `bb_360` is from [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14): the lower bound is
-  certified with a code-sized model of the circuit
-  ([Section 6.3](HISTORY.md#63-certified-lower-bounds-from-a-code-sized-model)), and the upper bound 23 is a codeword of
-  the full DEM found by RW ([Section 6.1](HISTORY.md#61-rw-threads-for-the-largest-dems)).
+- The reference bracket $[13, 16]$ of `double_gross` (`si1000`, $X$ basis) is from an external exact search (with a
+  verified weight-16 witness; [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14) gives $[12, 18]$ from a
+  code-sized model and RW). The bracket $[12, 23]$ of `bb_360` is from
+  [Section 6](HISTORY.md#6-follow-up-runs-of-0141-2026-10-14): the lower bound is certified with a code-sized model of
+  the circuit ([Section 6.3](HISTORY.md#63-certified-lower-bounds-from-a-code-sized-model)), and the upper bound 23 is a
+  codeword of the full DEM found by RW ([Section 6.1](HISTORY.md#61-rw-threads-for-the-largest-dems)).
 - The uniform-noise `gross` circuit and the torus circuits were re-run on their full DEMs with the current noise on
   2026-10-15, and the `yarn_mitten_150` circuits, the $Z$-basis `bb_72` uniform-noise circuit, and `shyps_225` on
   2026-10-20 (`method=3` of 0.14.7, default threads): all values certified by CC, in 0.4–168 s, and in 114 s ($X$)
@@ -1000,7 +977,7 @@ logical error, i.e., the distance of the full DEM (all detectors).
 - "–": not computed yet; "n/a": no circuit for this basis.
 
 | Circuit (`.stim` file name without `_X`/`_Z`) | $X$ basis | $Z$ basis |
-| :--- | :--- | :--- |
+| :------------------------------------------------------------------- | :------ | :---- |
 | `bb_72_12_6_si1000_r6` | 6 | 6 (s) |
 | `bb_90_8_10_si1000_r10` | 8 | – |
 | `bb_108_8_10_si1000_r10` | 8 | – |
@@ -1048,29 +1025,29 @@ circuit `shyps_225_16_8_r9_Z` keeps the code distance 8.
 ### 2.7 Rotated Surface Circuits (`benchmark/stim_surface/`) and Standalone DEM Suite (`benchmark/dem/`)
 
 | File | Parameters / Mode | Qubits | Detectors | Raw errs | `dist_m4ri` ($d$) |
-| :--- | :--- | ---: | ---: | ---: | :--- |
+| :------------------------- | :-------------------- | -----: | -------: | -----: | :------------ |
 | `stim_surface/surface_rot_d3_r3_Z.stim` | $[[9, 1, 3]]$, $r=3$ | 26 | 24 | 219 | 3 |
 | `stim_surface/surface_rot_d5_r5_Z.stim` | $[[25, 1, 5]]$, $r=5$ | 64 | 120 | 1,677 | 5 |
 | `stim_surface/surface_rot_d7_r7_Z.stim` | $[[49, 1, 7]]$, $r=7$ | 118 | 336 | 6,023 | 7 |
 | `stim_surface/surface_rot_d9_r9_Z.stim` | $[[81, 1, 9]]$, $r=9$ | 188 | 720 | 13,937 | 9 |
-| `stim_surface/surface_rot_d11_r11_Z.stim` | $[[121, 1, 11]]$, $r=11$ | 274 | 1,320 | 26,803 | 11 (`qec_cert`) |
-| `stim_surface/surface_rot_d13_r13_Z.stim` | $[[169, 1, 13]]$, $r=13$ | 376 | 2,184 | 45,821 | 13 (`qec_cert`) |
-| `dem/rep_d71_r6.dem` | 6-round rep, $k=1$ | – | 420 | 1,121 | [7, 71] (71 via `qec_cert`) |
+| `stim_surface/surface_rot_d11_r11_Z.stim` | $[[121, 1, 11]]$, $r=11$ | 274 | 1,320 | 26,803 | 11 (ref.) |
+| `stim_surface/surface_rot_d13_r13_Z.stim` | $[[169, 1, 13]]$, $r=13$ | 376 | 2,184 | 45,821 | 13 (ref.) |
+| `dem/rep_d71_r6.dem` | 6-round rep, $k=1$ | – | 420 | 1,121 | [7, 71] (ref. 71) |
 | `dem/tagged_repeat_pmin.dem` | `pmin=0` / `0.005` / `0.02` | – | 24 | 49 | 3 / 5 / 0 ($k=0$) |
 | `dem/bb_72_dropA.dem` | `drop=auto` / `bb_72_dropA.drop` | – | 432 / 252 | 16,200 | 6 / 6 ($A \neq 0$) |
 
 All `surface_rot_d*` circuits use Stim's standard depolarizing noise at $p = 0.001$ (Origins, item 9; $d = 3..9$
-certified by native CC on $\le 8$ threads, $d = 11, 13$ certified by `engine="auto"` / `qec_cert`). `rep_d71_r6.dem` has
+certified by native CC on $\le 8$ threads; $d = 11, 13$ reference values matching $d = L$). `rep_d71_r6.dem` has
 $|\mathcal{T}_3| = 700$ and exact distance $d = 71 > 64$ (above `RW_SHORTEN_WMAX = 64`). In `dem/` (Origins, item 10),
 `tagged_repeat_pmin.dem` exercises `[tag]` annotations, `repeat` + `shift_detectors`, self-cancelling `^` components,
-and `pmin` cuts (`d = 3`, `5` via CC and `qec_cert`, and `0 0 0` at `pmin=0.02`); `bb_72_dropA.{dem,drop}` exercises
-exact detector dropping with $A \neq 0$ (`bb_72_bad.drop` tests invalid-drop fallback), and
-`dem/make_large_drop_dems.py` generates the $> 2\text{ MB}$ `dgross_288_dropA` and `bb_756_dropA` files on demand.
+and `pmin` cuts (`d = 3`, `5` via CC, and `0 0 0` at `pmin=0.02`); `bb_72_dropA.{dem,drop}` exercises exact detector
+dropping with $A \neq 0$ (`bb_72_bad.drop` tests invalid-drop fallback), and `dem/make_large_drop_dems.py` generates the
+$> 2\text{ MB}$ `dgross_288_dropA` and `bb_756_dropA` files on demand.
 
 ### 2.8 Color-Code `memory_xyz` (`stim_color/`) and Specialized Noise / High-$k$ Circuits (`stim_noise/`)
 
 | File | Parameters / Feature | Qubits | Detectors | Raw errs | `dist_m4ri` ($d$) |
-| :--- | :--- | ---: | ---: | ---: | :--- |
+| :---------------------------- | :---------------- | -----: | -------: | -----: | :------------- |
 | `stim_color/color_d3_r3_xyz.stim` | $[[7, 1, 3]]$, $r=3$, `xyz` | 10 | 9 | 72 | 2 |
 | `stim_color/color_d5_r5_xyz.stim` | $[[19, 1, 5]]$, $r=5$, `xyz` | 28 | 45 | 1,104 | 3 |
 | `stim_color/color_d7_r7_xyz.stim` | $[[37, 1, 7]]$, $r=7$, `xyz` | 55 | 126 | 3,651 | 4 |
@@ -1087,6 +1064,8 @@ the four $d = 5$ `stim_noise/` circuits are certified exact by native CC; on
 `minority=True`.
 
 ---
+
+<div id="3-full-dems-and-their-exact-reduction"></div>
 
 ## 3. Full DEMs and Their Exact Reduction
 
@@ -1105,7 +1084,7 @@ The DEMs are generated from the `.stim` files on the fly (see
 [Running `dist_m4ri` on the Inputs](#running-dist_m4ri-on-the-inputs)):
 
 | Stim circuit | Basis | Full (dets x errs) | Stripped | Searched | $k$ |
-| :--- | :--- | :--- | :--- | :--- | :--- |
+| :--------------------------- | :---- | :--------------- | :------------- | :------------- | :-- |
 | `mitten_90_18_6_C3xS3_custom_r4_Z` | `Z` | 360 x 23,394 | 216 x 3,330 | 216 x 2,970 | 18 |
 | `mitten_90_18_6_C3xS3_hef_r4_Z` | `Z` | 360 x 22,410 | 216 x 3,330 | 216 x 2,970 | 18 |
 | `mitten_150_30_8_C5xS3_custom_r5_Z` | `Z` | 720 x 47,700 | 420 x 6,660 | 420 x 5,910 | 30 |
@@ -1271,12 +1250,9 @@ DEMs have 18–19%, and no detector is dropped.
      $b(x, y) = 1 + x^8 + x^{18} + x^{26} y + x^{29} y + x^{39}$, with rows and columns ordered by GAP's
      `Elements(SmallGroup(135, 2))` (`a=1,5,26,35,132,133`, `b=1,30,79,86,107,111`; full Pcgs ordering in the `.mtx`
      headers). The files `_Lx.mtx` and `_Lz.mtx` give echelon-reduced logical bases ($\mathrm{rank}(L_X L_Z^T) = 38$).
-   - **Certification method and date**: certified exact $d = d_X = d_Z = 23$ on **2026-11-14** by
-     `campaign_2bga.py confirm` (driving `search_2bga.py refine --engine cert`, i.e., `qec_cert` with `k_table=3`) in
-     `hr2bga_search/runs/conf_cert`: an 8-thread, 18,000 s pass on 2026-11-11 narrowed $[15, 23]$ to $[22, 23]$ (job
-     `000002_conf_refine`), and a 48-thread pass (`--t2 86400 --min-d 23`, job `000033_conf_refine`) certified
-     $d_Z = 23$ (`wmax=22`) in 19,671 s; $d_X = d_Z = 23$ holds identically by the abelian $X \leftrightarrow Z$
-     duality (block swap with group inversion $g \mapsto g^{-1}$).
+   - **Confirmation date**: exact $d = d_X = d_Z = 23$ confirmed on **2026-11-14** in the `hr-2bga` search campaign;
+     $d_X = d_Z = 23$ holds identically by the abelian $X \leftrightarrow Z$ duality (block swap with group inversion
+     $g \mapsto g^{-1}$).
 
 7. **Classical Linear Codes (`benchmark/classical/`) and Boundary / Small CSS Codes (`benchmark/css/`)**
    - **Classical codes (`classical/`)**: standard algebraic constructions — Hamming $[7, 4, 3]$, extended binary Golay
@@ -1324,13 +1300,13 @@ DEMs have 18–19%, and no detector is dropped.
      $[[L^2, 1, L]]$ CSS codes (weight-4 bulk and weight-2 boundary checks; H. Bombin and M. A. Martin-Delgado, *Phys.
      Rev. A* **76**, 012305 (2007); C. Horsman et al., *New J. Phys.* **14**, 123011 (2012)) and $L$-round depolarizing
      $Z$-memory Stim circuits (`stim.Circuit.generated("surface_code:rotated_memory_z", ...)`, $p = 0.001$; C. Gidney,
-     *Quantum* **5**, 497 (2021)) for odd $L \in \{3, 5, 7, 9, 11, 13\}$ (matching `qec-cert/bench/compare3`).
+     *Quantum* **5**, 497 (2021)) for odd $L \in \{3, 5, 7, 9, 11, 13\}$.
    - **Planar $(6.6.6)$ 2D color CSS codes (`css/color_271_1_19`, `css/color_721_1_31`) and planar directional
      rectangle (`css/bidir_rect_261_16_9`)**: self-dual triangular honeycomb-lattice CSS codes $[[271, 1, 19]]$ and
      $[[721, 1, 31]]$ ($n = (3d^2 + 1)/4$, $w \le 6$; H. Bombin and M. A. Martin-Delgado, *Phys. Rev. Lett.* **97**,
-     180501 (2006); Track A `color_cc_d31` of `qec-cert/bench`), certified at $d = 19$ and $d = 31$ by `qec_cert`
-     rank-DP, and the open-boundary directional planar rectangle CSS code `bidir_rect_261_16_9` ($[[261, 16, 9]]$,
-     `NNENWWSWWNENN` on an $L_1$ $10 \times 14$ open-boundary lattice, extracted from one syndrome-extraction round).
+     180501 (2006)), and the open-boundary directional planar rectangle CSS code `bidir_rect_261_16_9`
+     ($[[261, 16, 9]]$, `NNENWWSWWNENN` on an $L_1$ $10 \times 14$ open-boundary lattice, extracted from one
+     syndrome-extraction round).
    - **High-distance instances above the $w = 64$ shortening / canonical-table cap (`d > 64`)**: `dem/rep_d71_r6.dem`
      (6-round repetition-code DEM, $420 \times 1{,}121$, $|\mathcal{T}_3| = 700$, exact $d = 71$);
      `css/rep_css_68_1_1` ($66 \times 68$ weight-2 $H_X$ and $1 \times 68$ $H_Z$, $d_Z = 67, d_X = 1$, certified exact
@@ -1371,29 +1347,28 @@ DEMs have 18–19%, and no detector is dropped.
     - **Hypergraph-product, CPM pair-partition, and ZSZ balanced-product CSS codes (`css/`)**: `hgp_585_112_5`
       ($\mathrm{HGP}(H_{[15,7,5]}, H_{[31,16,7]})$, $[[585, 112, 5]]$ with $k = 112 > 64$ and $d_X = 7, d_Z = 5$;
       J.-P. Tillich and G. Zémor, *IEEE Trans. Inf. Theory* **60**, 1193 (2014)); `kasai_cpm_184_50_10` ($[[184, 50,
-      10]]$, $69 \times 184$, $w = 8$, $\mathrm{rank} = 67$, Lee et al., arXiv:2609.30069, App. D.2, Track A of
-      `qec-cert/bench`); and two rate-$1/5$ balanced-product CSS codes over non-abelian metacyclic ZSZ groups
+      10]]$, $69 \times 184$, $w = 8$, $\mathrm{rank} = 67$, Lee et al., arXiv:2609.30069, App. D.2); and two
+      rate-$1/5$ balanced-product CSS codes over non-abelian metacyclic ZSZ groups
       $C_\ell \rtimes C_5$ ($w = 9$; N. P. Breuckmann and J. N. Eberhardt, *IEEE Trans. Inf. Theory* **67**, 6653
       (2021), arXiv:2012.09271; Y. Hong, arXiv:2607.27644): `bp_zsz_275_55_10` ($[[275, 55, 10]]$ over $C_{11} \rtimes
       C_5$, $d_X = 12, d_Z = 10$) and `bp_zsz_625_125_14` ($[[625, 125, \le 14]]$ over $C_{25} \rtimes C_5$,
       $k = 125 > 64$).
     - **Small BB anchors, 2D torus static check matrices, and non-abelian $w = 12$ 2BGA codes (`css/`)**: `bb_18_4_4`
-      ($[[18, 4, 4]]$, $\ell = 3, m = 3$) and `bb_30_4_6` ($[[30, 4, 6]]$, $\ell = 3, m = 5$) from
-      `qec-cert/tests/integration/build_corpus.py`; static check matrices `torus_60_8_6`, `torus_120_8_6`,
+      ($[[18, 4, 4]]$, $\ell = 3, m = 3$) and `bb_30_4_6` ($[[30, 4, 6]]$, $\ell = 3, m = 5$) small bivariate bicycle
+      codes; static check matrices `torus_60_8_6`, `torus_120_8_6`,
       `torus_200_16_10`, and `torus_200_8_10` extracted from the four `stim_torus/` circuits (Origins, item 3),
       certifying their exact code distances $d = 6, 6, 10, 10$; and two non-abelian $w = 12$ 2BGA codes from L. P.
       Pryadko's `hr-2bga` project (`AsSSortedList(SmallGroup(o, i))` GAP ordering): `2bga_270_38_21_SG135_4`
       ($[[270, 38, 21]]$ over $\text{SmallGroup}(135, 4) \cong C_5 \times (C_9 \rtimes C_3)$, `tna6_6` key
-      `Nab35efc9222302d6`, certified exact $d_X = d_Z = 21$ by `qec_cert` in `hr2bga_search/runs/conf_cert`) and
-      `2bga_310_36_21_SG155_1` (`sg155_1_n310_k36_a`, $[[310, 36, \le 21]]$ over $\text{SmallGroup}(155, 1) \cong
-      C_{31} \rtimes C_5$ with trivial Tanner automorphism group, $d_X \in [18, 21]$, $d_Z \in [18, 27]$, Track A
-      `css_hr2bga_310_36_w12_X` of `qec-cert/bench`).
+      `Nab35efc9222302d6`, exact $d_X = d_Z = 21$) and `2bga_310_36_21_SG155_1` (`sg155_1_n310_k36_a`,
+      $[[310, 36, \le 21]]$ over $\text{SmallGroup}(155, 1) \cong C_{31} \rtimes C_5$ with trivial Tanner automorphism
+      group, $d_X \in [18, 21]$, $d_Z \in [18, 27]$).
 
 12. **Color-Code `memory_xyz` (`stim_color/`), Biased / Heralded / XZZX / `MPP` / High-$k$ Circuits (`stim_noise/`),
     and Folded Shaw–Terhal 2BGA Circuits (`stim_2bga/`)**
     - **Color-code `memory_xyz` circuits (`stim_color/color_d{3,5,7,9}_r{d}_xyz.stim`)**: generated via
-      `stim.Circuit.generated("color_code:memory_xyz", distance=d, rounds=d, ...)` at $p = 0.001$ (matching
-      `qec-cert/bench/compare3`; C. Gidney and C. Jones, *Quantum* **7**, 1141 (2023)); cycling $X \to Y \to Z$
+      `stim.Circuit.generated("color_code:memory_xyz", distance=d, rounds=d, ...)` at $p = 0.001$ (C. Gidney and C.
+      Jones, *Quantum* **7**, 1141 (2023)); cycling $X \to Y \to Z$
       detectors couple all bases (`drop=auto` keeps all detectors) with hook-reduced exact
       $d_{\mathrm{circ}} = 2, 3, 4, 5$ (`color_d5_r5_xyz.stim` corresponds to `color_xyz_d5` in
       [Section 11.1](HISTORY.md#111-stage-ablation-16-threads)).
@@ -1412,7 +1387,7 @@ DEMs have 18–19%, and no detector is dropped.
       noiseless sequential syndrome-extraction templates with alternating forward and mirror-backward rounds ($T = 1$
       and $T = d$ have identical circuit-level distance; M. H. Shaw and B. M. Terhal, arXiv:2604.09797) from L. P.
       Pryadko's `hr-2bga` `optcirc` campaign: `2bga_162_24_16_C9xC9_folded_T{1,16}_{X,Z}.stim` ($[[162, 24, 16]]$ over
-      $C_9 \times C_9$, $w = 10$, model lower bound 8, $d_{\mathrm{circ}} \in [8, 9]$), and
+      $C_9 \times C_9$, $w = 10$, model lower bound 8, exact $d_{\mathrm{circ}} = 9$), and
       `make_folded_2bga_circuits.py`, which deterministically generates both `2bga_162` and the $w = 12$
-      `2bga_254_44_19_C127_folded_T{1,19}_{X,Z}.stim` circuits ($[[254, 44, 19]]$ over $C_{127}$, Track B
-      `circ_hr2bga_254_w12_T19_X` of `qec-cert/bench`, $d_{\mathrm{circ}} \in [9, 17]$).
+      `2bga_254_44_19_C127_folded_T{1,19}_{X,Z}.stim` circuits ($[[254, 44, 19]]$ over $C_{127}$,
+      $d_{\mathrm{circ}} \in [9, 17]$).

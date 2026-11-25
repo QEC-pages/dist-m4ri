@@ -1,3 +1,13 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # Todo Notes for `dist_m4ri` Program
 
 ## 1. High-Priority Roadmap: High-Performance RW Overhaul
@@ -827,7 +837,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     model, about as much as its per-node cost (`scratch/rowsort/`). Done in 0.15.0 as part of the branch and bound
     (`cc_prune=1`, see **Branch-and-bound CC** below).
 - [x] **RW Step Profile** (Oct 2026, one thread, after the faster logical check): the Gaussian elimination takes
-  70–95% of a RW step for DEMs (`bb72_si1000_X.dem`: 215 of $\sim$310 µs; `gross_uniform_X.dem`: 6.8 of 7.8 ms), the
+  70–95% of a RW step for DEMs (`bb72_si1000_X.dem`: 215 of $\sim 310$ µs; `gross_uniform_X.dem`: 6.8 of 7.8 ms), the
   transposition 7–15%, the extraction of the candidates the rest. Faster elimination (Task 5, or M4RI on a
   column-permuted copy, which needs thread-safe allocations) is the next step. Done: the blocked elimination
   `rw_eliminate()` for at least 128 rows (the Method of the Four Russians on the scattered columns of the permutation,
@@ -838,7 +848,7 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
     so that the transposition skips the zero rows.
   - Contention on `cw_mutex` is negligible: only the candidates below the weight limit and with $Lc \neq 0$ are
     recorded, and with `min_hits` about `min_hits` $\times$ `cov_cws` hits are recorded until convergence (e.g., 1.4 µs
-    of lock wait per step of $\sim$260 µs for `surf_d5` with 32 threads); it only shows in runs of a few
+    of lock wait per step of $\sim 260$ µs for `surf_d5` with 32 threads); it only shows in runs of a few
     milliseconds. With the RW pairs (0.14.4), many more hits are recorded per step (small codes: 2–5x longer steps,
     see the pairs item above).
 - [x] **Distance Benchmark Update**: the overnight run of 0.14.0 (Oct 2026, `benchmark/BENCHMARK.md`) certified the

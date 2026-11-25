@@ -1,3 +1,13 @@
+---
+geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in"
+header-includes:
+  - |
+    \makeatletter
+    \DeclareRobustCommand{\_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi}
+    \makeatother
+    \setlength{\emergencystretch}{1.5em}
+---
+
 # Certification Benchmark Harness (`tools/bench/`)
 
 Engine-ready certification benchmark for `dist-m4ri` (design: `scratch/bench_review/REVIEW.md`, Sections 3-4;
