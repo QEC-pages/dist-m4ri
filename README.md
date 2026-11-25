@@ -499,8 +499,11 @@ determine the exact code distance as quickly as possible.
      RW can no longer improve the result.
    - **The first round at a supplied `dmin`** (no measured round yet) runs on half of the threads.
    - **During a round**, CC threads are added when RW finds a new $d_{\max}$ (e.g., if the round now certifies
-     $d_{\min} = d_{\max}$), and all threads join a round which takes more than 1.5 times its predicted time. A busy
-     RW thread joins a CC round when its current RW batch is done.
+     $d_{\min} = d_{\max}$), and all threads join a round which takes more than 1.5 times its predicted time. While RW
+     steps remain to be claimed, a busy RW thread joins a CC round which needs more threads after its current RW step,
+     and runs the rest of its RW batch after the round (since 0.17.4; before, it joined only once its batch was done,
+     which kept a round waiting for many seconds with slow RW steps, e.g., 20 s for 50 steps of 0.4 s). Once all RW
+     steps are claimed, an RW thread finishes its batch first, as before.
 3. **Timeout, Early Cutoff & RW Convergence**:
    - With a `timeout`, a CC round gets enough CC threads to finish within 3/4 of the remaining time. A round predicted
      not to finish in time on all threads is not started while RW runs; once RW has ended, the run ends instead. With
@@ -531,7 +534,10 @@ Relevant parameters:
   - Large matrices ($n \ge 5000$): 25 steps/chunk (50 for $\ge 10^4$ steps).
 
   In either case, a batch takes at most $\lceil r / (4 N_{\text{RW}}) \rceil$ of the $r$ remaining steps, where
-  $N_{\text{RW}}$ is the number of RW threads (guided scheduling, see below).
+  $N_{\text{RW}}$ is the number of RW threads (guided scheduling, see below). In `method=3` (since 0.17.4), the adaptive
+  batches also take at most about 0.5 s of RW steps by the measured step time (with a single thread, a single step until
+  it is measured), and while RW steps remain to be claimed, an RW thread leaves its batch between two steps for a CC
+  round which needs more threads (also with a given `chunk_size`).
 - `timeout=[sec]`: Maximum execution time in seconds (default: 60.0; set to `0`, or `inf` since 0.17.2, for infinite /
   no timeout; a trailing `s`, e.g., `timeout=10s`, is accepted). RW threads check the timeout (and the other stop
   conditions) between RW steps, and also within a step (every 16 columns of the Gaussian elimination, also with the
@@ -575,7 +581,9 @@ By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid ov
   `method=1`, the RW share in `method=3`, where CC rounds can still use all threads; `steps=0` in `method=3` runs pure
   CC without RW threads).
 - **Adaptive RW Chunk Sizing**: Setting `chunk_size=0` (or omitting it) enables adaptive batching, reducing atomic CAS
-  contention by up to 10x during extended searches ($10^4$ or $10^5$ steps).
+  contention by up to 10x during extended searches ($10^4$ or $10^5$ steps). In `method=3`, a batch takes at most about
+  0.5 s of RW steps (since 0.17.4), so that slow RW steps do not delay the CC rounds (on a single thread, RW batches and
+  CC rounds alternate).
 - **Guided RW Scheduling**: A thread claims at most $\lceil r / (4 N_{\text{RW}}) \rceil$ of the $r$ remaining RW steps
   at once, where $N_{\text{RW}}$ is the number of RW threads (also with a given `chunk_size`): no thread can monopolize
   the steps, and the batches shrink towards the end, so that the RW threads finish together.
@@ -594,8 +602,11 @@ By default (`nothrottle=0`), automatic heuristics clamp thread usage to avoid ov
   and specify `chunk_size=N` to override batch sizing.
 
 With `debug&8`, the binary reports the throttling and the thread allocation of every CC round, and with `debug&4` a
-periodic status line shows the progress of the current CC round. A CC round in `method=3` may have to wait until the RW
-threads assigned to it finish their current RW batch.
+periodic status line shows the progress of the current CC round. While RW steps remain to be claimed, a CC round in
+`method=3` waits at most for the current RW step of the RW threads assigned to it: they leave their RW batch between
+two steps (since 0.17.4; before, the round waited until their batches were done, as it still does for the last batches
+once all steps are claimed), and `debug&8` reports how many joined each round this way
+(`# CC round w=...: joined by ... RW threads which left their RW batch between two steps`).
 
 ### 5. RW Convergence: Empirical Test and Probability to Find a Codeword
 
@@ -1050,7 +1061,8 @@ integer. Multiple `debug` arguments are OR-combined, where the first one replace
   inactive), and the progress of the current CC round (or why no CC round runs).
 - `8` **thread allocation and timing**: throttling, the planning and re-planning of CC rounds, waits for RW, and the
   predicted vs measured CC work of each round, with its number of nodes (calls of the CC recursion; see `cc_prune`),
-  which does not depend on the number of threads.
+  which does not depend on the number of threads, and in `method=3` the RW threads which left their RW batch to join
+  it (since 0.17.4).
 - `16` **code parameters**: $\mathrm{rank}\,H$, $\mathrm{rank}\,L$ (or $\mathrm{rank}\,G$), and $k$, by dense
   elimination at startup (slow for large matrices).
 - `32` **codewords**: the support (1-based columns) of each new lightest codeword (RW, CC, `finC`).
@@ -1464,11 +1476,15 @@ interoperability without manual threading overhead.
     `timeout=0`, or at most 1 s is left); Stage B then runs `qec_cert` with the remaining time, seeded with
     `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (skipping its randomized upper-bound stage only when a narrow
     bracket $0 < d_{\max, A} - \max(1, d_{\min, A}) < 3$ is already known, since 0.17.1), where the lower bound
-    `dmin_A` certified by CC discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; if `qec_cert` ends early
-    with an open bracket, the binary continues with the time left, and if `qec_cert` is not installed or not usable
-    (e.g., without its library `libqeccert.so`; then a warning, once per process, since 0.17.2), the binary runs with
-    the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
-    `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
+    `dmin_A` certified by CC discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; since 0.17.4, a floor
+    `wmin > 1` is passed with `search_opts={"force_dom": 1}`, so that `qec_cert` keeps the stabilizer half-weight
+    dominance of its search on (by default, it switches it off for `wmin > 1`, although the rule is sound when `wmin`
+    is a certified lower bound, Sec. 8 of `doc/soundness_search.md` of `qec-cert`; an older `qec_cert` without this
+    option is called as before); if `qec_cert` ends early with an open bracket, the binary continues with the time
+    left, and if `qec_cert` is not installed or not usable (e.g., without its library `libqeccert.so`; then a warning,
+    once per process, since 0.17.2), the binary runs with the whole timeout. The stages are recorded in
+    `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and `--verbose`). Until 0.16.1, `'auto'` handed every
+    eligible request (classical codes too) to `qec_cert`.
     Benchmark (35 codes, circuits, and classical codes, `timeout=45`, 64 threads, Section 11.3 of the
     [benchmark history](benchmark/HISTORY.md)): in 0.17.0, `'auto'` certified 31 instances against 26 for the binary
     alone and 32 for `qec_cert` alone, and on the 20 easy instances it is as fast as the binary (median 0.087 s, against
@@ -1491,9 +1507,13 @@ interoperability without manual threading overhead.
   - Cache rules for `qec_cert` hand-off: only unconditional lower bounds (`status` in `('exact', 'bounds', 'timeout')`
     without `lb_conditional`) and verified upper-bound witnesses (`witness_verified=True`) are written to the distance
     cache. When the cache already holds a certified lower bound `dmin > 1`, that bound is passed to `qec_cert` as
-    `wmin=dmin`; if the certificate's conditionality is caused solely by that cached floor (`lb_assumed_wmin <= dmin`,
-    with no trust flags, precondition violations, or unverified symmetries), the cached certified `dmin` is discharged
-    and no longer makes the `qec_cert` lower bound conditional.
+    `wmin=dmin` (since 0.17.4 with `search_opts={"force_dom": 1}` for a quantum code or DEM, as in Stage B of `'auto'`,
+    unless `method=1`); if the certificate's conditionality is caused solely by that cached floor
+    (`lb_assumed_wmin <= dmin`, with no trust flags, precondition violations, or unverified symmetries), the cached
+    certified `dmin` is discharged and no longer makes the `qec_cert` lower bound conditional. Since 0.17.4, this does
+    not apply to a lower bound above `dmin` from a relaxation of a DEM, which `certify_dem` searches from the same floor
+    although its distance may be smaller: the $\mathcal{P}_1$ projection (unless its zero-solve sandwich is exact) and
+    spacetime folding.
   - `'codedistance'`: uses the `codedistance` library if installed (`ImportError` if missing, `ValueError` with
     codeword output `do_cws=True` or `outC`, and a warning on `stderr` for non-default `dist_m4ri` options).
 - Debug output: `debug=N` (default: 0) is a bitmap, where the bits `1` to `32768` are passed to the binary (see

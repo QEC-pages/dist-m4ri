@@ -39,6 +39,9 @@
  * only the RW share, and CC rounds can use all workers.
  * A worker without RW work (RW steps all claimed, RW stopped by min_hits) joins the current CC round.  A CC round hands
  * out work units: start columns, or pieces of them if there are few start columns per thread (see `cc_pack()`).
+ * In method=3, an RW worker leaves its batch of RW steps between two steps for a CC round which needs more workers, and
+ * runs the rest of the batch after the round, as long as RW steps remain to be claimed (see rw_yield_to_cc()); the
+ * adaptive batches take at most about 0.5 s of RW steps (see m3_batch_steps()).
  * Method 2 starts only a few workers, and the others once a CC round takes longer (see CC_SPAWN_INITIAL).
  *
  * Codewords (see codeword_add_maybe()): RW and CC add the codewords found to a hash with hit counts, holding the
@@ -274,6 +277,8 @@ typedef struct {
   atomic_int cc_round_active;
   atomic_llong cc_busy_ns;           /* total CC thread time in ns (all rounds), for the CC timing model */
   atomic_llong cc_nodes;             /* total calls of the CC recursion (smax = 0, all rounds), for DBG_TIMING */
+  atomic_long cc_rw_joins;           /* method 3: CC rounds joined by RW workers which left a batch (all rounds; see
+                                      * rw_yield_to_cc()), for DBG_TIMING */
 
   /* Codeword synchronization */
   pthread_mutex_t cw_mutex;
@@ -3197,16 +3202,52 @@ static int rw_dual_step(distfork_ctx_t * const ctx, rw_dual_t * const d, rw_thr_
   return rank;
 }
 
+/* Method 3 with two or more workers: whether an RW worker leaves its batch before its next RW step for the current CC
+ * round, i.e., the round has work units left and fewer workers than the coordinator's target cc_target_workers (see
+ * m3_plan_cc_threads()), while RW steps remain to be claimed.  The worker keeps the steps of the batch not run yet and
+ * runs them after the round (see worker_thread_func()): a batch of slow RW steps does not keep a CC round waiting, and
+ * no step is abandoned (only the stop flags end a step early).  Once all RW steps are claimed, the coordinator plans
+ * all threads for CC (the workers without RW work join the rounds), and a worker finishes its batch first, as before.
+ * With a single worker, RW batches and CC rounds alternate (see m3_batch_steps()). */
+static inline bool rw_yield_to_cc(distfork_ctx_t * const ctx) {
+  if (ctx->p->method != 3 || ctx->num_threads < 2 ||
+      !atomic_load_explicit(&ctx->cc_round_active, memory_order_acquire))
+    return false;
+  if (atomic_load_explicit(&ctx->cc_active_workers, memory_order_relaxed) >=
+      atomic_load_explicit(&ctx->cc_target_workers, memory_order_relaxed))
+    return false;
+  if (atomic_load_explicit(&ctx->rw_steps_started, memory_order_relaxed) >= ctx->total_rw_steps) return false;
+  const long long next = atomic_load_explicit(&ctx->cc_next, memory_order_relaxed);
+  return cc_unpack_idx(next) <= cc_unit_last(ctx, cc_unpack_w(next), cc_unpack_lev(next));
+}
+
+#define M3_BATCH_TIME 0.5 /* method 3, adaptive batches (chunk_size=0): at most about 0.5 s of RW steps per batch */
+
+/* Method 3, adaptive batches (chunk_size=0): the RW batch `batch_size` cut to about M3_BATCH_TIME seconds of RW steps
+ * by the measured thread time per step (fast steps keep their batches), so that RW batches and CC rounds alternate
+ * quickly also with slow RW steps on a single worker, and the last batches are short.  Until the step time is
+ * measured, a single worker takes a single step, while more workers keep `batch_size` (they leave a batch for a CC
+ * round, see rw_yield_to_cc()). */
+static long m3_batch_steps(distfork_ctx_t * const ctx, const long batch_size) {
+  const long n = atomic_load_explicit(&ctx->rw_timed_steps, memory_order_relaxed);
+  if (n <= 0) return (ctx->num_threads < 2) ? 1 : batch_size;
+  const double t_step = 1e-9 * (double)atomic_load_explicit(&ctx->rw_busy_ns, memory_order_relaxed) / (double)n;
+  if (!(t_step * (double)batch_size > M3_BATCH_TIME)) return batch_size;
+  const long b = (long)(M3_BATCH_TIME / t_step);
+  return (b > 1) ? b : 1;
+}
+
 /* Run RW batch of the global steps step0 .. step0+n_steps-1; returns the number of completed steps.  `el`: the thread's
  * RW elimination (blocked or column by column, see rw_elim_t); `pws`: the workspace of the RW pairs (see
  * rw_pairs_ws_init()); `th`: the state of the RW stages of rw_opt (NULL: none, the RW steps of version 0.16.1); `dl`:
- * the sparse-dual elimination of Stage 4 (NULL: the dense matrices mH, mHT) */
+ * the sparse-dual elimination of Stage 4 (NULL: the dense matrices mH, mHT); `*left` is set if the worker leaves the
+ * batch for a CC round after the completed steps (the other steps are not started, see rw_yield_to_cc()) */
 static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
                         mzd_t *mH, mzd_t *mHT, rci_t *ee,
                         mzp_t *perm, mzp_t *pivs, word *piv_mask, rw_elim_t *el, rw_pairs_ws_t *pws,
                         int *eff_nrows_ptr,
                         int *visited_cols, int *visited_checks, int *col_queue,
-                        int *visit_marker, uint64_t *rng_state, int tid, rw_thr_t *th, rw_dual_t *dl) {
+                        int *visit_marker, uint64_t *rng_state, int tid, rw_thr_t *th, rw_dual_t *dl, bool *left) {
   params_t * const p = ctx->p;
   const colmask_t * const maskL = p->maskL; /* NULL for a classical code */
   const int nvar = p->spaH->cols;
@@ -3224,10 +3265,15 @@ static int run_rw_steps(distfork_ctx_t *ctx, long step0, int n_steps,
   long long int n_pairs = 0, hits1 = 0, hits2 = 0; /* see rw_pairs_checked, rw_hits1, rw_hits2 */
   double t_last = get_time_sec(), acc_t = 0.0;
   int acc_n = 0;
+  *left = false;
 
   for (int step = 0; step < n_steps; step++) {
     if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
         atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+      break;
+    }
+    if (step > 0 && rw_yield_to_cc(ctx)) { /* (after at least one step per call: progress) */
+      *left = true;
       break;
     }
 
@@ -3466,11 +3512,11 @@ static inline bool ksub_row_in_window(const mzd_t * const N, const int r, const 
 
 /* Run compact subspace RW batch (ksub > 0) of the global steps step0 .. step0+n_steps-1; returns the number of
  * completed steps.  `nidx` is the thread's permutation of the row indices 0..nu-1 of N, used to sample ksub distinct
- * rows (partial Fisher-Yates shuffle) */
+ * rows (partial Fisher-Yates shuffle); `*left` as in run_rw_steps() */
 static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
                              mzd_t *M_sub, rci_t *ee, mzp_t *perm, mzp_t *pivs, int *nidx,
                              int *visited_cols, int *visited_checks, int *col_queue,
-                             int *visit_marker, uint64_t *rng_state, int tid) {
+                             int *visit_marker, uint64_t *rng_state, int tid, bool *left) {
   params_t * const p = ctx->p;
   const colmask_t * const maskL = p->maskL; /* NULL for a classical code */
   const int nvar = p->spaH->cols;
@@ -3480,9 +3526,10 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
   const int kwin = p->kwin;
   const int win_mode = p->win_mode;
 
+  *left = false;
   if (nu <= 0 || ksub <= 0 || !ctx->N_global) { /* not reached: no subspace to sample, count the steps as done */
     atomic_fetch_add(&ctx->rw_steps_completed, n_steps);
-    return 0;
+    return n_steps;
   }
 
   int n_done = 0;
@@ -3494,6 +3541,10 @@ static int run_rw_steps_ksub(distfork_ctx_t *ctx, long step0, int n_steps,
   for (int step = 0; step < n_steps; step++) {
     if (atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed) ||
         atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed)) {
+      break;
+    }
+    if (step > 0 && rw_yield_to_cc(ctx)) { /* (as in run_rw_steps()) */
+      *left = true;
       break;
     }
 
@@ -3681,6 +3732,9 @@ static void *worker_thread_func(void *arg) {
   /* RNG stream of this thread: a hashed starting point of splitmix64 (consecutive starting points would give
    * shifted copies of one stream) */
   uint64_t rng_state = mix64((uint64_t)ctx->p->seed ^ mix64((uint64_t)tid + 0x517cc1b727220a95ULL));
+  /* method 3: the global RW steps rest0 .. rest1-1 of a batch which this worker left for a CC round (see
+   * rw_yield_to_cc()), run before any new batch is claimed (none if rest0 >= rest1) */
+  long rest0 = 0, rest1 = 0;
 
   if (enable_rw) {
     ee = malloc((nvar + 2) * sizeof(rci_t));
@@ -3798,14 +3852,18 @@ static void *worker_thread_func(void *arg) {
       int active = atomic_load_explicit(&ctx->cc_active_workers, memory_order_relaxed);
       int target = atomic_load_explicit(&ctx->cc_target_workers, memory_order_relaxed);
       /* A worker without RW work joins any CC round: method 2, a CC-only worker (tid >= rw_threads), RW stopped by
-       * `min_hits`, or all RW steps already claimed by other workers (it would otherwise idle until the round ends) */
-      if (!enable_rw || atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed) ||
-          atomic_load_explicit(&ctx->rw_steps_started, memory_order_relaxed) >= ctx->total_rw_steps) {
-        target = ctx->num_threads;
-      }
+       * `min_hits`, or all RW steps already claimed by other workers (it would otherwise idle until the round ends).
+       * A worker with the rest of a batch left for a CC round (see rw_yield_to_cc()) follows the coordinator's target
+       * while RW steps remain to be claimed, and otherwise runs the rest first (as a worker finishes its batch). */
+      const bool rw_on = enable_rw && !atomic_load_explicit(&ctx->rw_stop_flag, memory_order_relaxed);
+      const bool all_claimed =
+          rw_on && atomic_load_explicit(&ctx->rw_steps_started, memory_order_relaxed) >= ctx->total_rw_steps;
+      if (!rw_on || (all_claimed && rest0 >= rest1)) target = ctx->num_threads;
+      else if (all_claimed) target = 0;
       const long long next = atomic_load_explicit(&ctx->cc_next, memory_order_relaxed);
       if (active < target && cc_unpack_idx(next) <= cc_unit_last(ctx, cc_unpack_w(next), cc_unpack_lev(next))) {
         if (atomic_compare_exchange_weak(&ctx->cc_active_workers, &active, active + 1)) {
+          if (rw_on && rest0 < rest1) atomic_fetch_add_explicit(&ctx->cc_rw_joins, 1, memory_order_relaxed);
           const double t_join = get_time_sec();
           while (!atomic_load_explicit(&ctx->stop_flag, memory_order_relaxed)) {
             if (ctx->timeout > 0.0 && (get_time_sec() - ctx->start_time >= ctx->timeout)) {
@@ -3902,55 +3960,69 @@ static void *worker_thread_func(void *arg) {
       }
     }
 
-    /* 2. Try to take RW work if RW is active (method 1 or 3) */
+    /* 2. Try to take RW work if RW is active (method 1 or 3): the rest of a batch left for a CC round first */
     if (enable_rw && !atomic_load(&ctx->stop_flag) && !atomic_load(&ctx->rw_stop_flag)) {
-      long cur_s = atomic_load(&ctx->rw_steps_started);
-      if (cur_s < ctx->total_rw_steps) {
-        long batch_size;
-        if (ctx->p->chunk_size > 0) {
-          batch_size = ctx->p->chunk_size;
-        } else {
-          int nvar = ctx->p->nvar;
-          if (nvar < 500) {
-            if (ctx->total_rw_steps >= 50000) batch_size = 500;
-            else if (ctx->total_rw_steps >= 1000) batch_size = 250;
-            else batch_size = 50;
-          } else if (nvar < 5000) {
-            if (ctx->total_rw_steps >= 10000) batch_size = 100;
-            else batch_size = 50;
+      long cur_s = rest0, target_s = rest1;
+      bool claimed = (rest0 < rest1);
+      if (!claimed) {
+        cur_s = atomic_load(&ctx->rw_steps_started);
+        if (cur_s < ctx->total_rw_steps) {
+          long batch_size;
+          if (ctx->p->chunk_size > 0) {
+            batch_size = ctx->p->chunk_size;
           } else {
-            /* Large matrices (e.g. n >= 5000): keep chunk bounded to ~2-3s */
-            if (ctx->total_rw_steps >= 10000) batch_size = 50;
-            else batch_size = 25;
-          }
-        }
-        /* Guided scheduling: a batch takes at most a quarter of the remaining steps per RW thread, so that no thread
-         * monopolizes the steps and the RW threads finish together (no idle threads at the end of the steps) */
-        if (ctx->rw_threads > 1) {
-          const long guided = (ctx->total_rw_steps - cur_s + 4L * ctx->rw_threads - 1) / (4L * ctx->rw_threads);
-          if (batch_size > guided) batch_size = (guided > 0) ? guided : 1;
-        }
-        long target_s = cur_s + batch_size;
-        if (target_s > ctx->total_rw_steps) target_s = ctx->total_rw_steps;
-        if (atomic_compare_exchange_weak(&ctx->rw_steps_started, &cur_s, target_s)) {
-          int n_steps = (int)(target_s - cur_s);
-          if (use_ksub) {
-            if (ksub_eff > 0) {
-              run_rw_steps_ksub(ctx, cur_s, n_steps, M_sub, ee, perm, pivs, nidx,
-                                visited_cols, visited_checks, col_queue,
-                                &visit_marker, &rng_state, tid);
+            int nvar = ctx->p->nvar;
+            if (nvar < 500) {
+              if (ctx->total_rw_steps >= 50000) batch_size = 500;
+              else if (ctx->total_rw_steps >= 1000) batch_size = 250;
+              else batch_size = 50;
+            } else if (nvar < 5000) {
+              if (ctx->total_rw_steps >= 10000) batch_size = 100;
+              else batch_size = 50;
             } else {
-              atomic_fetch_add(&ctx->rw_steps_completed, n_steps);
+              /* Large matrices (e.g. n >= 5000): fewer steps per batch (in method 3, see also m3_batch_steps()) */
+              if (ctx->total_rw_steps >= 10000) batch_size = 50;
+              else batch_size = 25;
             }
-          } else {
-            run_rw_steps(ctx, cur_s, n_steps, mH, mHT_rw, ee, perm, pivs,
-                         piv_mask, &rw_el, &rw_pws, &eff_nrows, visited_cols, visited_checks,
-                         col_queue, &visit_marker, &rng_state, tid, rw_th, rw_dl);
-            if (mH && eff_nrows > 0 && eff_nrows < mH->nrows) rw_shrink_matrices(&mH, &mHT_rw, eff_nrows);
+            /* method 3: at most about M3_BATCH_TIME seconds of RW steps (see m3_batch_steps()) */
+            if (ctx->p->method == 3) batch_size = m3_batch_steps(ctx, batch_size);
           }
-          did_work = true;
-          continue;
+          /* Guided scheduling: a batch takes at most a quarter of the remaining steps per RW thread, so that no
+           * thread monopolizes the steps and the RW threads finish together (no idle threads at the end of the
+           * steps) */
+          if (ctx->rw_threads > 1) {
+            const long guided = (ctx->total_rw_steps - cur_s + 4L * ctx->rw_threads - 1) / (4L * ctx->rw_threads);
+            if (batch_size > guided) batch_size = (guided > 0) ? guided : 1;
+          }
+          target_s = cur_s + batch_size;
+          if (target_s > ctx->total_rw_steps) target_s = ctx->total_rw_steps;
+          claimed = atomic_compare_exchange_weak(&ctx->rw_steps_started, &cur_s, target_s);
         }
+      }
+      if (claimed) {
+        const int n_steps = (int)(target_s - cur_s);
+        int n_done = n_steps;
+        bool left = false; /* the batch was left for a CC round after n_done steps (see rw_yield_to_cc()) */
+        if (use_ksub) {
+          if (ksub_eff > 0) {
+            n_done = run_rw_steps_ksub(ctx, cur_s, n_steps, M_sub, ee, perm, pivs, nidx,
+                                       visited_cols, visited_checks, col_queue,
+                                       &visit_marker, &rng_state, tid, &left);
+          } else {
+            atomic_fetch_add(&ctx->rw_steps_completed, n_steps);
+          }
+        } else {
+          n_done = run_rw_steps(ctx, cur_s, n_steps, mH, mHT_rw, ee, perm, pivs,
+                                piv_mask, &rw_el, &rw_pws, &eff_nrows, visited_cols, visited_checks,
+                                col_queue, &visit_marker, &rng_state, tid, rw_th, rw_dl, &left);
+          if (mH && eff_nrows > 0 && eff_nrows < mH->nrows) rw_shrink_matrices(&mH, &mHT_rw, eff_nrows);
+        }
+        /* the steps not run of a batch left for a CC round are run later (the steps of a batch ended by a stop flag
+         * are not run: the run, or RW, ends) */
+        rest0 = left ? cur_s + n_done : 0;
+        rest1 = left ? target_s : 0;
+        did_work = true;
+        continue;
       }
     }
 
@@ -4451,7 +4523,8 @@ static int m3_plan_cc_threads(distfork_ctx_t * const ctx, const int w, const dou
                               const double remaining_time) {
   const int nthr = ctx->num_threads;
   if (nthr <= 1) return 1;
-  /* RW finished, or all RW steps claimed: the RW workers join the round anyway */
+  /* RW finished, or all RW steps claimed: the RW workers join the round anyway (a worker which still has steps of its
+   * batch runs them first, see rw_yield_to_cc()) */
   if (!m3_rw_running(ctx) || atomic_load(&ctx->rw_steps_started) >= ctx->total_rw_steps) return nthr;
   const int cur_dmin = atomic_load(&ctx->dmin);
   const int cur_dmax = atomic_load(&ctx->dmax);
@@ -4641,6 +4714,7 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
     atomic_store(&ctx->cc_target_workers, n_cc);
     const long long busy_ns0 = atomic_load(&ctx->cc_busy_ns);
     const long long nodes0 = atomic_load(&ctx->cc_nodes);
+    const long rw_joins0 = atomic_load(&ctx->cc_rw_joins);
     atomic_store(&ctx->cc_next, cc_pack(w, lev, beg * ctx->cc_R[lev]));
     atomic_store(&ctx->cc_round_active, 1);
 
@@ -4731,6 +4805,11 @@ static void run_method3_coordinator(distfork_ctx_t *ctx) {
       }
     }
     res_round_add(w, busy_ns0, nodes0, cc_work_meas, cc_dur, cc_nodes_meas, n_cc, round_completed);
+    const long rw_joins = atomic_load(&ctx->cc_rw_joins) - rw_joins0;
+    if ((ctx->p->debug & DBG_TIMING) && rw_joins > 0) { /* (see rw_yield_to_cc()) */
+      fprintf(stderr, "# CC round w=%d: joined by %ld RW threads which left their RW batch between two steps\n", w,
+              rw_joins);
+    }
 
     const double t_now = t_round_end - ctx->start_time;
     int cw_found = atomic_load(&ctx->cc_found_weight);
@@ -5916,6 +5995,7 @@ int main(int argc, char **argv) {
   atomic_init(&ctx.cc_round_active, 0);
   atomic_init(&ctx.cc_busy_ns, 0);
   atomic_init(&ctx.cc_nodes, 0);
+  atomic_init(&ctx.cc_rw_joins, 0);
   atomic_init(&ctx.cw_red_cc, 0);
   atomic_init(&ctx.cw_red_rw, 0);
   atomic_init(&ctx.next_refresh_step, p->refresh > 0 ? p->refresh : 0);

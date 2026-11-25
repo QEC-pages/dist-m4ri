@@ -639,6 +639,38 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   `Makefile` builds `build/libqeccert.so` while `pyproject.toml` packages `qec_cert/*.so`, so a non-editable install
   without it cannot load the library unless `QEC_CERT_LIB` is set; `dist_m4ri` reports this with one clear error or
   warning since 0.17.2, PY-14 / PY-C01).
+- [ ] **For `qec-cert` (`force_dom` default with a certified `wmin > 1`)**: `qec_cert/pipeline.py:1798` sets
+  `s_kw.setdefault("force_dom", int(wmin == 1))`, which turns off the stabilizer half-weight dominance pruning
+  (`use_dom`) whenever a caller passes a certified lower bound `wmin > 1`, although `doc/soundness_search.md`, Sec. 8,
+  proves it sound under P0_W and calls `force_dom = 1` the default. Found in the final benchmark of 2026-11-24
+  (`scratch/final_bench/SUMMARY_phase1.md`, A4): Stage B of the two-stage `engine="auto"` (seeded with
+  `wmin = dmin_A > 1`) took 7.25–8.80 s on `bb_360_12_24` against 2.26 s for `engine="cert"` (`wmin = 1`), and timed
+  out at $[22, 23]$ on `2bga_292` in all 35 runs, where `engine="cert"` certifies 23 in 41.4 s. Decision (2026-11-24):
+  keep the `qec-cert` default for now and fix it in `qec-cert` next; `dist_m4ri.py` 0.17.4 passes
+  `search_opts={"force_dom": 1}` itself when it seeds `qec_cert` with a certified `wmin > 1` (fix A4, at all seven
+  `qec_cert` call sites, including `engine="cert"` with a cached certified `dmin`). Not covered from `dist_m4ri.py`:
+  with `wmin = 1` (no cache record, or the DEM fast path), `certify_dem()` raises its own floor internally and then
+  turns dominance off as well; the `qec-cert` fix should cover that path. Related soundness issue (found by the A4
+  verification, 2026-11-24): `certify_dem()` treats a caller's `wmin > 1` as a floor for its inexact coarse
+  sub-problems too (`p1_projection_lb` when the sandwich is not exact, `fold_dem`/`fold_mod_*`), where
+  $d(\mathcal{P}_1) \le d(\mathrm{DEM})$ gives no such floor; with a conditional bound above `wmax`, the DEM search is
+  skipped and the returned lower bound can exceed the true distance (a constructed DEM: `d = 15`, `wmin = 6`, lower
+  bound 19). `dist_m4ri.py` 0.17.4 no longer accepts such conditional coarse bounds; in `qec-cert`, treat the
+  caller's `wmin` as a floor of the full DEM only (pass `wmin = 1` to inexact projections and folds). After the
+  `qec-cert` fix, re-compute the speed tests that involve `qec_cert`: the 35-instance portfolio (`BENCHMARK.md`,
+  Figure 1; `HISTORY.md`, Section 11.3), the $\tau_1 \times$ `use_ub`-gap grid of the `auto` engine (re-test $\tau_1$
+  at `timeout` $\in \{15, 45, 180\}$ s; at 45 s, $\tau_1 = 1.5$–2 s saved 13% against the default 4.5 s, but with
+  `force_dom` off in Stage B), and the engine comparison of the final benchmark (block N3, dropped from the run of
+  2026-11-24).
+- [ ] **Stage-5 canonicalization latency on inputs with many twin columns** (found with fix A3, 2026-11-24,
+  `scratch/fixes_a3a4/A3_REPORT.md` §6 and `a3/verify/VERIFY.md`, check 5; no soundness issue): on
+  `bb_72_r3_X_unmerged` ($180 \times 9180$, 6x unmerged twin columns, $|\mathcal{T}_3| = 653{,}688$), an RW step takes
+  817 ms with the default `0x11` against 12 ms with `rw_opt=1`, almost all in the `rw_canon_key()` loop of
+  `rw_rec_flush()`, which does not poll the stop flags (a run with `timeout=5` stopped after 17.5 s). Causes: the loop
+  is unpolled (it also runs after the stop and when the canonical table is full); a CLI `dmax > 0` leaves
+  `canon_w = INT_MAX`, so all buffered weights up to 64 are canonicalized before the ones above `min_w` are dropped;
+  `canon_t3()` does not merge identical columns. Fix: poll the stop flags in the loop, canonicalize only weights up to
+  the current `min_w`, and collapse twin columns in the canonical form.
 
 ---
 

@@ -1086,6 +1086,11 @@ void print_short_help(const char *prog);
   "                     25 to 500 steps by n and steps). Near the end of the steps,\n" \
   "                     batches shrink to ceil(remaining/(4*RW threads)) steps, so\n" \
   "                     that the RW threads finish together. Alias: batch=[int].\n" \
+  "                     In method=3, adaptive batches take at most about 0.5 s of\n" \
+  "                     RW steps (by the measured step time), and while RW steps\n" \
+  "                     remain to be claimed, an RW worker leaves its batch between\n" \
+  "                     two steps for a CC round which needs more threads (the rest\n" \
+  "                     of the batch runs after the round).\n" \
   "  ksub=[int]         EXPERIMENTAL, should not be used (a warning is printed):\n" \
   "                     subspace dimension sampled from ker(H) in RW (default: 0 =\n" \
   "                     original full-matrix RW). E.g. ksub=32 or 64 keeps working\n" \
@@ -1373,8 +1378,9 @@ void print_short_help(const char *prog);
   "           RW steps and rate, the min_hits statistic (<n>, or the\n" \
   "           canonical classes of rw_opt 16), progress of the current CC round\n" \
   "    8    : Thread allocation and timing: throttling, CC round planning and\n" \
-  "           re-planning, waits for RW, predicted vs measured CC work, and the\n" \
-  "           nodes of each CC round (calls of the recursion)\n" \
+  "           re-planning, waits for RW, predicted vs measured CC work, the\n" \
+  "           nodes of each CC round (calls of the recursion), and in method=3\n" \
+  "           the RW workers which left their RW batch to join it\n" \
   "    16   : Code parameters rank(H), rank(L) or rank(G), and k (dense\n" \
   "           elimination at startup, slow for large matrices)\n" \
   "    32   : Support (1-based) of each new lightest codeword (RW, CC, finC)\n" \

@@ -2090,6 +2090,24 @@ if [ -e "$J141_NO" ]; then
 fi
 rm -f "$J141" "$ERR141" "$OUT141" "$H141" "$DEM141" "$DRP141" "$J141_NO"
 
+# Test 142: method=3, an RW thread leaves its batch of RW steps between two steps for a CC round which needs more
+# threads, and runs the rest of the batch after the round (since 0.17.4; before, a CC round waited until the RW batches
+# were done, e.g., 20 s for 50 steps of 0.4 s).  Here the batches of 10^6 steps (an explicit chunk_size, which the time
+# limit of the adaptive batches does not cut) would take minutes, and min_hits=0 keeps RW from ending: CC certifies d=5
+# at once, and debug&8 reports the RW threads which joined a round this way (none would time out at 60 s); likewise
+# with the experimental ksub RW (c1920H: ksub is used, m >= nu), until CC certifies dmin=dstop=4
+assert_output "$BIN_FORK method=3 $S5 steps=100000000 chunk_size=1000000 min_hits=0 timeout=60 threads=2 debug=9" 0 \
+    "^5 5 [0-9]+$" "^# CC round w=[0-9]+: joined by [12] RW threads which left their RW batch between two steps$" \
+    "^# stopped after [0-9.]+s: timeout"
+assert_output "$BIN_FORK method=3 finH=$EXAMPLES_DIR/c1920H.mmx ksub=32 dstop=4 steps=100000000 chunk_size=1000000 \
+min_hits=0 timeout=60 threads=2 debug=9" 0 "^4 [0-9]+ [0-9]+$" \
+    "^# CC round w=[0-9]+: joined by [12] RW threads which left their RW batch between two steps$" \
+    "^# stopped after [0-9.]+s: timeout"
+# Once all RW steps are claimed (here at once: steps=10 run on 1 of 2 threads, see Test 73), the CC rounds plan all
+# threads for the workers without RW work, and an RW thread finishes its batch first, as before
+assert_output "$BIN_FORK method=3 $S5 steps=10 threads=2 debug=9" 0 "^5 5 [0-9]+$" "RW limited to 1 of 2 threads" \
+    "joined by"
+
 if [ $FAILED -ne 0 ]; then
     echo "Some tests failed!"
     exit 1

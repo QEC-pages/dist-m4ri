@@ -2315,7 +2315,12 @@ def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
     flags, no precondition violation, and no other conditional stage or reduction.
 
     A conditional search must have a verified symmetry (or verified polymer pinning), or no symmetry at all (since
-    version 0.17.0, see _cert_search_no_symmetry()).
+    version 0.17.0, see _cert_search_no_symmetry()).  A floor certified for a DEM is not one of its relaxations, whose
+    distance may be smaller (d(P_1) <= d(DEM), Sec. 4-5 of doc/soundness_circuits.md of qec-cert), although
+    certify_dem() searches them from the same wmin: since version 0.17.4, a conditional lower bound above
+    certified_dmin of the P_1 projection (stage and reduction p1_projection_lb) is accepted only with the exact
+    zero-solve sandwich (stage zero_solve_sandwich 'exact', where d(P_1) = d(DEM), Theorem 3.2 there), and one of the
+    spacetime folding (stage fold_mod_<p>, reduction capped_spacetime_folding) never.
     """
     if certified_dmin <= 1:
         return False
@@ -2345,6 +2350,9 @@ def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
         isinstance(s, dict) and s.get("name") == "polymer_pinning" and s.get("shift_verified") is True
         for s in stages
     )
+    sand_exact = any(
+        isinstance(s, dict) and s.get("name") == "zero_solve_sandwich" and s.get("status") == "exact" for s in stages
+    )
     for s in stages:
         if isinstance(s, dict) and s.get("lb_conditional"):
             sname = str(s.get("name", "") or "")
@@ -2356,7 +2364,11 @@ def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
                 ) or _cert_search_no_symmetry(s)
                 if not sym_ok:
                     return False
-            elif sname != "p1_projection_lb" and not sname.startswith("fold_mod_"):
+            elif sname == "p1_projection_lb" or sname.startswith("fold_mod_"):
+                # (a relaxation of a DEM, searched from its floor: its bound only up to certified_dmin)
+                if int(s.get("lb", 0) or 0) > certified_dmin and not (sand_exact and sname == "p1_projection_lb"):
+                    return False
+            else:
                 return False
     reductions = get("reductions", ()) or ()
     pinned_red_ok = pinned_ok or any(
@@ -2380,9 +2392,63 @@ def _cert_wmin_discharged(cert: Any, certified_dmin: int) -> bool:
                 wmin_r = int(rp.get("wmin", 0) or 0)
                 if not sym_ok or (wmin_r > certified_dmin):
                     return False
-            elif rname not in ("p1_projection_lb", "capped_spacetime_folding"):
+            elif not (rname == "p1_projection_lb" and sand_exact):  # (raised the bound: see the stages)
                 return False
     return True
+
+
+def _qec_cert_has_force_dom(qec_pipeline: Any) -> bool:
+    """
+    Whether qec_cert (its module pipeline: qec_pipeline) has the search option force_dom (see _cert_search_kw()): its
+    certify() takes the parameter search_opts (which certify_dem() and certify_circuit() forward to it in **kwargs),
+    and its search kernel has the option force_dom (qec_cert.search.OPTION_NAMES).  False for an older qec_cert, or
+    one which cannot be inspected; it is then called as before.
+    """
+    try:
+        import importlib
+        import inspect
+        if "search_opts" not in inspect.signature(qec_pipeline.certify).parameters:
+            return False
+        pkg = getattr(qec_pipeline, "__package__", None) or "qec_cert"
+        return "force_dom" in getattr(importlib.import_module(pkg + ".search"), "OPTION_NAMES", ())
+    except Exception:
+        return False
+
+
+def _cert_search_kw(qec_pipeline: Any, wmin: int, search_opts: Optional[Dict[str, Any]] = None, *,
+                    search: bool = True, debug: int = 0, verbose: bool = False) -> Dict[str, Any]:
+    """
+    The keyword argument search_opts of a call of qec_cert (certify(), certify_dem(), or certify_circuit() of
+    qec_pipeline) with the floor wmin (since version 0.17.4): {"search_opts": {...}}, or {} if there is nothing to
+    pass (the call is then as before).
+
+    qec_cert switches off the stabilizer half-weight dominance of its search with a floor wmin > 1 (its default
+    force_dom = int(wmin == 1), unless search_opts sets force_dom), which slowed Stage B of engine='auto' down (e.g.,
+    bb_360 at 64 threads: 7.25-8.80 s in Stage B, against 2.26 s for engine='cert', which starts from wmin=1).  Yet the
+    rule is sound whenever wmin is a certified lower bound (Sec. 8 of doc/soundness_search.md of qec-cert): like the
+    other pruning rules of the search, it drops a codeword of weight W only if one of weight < W exists.  The floor of
+    dist_m4ri is always certified (the dmin of a cache record, or the certified_dmin of Stage A, see
+    _cert_code_distance()), so with wmin > 1, force_dom=1 is merged into a copy of search_opts, unless search_opts sets
+    force_dom already (an explicit choice is kept).  With wmin <= 1, the default of qec_cert (dominance on) is left
+    alone; so it is with search=False, for a call which runs no search (mode='ub').  A classical code has no
+    stabilizer dominance (its call does not use this function).  For a DEM, certify_dem() also searches relaxations of
+    it (the P_1 projection, folding) from wmin, where this floor may not hold; their conditional lower bounds above the
+    floor are not accepted (see _cert_wmin_discharged()), so dominance there cannot change an accepted lower bound.
+    An older qec_cert without the option (see _qec_cert_has_force_dom()) is called as before.  With verbose or the
+    debug bit PY_DBG_COMMANDS, a note says which.
+    """
+    opts = dict(search_opts or {})
+    if search and wmin > 1 and "force_dom" not in opts:
+        say = verbose or bool(debug & PY_DBG_COMMANDS)
+        if _qec_cert_has_force_dom(qec_pipeline):
+            opts["force_dom"] = 1
+            if say:
+                print(f"[dist_m4ri] qec_cert: search option force_dom=1 with the certified floor wmin={wmin} (its "
+                      f"stabilizer dominance stays on)")
+        elif say:
+            print(f"[dist_m4ri] qec_cert: no search option force_dom (an older version): its stabilizer dominance is "
+                  f"off with the floor wmin={wmin} > 1")
+    return {"search_opts": opts} if opts else {}
 
 
 def _cert_code_distance(
@@ -2408,12 +2474,14 @@ def _cert_code_distance(
     cache disabled; 0: none); and wmax = dmax - 1 (or wmax, dstop - 1), with dmax tightened by the cache record, or 40
     without any of them (qec_cert then searches no larger weight, but its stages which do not depend on wmax, e.g.,
     the graphlike or rank-DP bounds, may still certify a larger distance).  A lower bound of qec_cert which is
-    conditional only on its assumption lb_assumed_wmin <= d_cert is accepted, see _cert_wmin_discharged().  A
-    caller's dmin is not certified here (since version 0.17.2): it is not passed as wmin (the lower bound of qec_cert
-    would then be conditional on it), it only tightens the returned bounds (as the dmin of the binary, a known lower
-    bound), and it is never cached.  The statistics _last_run_stats are replaced by {"engine_cert": {...}} (the bounds
-    of qec_cert "lb", "ub", "wmin", "wmax", its run time "time", and "cached"; no run of the binary), unless keep_stats
-    (engine='auto').
+    conditional only on its assumption lb_assumed_wmin <= d_cert is accepted, see _cert_wmin_discharged().  Since
+    version 0.17.4, the callbacks of the compute_*() functions for quantum codes and DEMs pass
+    search_opts={"force_dom": 1} with wmin > 1, so that qec_cert keeps the stabilizer dominance of its search on (see
+    _cert_search_kw()).  A caller's dmin is not certified here (since version 0.17.2): it is not passed as wmin (the
+    lower bound of qec_cert would then be conditional on it), it only tightens the returned bounds (as the dmin of the
+    binary, a known lower bound), and it is never cached.  The statistics _last_run_stats are replaced by
+    {"engine_cert": {...}} (the bounds of qec_cert "lb", "ub", "wmin", "wmax", its run time "time", and "cached"; no
+    run of the binary), unless keep_stats (engine='auto').
     """
     global _distance_cache, _last_run_stats
     if not keep_stats:
@@ -2736,9 +2804,10 @@ def _auto_two_stage(
     narrow bracket is already known (0 < dmax_A - max(1, dmin_A) < _AUTO_STAGE_B_UB_GAP, see _auto_stage_b_use_ub()),
     qec_cert skips its randomized upper-bound stage (use_ub=False).  The assumption lb_assumed_wmin <= dmin_A of
     qec_cert is discharged by the lower bound dmin_A certified by the CC of Stage A (certified_dmin, see
-    _cert_wmin_discharged()); a lower bound of qec_cert which is conditional for any other reason is not used.  If
-    qec_cert ends early with an open bracket, the binary runs with the time left.  The result is never weaker than that
-    of Stage A.
+    _cert_wmin_discharged()); a lower bound of qec_cert which is conditional for any other reason is not used.  With
+    wmin > 1, qec_cert keeps the stabilizer dominance of its search on (search_opts={"force_dom": 1}, since version
+    0.17.4, see _cert_search_kw()).  If qec_cert ends early with an open bracket, the binary runs with the time left.
+    The result is never weaker than that of Stage A.
 
     If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None); the same if it is
     installed but not usable (e.g., its library libqeccert.so is missing, see _qec_cert_available()), with a warning
@@ -6029,7 +6098,8 @@ def compute_classical_distance(
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
-        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps; in method=3,
+            at most about 0.5 s of RW steps, and an RW thread leaves its batch between two steps for a CC round).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
             rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
@@ -6170,7 +6240,7 @@ def compute_classical_distance(
         mode_arg = "ub" if method == 1 else "auto"
         res = _cert_code_distance(
             lambda: _matrix_cache_key(H, None, None, True),
-            lambda w_lo, w_hi: qec_pipeline.certify(
+            lambda w_lo, w_hi: qec_pipeline.certify(  # (no search_opts: no stabilizer dominance, see _cert_search_kw())
                 qec_io.DistanceProblem(_cert_to_csr(H, qec_io), None, None),
                 wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                 seed=seed if seed != 0 else 1,
@@ -6271,7 +6341,8 @@ def compute_quantum_distance(
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
-        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps; in method=3,
+            at most about 0.5 s of RW steps, and an RW thread leaves its batch between two steps for a CC round).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
             rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
@@ -6362,7 +6433,11 @@ def compute_quantum_distance(
             >= 3 or no codeword is known, since version 0.17.1); if qec_cert ends early with an open bracket, the binary
             with the time left; the binary only, with the whole timeout, if qec_cert is not installed (or not usable,
             with a warning once per process).  A cached exact result is used without a run (and without importing
-            qec_cert).  The details are in _last_run_stats["engine_auto"].
+            qec_cert).  The details are in _last_run_stats["engine_auto"].  With "cert" and "auto", a floor wmin > 1 (a
+            certified lower bound) is passed with search_opts={"force_dom": 1}, so that qec_cert keeps the stabilizer
+            dominance of its search on (since version 0.17.4; also for a DEM; not for a classical code, which has no
+            such dominance, nor with method=1, whose mode 'ub' runs no search; an older qec_cert without this option
+            is called as before), see _cert_search_kw().
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
@@ -6462,13 +6537,14 @@ def compute_quantum_distance(
 
             def certify(w_lo: int, w_hi: int) -> Any:
                 _, qec_io, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
+                s_kw = _cert_search_kw(qec_pipeline, w_lo, debug=debug, verbose=verbose)
                 return qec_pipeline.certify(
                     qec_io.DistanceProblem(
                         _cert_to_csr(H, qec_io), _cert_to_csr(L, qec_io), _cert_to_csr(G, qec_io)
                     ),
                     wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8), seed=seed if seed != 0 else 1,
                     time_limit=_cert_time_left(t_lim, t_call), mode="auto",
-                    use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s),
+                    use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **s_kw,
                 )
             return _cert_code_distance(
                 lambda: _matrix_cache_key(H, G, L, False), certify, label="quantum", dmin=dmin_s, dmax=dmax_s,
@@ -6496,6 +6572,7 @@ def compute_quantum_distance(
                 seed=seed if seed != 0 else 1,
                 time_limit=_auto_timeout(timeout),
                 mode=mode_arg,
+                **_cert_search_kw(qec_pipeline, w_lo, search=mode_arg != "ub", debug=debug, verbose=verbose),
             ),
             label="quantum", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
             eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
@@ -6612,7 +6689,8 @@ def compute_css_distance(
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
-        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps; in method=3,
+            at most about 0.5 s of RW steps, and an RW thread leaves its batch between two steps for a CC round).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
             rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
@@ -6690,9 +6768,9 @@ def compute_css_distance(
             compute_quantum_distance()); "auto" (since version 0.17.0): the two-stage portfolio of
             compute_quantum_distance() for each sector (a distance-only method=3 call): the binary first (Stage A,
             from the timeout as there), qec_cert only for a sector whose bracket is still open (Stage B; wmin =
-            max(1, dmin_A), wmax = dmax_A - 1, and its upper-bound stage only for a wide bracket), and the binary again
-            with the time left if qec_cert ends early with an open bracket; each sector has the whole timeout, as with
-            the other engines.
+            max(1, dmin_A), wmax = dmax_A - 1, its upper-bound stage only for a wide bracket, and with wmin > 1
+            search_opts={"force_dom": 1}, since version 0.17.4), and the binary again with the time left if qec_cert
+            ends early with an open bracket; each sector has the whole timeout, as with the other engines.
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
@@ -6831,13 +6909,14 @@ def compute_css_distance(
 
                 def certify(w_lo: int, w_hi: int) -> Any:
                     _, qec_io, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
+                    s_kw = _cert_search_kw(qec_pipeline, w_lo, debug=debug, verbose=verbose)
                     return qec_pipeline.certify(
                         qec_io.DistanceProblem(
                             _cert_to_csr(H_s, qec_io), _cert_to_csr(L_s, qec_io), _cert_to_csr(G_s, qec_io)
                         ),
                         wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                         seed=seed if seed != 0 else 1, time_limit=_cert_time_left(t_lim, t_call), mode="auto",
-                        use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s),
+                        use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **s_kw,
                     )
                 return _cert_code_distance(
                     lambda: _matrix_cache_key(H_s, G_s, L_s, False), certify, label=f"CSS {s}-sector", dmin=dmin_s,
@@ -6863,6 +6942,7 @@ def compute_css_distance(
                     seed=seed if seed != 0 else 1,
                     time_limit=_auto_timeout(timeout),
                     mode=mode_arg,
+                    **_cert_search_kw(qec_pipeline, w_lo, search=mode_arg != "ub", debug=debug, verbose=verbose),
                 ),
                 label=f"CSS {s}-sector", dmin=eff_dmin, dmax=0, dstop=sector_stop, wmax=wmax,
                 eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
@@ -7222,7 +7302,8 @@ def compute_dem_distance(
         threads: Maximum number of worker threads (default: all logical CPUs available; subject to throttling).
         timeout: Execution timeout in seconds (default: 60.0; 0 or inf: no limit).
         nothrottle: If True, the automatic thread throttling of the binary is disabled (default: False).
-        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps).
+        chunk_size: Maximum RW batch claimed at once by a thread (default: 0: adaptive, 25-500 steps; in method=3,
+            at most about 0.5 s of RW steps, and an RW thread leaves its batch between two steps for a CC round).
         num_steps: Maximum RW steps.
         min_hits: RW stops once the average number of hits per codeword reaches min_hits (with a nonzero resolved
             rw_opt, not counting the hits of the row slabs and of the hybrid index windows), both for the codewords of
@@ -7355,6 +7436,8 @@ def compute_dem_distance(
             with an open bracket, also with timeout=0); otherwise the two-stage portfolio of compute_quantum_distance()
             (the binary first, then qec_cert if the bracket is still open, and then the binary again with the time
             left); the binary only, with the whole timeout, if qec_cert is not installed or not usable (a warning).
+            With "cert" and "auto", a floor wmin > 1 is passed to qec_cert with search_opts={"force_dom": 1}, as in
+            compute_quantum_distance() (since version 0.17.4).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
@@ -7522,7 +7605,9 @@ def compute_dem_distance(
             r_seed = seed if seed != 0 else 1
 
             def certify_cut(w_lo: int, w_hi: int) -> Any:
-                kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg)
+                kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg,
+                          **_cert_search_kw(qec_pipeline, w_lo, search=mode_arg != "ub", debug=debug,
+                                            verbose=verbose))
                 if pmin > 0.0:  # (qec_cert has no cutoff: it gets the DEM of the cache key, without the errors < pmin)
                     return qec_pipeline.certify_dem(_dem_pmin_cut(dem, pmin), **kw)
                 if circuit is not None:
@@ -7560,9 +7645,10 @@ def compute_dem_distance(
 
                 def certify(w_lo: int, w_hi: int) -> Any:
                     _, _, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
+                    s_kw = _cert_search_kw(qec_pipeline, w_lo, debug=debug, verbose=verbose)
                     kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed,
                               time_limit=_cert_time_left(t_lim, t_call), mode="auto",
-                              use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s))
+                              use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **s_kw)
                     if circuit is not None:
                         return qec_pipeline.certify_circuit(circuit, **kw)
                     return qec_pipeline.certify_dem(fdem_run, **kw)
@@ -9173,6 +9259,10 @@ Multithreading & throttling:
   chunk_size=N          Maximum RW batch claimed at once by a thread (default: 0 = adaptive
                         25-500). Near the end of the steps, batches shrink to at most
                         ceil(remaining / (4 * RW threads)) steps. Alias: batch=N (also chunk=N).
+                        In method=3, adaptive batches take at most about 0.5 s of RW steps, and
+                        while RW steps remain to be claimed, an RW thread leaves its batch between
+                        two steps for a CC round which needs more threads (the rest of the batch
+                        runs after the round).
   ksub=N                EXPERIMENTAL, should not be used (a warning is printed): subspace sketch
                         dimension for RW (default: 0 = full matrix).
                         Precomputes N = ker(H) once; each thread echelonizes a compact
@@ -9510,6 +9600,9 @@ General options:
                           the remaining time from the tightened bounds.
                         If qec_cert is not installed (or not usable, e.g., without libqeccert.so:
                         warns once per process), the native binary runs once with the whole timeout.
+                        With 'cert' and 'auto', a floor wmin > 1 (a certified lower bound) keeps the
+                        stabilizer dominance of the qec_cert search on for quantum codes and DEMs
+                        (force_dom=1 if this qec_cert has the option, since 0.17.4).
                         'codedistance': runs the codedistance Python package (error if missing, or
                         with --cws or outC; uses steps and seed, and ignores non-default dist_m4ri
                         binary options with a warning).  --verbose reports the engine='auto' stages.

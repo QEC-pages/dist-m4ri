@@ -5094,5 +5094,325 @@ def test_cli_stamp_json_disabled(capsys, tmp_path):
         assert capsys.readouterr().out == out, topic
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Version 0.17.4 (A4 of the final benchmark): with a certified floor wmin > 1, every call of qec_cert passes
+# search_opts={"force_dom": 1}, so that qec_cert keeps the stabilizer dominance of its search on (it switches it off
+# for wmin > 1 by default): Stage B of engine='auto' (quantum codes, CSS sectors, DEMs, Stim circuits) and
+# engine='cert' from the certified dmin of a cache record (not for classical codes, which have no stabilizers).
+# ---------------------------------------------------------------------------------------------------------------
+
+def _force_dom_pipeline(monkeypatch, pkg, search_opts=True, option_names=("wmin", "force_dom")):
+    """
+    Installs a fake qec_cert package pkg in sys.modules (restored by monkeypatch) and returns its module pipeline,
+    whose certify() takes the parameter search_opts (or not, as an older qec_cert), with a module search whose
+    OPTION_NAMES are option_names (None: no module search).
+    """
+    import types
+    pipeline = types.ModuleType(pkg + ".pipeline")
+    pipeline.__package__ = pkg
+    if search_opts:
+        def certify(problem, *, wmin=1, wmax=40, search_opts=None, **kw):
+            raise AssertionError("not called")
+    else:
+        def certify(problem, *, wmin=1, wmax=40, **kw):
+            raise AssertionError("not called")
+    pipeline.certify = certify
+    monkeypatch.setitem(sys.modules, pkg, types.ModuleType(pkg))
+    monkeypatch.setitem(sys.modules, pkg + ".pipeline", pipeline)
+    if option_names is not None:
+        search = types.ModuleType(pkg + ".search")
+        search.OPTION_NAMES = tuple(option_names)
+        monkeypatch.setitem(sys.modules, pkg + ".search", search)
+    return pipeline
+
+
+def test_qec_cert_has_force_dom(monkeypatch):
+    # the feature check: certify() takes search_opts (forwarded by certify_dem() and certify_circuit()), and the search
+    # kernel has the option force_dom (qec_cert.search.OPTION_NAMES); otherwise False (an older qec_cert)
+    from types import SimpleNamespace
+    has = dist_m4ri._qec_cert_has_force_dom
+    assert has(_force_dom_pipeline(monkeypatch, "fake_qc_a4_new")) is True
+    assert has(_force_dom_pipeline(monkeypatch, "fake_qc_a4_noopts", search_opts=False)) is False
+    assert has(_force_dom_pipeline(monkeypatch, "fake_qc_a4_nodom", option_names=("wmin", "use_dom"))) is False
+    assert has(_force_dom_pipeline(monkeypatch, "fake_qc_a4_nosearch", option_names=None)) is False
+    assert has(SimpleNamespace(certify=lambda *a, **kw: None)) is False  # (as the fake of _fake_qec_cert())
+    assert has(SimpleNamespace()) is False
+
+
+def test_cert_search_kw(monkeypatch, capsys):
+    # force_dom=1 only with a floor wmin > 1 (always a certified lower bound, see _cert_code_distance()); with wmin <= 1
+    # qec_cert's default is left alone; an explicit force_dom of the caller wins; other search options are kept
+    kw = dist_m4ri._cert_search_kw
+    qp = _force_dom_pipeline(monkeypatch, "fake_qc_a4_kw")
+    assert kw(qp, 1) == {} and kw(qp, 0) == {}
+    assert kw(qp, 2) == {"search_opts": {"force_dom": 1}} and kw(qp, 22) == {"search_opts": {"force_dom": 1}}
+    mine = {"use_cayley": 0}
+    assert kw(qp, 1, mine) == {"search_opts": {"use_cayley": 0}}
+    assert kw(qp, 5, mine) == {"search_opts": {"use_cayley": 0, "force_dom": 1}} and mine == {"use_cayley": 0}
+    for val in (0, 1, False):
+        assert kw(qp, 5, {"force_dom": val}) == {"search_opts": {"force_dom": val}}
+        assert kw(qp, 1, {"force_dom": val}) == {"search_opts": {"force_dom": val}}
+    assert capsys.readouterr().out == ""  # (a note only with verbose or PY_DBG_COMMANDS)
+    # search=False (a call without search, mode='ub'): nothing added, no note
+    assert kw(qp, 5, search=False, verbose=True) == {} and capsys.readouterr().out == ""
+    assert kw(qp, 5, mine, search=False) == {"search_opts": {"use_cayley": 0}}
+    assert kw(qp, 5, verbose=True) == {"search_opts": {"force_dom": 1}}
+    assert "search option force_dom=1 with the certified floor wmin=5" in capsys.readouterr().out
+    assert kw(qp, 6, debug=dist_m4ri.PY_DBG_COMMANDS) == {"search_opts": {"force_dom": 1}}
+    assert "force_dom=1 with the certified floor wmin=6" in capsys.readouterr().out
+    # an older qec_cert (certify() without search_opts, or no option force_dom): called as before, with a debug note
+    for old in (_force_dom_pipeline(monkeypatch, "fake_qc_a4_old1", search_opts=False),
+                _force_dom_pipeline(monkeypatch, "fake_qc_a4_old2", option_names=("wmin",))):
+        assert kw(old, 5) == {} and capsys.readouterr().out == ""
+        assert kw(old, 5, debug=dist_m4ri.PY_DBG_COMMANDS) == {}
+        assert "no search option force_dom (an older version)" in capsys.readouterr().out
+        assert kw(old, 1, verbose=True) == {} and capsys.readouterr().out == ""
+        assert kw(old, 5, {"use_cayley": 0}) == {"search_opts": {"use_cayley": 0}}
+
+
+def test_force_dom_call_sites(monkeypatch, tmp_path):
+    # every call site: force_dom=1 with a certified floor wmin > 1, nothing new with wmin = 1
+    import functools
+    monkeypatch.setattr(dist_m4ri, "_qec_cert_has_force_dom", lambda qp: True)
+    fake = _FakeBinary(["3 5 10"])
+    monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake.popen)
+    calls = _fake_qec_cert(monkeypatch, certify=_cert_search_lb(), certify_dem=_cert_search_lb(),
+                           certify_circuit=_cert_search_lb())
+    force = {"force_dom": 1}
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        # engine='auto', quantum code: Stage A [3, 5], Stage B from wmin=3 (the dmin certified by CC)
+        d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2,
+                                                     return_info=True)
+        assert (d, info) == (5, [5, 5, 0]) and len(calls) == 1 and calls[0][0] == "certify"
+        assert calls[0][1]["wmin"] == 3 and calls[0][1]["search_opts"] == force
+        # Stage A without a lower bound: Stage B from wmin=1 gets no search_opts (the default of qec_cert)
+        fake.outputs, fake.cmds[:], calls[:] = ["0 5 10"], [], []
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2)
+        assert len(calls) == 1 and calls[0][1]["wmin"] == 1 and "search_opts" not in calls[0][1]
+        # engine='auto', CSS code: Stage B only for the sector X, open after Stage A ([3, 6])
+        fake.outputs, fake.cmds[:], calls[:] = ["4 4 0", "3 6 50"], [], []
+        dist_m4ri.compute_css_distance(S5_H, S5_H, Lx=S5_L, Lz=S5_L, engine="auto", timeout=20, threads=2)
+        assert len(calls) == 1 and calls[0][1]["wmin"] == 3 and calls[0][1]["search_opts"] == force
+        # engine='auto', DEM (certify_dem()) and Stim circuit (certify_circuit())
+        fake.outputs, fake.cmds[:], calls[:] = ["2 5 10"], [], []
+        dist_m4ri.compute_dem_distance(SURF_D3_DEM, engine="auto", timeout=20, threads=2)
+        assert [c[0] for c in calls] == ["certify_dem"] and calls[0][1]["wmin"] == 2
+        assert calls[0][1]["search_opts"] == force
+        if dist_m4ri._HAS_STIM:
+            import stim
+            circ = stim.Circuit.generated("repetition_code:memory", distance=5, rounds=2,
+                                          after_clifford_depolarization=0.001)
+            fake.outputs, fake.cmds[:], calls[:] = ["2 5 10"], [], []
+            dist_m4ri.compute_dem_distance(circuit=circ, engine="auto", timeout=20, threads=2)
+            assert [c[0] for c in calls] == ["certify_circuit"] and calls[0][1]["search_opts"] == force
+        # engine='cert' without a cache record: from wmin=1, no search_opts
+        calls[:] = []
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="cert")
+        dist_m4ri.compute_classical_distance(HAMMING_H, engine="cert")
+        dist_m4ri.compute_dem_distance(SURF_D3_DEM, engine="cert")
+        assert [c[0] for c in calls] == ["certify", "certify", "certify_dem"]
+        assert all(c[1]["wmin"] == 1 and "search_opts" not in c[1] for c in calls)
+    finally:
+        dist_m4ri.enable_distance_cache()
+    # engine='cert' from the certified dmin of a cache record written by the binary (a new cache for each case): a
+    # quantum code, the two sectors of a CSS code, and a DEM (also with pmin > 0, and on the DEM fast path of
+    # engine='auto'), but not a classical code (no stabilizer dominance) nor method=1 (mode 'ub': no search)
+    def fast_path(**kw):  # (more than 25,000 raw error mechanisms: qec_cert first, from the floor of the cache)
+        monkeypatch.setattr(dist_m4ri, "_dem_num_raw_errors", lambda dem, limit=0: 30000)
+        return dist_m4ri.compute_dem_distance(SURF_D3_DEM, engine="auto", timeout=10, **kw)
+
+    def quantum(**kw):
+        return dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, **kw)
+
+    def css(**kw):
+        return dist_m4ri.compute_css_distance(QX40, QZ40, **kw)
+
+    def classical(**kw):
+        return dist_m4ri.compute_classical_distance(HAMMING_H, **kw)
+
+    def dem(**kw):
+        return dist_m4ri.compute_dem_distance(SURF_D3_DEM, **kw)
+
+    def dem_pmin(**kw):
+        return dist_m4ri.compute_dem_distance(SURF_D3_DEM, pmin=0.0005, **kw)
+
+    cases = [  # (name, the record of the binary, the call writing it, the call of qec_cert, its kinds, wmin, options)
+        ("quantum", "3 5 10", quantum, functools.partial(quantum, engine="cert"), ["certify"], 3, force),
+        ("quantum_ub", "3 5 10", quantum, functools.partial(quantum, engine="cert", method=1), ["certify"], 3, None),
+        ("css", "3 5 10", css, functools.partial(css, engine="cert"), ["certify"] * 2, 3, force),
+        ("classical", "2 3 10", classical, functools.partial(classical, engine="cert"), ["certify"], 2, None),
+        ("dem", "2 3 10", dem, functools.partial(dem, engine="cert"), ["certify_dem"], 2, force),
+    ]
+    if dist_m4ri._HAS_STIM:  # (the cutoff of pmin for qec_cert, see _dem_pmin_cut())
+        cases.append(("dem_pmin", "2 3 10", dem_pmin, functools.partial(dem_pmin, engine="cert"), ["certify_dem"], 2,
+                      force))
+    cases.append(("dem_fast_path", "2 3 10", dem, fast_path, ["certify_dem"], 2, force))
+    try:
+        for name, record, write, cert, kinds, w_lo, opts in cases:
+            dist_m4ri.clear_distance_cache()
+            cache_file = str(tmp_path / f"a4_{name}.json")
+            fake.outputs, fake.cmds[:] = [record], []
+            write(threads=2, cache_file=cache_file)  # (the binary: the record [w_lo, ...])
+            calls[:] = []
+            cert(cache_file=cache_file)
+            assert [c[0] for c in calls] == kinds, name
+            assert all(c[1]["wmin"] == w_lo and c[1].get("search_opts") == opts for c in calls), name
+    finally:
+        dist_m4ri.clear_distance_cache()
+
+
+def test_force_dom_older_qec_cert(monkeypatch, capsys):
+    # an older qec_cert (here the fake of _fake_qec_cert(), whose certify() takes no search_opts): Stage B from the
+    # floor wmin=3 is called as before, without search_opts, and verbose says why
+    fake = _FakeBinary(["3 5 10"])
+    monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake.popen)
+    calls = _fake_qec_cert(monkeypatch, certify=_cert_search_lb())
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2,
+                                                     return_info=True, verbose=True)
+        assert (d, info) == (5, [5, 5, 0]) and len(calls) == 1 and calls[0][1]["wmin"] == 3
+        assert "search_opts" not in calls[0][1]
+        assert "no search option force_dom (an older version)" in capsys.readouterr().out
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_force_dom_real_qec_cert(monkeypatch):
+    # the real qec_cert (skipped unless it is usable and has the option force_dom): Stage B of engine='auto' from the
+    # floor wmin=3 of Stage A (a fake binary: the wide bracket [3, 6], so use_ub=True, and qec_cert runs its search
+    # after its upper-bound stage, not its rank DP) for bb_72 ([[72, 12, 6]], H = Hx, G = Hz) gets search_opts
+    # force_dom=1, which reaches the search kernel: its stabilizer dominance is on (rule 'dom', with dominance sets)
+    import functools
+    if not dist_m4ri._has_qec_cert():
+        pytest.skip(f"qec_cert is not usable: {dist_m4ri._qec_cert_status}")
+    _, _, qp = dist_m4ri._get_qec_cert()
+    if not dist_m4ri._qec_cert_has_force_dom(qp):
+        pytest.skip("qec_cert without the search option force_dom")
+    css_dir = os.path.join(EXAMPLES_DIR, "..", "benchmark", "css")
+    H, G = os.path.join(css_dir, "bb_72_12_6_Hx.mtx"), os.path.join(css_dir, "bb_72_12_6_Hz.mtx")
+    certs = []
+    real = qp.certify
+
+    @functools.wraps(real)  # (the signature of certify(), with search_opts, for the feature check)
+    def spy(*a, **kw):
+        certs.append((kw, real(*a, **kw)))
+        return certs[-1][1]
+
+    monkeypatch.setattr(qp, "certify", spy)
+    fake = _FakeBinary(["3 6 10"])
+    monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake.popen)
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        d, info = dist_m4ri.compute_quantum_distance(H, G=G, engine="auto", timeout=30, threads=2, return_info=True)
+        assert (d, info) == (6, [6, 6, 0]) and len(certs) == 1
+        kw, cert = certs[0]
+        assert (kw["wmin"], kw["wmax"], kw["use_ub"], kw["search_opts"]) == (3, 5, True, {"force_dom": 1})
+        search = [s for s in cert.stages if isinstance(s, dict) and s.get("name") == "search"]
+        assert len(search) == 1, [s.get("name") for s in cert.stages]
+        assert search[0]["n_dom"] > 0 and "dom" in search[0]["rules"], search[0]
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def _dem_floor_cert(lb, stages, reductions, wmin=6, ub=None):
+    """A certificate (a dict) of certify_dem() from the floor wmin > 1, conditional on lb_assumed_wmin = wmin."""
+    return {"status": "bounds", "lower_bound": lb, "upper_bound": ub, "witness_verified": True if ub else None,
+            "instance": {"lb_conditional": True, "lb_assumed_wmin": wmin}, "stages": stages,
+            "reductions": reductions}
+
+
+def test_cert_wmin_discharged_dem_relaxations():
+    # M1 of the verification of A4 (scratch/fixes_a3a4/a4/verify/VERIFY.md): certify_dem() searches the relaxations of
+    # a DEM (the P_1 projection, spacetime folding), whose distance may be below the floor wmin of the DEM, from that
+    # floor; a conditional lower bound of them above the floor is accepted only with the exact zero-solve sandwich
+    # (d(P_1) = d(DEM)), and one of folding never
+    def stage(name, lb):
+        return {"name": name, "status": "bounds", "lb": lb, "lb_conditional": True}
+
+    def search(w_lo, lb):  # (a search stage and its reduction, without symmetry, from the floor w_lo)
+        flags = {"lb_conditional": True, "sym_kind": "unknown", "sym_verified": 0, "rules": list(_NOSYM_RULES)}
+        return ({"name": "search", "status": "none", "lb": lb, **flags},
+                {"name": "cc_mitm_search", "params": {"wmin": w_lo, "wmax": lb - 1, **flags}})
+
+    inexact, exact = ({"name": "zero_solve_sandwich", "status": s} for s in ("inexact", "exact"))
+    p1_red = {"name": "p1_projection_lb", "params": {"lb": 19, "lb_conditional": True}}
+    s19, r19 = search(6, 19)
+    # the leak (verify/check_p1_wmin.py): the inexact P_1 projection, searched from 6, raises the bound to 19 > wmax,
+    # so that the DEM itself is not searched (the true distance was 15)
+    leak = _dem_floor_cert(19, [inexact, stage("p1_projection_lb", 19)], [p1_red, r19])
+    assert not dist_m4ri._cert_wmin_discharged(leak, 6) and dist_m4ri._cert_extract_bounds(leak, 6) == (0, 0)
+    leak_ub = dict(leak, lower_bound=17, upper_bound=17, witness_verified=True)  # (qec_cert clamps it to a witness)
+    assert dist_m4ri._cert_extract_bounds(leak_ub, 6) == (0, 17)
+    # (the stage alone suffices, also without the reduction p1_projection_lb, e.g., from another qec_cert version)
+    assert not dist_m4ri._cert_wmin_discharged(dict(leak, reductions=[r19]), 6)
+    # the exact zero-solve sandwich (its P_1 searched from the floor of the DEM): valid
+    exact_p1 = _dem_floor_cert(19, [exact, s19], [p1_red, r19])
+    assert dist_m4ri._cert_wmin_discharged(exact_p1, 6) and dist_m4ri._cert_extract_bounds(exact_p1, 6) == (19, 0)
+    # an inexact P_1 projection which does not raise the bound, then the DEM searched from the floor: valid
+    s15, r15 = search(6, 15)
+    p1_low = _dem_floor_cert(15, [inexact, stage("p1_projection_lb", 4), s15], [r15], ub=15)
+    assert dist_m4ri._cert_wmin_discharged(p1_low, 6) and dist_m4ri._cert_extract_bounds(p1_low, 6) == (15, 15)
+    # folding: valid only if it does not raise the bound
+    fold_red = {"name": "capped_spacetime_folding", "params": {"period": 2, "lb": 12, "lb_conditional": True}}
+    s10, r10 = search(6, 10)
+    assert not dist_m4ri._cert_wmin_discharged(_dem_floor_cert(12, [stage("fold_mod_2", 12)], [fold_red, r19]), 6)
+    assert not dist_m4ri._cert_wmin_discharged(_dem_floor_cert(12, [stage("fold_mod_2", 12)], [r19]), 6)
+    assert not dist_m4ri._cert_wmin_discharged(_dem_floor_cert(12, [], [fold_red]), 6)
+    assert dist_m4ri._cert_wmin_discharged(_dem_floor_cert(10, [stage("fold_mod_2", 5), s10], [r10]), 6)
+    # end to end, from the floor 6: the bound 19 of the leak is not used
+    dist_m4ri.disable_distance_cache()
+    try:
+        res = dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi: leak, dmin=6, certified_dmin=6)
+        assert res["d_info"] == [6, 0, 0]
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def _simplex_p1_dem():
+    """
+    The text of a DEM (9 detector chains, 8 rounds) whose time-collapsed projection P_1 is the [7, 3, 4] simplex code
+    (each logical of P_1 has weight 4), with the distance 15 and an inexact zero-solve sandwich (from
+    scratch/fixes_a3a4/a4/verify/check_p1_wmin.py of the verification of A4).
+    """
+    n_chains, n_rounds = 9, 8
+    lines = [f"detector(0, {c}, {t}) D{n_rounds * c + t}" for c in range(n_chains) for t in range(n_rounds)]
+    lines += [f"error(0.001) D{n_rounds * c + t} D{n_rounds * c + t + 1}"
+              for c in range(n_chains) for t in range(n_rounds - 1)]
+    cols = [[0, 1, 3], [0, 2, 3], [1, 2, 3], [0], [1], [2], [3]]  # (the columns of P_1: its 4 x 7 check matrix)
+    for j, (chains, t) in enumerate(zip(cols, [0, 2, 4, 6, 7, 5, 3])):
+        lines.append("error(0.001) " + " ".join(f"D{n_rounds * c + t}" for c in chains) + (" L0" if j == 0 else ""))
+    for i in range(5):  # (more columns on the chains 4..8, without L0)
+        lines.append("error(0.001) " + " ".join(f"D{n_rounds * (4 + (i + k) % 5) + i}" for k in range(3)))
+    return "\n".join(lines) + "\n"
+
+
+def test_cert_wmin_discharged_p1_leak_real_qec_cert(tmp_path):
+    # M1 with the real qec_cert (skipped unless it is usable, with stim): the floor wmin=6 of the DEM (distance 15) is
+    # not one of P_1 (distance 4); without the rank DP (cut_rank_threshold=-1), certify_dem() raises the bound to 19
+    # from P_1 alone, which must not be accepted; from the floor 4, and from 6 with the defaults (the DP gives d(P_1)
+    # = 4, and the DEM is searched from 6), the discharge still certifies 15
+    pytest.importorskip("stim")
+    if not dist_m4ri._has_qec_cert():
+        pytest.skip(f"qec_cert is not usable: {dist_m4ri._qec_cert_status}")
+    _, _, qp = dist_m4ri._get_qec_cert()
+    dem_file = str(tmp_path / "simplex_p1.dem")
+    with open(dem_file, "w") as f:
+        f.write(_simplex_p1_dem())
+    ref = qp.certify_dem(dem_file, wmin=1, wmax=25, threads=2)
+    assert ref.status == "exact" and ref.lower_bound == 15
+    no_dp = {"cut_rank_threshold": -1, "k_table": 1}
+    for wmin, extra, expected in ((6, no_dp, None), (4, no_dp, (15, 15)), (6, {}, (15, 15))):
+        cert = qp.certify_dem(dem_file, wmin=wmin, wmax=18, threads=2, use_ub=False, **extra,
+                              **dist_m4ri._cert_search_kw(qp, wmin))
+        bounds = dist_m4ri._cert_extract_bounds(cert, wmin)
+        assert bounds[0] <= 15, (wmin, extra, cert.lower_bound, bounds)  # (never above the distance)
+        assert expected is None or bounds == expected, (wmin, extra, bounds)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
