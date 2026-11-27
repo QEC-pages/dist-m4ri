@@ -672,6 +672,20 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   `canon_w = INT_MAX`, so all buffered weights up to 64 are canonicalized before the ones above `min_w` are dropped;
   `canon_t3()` does not merge identical columns. Fix: poll the stop flags in the loop, canonicalize only weights up to
   the current `min_w`, and collapse twin columns in the canonical form.
+- [ ] **RW micro-overhead studies on fast static codes (post-0.17.5)**:
+  - **(a) Skip `rw_opt=0x01` per-step overhead when $\mathcal{T}_3 = \emptyset$ and `min_hits == 0`:** on static CSS
+    codes with $\mathcal{T}_3 = \emptyset$ (`gross`, `double_gross`), `rw_opt=-1` still resolves to `0x01`, so
+    `run_rw_steps()` computes the Stage-2a reduced-$L$ syndrome table (`rw_srows()`), flushes per-step candidate
+    buffers (`rw_rec_flush()`), and accumulates the FKG score on every step (~5–8% per step vs `rw_opt=0`: `82.2 s` vs
+    `76.1 s` on `gross` 3M steps at $p = 1$, `4.36e-5` vs `4.05e-5 s/step`). Study disabling `0x01` when
+    $\mathcal{T}_3 = \emptyset$ and `min_hits == 0` (checking whether `rw_pairs_step()` still benefits from `rw_srows`,
+    and keeping Stage 5 `0x10` unchanged when `min_hits > 0`).
+  - **(b) Batch `rw_steps_completed` and `rw_time_step()` updates at high thread counts ($p = 64..128$):**
+    `run_rw_steps()` currently runs `atomic_fetch_add(&ctx->rw_steps_completed, 1)` (`seq_cst`, sharing a 64-byte cache
+    line with `rw_steps_started`) and `rw_time_step()` (`clock_gettime`) on every step. On very short steps (20–40 µs
+    on `gross` / `double_gross`), 128 threads contend on that cache line; study accumulating completed steps locally
+    and flushing per batch or every 1–2 ms (`memory_order_relaxed`, plus cache-line separation), verifying 64–128
+    thread scaling, `method=3` coordinator responsiveness, and `timeout` accuracy.
 
 ---
 
