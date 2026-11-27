@@ -1667,30 +1667,32 @@ The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes 
 (bivariate bicycle codes including the gross and double-gross codes, Mitten codes including those of arXiv:2607.28795
 with circuits of their published hook-free schedules, SHYPS codes, and 2D-local torus BB circuits),
 their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on a
-128-thread server: the scaling with the number of threads (0.17.0, 0.15.2, and earlier versions), and a comparison of
-the versions 0.14.6, 0.14.5, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. [`benchmark/BENCHMARK.md`](benchmark/BENCHMARK.md) shows
-the current results in figures with plain captions, and [`benchmark/HISTORY.md`](benchmark/HISTORY.md) the dated results
-of each version. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight in at most
-1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of the
-`mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
-detectors stripped, whose distance is only a lower bound). Section 7 of the history measures the RW window size and the
-thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its Section 8 the RW pairs of 0.14.4 with the
-work bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5. With the pairs, RW needs 6-30 times fewer
-steps to a minimum-weight codeword of a full DEM where many steps are needed (the time of these short runs is mostly
-reading and reducing the DEM), it finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s and
-the weight 23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and it finds lighter codewords of codes with a
-large distance. Sections 9 and 10 of the history measure the branch-and-bound CC search of 0.15.0 (4-35 times faster for
-the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of `bb_360` certified, up to $d = 24$, and
-those up to $d = 18$ confirmed with the walk of the earlier versions) and the lower cost per node of 0.15.2. Sections 11
-and 12 of the history measure the RW stages of 0.17.0–0.17.4 (`rw_opt`: a stage ablation on 22 inputs, sustained
-sparse-dual scaling at 9.9–13.5x on `bb_360` and 5.3–7.7x on `bb_756`, and automatic row slabs reaching weight 16 in
-11/11 seeds on single-round double gross), long-running `method=2`/`method=3` scaling (58–65x on 64 cores, 63–84x on
-128 threads), and 128-thread certification of 24 of 25 multi-round circuits and CSS codes in 0.145–1,697 s (`bb_360`
-code in 53.5 s, `gross` SI1000 circuit in 77.6 s).
+128-thread server: the scaling with the number of threads (0.17.5, 0.15.2, and earlier versions), and a comparison of
+the versions 0.17.5, 0.14.6, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. [`benchmark/BENCHMARK.md`](benchmark/BENCHMARK.md)
+shows the current results in figures with plain captions, and [`benchmark/HISTORY.md`](benchmark/HISTORY.md) the dated
+results of each version. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight
+in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9
+of the `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the
+minority-basis detectors stripped, whose distance is only a lower bound). Section 7 of the history measures the RW
+window size and the thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its Section 8 the RW pairs
+of 0.14.4 with the work bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5. With the RW pairs,
+0.14.6 already needs 6–30 times fewer steps than 0.14.3 to a minimum-weight codeword of a full DEM, finding weight 18
+of the double-gross circuit in 1.5–2.4 s instead of 9.6–18.8 s and weight 23 of `bb_360` in 56–119 s (0.14.3: 24 in
+4 min), as well as lighter codewords of codes with a large distance. Sections 9 and 10 of the history measure the
+branch-and-bound CC search of 0.15.0 (4–35 times faster for the codes with $d = 14$–18; the distances of the larger
+`yarn_*` codes and of `bb_360` certified, up to $d = 24$, and those up to $d = 18$ confirmed with the walk of the
+earlier versions) and the lower cost per node of 0.15.2. Sections 11 and 12 of the history measure the RW stages of
+0.17.0–0.17.5 (`rw_opt`: sparse-dual elimination, triplet shortening, automatic row slabs, and canonical-class
+stopping): in 0.17.5, RW reaches weight 18 of the double-gross circuit in 1.16–1.53 s (wall 1.35–1.74 s) and weight 23
+of the `bb_360` circuit in **3.0 and 8.6 s** (wall 3.35 and 8.96 s, 183 and 1,096 steps, using all 128 RW threads under
+sparse elimination vs 32 dense threads in 0.14.6), cuts median steps on the 12 full DEMs further (e.g., 27 vs 62 on
+`gross`, 1 step on 6 of 12 circuits), achieves 58–65x long-running `method=2`/`method=3` scaling on 64 cores (63–84x on
+128 threads), and certifies 24 of 25 multi-round circuits and CSS codes on 128 threads in 0.145–1,697 s (`bb_360` code
+in 53.5 s, `gross` SI1000 circuit in 77.6 s).
 
 ![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/time_to_d_full_dems.png)
 
-![The lightest codeword found against time, 0.14.3 and 0.14.6](benchmark/figures/lightest_vs_time.png)
+![The lightest codeword found against time, 0.14.3, 0.14.6, and 0.17.5](benchmark/figures/lightest_vs_time.png)
 
 ---
 

@@ -11,13 +11,13 @@ header-includes:
 # Benchmark History of `dist-m4ri`
 
 This file collects the dated, version-by-version results of the benchmarks of `dist_m4ri`, from the overnight
-benchmark of 0.14.0 (2026-10-11) to the validation, long-running thread scaling, and 128-thread certification of
-0.17.3–0.17.4 (2026-11-24), with all their tables and the runs behind the figures. The current figures with plain
-captions, the terms used, and the inputs are in [BENCHMARK.md](BENCHMARK.md). Sections 4–11 keep the numbers which
-they had in BENCHMARK.md until 2026-11-24, so that references to "Section N of the benchmark" in older notes still
-apply, and Section 12 adds the 2026-11-24 runs; Sections 1–3 (the codes, the circuits with their circuit-level
-distances, and the full DEMs with their exact reduction) are in BENCHMARK.md. The raw data and scripts are in
-`scratch/` (not in the repository; the directory of each benchmark is given in its section).
+benchmark of 0.14.0 (2026-10-11) to the validation, long-running thread scaling, 128-thread certification, and 0.17.5
+figure refresh of 0.17.3–0.17.5 (2026-11-24 to 2026-11-27), with all their tables and the runs behind the figures. The
+current figures with plain captions, the terms used, and the inputs are in [BENCHMARK.md](BENCHMARK.md). Sections
+4–11 keep the numbers which they had in BENCHMARK.md until 2026-11-24, so that references to "Section N of the
+benchmark" in older notes still apply, and Section 12 adds the 2026-11-24 and 2026-11-27 runs; Sections 1–3 (the codes,
+the circuits with their circuit-level distances, and the full DEMs with their exact reduction) are in BENCHMARK.md. The
+raw data and scripts are in `scratch/` (not in the repository; the directory of each benchmark is given in its section).
 
 - [Section 4](#4-scaling-with-the-number-of-threads-versions-and-details): the scaling with the number of threads,
   versions and details (Figures 2–5 of BENCHMARK.md);
@@ -34,8 +34,8 @@ distances, and the full DEMs with their exact reduction) are in BENCHMARK.md. Th
 - [Section 11](#11-rw-triplet-pipeline-and-thread-scaling-of-0170-2026-11-13): the RW triplet pipeline and the thread
   scaling of 0.17.0 (2026-11-13);
 - [Section 12](#12-validation-of-01710174-long-running-thread-scaling-and-certification-on-128-threads-2026-11-24):
-  validation of 0.17.1–0.17.4, long-running CC/`method=3` thread scaling (Figure 6), and 128-thread certification
-  (Figure 1) (2026-11-24).
+  validation of 0.17.1–0.17.4, long-running CC/`method=3` thread scaling (Figure 6), 128-thread certification
+  (Figure 1), and 0.17.5 figure refresh (Figures 2–5, 7–9) (2026-11-24 to 2026-11-27).
 
 ---
 
@@ -534,8 +534,9 @@ BENCHMARK.md): the runs of Section 5.2. All runs of 0.14.x found a codeword of w
 RW with the default threads (32 RW threads, Section 7.1) on the full DEMs of the double-gross circuit (`wmin=18`, three
 seeds) and of `bb_360` (`wmin=23`, two seeds, timeout 240 s). The time of the first codeword of each weight is that of
 its message "RW found new upper bound", since the start of the run (reading and reducing the DEM take about 1 s and
-2 s). The figure ([Figure 8](BENCHMARK.md#figure-8-lightest-codeword-against-time-with-and-without-the-rw-pairs) of
-BENCHMARK.md) shows 0.14.6 (Section 8.7), which finds these codewords as soon as 0.14.5, against 0.14.3.
+2 s). The figure ([Figure 8](BENCHMARK.md#figure-8-lightest-codeword-against-time-with-rw-pairs-and-stages) of
+BENCHMARK.md) shows 0.14.6 (Section 8.7), which finds these codewords as soon as 0.14.5, against 0.14.3 (and now 0.17.5,
+Section 12.4).
 
 | DEM | weight | 0.14.3: time (s)/RW steps, per seed | 0.14.5 | 0.14.6 (Section 8.7) |
 | :--------- | :----: | :----------------------- | :------------------- | :------------------- |
@@ -1035,7 +1036,8 @@ the row slabs `0x04` on the four R2 DEMs, which have no round structure; see bit
 
 ### 11.2 Thread scaling of the RW stages
 
-The figure is [Figure 9](BENCHMARK.md#figure-9-rw-stages-of-0170-against-threads) of BENCHMARK.md.
+The 0.17.0 run below was refreshed with 0.17.5 in
+[Figure 9](BENCHMARK.md#figure-9-rw-stages-of-0175-against-threads) of BENCHMARK.md (Section 12.4).
 
 `rw_opt=0` (the RW of 0.16.1) against `rw_opt=-1` on `taskset -c 0..p-1`, rates per second of RW time. Top two rows:
 hit-heavy RW (`min_hits=10^9`, hits on the up to `cov_cws = 100` stored minimum-weight codewords, Section 11.1;
@@ -1253,3 +1255,63 @@ would exceed 5,000 s, so its `method=3` speedup is $4 \cdot T(4) / T(p)$).
     RW for 20 s (`0/3` seeds certified, `[5, 6]` with `8–23%` of $w = 5$ claimed). With `rw_yield_to_cc()` and the
     $\approx 0.5$ s `method=3` batch cap in 0.17.4, RW workers yield between steps as soon as CC round $w = 5$ needs
     threads, certifying **$d = 6$ in 3/3 seeds in 3.90, 4.11, and 4.22 s** (22–36 RW steps).
+
+<div id="124-0175-figure-refresh-2026-11-27"></div>
+
+### 12.4 0.17.5 figure refresh (2026-11-27)
+
+To bring Figures 2–5, 7, 8, and 9 of [BENCHMARK.md](BENCHMARK.md#key-results) (and the two speed figures embedded in
+[README.md](../README.md)) up to version 0.17.5, a 30-minute exclusive rerun on the same 2 x 32-core EPYC 7B13 server
+(`scratch/bench_0.17.5/run_0175_figures.py`, plotted by `scratch/bench_0.17.5/make_figures_0175.py`) re-measured all
+0.17.0 and 0.14.6 figure inputs with the 0.17.5 binary.
+
+- **Fixed-work thread scaling (Figures 2–5, Section 4 protocol).**
+  - `gross_css` (`method=1`, 3M steps): `82.2 s` at $p = 1$, `1.55 s` at $p = 64$ (`53.2x`), `1.21 s` at $p = 128$
+    (`68.2x`); CC up to $w = 11$ in `0.027 s` at $p = 1$ (`0.015–0.030 s` for $p \ge 8$); `method=3` in `0.049 s` at
+    $p = 1$ (`0.017–0.028 s` for $p \ge 8$).
+  - `dgross_css`: RW (1M steps) `83.1 s` at $p = 1$, `1.54 s` at $p = 64$ (`53.9x`), `1.52 s` at $p = 128$ (`54.7x`);
+    CC up to $w = 15$ `0.835 s` at $p = 1$, `0.036–0.046 s` at $p = 64..128$; `method=3` (500k steps + $w \le 15$)
+    `46.1 s` at $p = 1$, `0.844 s` at $p = 64$ (`54.6x`), `0.757 s` at $p = 128$ (`61.0x`).
+  - `dgross_dem`: RW (300 steps, sparse dual `0x09`) `20.4 s` at $p = 1$, `0.855 s` at $p = 32$ (`23.8x`), `0.638 s` at
+    $p = 64$ (`31.9x`, `3.7x` faster than 0.15.2's `2.36 s`), `0.826 s` at $p = 128$. `method=3` (150 steps + $w \le 5$)
+    improves substantially over 0.17.0 via the 0.17.4 RW-to-CC handoff: `11.2 s` at $p = 1$ (vs `12.9 s`), `0.562 s` at
+    $p = 64$ (`20.0x`, vs `0.748 s`), and `0.662 s` at $p = 128$ (`17.0x`, vs `1.07 s`, 38% faster).
+  - `bb_dem_full` (`method=1`, 20k steps): `11.5 s` at $p = 1$, `0.333 s` at $p = 64$ (`34.4x`), `0.332 s` at $p = 128$
+    (`34.5x`); `method=3` (exact $d = 6$) `0.336 s` at $p = 1$, `0.092–0.136 s` at $p = 8..128$.
+
+- **Full DEMs time to weight $d$ (Figure 7, 128 threads, `nothrottle=1`, 5 seeds, 7 for `gross`).** Every seed of all
+  12 circuits reaches $d$ in `0.098–0.769 s` median wall time (input/reduction dominated), with fewer median RW steps
+  than 0.14.6 across the board: `gross` (`27` vs `62`, `0.466 s`), `mitten_150` custom (`5` vs `13`, `0.367 s`),
+  `mitten_150` hef (`3` vs `4`, `0.399 s`), `mitten_210` custom (`1` vs `3`, `0.454 s`), `mitten_210` hef (`1` vs `6`,
+  `0.492 s`), `mitten_270` custom (`173` vs `220`, `0.566 s`), `mitten_270` hef (`130` vs `161`, `0.627 s`), `bb_72`
+  (`1` vs `3`, `0.098 s`), `mitten_90` custom/hef (`1/1` vs `3/2`, `0.166/0.184 s`), and `mitten_330` custom/hef (`1/1`
+  vs `1/1`, `0.716/0.769 s`).
+
+- **Lightest codeword against time (Figure 8, default throttle, Sections 8.2–8.3 protocol).** Sparse elimination
+  (`rw_opt=0x09`) removes the 32-thread dense-memory cap on the two large DEMs, so 0.17.5 uses all 128 RW threads under
+  the default throttle and combines sparse dual with triplet shortening:
+
+| Input | Stop / limit | 0.14.3 | 0.14.6 | 0.17.5 (2026-11-27) |
+| :----------- | :----------: | :----------------- | :--------------------- | :----------------------------------- |
+| `double_gross` | $w \le 18$ | 9.6, 11.3, 18.8 s | 1.92, 1.52, 2.37 s | **1.16, 1.53, 1.21 s** (128, 401, 110 st) |
+| `bb_360` | $w \le 23$ | $w = 24$ (240 s) | 119 s (5.1k), 56 s (2.2k) | **3.00 s (183 st), 8.60 s (1,096 st)** |
+| `c1920H` | 30 s, 128 thr | 265, 253, 257 | 234, 234, 227 | 241, 234, 232 (268k–277k st) |
+| `ldpc3000` | 30 s, 128 thr | 426, 410, 422 | 402, 396, 402 | 402, 396, 402 (66k st) |
+
+  (Wall times including reading and reducing the full DEMs in 0.17.5: `1.35, 1.74, 1.41 s` on `double_gross`, and
+  `3.35, 8.96 s` on `bb_360`.)
+
+- **RW stages against threads (Figure 9, `rw_opt=-1` vs `rw_opt=0`).**
+  - `bb_72_full`: `-1` scales `61.4x` (`1,580` to `97,087 steps/s`) and reaches `50,735 hits/s` at $p = 128$ (`1.32x`
+    `0`'s `38,561`, itself up from `26,305` in 0.17.0).
+  - `2bga_102_X`: `-1` reaches `10,695 / 10,701 steps/s` and `70.1 / 71.2 hits/s` at $p = 64 / 128$ (`1.19x` `0`'s
+    `59.7 hits/s` at $p = 128$, and `+60%` over 0.17.0's `44.5`).
+  - `mitten_150_T1`: automatic row slabs (`0x15`, every 2nd step) raise `-1` throughput to `416,667 steps/s` at
+    $p = 128$ (`1.53x` `0`'s `272,109`), while weight-7 hits occur only on the uniform steps (`7,458` vs `15,088 hits/s`
+    for `0`; compare Section 12.3 on `dgross_288` $T = 1$).
+  - `bb_72_model`: `-1` peaks at `524,470 hits/s` at $p = 32$ (`1.37x` `0`) and `346,061` at $p = 128$ (`1.50x` `0`).
+  - Wide DEMs: `bb_360` `-1` unthrottled reaches `4.86 / 159.4 / 112.7 steps/s` at $p = 1 / 64 / 128$ (`2.4x / 5.2x /
+    4.5x` `0`), and `39.4–40.8 steps/s` under the default 8-thread cap (`3.1–3.5x` `0`); `bb_756` `-1` unthrottled
+    reaches `3.05 / 4.14 / 2.82 steps/s` at $p = 16 / 64 / 128$ (`2.9–4.8x` `0`, `2.0x` 0.17.0 at $p = 64$). Under the
+    default throttle on `bb_756` (`steps=24` allocates 3 RW threads), no full step completes before `timeout=25 s`
+    (since 0.17.1, interrupted partial steps are no longer counted, replacing 0.17.0's 3 partial steps).

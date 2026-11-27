@@ -47,6 +47,7 @@ def main() -> int:
                 cwd=str(p.parent),
                 capture_output=True,
                 text=True,
+                errors="replace",
             )
             log = (tmp_dir / "doc.log").read_text(errors="replace")
             tex_lines = tex_file.read_text().splitlines()
