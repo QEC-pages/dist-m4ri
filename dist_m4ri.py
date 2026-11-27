@@ -35,7 +35,7 @@ _codedistance_mod = None
 _stim_mod = None
 _qec_cert_mod = None
 
-__version__ = "0.17.4"
+__version__ = "0.17.5"
 
 # Debug bitmap (debug=N): bits 1..32768 are passed to the dist_m4ri binary (1: summary, 2: progress, 4: periodic
 # status, 8: thread allocation and timing, 16: code parameters, 32: codeword supports, 64: arguments, 128: matrices,
@@ -2274,6 +2274,9 @@ def _cert_extract_bounds(cert: Any, certified_dmin: int = 1) -> Tuple[int, int]:
     - For bounds, an upper bound dmax only if witness_verified is True, and a lower bound dmin only when
       status in ('exact', 'bounds', 'timeout') and not lb_conditional.
     A lower bound conditional only on lb_assumed_wmin <= certified_dmin is accepted (see _cert_wmin_discharged()).
+    Such a lower bound which meets the verified upper bound gives the exact distance as well, e.g., of certify_dem() of
+    qec_cert P0, which stops as soon as its lower bound meets a verified upper bound also from a floor wmin > 1, with
+    the status 'bounds' (see _cert_handoff_kw()).
     """
     get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
     status = str(get("status", "") or "")
@@ -2435,7 +2438,8 @@ def _cert_search_kw(qec_pipeline: Any, wmin: int, search_opts: Optional[Dict[str
     it (the P_1 projection, folding) from wmin, where this floor may not hold; their conditional lower bounds above the
     floor are not accepted (see _cert_wmin_discharged()), so dominance there cannot change an accepted lower bound.
     An older qec_cert without the option (see _qec_cert_has_force_dom()) is called as before.  With verbose or the
-    debug bit PY_DBG_COMMANDS, a note says which.
+    debug bit PY_DBG_COMMANDS, a note says which.  Since version 0.17.5, the calls of qec_cert get it from
+    _cert_handoff_kw(), together with the handoff parameters.
     """
     opts = dict(search_opts or {})
     if search and wmin > 1 and "force_dom" not in opts:
@@ -2451,9 +2455,131 @@ def _cert_search_kw(qec_pipeline: Any, wmin: int, search_opts: Optional[Dict[str
     return {"search_opts": opts} if opts else {}
 
 
+# The keyword parameters of the handoff to qec_cert which dist_m4ri may pass (since version 0.17.5, see
+# _cert_handoff_kw()): the known upper bound (dmax_init), and the codeword of that weight found by the binary, as its
+# JSON summary (from_dm4ri) or as a list of 0-based columns (ub_witness, with ub_witness_base=0).  The floor_hint of
+# qec_cert is not passed: the floor is wmin, as before.
+_QEC_CERT_HANDOFF_PARAMS = ("dmax_init", "from_dm4ri", "ub_witness", "ub_witness_base")
+_qec_cert_handoff_probed: Dict[int, Tuple[Any, frozenset]] = {}  # id(function) -> (function, its handoff parameters)
+
+
+def _qec_cert_handoff(qec_pipeline: Any, func: str = "certify") -> frozenset:
+    """
+    The handoff parameters (_QEC_CERT_HANDOFF_PARAMS) which the function func ('certify', 'certify_dem', or
+    'certify_circuit') of qec_cert (its module pipeline: qec_pipeline) names in its signature (inspect.signature, once
+    per function object; since version 0.17.5).  A parameter accepted only by **kwargs does not count (certify_dem()
+    forwards those to its own certify() calls, e.g., for the P_1 projection, where an upper bound or a codeword of the
+    DEM does not hold), except that certify_circuit() with **kwargs has those of certify_dem(), to which it forwards
+    them.  Empty for an older qec_cert, or one which cannot be inspected: it is then called as before.
+    """
+    fn = getattr(qec_pipeline, func, None)
+    if fn is None:
+        return frozenset()
+    hit = _qec_cert_handoff_probed.get(id(fn))
+    if hit is not None and hit[0] is fn:
+        return hit[1]
+    try:
+        import inspect
+        params = inspect.signature(fn).parameters
+        named = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        have = frozenset(k for k, p in params.items() if k in _QEC_CERT_HANDOFF_PARAMS and p.kind in named)
+        if func == "certify_circuit" and any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            have |= _qec_cert_handoff(qec_pipeline, "certify_dem")
+    except Exception:
+        have = frozenset()
+    _qec_cert_handoff_probed[id(fn)] = (fn, have)  # (the function is kept: its id is not reused)
+    return have
+
+
+def _cert_handoff_kw(qec_pipeline: Any, wmin: int, search_opts: Optional[Dict[str, Any]] = None, *,
+                     func: str = "certify", search: bool = True, dmax: int = 0,
+                     dm4ri_json: Optional[Dict[str, Any]] = None, debug: int = 0,
+                     verbose: bool = False) -> Dict[str, Any]:
+    """
+    The keyword arguments of a call of the function func ('certify', 'certify_dem', or 'certify_circuit') of qec_cert
+    (its module pipeline: qec_pipeline) from the certified floor wmin (since version 0.17.5): wmin and search_opts, as
+    before (see _cert_search_kw()), and the handoff parameters which func names in its signature (see
+    _qec_cert_handoff(); none for an older qec_cert, which is called as before):
+
+    - dmax_init: the upper bound dmax of the call if dmax > wmin (the dmax of the caller or of the cache record, see
+      _cert_code_distance(), e.g., dmax_A of Stage A in engine='auto').  qec_cert stops its exact search below it (as
+      with wmax = dmax - 1, which the caller passes anyway) and reports it in its instance, but never as its upper
+      bound without a verified codeword.
+    - from_dm4ri: the JSON summary dm4ri_json (schema 'dm4ri-result/1') of the run of the binary in Stage A of
+      engine='auto', with its codeword of weight dmax_A (see _auto_stage_a_witness()), whose 1-based original columns
+      (witness.support) qec_cert imports: the columns of H for a quantum code or a CSS sector, and for certify_dem()
+      the error mechanisms of the DEM in the order of its flattened text (repeat blocks unrolled; the first one of the
+      equal columns merged by the binary; a codeword found with detectors dropped is one of the DEM).  qec_cert
+      verifies it itself (H x = 0 and L x != 0, for a DEM on its error mechanisms), and does not use it otherwise,
+      see _cert_code_distance(); with the stop code 'rw_converged' of the binary (method=1 only: Stage A with
+      method=3 ends by its time limit or the bounds), certify() also skips its Stage-1 Stern search.  If func names
+      ub_witness but not from_dm4ri, the codeword is passed as ub_witness instead, a sorted list of 0-based columns
+      (with ub_witness_base=0 if func names it).  Never for certify_circuit(), whose DEM is generated by qec_cert from
+      the circuit: its error mechanisms need not be those of the DEM of the binary.
+
+    The floor stays wmin, as before: qec_cert searches from it (it would search the weights below it again from
+    wmin=1), and its lower bound, conditional on lb_assumed_wmin = wmin, is accepted if wmin is certified (see
+    _cert_wmin_discharged()); since its P0 version, certify_dem() also stops as soon as its lower bound meets a
+    verified upper bound from wmin > 1, with the status 'bounds', whose bounds are then exact here (see
+    _cert_extract_bounds()).  The floor_hint of qec_cert is not passed: with the floor wmin, it would change nothing
+    (qec_cert uses it only for the target max(lb, floor_hint) of its randomized upper-bound stages, where lb >= wmin,
+    and to report a verified codeword below it, which it reports with wmin as precondition_violated).  With verbose or
+    the debug bit PY_DBG_COMMANDS, a note lists dmax_init and the codeword passed.
+    """
+    kw: Dict[str, Any] = {"wmin": wmin}
+    kw.update(_cert_search_kw(qec_pipeline, wmin, search_opts, search=search, debug=debug, verbose=verbose))
+    have = _qec_cert_handoff(qec_pipeline, func)
+    if dmax > max(1, wmin) and "dmax_init" in have:
+        kw["dmax_init"] = int(dmax)
+    wit = dm4ri_json.get("witness") if (isinstance(dm4ri_json, dict) and func != "certify_circuit") else None
+    if isinstance(wit, dict) and wit.get("available") is True:
+        if "from_dm4ri" in have:
+            kw["from_dm4ri"] = dm4ri_json
+        elif "ub_witness" in have:
+            kw["ub_witness"] = sorted(int(j) - 1 for j in wit.get("support") or ())
+            if "ub_witness_base" in have:
+                kw["ub_witness_base"] = 0
+    if verbose or bool(debug & PY_DBG_COMMANDS):
+        what = [f"dmax_init={kw['dmax_init']}"] if "dmax_init" in kw else []
+        for k in ("from_dm4ri", "ub_witness"):
+            if k in kw:
+                what.append(f"{k} (the codeword of weight {wit.get('weight')} found by dist_m4ri in Stage A)")
+        if what:
+            print(f"[dist_m4ri] qec_cert {func}(): wmin={wmin}, {', '.join(what)}")
+    return kw
+
+
+def _cert_handoff_warnings(cert: Any, w_lo: int, label: str) -> None:
+    """
+    The warnings to stderr on a certificate of qec_cert from the floor w_lo certified by the binary (since version
+    0.17.5, see _cert_code_distance()): qec_cert did not verify the codeword of the binary passed to it (see
+    _cert_handoff_kw(): ub_witness_status 'invalid' or 'unreadable'; qec_cert warns itself as well, and runs as without
+    it), or it found a verified codeword of weight below w_lo (which qec_cert reports as precondition_violated, or as
+    floor_hint_contradicted with the floor passed as floor_hint), i.e., the two programs contradict each other.
+    """
+    get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
+    inst = get("instance", None)
+    inst_d = inst if isinstance(inst, dict) else {}
+    status = inst_d.get("ub_witness_status")
+    if status in ("invalid", "unreadable"):
+        err = inst_d.get("ub_witness_error")
+        sys.stderr.write(f"# Warning: qec_cert did not verify the codeword found by dist_m4ri for the {label} distance "
+                         f"(ub_witness_status '{status}'{': ' + str(err) if err else ''}); it was not used: please "
+                         f"report this\n")
+    try:
+        ub = int(get("upper_bound") or 0)
+    except (TypeError, ValueError):
+        ub = 0
+    if (get("witness_verified") is True and 0 < ub < w_lo) or inst_d.get("floor_hint_contradicted"):
+        flags = [k for k in ("precondition_violated", "floor_hint_contradicted") if get(k, False) or inst_d.get(k)]
+        sys.stderr.write(f"# Warning: qec_cert found a verified codeword of weight {ub} below the lower bound "
+                         f"{w_lo} certified by dist_m4ri for the {label} distance"
+                         f"{' (' + ', '.join(flags) + ')' if flags else ''}: please report this\n")
+
+
 def _cert_code_distance(
     key_fn: Callable[[], str],
-    run_cert_fn: Callable[[int, int], Any],
+    run_cert_fn: Callable[[int, int, int], Any],
     *,
     label: str = "code",
     dmin: int = 0,
@@ -2469,19 +2595,23 @@ def _cert_code_distance(
     """
     Runs a qec_cert certification callback with dist_m4ri cache lookup and safe cache write-back.
 
-    The callback gets wmin = max(1, d_cert), where d_cert is the certified lower bound: the dmin of the cache record,
-    or certified_dmin (the dmin certified by the CC of the dist_m4ri binary in Stage A of engine='auto', also with the
-    cache disabled; 0: none); and wmax = dmax - 1 (or wmax, dstop - 1), with dmax tightened by the cache record, or 40
-    without any of them (qec_cert then searches no larger weight, but its stages which do not depend on wmax, e.g.,
-    the graphlike or rank-DP bounds, may still certify a larger distance).  A lower bound of qec_cert which is
+    The callback run_cert_fn(wmin, wmax, dmax) gets wmin = max(1, d_cert), where d_cert is the certified lower bound:
+    the dmin of the cache record, or certified_dmin (the dmin certified by the CC of the dist_m4ri binary in Stage A of
+    engine='auto', also with the cache disabled; 0: none); wmax = dmax - 1 (or wmax, dstop - 1), with dmax tightened by
+    the cache record, or 40 without any of them (qec_cert then searches no larger weight, but its stages which do not
+    depend on wmax, e.g., the graphlike or rank-DP bounds, may still certify a larger distance); and this dmax if it is
+    above wmin, otherwise 0 (since version 0.17.5: the callbacks of the compute_*() functions pass it to qec_cert as
+    dmax_init, see _cert_handoff_kw(), so that it always agrees with wmax).  A lower bound of qec_cert which is
     conditional only on its assumption lb_assumed_wmin <= d_cert is accepted, see _cert_wmin_discharged().  Since
     version 0.17.4, the callbacks of the compute_*() functions for quantum codes and DEMs pass
     search_opts={"force_dom": 1} with wmin > 1, so that qec_cert keeps the stabilizer dominance of its search on (see
-    _cert_search_kw()).  A caller's dmin is not certified here (since version 0.17.2): it is not passed as wmin (the
-    lower bound of qec_cert would then be conditional on it), it only tightens the returned bounds (as the dmin of the
-    binary, a known lower bound), and it is never cached.  The statistics _last_run_stats are replaced by
-    {"engine_cert": {...}} (the bounds of qec_cert "lb", "ub", "wmin", "wmax", its run time "time", and "cached"; no
-    run of the binary), unless keep_stats (engine='auto').
+    _cert_search_kw()).  Since version 0.17.5, a warning is written to stderr if qec_cert does not verify the codeword
+    of the binary passed to it by the callback, or if it finds a verified codeword below wmin (see
+    _cert_handoff_warnings()).  A caller's dmin is not certified here (since version 0.17.2): it is not passed as wmin
+    (the lower bound of qec_cert would then be conditional on it), it only tightens the returned bounds (as the dmin of
+    the binary, a known lower bound), and it is never cached.  The statistics _last_run_stats are replaced by
+    {"engine_cert": {...}} (the bounds of qec_cert "lb", "ub", "wmin", "wmax", "dmax" (the dmax of the callback), its
+    run time "time", and "cached"; no run of the binary), unless keep_stats (engine='auto').
     """
     global _distance_cache, _last_run_stats
     if not keep_stats:
@@ -2514,8 +2644,9 @@ def _cert_code_distance(
         w_hi = min(w_hi, max(1, eff_dmax - 1)) if wmax > 0 else max(1, eff_dmax - 1)
     if dstop > 0:
         w_hi = min(w_hi, max(1, dstop - 1)) if (wmax > 0 or eff_dmax > 0) else max(1, dstop - 1)
+    dmax_init = eff_dmax if eff_dmax > w_lo else 0  # (not at or below the floor, e.g., a caller's inconsistent dmax)
     t_cert = time.monotonic()
-    cert = run_cert_fn(w_lo, max(w_lo, w_hi))
+    cert = run_cert_fn(w_lo, max(w_lo, w_hi), dmax_init)
     t_cert = time.monotonic() - t_cert
     c_get = cert.get if isinstance(cert, dict) else lambda k, d=None: getattr(cert, k, d)
     if str(c_get("status", "") or "") == "infeasible":  # (qec_cert certified k = 0: no logical codeword)
@@ -2524,10 +2655,11 @@ def _cert_code_distance(
         if not keep_stats:
             _last_run_stats["engine_cert"] = {"cached": False, "k0": True, "wmin": w_lo, "time": t_cert}
         return _k0_result((code_key,), eff_cache_file)
+    _cert_handoff_warnings(cert, w_lo, label)
     c_lb, c_ub = _cert_extract_bounds(cert, max(p_dmin, certified_dmin))
     if not keep_stats:
         _last_run_stats["engine_cert"] = {"cached": False, "lb": c_lb, "ub": c_ub, "wmin": w_lo,
-                                          "wmax": max(w_lo, w_hi), "time": t_cert}
+                                          "wmax": max(w_lo, w_hi), "dmax": dmax_init, "time": t_cert}
     p_dmax = (entry.get("dmax", 0) or 0) if entry else 0
     p_rw = (entry.get("rw_steps", 0) or 0) if entry else 0
     p_cws = list(entry.get("cws", [])) if entry else []
@@ -2574,6 +2706,31 @@ _AUTO_STAGE_B_UB_GAP = 3  # Stage B keeps qec_cert's upper-bound stage when dmax
 _AUTO_STAGE1_MIN = 2.0  # Stage A: the whole timeout up to this many seconds, otherwise at least this many seconds
 _AUTO_STAGE1_FRAC = 0.1  # ... and this fraction of the timeout (since version 0.17.1; 0.5 in 0.17.0)
 _AUTO_STAGE1_MAX = 10.0  # ... but at most this many seconds (since version 0.17.1; 30.0 in 0.17.0)
+_binary_json_ok: Dict[str, bool] = {}  # the path of a dist_m4ri binary -> whether it writes json=1 (see below)
+
+
+def _binary_has_json(dist_m4ri: Optional[str] = None) -> bool:
+    """
+    Whether the dist_m4ri binary (dist_m4ri: its path, None for the default, see find_dist_m4ri_binary()) writes the
+    JSON summary of json=1 (since version 0.17.5; checked once per binary, for Stage A of engine='auto'): its version
+    (dist_m4ri --version) is at least 0.17.4, and it is not dist_m4ri_old, which prints the same version (and exits 0
+    on 'dist_m4ri --help json', which both binaries share), but ignores json=1 with a warning.  False for an older
+    binary, for one of unknown version, or if it is not found.
+    """
+    try:
+        path = find_dist_m4ri_binary(dist_m4ri)
+    except (RuntimeError, FileNotFoundError):
+        return False
+    if path not in _binary_json_ok:
+        ok = False
+        if "dist_m4ri_old" not in (os.path.basename(path), os.path.basename(os.path.realpath(path))):
+            try:
+                ver = _binary_version(path)[1]
+                ok = ver is not None and _parse_version(ver) >= (0, 17, 4)
+            except Exception:
+                ok = False
+        _binary_json_ok[path] = ok
+    return _binary_json_ok[path]
 
 
 def _auto_timeout(timeout: Optional[float]) -> float:
@@ -2730,6 +2887,36 @@ def _auto_seed_bounds(dmin: int, dmax: int, res: Dict[str, Any]) -> Tuple[int, i
     return max(dmin, res["dmin"]), (min(ub) if ub else 0)
 
 
+def _auto_stage_a_witness(res: Dict[str, Any], rj: Any, dmax_s: int) -> Optional[Dict[str, Any]]:
+    """
+    engine='auto' (since version 0.17.5): the JSON summary rj (schema 'dm4ri-result/1', _last_run_stats['result_json']
+    of the run of the binary in Stage A with json=1, see _auto_two_stage()) for Stage B (see _cert_handoff_kw()), if its
+    witness is a codeword of weight dmax_s, the upper bound of Stage B, found in this run, whose result is res:
+    available, with base 1 and dmax_s distinct original columns (1-based).  None otherwise: for a cached result res
+    (no run: the statistics of an earlier run are never used), for k = 0, without a summary (e.g., an older binary or
+    dist_m4ri_old, see _binary_has_json()), without a codeword (witness.available false, which qec_cert would report
+    as 'invalid'), or with one of another weight (e.g., of a caller's dmax, below the weight found).
+    """
+    if res.get("cached") or res.get("k0") or dmax_s <= 0 or int(res.get("dmax", 0) or 0) != dmax_s:
+        return None
+    if not isinstance(rj, dict) or rj.get("schema") != "dm4ri-result/1" or rj.get("k0"):
+        return None
+    wit = rj.get("witness")
+    if not isinstance(wit, dict) or wit.get("available") is not True or wit.get("base", 1) != 1:
+        return None
+    sup = wit.get("support")
+    if not isinstance(sup, (list, tuple)):
+        return None
+    try:
+        cols = {int(j) for j in sup}
+        w = int(wit.get("weight") or 0)
+    except (TypeError, ValueError):
+        return None
+    if w != dmax_s or len(sup) != w or len(cols) != w or min(cols) < 1:
+        return None
+    return rj
+
+
 def _auto_add_rw(res: Dict[str, Any], prev_rw: int) -> Dict[str, Any]:
     """
     The result of a later stage of engine='auto' with the RW steps of the earlier runs of the binary (prev_rw) added if
@@ -2778,8 +2965,8 @@ def _auto_native_tail(
 
 
 def _auto_two_stage(
-    run_native: Callable[[float, int, int], Dict[str, Any]],
-    run_cert: Callable[[int, int, int, float], Dict[str, Any]],
+    run_native: Callable[..., Dict[str, Any]],
+    run_cert: Callable[..., Dict[str, Any]],
     *,
     timeout: Optional[float],
     dmin: int = 0,
@@ -2806,18 +2993,25 @@ def _auto_two_stage(
     qec_cert is discharged by the lower bound dmin_A certified by the CC of Stage A (certified_dmin, see
     _cert_wmin_discharged()); a lower bound of qec_cert which is conditional for any other reason is not used.  With
     wmin > 1, qec_cert keeps the stabilizer dominance of its search on (search_opts={"force_dom": 1}, since version
-    0.17.4, see _cert_search_kw()).  If qec_cert ends early with an open bracket, the binary runs with the time left.
-    The result is never weaker than that of Stage A.
+    0.17.4, see _cert_search_kw()).  Since version 0.17.5, Stage A runs the binary with json=1 if it has this option
+    (see _binary_has_json()), and a qec_cert with the handoff parameters gets dmax_init=dmax_A and the codeword of
+    weight dmax_A found in this run (its JSON summary as from_dm4ri, or the codeword as ub_witness; not from a cache
+    record, see _auto_stage_a_witness() and _cert_handoff_kw()), which it verifies itself, still from wmin =
+    max(1, dmin_A).  If qec_cert ends early with an open bracket, the binary runs with the time left.  The result is
+    never weaker than that of Stage A.
 
-    If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None); the same if it is
-    installed but not usable (e.g., its library libqeccert.so is missing, see _qec_cert_available()), with a warning
-    to stderr once per process.  If its import fails only at Stage B, or qec_cert fails, a warning is written to
-    stderr, and the binary continues with the time left.  The stages are recorded in _last_run_stats["engine_auto"]
-    (see explain_bounds()).
+    If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None, without json=1);
+    the same if it is installed but not usable (e.g., its library libqeccert.so is missing, see
+    _qec_cert_available()), with a warning to stderr once per process.  If its import fails only at Stage B, or
+    qec_cert fails, a warning is written to stderr, and the binary continues with the time left.  The stages are
+    recorded in _last_run_stats["engine_auto"] (see explain_bounds()).
 
     Args:
-        run_native: (timeout, dmin, dmax) -> the result of _cached_code_distance() for the binary.
-        run_cert: (dmin, dmax, certified_dmin, time_limit) -> the result of _cert_code_distance() for qec_cert.
+        run_native: (timeout, dmin, dmax, json_out=False) -> the result of _cached_code_distance() for the binary
+            (json_out: the binary writes its JSON summary, if it has this option, in Stage A).
+        run_cert: (dmin, dmax, certified_dmin, time_limit, dm4ri_json=None) -> the result of _cert_code_distance()
+            for qec_cert (dm4ri_json: the JSON summary of Stage A with its codeword of weight dmax, see
+            _auto_stage_a_witness(); None if there is none).
         timeout: The timeout of the call in seconds (0: no limit; None: 60 s).
         dmin / dmax: The caller's bounds (dmax: a known upper bound; 0 for a CSS sector).
         dstop / wmax: The stop target and the CC weight limit of the call.
@@ -2840,7 +3034,8 @@ def _auto_two_stage(
         t_str = f"timeout={tau_1:g} s" if tau_1 > 0 else "no time limit"
         print(f"[dist_m4ri] engine='auto': Stage A, dist_m4ri (method=3, {t_str}) for the {label} distance")
     t0 = time.monotonic()
-    res_a = run_native(timeout if tau_1 == t_all else tau_1, dmin, dmax)  # (the whole timeout: as given)
+    res_a = run_native(timeout if tau_1 == t_all else tau_1, dmin, dmax, json_out=True)  # (the whole timeout: as given)
+    rj_a = _last_run_stats.get("result_json")  # (of this run only: _cached_code_distance() resets the statistics)
     t_a = time.monotonic() - t0
     a_rw = res_a.get("rw_steps", 0) or 0
     info: Dict[str, Any] = {
@@ -2855,6 +3050,7 @@ def _auto_two_stage(
                   f"{reason}: no qec_cert run")
         return res_a
     s_dmin, s_dmax = _auto_seed_bounds(dmin, dmax, res_a)
+    wit_a = _auto_stage_a_witness(res_a, rj_a, s_dmax)  # (the codeword of weight dmax_A of this run, for qec_cert)
     if say:
         print(f"[dist_m4ri] engine='auto': Stage A bounds [{res_a['dmin']}, {res_a['dmax']}] in {t_a:.3g} s; "
               f"Stage B, qec_cert with the remaining {t_all - t_a:.3g} s")
@@ -2863,7 +3059,7 @@ def _auto_two_stage(
         _get_qec_cert()  # (the import, before the time limit of qec_cert is set)
         t_lim = max(t_all - (time.monotonic() - t0), 0.1)  # (never 0.0: no limit in qec_cert)
         info["stage_b_time_limit"] = t_lim
-        res_b = run_cert(s_dmin, s_dmax, res_a["dmin"], t_lim)
+        res_b = run_cert(s_dmin, s_dmax, res_a["dmin"], t_lim, dm4ri_json=wit_a)
     except Exception as e:  # (ImportError of a broken installation, or an error in qec_cert)
         if isinstance(e, ImportError):  # (found, but not usable, see _probe_qec_cert(): a warning once per process)
             _auto_qec_cert_unusable_reason()
@@ -2906,7 +3102,8 @@ def _auto_cert_first(
     """
     engine='auto' for a DEM with more than _AUTO_DEM_FAST_PATH_ERRORS raw error mechanisms and a timeout of at least
     _AUTO_DEM_FAST_PATH_MIN_TIMEOUT s (or none): qec_cert first, with the whole timeout (counted from its import, see
-    _cert_time_left()), as with engine='cert' (a cache record with the exact distance answers without importing it).
+    _cert_time_left()), as with engine='cert' (a cache record with the exact distance answers without importing it;
+    without a run of the binary before it, qec_cert gets no codeword of the binary, see _cert_handoff_kw()).
     If qec_cert is not installed (or not usable, with a warning once per process, see _qec_cert_available()), the
     binary runs with the whole timeout; if qec_cert fails (a warning) or ends early with an open bracket, the binary
     runs with the time left (with timeout=0 also without a limit; since version 0.17.2), see _auto_two_stage() for the
@@ -5820,7 +6017,8 @@ def _cached_code_distance(
     cc_prune: Optional[int] = None,
     ortho: bool = True,
     rw_opt: Optional[int] = None,
-    dem_rounds: int = 0
+    dem_rounds: int = 0,
+    json_out: bool = False
 ) -> Dict[str, Any]:
     """
     Distance of a classical code (H), of a quantum code (H with G or L), or of a DEM (fdem: a stim DEM object or a .dem
@@ -5830,7 +6028,9 @@ def _cached_code_distance(
     compute_css_distance(), and compute_dem_distance() (the warnings for the expert options are issued by the callers).
     The row order sort_rows and the CC search cc_prune (see run_dist_m4ri()) do not change the result, nor the cache
     key; nor do the RW window size win_hyb, the RW pairs (pairs), the RW stages rw_opt, the rounds dem_rounds, and the
-    expert option ortho (False: the binary does not check H G^T = 0) change the cache key.
+    expert option ortho (False: the binary does not check H G^T = 0) change the cache key.  With json_out (Stage A of
+    engine='auto', since version 0.17.5), a binary which has the option json= (see _binary_has_json()) writes its JSON
+    summary (json=1, decoded into _last_run_stats['result_json'] of this run, see _auto_stage_a_witness()).
 
     A cache record (key: key_fn() if given, otherwise see _matrix_cache_key()) answers the request if it holds the
     exact distance, or with the stop target dstop > 0 a lower bound dmin >= dstop (and the codewords, if needed).
@@ -5999,7 +6199,8 @@ def _cached_code_distance(
             refresh=refresh,
             verbose=verbose,
             rw_opt=rw_opt,
-            dem_rounds=dem_rounds if fdem is not None else 0
+            dem_rounds=dem_rounds if fdem is not None else 0,
+            json_out=True if (json_out and _binary_has_json(dist_m4ri)) else None
         )
 
         if _last_run_stats.get("k0"):  # (no logical codeword: [0, 0, 0], not cached, see _k0_result())
@@ -6240,12 +6441,13 @@ def compute_classical_distance(
         mode_arg = "ub" if method == 1 else "auto"
         res = _cert_code_distance(
             lambda: _matrix_cache_key(H, None, None, True),
-            lambda w_lo, w_hi: qec_pipeline.certify(  # (no search_opts: no stabilizer dominance, see _cert_search_kw())
+            lambda w_lo, w_hi, dmax_c: qec_pipeline.certify(  # (no stabilizer dominance: search=False)
                 qec_io.DistanceProblem(_cert_to_csr(H, qec_io), None, None),
-                wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                 seed=seed if seed != 0 else 1,
                 time_limit=_auto_timeout(timeout),
                 mode=mode_arg,
+                **_cert_handoff_kw(qec_pipeline, w_lo, search=False, dmax=dmax_c, debug=debug, verbose=verbose),
             ),
             label="classical", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
             eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
@@ -6437,7 +6639,11 @@ def compute_quantum_distance(
             certified lower bound) is passed with search_opts={"force_dom": 1}, so that qec_cert keeps the stabilizer
             dominance of its search on (since version 0.17.4; also for a DEM; not for a classical code, which has no
             such dominance, nor with method=1, whose mode 'ub' runs no search; an older qec_cert without this option
-            is called as before), see _cert_search_kw().
+            is called as before), see _cert_search_kw().  Since version 0.17.5, a qec_cert with the handoff parameters
+            also gets the upper bound dmax (of the caller or of the cache record, if above wmin) as dmax_init, and with
+            "auto" the codeword of weight dmax_A found by the binary in Stage A (which then runs with json=1), as its
+            JSON summary from_dm4ri (or as ub_witness), which qec_cert verifies; the floor stays wmin (see
+            _cert_handoff_kw()).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
@@ -6517,7 +6723,7 @@ def compute_quantum_distance(
 
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
 
-    def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int) -> Dict[str, Any]:
+    def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int, json_out: bool = False) -> Dict[str, Any]:
         # (the native multithreaded dist_m4ri; the cache records are shared with the sectors of CSS codes)
         return _cached_code_distance(
             H, G, L, False, "quantum", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=t_budget,
@@ -6526,25 +6732,28 @@ def compute_quantum_distance(
             eff_cache_file=eff_cache_file, seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle,
             chunk_size=chunk_size, ksub=ksub, kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0),
             win_mode=win_mode, min_hits=min_hits, cov_cws=cov_cws, refresh=refresh, trust_start=trust_start,
-            sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, ortho=ortho, rw_opt=rw_opt
+            sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, ortho=ortho, rw_opt=rw_opt,
+            json_out=json_out
         )
 
     if cert_mode == "auto" and _auto_cert_eligible(
         method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
     ):
-        def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
+        def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float,
+                     dm4ri_json: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             t_call = time.monotonic()
 
-            def certify(w_lo: int, w_hi: int) -> Any:
+            def certify(w_lo: int, w_hi: int, dmax_c: int) -> Any:
                 _, qec_io, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
-                s_kw = _cert_search_kw(qec_pipeline, w_lo, debug=debug, verbose=verbose)
+                h_kw = _cert_handoff_kw(qec_pipeline, w_lo, dmax=dmax_c, dm4ri_json=dm4ri_json, debug=debug,
+                                        verbose=verbose)
                 return qec_pipeline.certify(
                     qec_io.DistanceProblem(
                         _cert_to_csr(H, qec_io), _cert_to_csr(L, qec_io), _cert_to_csr(G, qec_io)
                     ),
-                    wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8), seed=seed if seed != 0 else 1,
+                    wmax=w_hi, threads=threads or (os.cpu_count() or 8), seed=seed if seed != 0 else 1,
                     time_limit=_cert_time_left(t_lim, t_call), mode="auto",
-                    use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **s_kw,
+                    use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **h_kw,
                 )
             return _cert_code_distance(
                 lambda: _matrix_cache_key(H, G, L, False), certify, label="quantum", dmin=dmin_s, dmax=dmax_s,
@@ -6564,15 +6773,16 @@ def compute_quantum_distance(
         mode_arg = "ub" if method == 1 else "auto"
         res = _cert_code_distance(
             lambda: _matrix_cache_key(H, G, L, False),
-            lambda w_lo, w_hi: qec_pipeline.certify(
+            lambda w_lo, w_hi, dmax_c: qec_pipeline.certify(
                 qec_io.DistanceProblem(
                     _cert_to_csr(H, qec_io), _cert_to_csr(L, qec_io), _cert_to_csr(G, qec_io)
                 ),
-                wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                 seed=seed if seed != 0 else 1,
                 time_limit=_auto_timeout(timeout),
                 mode=mode_arg,
-                **_cert_search_kw(qec_pipeline, w_lo, search=mode_arg != "ub", debug=debug, verbose=verbose),
+                **_cert_handoff_kw(qec_pipeline, w_lo, search=mode_arg != "ub", dmax=dmax_c, debug=debug,
+                                   verbose=verbose),
             ),
             label="quantum", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
             eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
@@ -6769,8 +6979,10 @@ def compute_css_distance(
             compute_quantum_distance() for each sector (a distance-only method=3 call): the binary first (Stage A,
             from the timeout as there), qec_cert only for a sector whose bracket is still open (Stage B; wmin =
             max(1, dmin_A), wmax = dmax_A - 1, its upper-bound stage only for a wide bracket, and with wmin > 1
-            search_opts={"force_dom": 1}, since version 0.17.4), and the binary again with the time left if qec_cert
-            ends early with an open bracket; each sector has the whole timeout, as with the other engines.
+            search_opts={"force_dom": 1}, since version 0.17.4; since version 0.17.5, with a qec_cert which has the
+            handoff parameters, also dmax_init=dmax_A and the codeword of weight dmax_A found in Stage A, see
+            _cert_handoff_kw()), and the binary again with the time left if qec_cert ends early with an open bracket;
+            each sector has the whole timeout, as with the other engines.
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
@@ -6887,8 +7099,9 @@ def compute_css_distance(
             print(f"[dist_m4ri] CSS sector d{s}: H={'Hz' if s == 'X' else 'Hx'} with "
                   f"{'G' if G_s is not None else 'L'}={dual}")
 
-        def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int, s: str = s, H_s: Any = H_s,
-                       G_s: Any = G_s, L_s: Any = L_s, finC_s: Optional[str] = finC_s) -> Dict[str, Any]:
+        def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int, json_out: bool = False, s: str = s,
+                       H_s: Any = H_s, G_s: Any = G_s, L_s: Any = L_s,
+                       finC_s: Optional[str] = finC_s) -> Dict[str, Any]:
             return _cached_code_distance(
                 H_s, G_s, L_s, False, f"CSS {s}-sector", dist_m4ri=dist_m4ri, method=method, threads=threads,
                 timeout=t_budget, num_steps=num_steps, d_exp=d_exp, dmin=dmin_s, dmax=dmax_s, dstop=sector_stop,
@@ -6897,26 +7110,28 @@ def compute_css_distance(
                 seed=seed, debug=debug, verbose=verbose, nothrottle=nothrottle, chunk_size=chunk_size, ksub=ksub,
                 kwin=kwin if kwin != 0 else int(kwargs.get("win", 0) or 0), win_mode=win_mode, min_hits=min_hits,
                 cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, sort_rows=sort_rows, win_hyb=win_hyb,
-                pairs=pairs, cc_prune=cc_prune, ortho=ortho, rw_opt=rw_opt
+                pairs=pairs, cc_prune=cc_prune, ortho=ortho, rw_opt=rw_opt, json_out=json_out
             )
 
         if cert_mode == "auto" and _auto_cert_eligible(
             method=method, do_cws=do_cws, outC=outC, finC=finC_s, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
         ):
-            def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float, s: str = s, H_s: Any = H_s,
-                         G_s: Any = G_s, L_s: Any = L_s) -> Dict[str, Any]:
+            def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float,
+                         dm4ri_json: Optional[Dict[str, Any]] = None, s: str = s, H_s: Any = H_s, G_s: Any = G_s,
+                         L_s: Any = L_s) -> Dict[str, Any]:
                 t_call = time.monotonic()
 
-                def certify(w_lo: int, w_hi: int) -> Any:
+                def certify(w_lo: int, w_hi: int, dmax_c: int) -> Any:
                     _, qec_io, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
-                    s_kw = _cert_search_kw(qec_pipeline, w_lo, debug=debug, verbose=verbose)
+                    h_kw = _cert_handoff_kw(qec_pipeline, w_lo, dmax=dmax_c, dm4ri_json=dm4ri_json, debug=debug,
+                                            verbose=verbose)
                     return qec_pipeline.certify(
                         qec_io.DistanceProblem(
                             _cert_to_csr(H_s, qec_io), _cert_to_csr(L_s, qec_io), _cert_to_csr(G_s, qec_io)
                         ),
-                        wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                        wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                         seed=seed if seed != 0 else 1, time_limit=_cert_time_left(t_lim, t_call), mode="auto",
-                        use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **s_kw,
+                        use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **h_kw,
                     )
                 return _cert_code_distance(
                     lambda: _matrix_cache_key(H_s, G_s, L_s, False), certify, label=f"CSS {s}-sector", dmin=dmin_s,
@@ -6934,15 +7149,16 @@ def compute_css_distance(
             mode_arg = "ub" if method == 1 else "auto"
             res[s] = _cert_code_distance(
                 lambda H_s=H_s, G_s=G_s, L_s=L_s: _matrix_cache_key(H_s, G_s, L_s, False),
-                lambda w_lo, w_hi, H_s=H_s, G_s=G_s, L_s=L_s: qec_pipeline.certify(
+                lambda w_lo, w_hi, dmax_c, H_s=H_s, G_s=G_s, L_s=L_s: qec_pipeline.certify(
                     qec_io.DistanceProblem(
                         _cert_to_csr(H_s, qec_io), _cert_to_csr(L_s, qec_io), _cert_to_csr(G_s, qec_io)
                     ),
-                    wmin=w_lo, wmax=w_hi, threads=threads or (os.cpu_count() or 8),
+                    wmax=w_hi, threads=threads or (os.cpu_count() or 8),
                     seed=seed if seed != 0 else 1,
                     time_limit=_auto_timeout(timeout),
                     mode=mode_arg,
-                    **_cert_search_kw(qec_pipeline, w_lo, search=mode_arg != "ub", debug=debug, verbose=verbose),
+                    **_cert_handoff_kw(qec_pipeline, w_lo, search=mode_arg != "ub", dmax=dmax_c, debug=debug,
+                                       verbose=verbose),
                 ),
                 label=f"CSS {s}-sector", dmin=eff_dmin, dmax=0, dstop=sector_stop, wmax=wmax,
                 eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
@@ -7437,7 +7653,10 @@ def compute_dem_distance(
             (the binary first, then qec_cert if the bracket is still open, and then the binary again with the time
             left); the binary only, with the whole timeout, if qec_cert is not installed or not usable (a warning).
             With "cert" and "auto", a floor wmin > 1 is passed to qec_cert with search_opts={"force_dom": 1}, as in
-            compute_quantum_distance() (since version 0.17.4).
+            compute_quantum_distance() (since version 0.17.4); since version 0.17.5, a qec_cert with the handoff
+            parameters also gets dmax_init, and with "auto" for a DEM (not for a Stim circuit, whose DEM qec_cert
+            generates itself) the codeword of weight dmax_A found in Stage A, which qec_cert verifies on the DEM, see
+            _cert_handoff_kw().
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
@@ -7604,10 +7823,11 @@ def compute_dem_distance(
             n_thr = threads or (os.cpu_count() or 8)
             r_seed = seed if seed != 0 else 1
 
-            def certify_cut(w_lo: int, w_hi: int) -> Any:
-                kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg,
-                          **_cert_search_kw(qec_pipeline, w_lo, search=mode_arg != "ub", debug=debug,
-                                            verbose=verbose))
+            def certify_cut(w_lo: int, w_hi: int, dmax_c: int) -> Any:
+                func = "certify_circuit" if (circuit is not None and pmin <= 0.0) else "certify_dem"
+                kw = dict(wmax=w_hi, threads=n_thr, seed=r_seed, time_limit=t_lim, mode=mode_arg,
+                          **_cert_handoff_kw(qec_pipeline, w_lo, func=func, search=mode_arg != "ub", dmax=dmax_c,
+                                             debug=debug, verbose=verbose))
                 if pmin > 0.0:  # (qec_cert has no cutoff: it gets the DEM of the cache key, without the errors < pmin)
                     return qec_pipeline.certify_dem(_dem_pmin_cut(dem, pmin), **kw)
                 if circuit is not None:
@@ -7621,7 +7841,7 @@ def compute_dem_distance(
             dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
             return (dist, d_info, cws) if do_cws else (dist, d_info)
 
-        def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int) -> Dict[str, Any]:
+        def run_native(t_budget: Optional[float], dmin_s: int, dmax_s: int, json_out: bool = False) -> Dict[str, Any]:
             return _cached_code_distance(
                 None, None, None, False, "DEM", dist_m4ri=dist_m4ri, method=method, threads=threads, timeout=t_budget,
                 num_steps=num_steps, d_exp=d_exp, dmin=dmin_s, dmax=dmax_s, dstop=dstop, wmin=wmin, wmax=wmax,
@@ -7632,23 +7852,29 @@ def compute_dem_distance(
                 cov_cws=cov_cws, refresh=refresh, trust_start=trust_start, fdem=fdem_run, pmin=pmin,
                 merge=merge, key_fn=lambda: _dem_cache_key(dem, pmin), cws_out_fn=cws_out_fn, fdrop=fdrop,
                 outD=outd_file, sort_rows=sort_rows, win_hyb=win_hyb, pairs=pairs, cc_prune=cc_prune, rw_opt=rw_opt,
-                dem_rounds=eff_dem_rounds
+                dem_rounds=eff_dem_rounds, json_out=json_out
             )
 
         if cert_mode == "auto" and _auto_cert_eligible(
             method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC, start_list=start_list,
             outD=outD, out_reduced=out_reduced, pmin=pmin,
         ):
-            def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
+            def run_cert(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float,
+                         dm4ri_json: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                 n_thr, r_seed = threads or (os.cpu_count() or 8), seed if seed != 0 else 1
                 t_call = time.monotonic()
 
-                def certify(w_lo: int, w_hi: int) -> Any:
+                def certify(w_lo: int, w_hi: int, dmax_c: int) -> Any:
                     _, _, qec_pipeline = _get_qec_cert()  # (the import, before its time limit is counted)
-                    s_kw = _cert_search_kw(qec_pipeline, w_lo, debug=debug, verbose=verbose)
-                    kw = dict(wmin=w_lo, wmax=w_hi, threads=n_thr, seed=r_seed,
+                    # (the codeword of Stage A indexes the error mechanisms of fdem_run, the DEM of the binary: not
+                    # necessarily those of the DEM which certify_circuit() generates from the circuit)
+                    func = "certify_circuit" if circuit is not None else "certify_dem"
+                    h_kw = _cert_handoff_kw(qec_pipeline, w_lo, func=func, dmax=dmax_c,
+                                            dm4ri_json=dm4ri_json if circuit is None else None, debug=debug,
+                                            verbose=verbose)
+                    kw = dict(wmax=w_hi, threads=n_thr, seed=r_seed,
                               time_limit=_cert_time_left(t_lim, t_call), mode="auto",
-                              use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **s_kw)
+                              use_ub=_auto_stage_b_use_ub(dmin_s, dmax_s), **h_kw)
                     if circuit is not None:
                         return qec_pipeline.certify_circuit(circuit, **kw)
                     return qec_pipeline.certify_dem(fdem_run, **kw)
@@ -9602,7 +9828,10 @@ General options:
                         warns once per process), the native binary runs once with the whole timeout.
                         With 'cert' and 'auto', a floor wmin > 1 (a certified lower bound) keeps the
                         stabilizer dominance of the qec_cert search on for quantum codes and DEMs
-                        (force_dom=1 if this qec_cert has the option, since 0.17.4).
+                        (force_dom=1 if this qec_cert has the option, since 0.17.4).  Since 0.17.5, a
+                        qec_cert with the handoff parameters also gets dmax_init=<dmax> and, with
+                        'auto', the codeword of weight dmax_A found by Stage A (run with json=1),
+                        which qec_cert verifies (not for a Stim circuit); the floor stays wmin.
                         'codedistance': runs the codedistance Python package (error if missing, or
                         with --cws or outC; uses steps and seed, and ignores non-default dist_m4ri
                         binary options with a warning).  --verbose reports the engine='auto' stages.

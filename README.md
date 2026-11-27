@@ -979,7 +979,7 @@ unrecognized parameter or a missing input, end the binary with the exit code 255
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.17.4): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.17.5): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -1136,7 +1136,8 @@ default, leaving the default `stdout` and `stderr` output unchanged for backward
   - Core result (matches `stdout`): `schema`, `version`, `dmin`, `dmax`, `rw_steps`, `k0`, `k0_reason`, `search`
     (`false` when no worker search ran).
   - Stop reason: `stop: {"code", "text"}` with stable `code` in `bounds`, `cc_found`, `rw_converged`, `rw_steps`,
-    `timeout`, `cc_done`, `cc_slow`, `wmin`, `maxc`, `collected`, `dstop`, `k0`, `none`.
+    `timeout`, `cc_done`, `cc_slow`, `wmin`, `maxc`, `collected`, `dstop`, `k0`, `none` (`rw_converged` only with
+    `method=1`; with `method=3`, the convergence of RW only ends the RW threads, while CC continues).
   - Timings: `t_input` (process start to search start), `t_stop` (search clock at stop, matching `# stopped after`),
     `t_ub` (`null` if no upper bound or $k = 0$) and `t_lb` (search clock when `dmax` / `dmin` reached their final
     values).
@@ -1515,6 +1516,24 @@ interoperability without manual threading overhead.
     (e.g., without its library `libqeccert.so`; then a warning, once per process, since 0.17.2), the binary runs with
     the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
     `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
+  - Hand-off of bounds and codewords (since 0.17.5, with a `qec_cert` whose `certify`, `certify_dem`, or
+    `certify_circuit` names the hand-off parameters of its P0 version in its signature; an older `qec_cert` is called
+    as before): with `'auto'`, Stage A runs the binary with `json=1` (if it has this option: version 0.17.4 or later,
+    and not `dist_m4ri_old`, which ignores it), and Stage B passes, besides `wmin` and `wmax`, `dmax_init=dmax_A` and
+    the codeword of weight `dmax_A` found by the binary in this run (never one of a cache record): its JSON summary as
+    `from_dm4ri` (or the codeword as the 0-based list `ub_witness` with `ub_witness_base=0`, if only that parameter is
+    named), whose 1-based original columns are those of `H` for a code, and the error mechanisms of the flattened DEM
+    for `certify_dem` (`repeat` blocks unrolled, the first of the equal columns merged by the binary; a codeword found
+    with detectors dropped is a codeword of the DEM); not for a Stim circuit, whose DEM `certify_circuit` generates
+    itself. `qec_cert` verifies the codeword itself (`H x = 0` and `L x != 0`, for a DEM on its error mechanisms)
+    before it uses it as its upper bound, e.g., to stop its exact search, also with `use_ub=False`. `'cert'` passes
+    `dmax_init` as well (the `dmax` of the caller, tightened by the cache record). The floor stays `wmin` (from it,
+    `certify_dem` of `qec-cert` P0 also stops as soon as its lower bound meets a verified upper bound, with
+    `status='bounds'`, whose bounds are then exact here); its advisory `floor_hint` is not passed, since it changes
+    nothing with this floor. A warning goes to `stderr` if `qec_cert` does not verify the codeword
+    (`ub_witness_status` `invalid` or `unreadable`), or if it finds a verified codeword below the certified floor
+    (`precondition_violated`). The stop code `rw_converged`, with which `certify` skips its Stage-1 Stern search, is
+    only written with `method=1`, not by Stage A.
   - Hand-off scope: the hand-off covers distance-only requests. Codeword output (`do_cws=True` or `outC`), `finC`,
     `smax > 0`, an explicit `dW >= 0` (the Python default `dW=-1` means not set), `maxC > 0`, `start`, `outD`,
     `out_reduced`, `pmin > 0`, and `method=1` or `2` stay on the native `dist_m4ri` binary with `'auto'` (which also
