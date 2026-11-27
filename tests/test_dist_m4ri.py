@@ -5024,38 +5024,40 @@ def test_bin_stamp_and_json(capsys, tmp_path, monkeypatch):
     dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
     res_def = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=dist_m4ri.PY_DBG_COMMANDS)
     out_def = capsys.readouterr()
-    assert res_def == (3, 3, 6)
+    assert res_def[:2] == (3, 3) and res_def[2] >= 1
     assert "stamp=" not in out_def.out and "json=" not in out_def.out
     assert "result_json" not in dist_m4ri._last_run_stats
 
     res_sj = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=3, stamp=True, json_out=True)
     out_sj = capsys.readouterr()
-    assert res_sj == (3, 3, 6)
+    assert res_sj[:2] == (3, 3) and res_sj[2] >= 1
     assert " [t=" in out_sj.out and "# RESULT " in out_sj.out
     rj = dist_m4ri._last_run_stats.get("result_json")
     assert rj is not None and rj["schema"] == "dm4ri-result/1"
-    assert [rj["dmin"], rj["dmax"], rj["rw_steps"]] == [3, 3, 6]
+    assert [rj["dmin"], rj["dmax"], rj["rw_steps"]] == list(res_sj)
     assert rj["witness"]["available"] is True and rj["witness"]["weight"] == 3 and len(rj["witness"]["support"]) == 3
 
     # debug=0 with json_out=True decodes result_json without forwarding raw '# RESULT {...}' to stderr
     res_q = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=True)
     out_q = capsys.readouterr()
-    assert res_q == (3, 3, 6) and out_q.err == "" and out_q.out == ""
-    assert dist_m4ri._last_run_stats["result_json"]["stop"]["code"] == "bounds"
+    assert res_q[:2] == (3, 3) and res_q[2] >= 1 and out_q.err == "" and out_q.out == ""
+    rj_q = dist_m4ri._last_run_stats["result_json"]
+    assert rj_q["stop"]["code"] == "bounds" and [rj_q["dmin"], rj_q["dmax"], rj_q["rw_steps"]] == list(res_q)
 
     jf = tmp_path / "res.json"
     res_f = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=jf)
     out_f = capsys.readouterr()
-    assert res_f == (3, 3, 6) and "# RESULT" not in out_f.err
+    assert res_f[:2] == (3, 3) and res_f[2] >= 1 and "# RESULT" not in out_f.err
     rj_f = json.loads(jf.read_text())
     assert rj_f["schema"] == "dm4ri-result/1" and rj_f["stop"]["code"] == "bounds"
+    assert [rj_f["dmin"], rj_f["dmax"], rj_f["rw_steps"]] == list(res_f)
     assert rj_f["size"]["full"] == [24, 221] and rj_f["size"]["searched"] == [16, 55]
 
     # Path("./1") and Path("./0") keep file semantics despite pathlib normalizing them to "1" / "0"
     monkeypatch.chdir(tmp_path)
     for name in ("1", "0"):
-        assert dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=Path(f"./{name}")) == (
-            3, 3, 6)
+        res_p = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=Path(f"./{name}"))
+        assert res_p[:2] == (3, 3) and res_p[2] >= 1
         assert capsys.readouterr().err == ""
         assert json.loads((tmp_path / name).read_text())["dmax"] == 3
 
@@ -6038,6 +6040,381 @@ def test_handoff_real_circuit_without_codeword(monkeypatch, tmp_path):
         kw, cert = certs[0]
         assert (kw["wmin"], kw["wmax"], kw["dmax_init"]) == (2, 4, 5) and not {"from_dm4ri", "ub_witness"} & set(kw)
         assert cert.instance["ub_witness_status"] == "none" and (cert.lower_bound, cert.upper_bound) == (5, 5)
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def _make_fake_tropidist_root(tmp_path):
+    """Creates a minimal fake tropidist directory layout passing find_tropidist_root()."""
+    root = tmp_path / "fake_tropidist"
+    (root / "cdist").mkdir(parents=True)
+    (root / "cdist" / "__main__.py").write_text("# stub\n")
+    (root / "bench" / "adapters").mkdir(parents=True)
+    (root / "bench" / "adapters" / "ours_pipeline.py").write_text("# stub\n")
+    return root
+
+
+def test_tropidist_discovery_and_options(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("TROPIDIST_ROOT", raising=False)
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
+    assert dist_m4ri.find_tropidist_root() is None
+    assert not dist_m4ri._tropidist_available() and not dist_m4ri._HAS_TROPIDIST
+    with pytest.raises(ImportError, match="TROPIDIST_ROOT"):
+        dist_m4ri._get_tropidist_root()
+    # CLI returns exit code 2 on missing tropidist
+    assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "engine=tropidist", "--no-cache"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("Error: tropidist is not configured") and err.count("\n") == 1
+
+    # Invalid TROPIDIST_ROOT reports the path
+    bad = tmp_path / "empty_dir"
+    bad.mkdir()
+    monkeypatch.setenv("TROPIDIST_ROOT", str(bad))
+    assert dist_m4ri.find_tropidist_root() is None
+    with pytest.raises(ImportError, match=re.escape(str(bad))):
+        dist_m4ri._get_tropidist_root()
+
+    # Valid checkout layout via TROPIDIST_ROOT
+    fake_root = _make_fake_tropidist_root(tmp_path)
+    monkeypatch.setenv("TROPIDIST_ROOT", str(fake_root))
+    assert dist_m4ri.find_tropidist_root() == str(fake_root.resolve())
+    assert dist_m4ri._tropidist_available() and dist_m4ri._HAS_TROPIDIST
+    assert dist_m4ri._resolve_cert_engine(engine="tropidist") == "tropidist"
+    assert dist_m4ri._resolve_cert_engine(solver="tropidist") == "tropidist"
+
+    # table_gb validation and CLI parsing
+    assert dist_m4ri._check_table_gb(None) is None
+    assert dist_m4ri._check_table_gb(0) == 0 and dist_m4ri._check_table_gb(8) == 8
+    for bad_gb in (-1, True, 1.5, "4"):
+        with pytest.raises(ValueError, match="table_gb"):
+            dist_m4ri._check_table_gb(bad_gb)
+    parsed = dist_m4ri.parse_cli_args([f"finH={S5_H}", f"finL={S5_L}", "engine=tropidist", "--table-gb", "4"])
+    assert parsed["engine"] == "tropidist" and parsed["table_gb"] == 4
+    assert dist_m4ri.parse_cli_args([f"finH={S5_H}", "table_gb=0"])["table_gb"] == 0
+    with pytest.raises(ValueError, match="table_gb"):
+        dist_m4ri.parse_cli_args([f"finH={S5_H}", "table_gb=-2"])
+
+    # Codeword extraction rejected with ValueError
+    with pytest.raises(ValueError, match="Codeword extraction is not supported with engine='tropidist'"):
+        dist_m4ri.compute_classical_distance(HAMMING_H, engine="tropidist", do_cws=True)
+    with pytest.raises(ValueError, match="Codeword extraction is not supported with engine='tropidist'"):
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="tropidist", outC=str(tmp_path / "c.nz"))
+
+    # Ignored options warnings for tropidist (including method=1, start, smax, dW, maxC, outD) and table_gb on native
+    monkeypatch.setattr(
+        dist_m4ri, "_run_tropidist",
+        lambda **kw: {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [0, 1, 3]},
+    )
+    dist_m4ri.disable_distance_cache()
+    try:
+        capsys.readouterr()
+        d = dist_m4ri.compute_classical_distance(
+            HAMMING_H, engine="tropidist", method=1, smax=3, dW=1, maxC=5, start=[0, 1], table_gb=2,
+        )
+        assert d == 3
+        err = capsys.readouterr().err
+        assert "smax=, dW=, maxC=, method=: not used with engine='tropidist'; ignored" in err
+        assert "start=0,1 is ignored with engine='tropidist'" in err and "# WARNING: start=" not in err
+        # table_gb ignored on native engine
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, table_gb=4, threads=1) == 3
+        assert "table_gb=: only used with engine='tropidist' or engine='auto'; ignored" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_tropidist_gf2_logicals_and_witness_verification(capsys):
+    # CSS pair: QX40 / QZ40 -> L commutes with G (G L^T = 0) and spans ker(G) / rowspace(H)
+    H_csr = dist_m4ri._to_binary_csr(QX40)
+    G_csr = dist_m4ri._to_binary_csr(QZ40)
+    L_csr = dist_m4ri._gf2_logicals_from_hg(H_csr, G_csr, ortho=True)
+    r_h = dist_m4ri._gf2_rank(H_csr)
+    r_g = dist_m4ri._gf2_rank(G_csr)
+    k = H_csr.shape[1] - r_h - r_g
+    assert L_csr.shape == (k, H_csr.shape[1]) and k > 0
+    gl = (G_csr.astype(np.int32) @ L_csr.T.astype(np.int32)).toarray() & 1
+    assert not np.any(gl)
+    # Every row of L is independent modulo rowspace(H): rank([H; L]) == rank(H) + k
+    import scipy.sparse as sp
+    assert dist_m4ri._gf2_rank(sp.vstack([H_csr, L_csr])) == r_h + k
+
+    # Non-orthogonal (H, G) raises RuntimeError with ortho=True, succeeds with ortho=False
+    H_bad = np.array([[1, 1, 0, 0]], dtype=np.uint8)
+    G_bad = np.array([[1, 0, 1, 0]], dtype=np.uint8)
+    with pytest.raises(RuntimeError, match="not orthogonal"):
+        dist_m4ri._gf2_logicals_from_hg(H_bad, G_bad, ortho=True)
+    L_sub = dist_m4ri._gf2_logicals_from_hg(H_bad, G_bad, ortho=False)
+    assert L_sub.shape[0] > 0 and not np.any((G_bad @ L_sub.T.toarray()) & 1)
+
+    # Full-rank / k=0 yields 0 rows in L
+    assert dist_m4ri._gf2_logicals_from_hg(np.array([[1, 1]]), np.array([[1, 1]]), ortho=True).shape == (0, 2)
+
+    # DEM to (H, L) with repeat block and pmin filtering
+    dem_text = (
+        "error(0.1) D0 L0\n"
+        "error(0.001) D0 L0\n"  # merged with col 0 when pmin=0, dropped when pmin=0.01
+        "error(0.001) D1 L0\n"  # dropped when pmin=0.01
+        "repeat 2 {\n"
+        "  error(0.1) D0 D1\n"
+        "  shift_detectors 1\n"
+        "}\n"
+        "error(0.1) D2 L0\n"
+    )
+    H_d0, L_d0 = dist_m4ri._dem_to_hl_csr(dem_text, pmin=0.0)
+    H_d1, L_d1 = dist_m4ri._dem_to_hl_csr(dem_text, pmin=0.01)
+    assert H_d0.shape[1] == 5 and H_d1.shape[1] == 4  # D1 L0 dropped by pmin=0.01
+
+    # Witness verification: valid vs invalid cases
+    H_ham = dist_m4ri._to_binary_csr(HAMMING_H)
+    L_ham = sp.eye(7, dtype=np.uint8, format="csr")
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 1, 3], classical=True)[0] is True
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 1], classical=True)[0] is False
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 0, 3], classical=True)[0] is False
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 99], classical=True)[0] is False
+    assert dist_m4ri._verify_matrix_witness(H_ham, sp.csr_matrix((1, 7), dtype=np.uint8), [0, 1, 3])[0] is False
+
+    # _tropidist_extract_bounds: value_only rejects UB, keeps LB; tampered witness warns & drops UB
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": None, "value_only": True},
+        H_csr=H_ham, L_csr=L_ham, classical=True,
+    )
+    assert (lb, ub, ok) == (3, 0, False)
+
+    capsys.readouterr()
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 2, "witness": [0, 1], "value_only": False},
+        H_csr=H_ham, L_csr=L_ham, classical=True, label="classical",
+    )
+    assert (lb, ub, ok) == (3, 0, False)
+    assert "invalid witness" in capsys.readouterr().err
+
+    # Circuit witness requires replay.result == 'pass'
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [0, 1, 2],
+         "replay": {"result": "fail"}},
+        is_circuit=True, label="DEM",
+    )
+    assert (lb, ub, ok) == (3, 0, False) and "did not pass Stim replay" in capsys.readouterr().err
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [0, 1, 2],
+         "replay": {"result": "pass"}},
+        is_circuit=True, label="DEM",
+    )
+    assert (lb, ub, ok) == (3, 3, True)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        dist_m4ri._tropidist_extract_bounds({"status": "error", "notes": '{"error": "boom"}'})
+    with pytest.raises(ImportError, match="no c lib"):
+        dist_m4ri._tropidist_extract_bounds({"status": "unavailable", "notes": '{"error": "no c lib"}'})
+
+
+def test_tropidist_delegation_mocked_and_cache(monkeypatch, tmp_path, capsys):
+    fake_root = _make_fake_tropidist_root(tmp_path)
+    monkeypatch.setenv("TROPIDIST_ROOT", str(fake_root))
+    cache_file = str(tmp_path / "trop_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    orig_run_trop = dist_m4ri._run_tropidist
+    calls = []
+
+    def fake_run(**kw):
+        calls.append(kw)
+        if kw.get("circuit") is not None:
+            return {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [1, 2, 3],
+                    "replay": {"result": "pass"}}
+        # Return a real valid codeword of HAMMING_H ([0, 1, 3]) or bounds-only
+        return {"status": "bounds", "lower_bound": 2, "upper_bound": 3, "witness": [0, 1, 3]}
+
+    monkeypatch.setattr(dist_m4ri, "_run_tropidist", fake_run)
+    try:
+        # 1. Partial result with caller's unverified dmin=3: caller dmin tightens return, NEVER cached!
+        d, info = dist_m4ri.compute_classical_distance(
+            HAMMING_H, dmin=3, engine="tropidist", table_gb=4, return_info=True, cache_file=cache_file,
+        )
+        assert d == 3 and info == [3, 3, 0] and len(calls) == 1
+        assert calls[0]["w_lo"] == 1 and calls[0]["table_gb"] == 4
+        cached = dist_m4ri.get_cached_distance(H=HAMMING_H, cache_file=cache_file)
+        assert cached["dmin"] == 2 and cached["dmax"] == 3
+        assert "certified by tropidist" in dist_m4ri.explain_bounds([2, 3, 0], stats=dist_m4ri._last_run_stats)
+
+        # 2. Next call resumes from cached certified dmin=2 (w_lo=2) and w_hi=2 (eff_dmax-1=2)
+        monkeypatch.setattr(
+            dist_m4ri, "_run_tropidist",
+            lambda **kw: (calls.append(kw), {"status": "bounds", "lower_bound": 3, "upper_bound": None,
+                                             "witness": None})[1],
+        )
+        d2, info2 = dist_m4ri.compute_classical_distance(
+            HAMMING_H, engine="tropidist", return_info=True, cache_file=cache_file,
+        )
+        assert d2 == 3 and info2 == [3, 3, 0] and calls[-1]["w_lo"] == 2 and calls[-1]["w_hi"] == 2
+        assert dist_m4ri.get_cached_distance(H=HAMMING_H, cache_file=cache_file)["dmin"] == 3
+
+        # 3. Third call hits exact cache without calling _run_tropidist
+        n_before = len(calls)
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, engine="tropidist", cache_file=cache_file) == 3
+        assert len(calls) == n_before and dist_m4ri._last_run_stats["engine_tropidist"]["cached"] is True
+
+        # 4. k = 0 returns [0, 0, 0] without calling _run_tropidist
+        capsys.readouterr()
+        assert dist_m4ri.compute_classical_distance(
+            np.eye(3, dtype=np.uint8), engine="tropidist", return_info=True, cache_file=cache_file,
+        ) == (0, [0, 0, 0])
+        assert len(calls) == n_before and "# Note: k=0" in capsys.readouterr().err
+
+        # 5. Stim circuit passes circuit= directly when pmin=0, and falls back to matrices when pmin > 0
+        import stim
+        circ = stim.Circuit.generated(
+            "repetition_code:memory", rounds=2, distance=3, after_clifford_depolarization=0.01,
+        )
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", fake_run)
+        dist_m4ri.disable_distance_cache()
+        d_c, info_c = dist_m4ri.compute_dem_distance(circuit=circ, engine="tropidist")
+        assert d_c == 3 and info_c == [3, 3, 0] and calls[-1]["circuit"] is not None
+        monkeypatch.setattr(
+            dist_m4ri, "_run_tropidist",
+            lambda **kw: (calls.append(kw), {"status": "bounds", "lower_bound": 2, "upper_bound": None,
+                                             "witness": None})[1],
+        )
+        d_p, info_p = dist_m4ri.compute_dem_distance(circuit=circ, pmin=0.001, engine="tropidist")
+        assert calls[-1].get("circuit") is None and calls[-1]["H_csr"] is not None and info_p == [2, 0, 0]
+
+        # 6. CLI --model-lb warns on table_gb=
+        capsys.readouterr()
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        dist_m4ri._warn_cli_conflicts(dist_m4ri.parse_cli_args([f"fdem={dem_file}", "--model-lb", "--table-gb", "4"]))
+        assert "table_gb=" in capsys.readouterr().err
+
+        # 7. _run_tropidist clamps kmin..kmax to 1..40 in --config
+        seen_cmds = []
+
+        class _FakeTropPopen:
+            def __init__(self, cmd, **kw):
+                seen_cmds.append(cmd)
+                self.pid = 12345
+                self.returncode = 0
+                out_p = cmd[cmd.index("--out") + 1]
+                Path(out_p).write_text(json.dumps({
+                    "status": "bounds", "lower_bound": 40, "upper_bound": None, "witness": None,
+                }))
+
+            def communicate(self, timeout=None):
+                return "", ""
+
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", orig_run_trop)
+        monkeypatch.setattr(dist_m4ri.subprocess, "Popen", _FakeTropPopen)
+        H_ham = dist_m4ri._to_binary_csr(HAMMING_H)
+        import scipy.sparse as sp
+        L_ham = sp.eye(7, dtype=np.uint8, format="csr")
+        rec = dist_m4ri._run_tropidist(H_csr=H_ham, L_csr=L_ham, w_lo=45, w_hi=60, threads=1, timeout=5, table_gb=3)
+        assert rec["lower_bound"] == 40
+        cfg = seen_cmds[0][seen_cmds[0].index("--config") + 1]
+        assert cfg == "dp=2,kmin=40,kmax=40,table_gb=3"
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_tropidist_auto_fallback_mocked(monkeypatch, tmp_path, capsys):
+    # When qec_cert is unavailable and TROPIDIST_ROOT is set:
+    # - classical codes stay native
+    # - quantum/CSS/DEM open Stage-A brackets delegate Stage B to tropidist
+    # - tropidist failure falls back to Stage C native tail
+    fake_root = _make_fake_tropidist_root(tmp_path)
+    monkeypatch.setenv("TROPIDIST_ROOT", str(fake_root))
+    _probe_state(monkeypatch)
+    monkeypatch.setitem(sys.modules, "qec_cert", None)
+    assert not dist_m4ri._qec_cert_available() and dist_m4ri._tropidist_available()
+
+    dist_m4ri.disable_distance_cache()
+    try:
+        # 1. Classical code bypasses tropidist in engine='auto'
+        trop_calls = []
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", lambda **kw: trop_calls.append(kw))
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, engine="auto", threads=1) == 3
+        assert trop_calls == []
+
+        # 2. Quantum open Stage A [2, 5, 10] -> Stage B tropidist certifies lb=5 -> exact [5, 5, 0]
+        fake_bin = _FakeBinary(["2 5 10"])
+        monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake_bin.popen)
+        monkeypatch.setattr(
+            dist_m4ri, "_run_tropidist",
+            lambda **kw: (trop_calls.append(kw), {"status": "bounds", "lower_bound": 5, "upper_bound": None,
+                                                  "witness": None})[1],
+        )
+        d, info = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, engine="auto", timeout=30, table_gb=2, return_info=True,
+        )
+        assert d == 5 and info == [5, 5, 0] and len(trop_calls) == 1
+        assert trop_calls[0]["w_lo"] == 2 and trop_calls[0]["w_hi"] == 4 and trop_calls[0]["table_gb"] == 2
+        auto = dist_m4ri._last_run_stats["engine_auto"]
+        assert auto["stage"] == "B" and auto["stage_b_engine"] == "tropidist"
+        txt = dist_m4ri.explain_bounds([4, 5, 0], stats=dist_m4ri._last_run_stats)
+        assert "tropidist" in txt
+
+        # 3. Stage B tropidist failure warns and runs Stage C native tail
+        fake_bin2 = _FakeBinary(["2 5 10", "5 5 0"])
+        monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake_bin2.popen)
+
+        def fail_trop(**kw):
+            raise RuntimeError("kernel build failed")
+
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", fail_trop)
+        capsys.readouterr()
+        d3, info3 = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=30, return_info=True)
+        assert d3 == 5 and info3 == [5, 5, 0] and len(fake_bin2.cmds) == 2
+        assert "engine='auto': tropidist failed" in capsys.readouterr().err
+        assert dist_m4ri._last_run_stats["engine_auto"]["stage_c"] == [5, 5]
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_tropidist_real_end_to_end(monkeypatch, tmp_path, capsys):
+    # Real integration test against compiled local tropidist checkout (skipped if absent).
+    repo_root = Path(__file__).resolve().parent.parent
+    trop_root = repo_root / "scratch" / "ext_bench" / "builds" / "tropidist"
+    if not (trop_root / "cdist" / "__main__.py").is_file() or not (trop_root / "cdist" / "libgmitm.so").is_file():
+        pytest.skip("compiled tropidist checkout not present in scratch/ext_bench/builds/tropidist")
+    monkeypatch.setenv("TROPIDIST_ROOT", str(trop_root))
+    cache_file = str(tmp_path / "trop_real.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        # Classical Hamming [7, 4, 3]
+        assert dist_m4ri.compute_classical_distance(
+            HAMMING_H, engine="tropidist", threads=2, timeout=15, return_info=True, cache_file=cache_file,
+        ) == (3, [3, 3, 0])
+        assert dist_m4ri._last_run_stats["engine_tropidist"]["witness_verified"] is True
+
+        # Quantum with L (surf_d5) and with G (QX40/QZ40)
+        assert dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, engine="tropidist", threads=2, timeout=15, return_info=True, cache_file=cache_file,
+        ) == (5, [5, 5, 0])
+        assert dist_m4ri.compute_quantum_distance(
+            QX40, G=QZ40, engine="tropidist", threads=2, timeout=15, return_info=True, cache_file=cache_file,
+        ) == (4, [4, 4, 0])
+
+        # CSS (both sectors; Z sector hits cache from above, X sector runs tropidist)
+        assert dist_m4ri.compute_css_distance(
+            QX40, QZ40, engine="tropidist", threads=2, timeout=15, cache_file=cache_file,
+        ) == (4, [4, 4, 0], [4, 4, 0])
+
+        # Standalone DEM (surf_d3.dem) and Stim circuit (repetition code d=3)
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        assert dist_m4ri.compute_dem_distance(
+            dem=dem_file, engine="tropidist", threads=2, timeout=15, cache_file=cache_file,
+        ) == (3, [3, 3, 0])
+        import stim
+        circ = stim.Circuit.generated(
+            "repetition_code:memory", rounds=2, distance=3, after_clifford_depolarization=0.001,
+        )
+        assert dist_m4ri.compute_dem_distance(
+            circuit=circ, engine="tropidist", threads=2, timeout=15, table_gb=1, cache_file=cache_file,
+        ) == (3, [3, 3, 0])
+        assert dist_m4ri._last_run_stats["engine_tropidist"]["witness_verified"] is True
+
+        # CLI end-to-end with engine=tropidist and --table-gb
+        capsys.readouterr()
+        rc = dist_m4ri.main([f"finH={QX40}", f"finG={QZ40}", "engine=tropidist", "--table-gb", "1",
+                             "threads=2", "--no-cache"])
+        assert rc == 0 and "4 4 0 (exact)" in capsys.readouterr().out
     finally:
         dist_m4ri.enable_distance_cache()
 

@@ -1445,9 +1445,9 @@ interoperability without manual threading overhead.
   file), `RuntimeError` if it exits with an error (e.g., for a missing matrix file, or rows of $H$ and $G$ which are not
   orthogonal), `ValueError` for invalid option values (e.g., `cc_prune`, `drop`, `p_noise`, a NaN `timeout`, a matrix
   without columns, or `method=2` without a limit `wmax`, `dmax`, `dstop`, or `timeout`), and `ImportError` if `stim`,
-  `qec_cert` (with `solver="cert"` / `engine="cert"`), or `codedistance` is needed but not installed; for `qec_cert`,
-  since 0.17.2, one `ImportError` without a chained traceback says why (not installed, or its library `libqeccert.so`
-  cannot be loaded) and how to install it.
+  `qec_cert` (with `solver="cert"` / `engine="cert"`), `tropidist` (with `solver="tropidist"` / `engine="tropidist"`),
+  or `codedistance` is needed but not installed or configured; for `qec_cert`, since 0.17.2, one `ImportError` without
+  a chained traceback says why (not installed, or its library `libqeccert.so` cannot be loaded) and how to install it.
 - `timeout` of the `compute_*()` functions: in seconds (default: 60); `None` means 60 s for every engine (since 0.17.2;
   before, no limit with `engine="cert"`, and a `TypeError` with `method=2`), and `0` or `inf` no limit.
 - Inputs which are ignored give a warning on `stderr` (`# Warning: ...`), unless `set_silent()` is on (in the CLI:
@@ -1469,8 +1469,8 @@ interoperability without manual threading overhead.
   `--cws` (`do_cws`) collects the minimum-weight codewords into the cache record (written to the file `outC=FILE`;
   nothing is printed). The exit code is 0 on success, 1 for an invalid value (also an unknown help topic), 255 for an
   unrecognized parameter or no input, and, since 0.17.2, 2 for a package or library which is missing or not usable
-  (e.g., `qec_cert` without `libqeccert.so`), a binary which is missing or fails, or a file which cannot be read or
-  written (one line `Error: ...` on `stderr`; a traceback before).
+  (e.g., `qec_cert` without `libqeccert.so`, or `tropidist` without `TROPIDIST_ROOT`), a binary which is missing or
+  fails, or a file which cannot be read or written (one line `Error: ...` on `stderr`; a traceback before).
 - CLI help: `--help` (commonly used parameters, fits 80 rows) and `--morehelp` (all parameters); `--morehelp TOPIC`
   (also `--morehelp=TOPIC`, and `--help TOPIC` or `--help=TOPIC`) prints only the entries of the parameters `TOPIC`
   (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-` and `_` are ignored,
@@ -1498,24 +1498,41 @@ interoperability without manual threading overhead.
     make `qec_cert` importable, install the `qec-cert` package in the active Python environment (e.g.,
     `pip install -e /path/to/qec-cert` after building its native library with `make`) or add its repository root to
     `PYTHONPATH`.
+  - `'tropidist'` (since 0.17.5): delegates distance-only requests to an external MIT-licensed `tropidist` checkout in
+    an isolated subprocess (`python -m cdist`, located by `find_tropidist_root()` via the `TROPIDIST_ROOT` environment
+    variable or an importable `cdist` package on `PYTHONPATH`; `ImportError` if not configured, `ValueError` with
+    codeword output `do_cws=True` or `outC`; `finC`, `smax > 0`, `dW >= 0`, `maxC > 0`, `start`, `outD`, `out_reduced`,
+    and `method=1` are ignored with a warning; `[0, 0, 0]` when $k = 0$). For Stim circuits with `pmin=0`, the
+    processed `.stim` circuit is passed directly so `tropidist` retains its native circuit relaxations and noiseless
+    Stim witness replay (`replay.result == "pass"`); for classical codes ($L = I_n$), quantum/CSS codes (constructing
+    $L$ from $(H, G)$ over $\mathrm{GF}(2)$ when `G` is given, checking $H G^T = 0$ unless `ortho=False`), and
+    standalone DEMs (or DEMs with `pmin > 0`, exported as merged $(H, L)$ matrices), `--matrices H.mtx L.mtx` is used
+    and every returned witness is independently verified ($H x = 0$, $L x \neq 0$) before accepting or caching the
+    upper bound (`value_only` DP bounds without a witness are never accepted as upper bounds). The search bounds
+    `kmin`..`kmax` are clamped to `1..40`, starting only from a certified cached or Stage-A lower bound (never an
+    unverified caller `dmin`); `table_gb` (CLI: `table_gb=N` or `--table-gb N`) sets the lookup-table memory budget in
+    GiB (`0`: `tropidist` default).
   - `'auto'` (since 0.17.0): a two-stage portfolio for distance-only `method=3` requests. Classical codes always run
-    the native binary (without importing `qec_cert`). A DEM or Stim circuit with more than 25,000 raw error mechanisms
-    (and a timeout of at least 3 s, or none) goes to `qec_cert` first, whose exact reductions of large DEMs come before
-    any search; the binary runs with the time left if the bracket stays open. Otherwise (quantum codes, sectors of CSS
-    codes, smaller DEMs), Stage A runs the native binary for $\tau_1$ = the timeout if it is at most 2 s, else
+    the native binary (without importing `qec_cert` or spawning `tropidist`). When `qec_cert` is available, a DEM or
+    Stim circuit with more than 25,000 raw error mechanisms (and a timeout of at least 3 s, or none) goes to `qec_cert`
+    first, whose exact reductions of large DEMs come before any search; the binary runs with the time left if the
+    bracket stays open. Otherwise (quantum codes, sectors of CSS codes, smaller DEMs, or all DEMs when falling back to
+    `tropidist`), Stage A runs the native binary for $\tau_1$ = the timeout if it is at most 2 s, else
     $\min(\max(2, \text{timeout}/10), 10)$ s (since 0.17.1; $\min(\max(2, \text{timeout}/2), 30)$ s in 0.17.0), and its
-    result is returned at once, without importing `qec_cert`, if it is exact (or `dmin >= dstop > 0`, CC reached `wmax`,
-    `timeout=0`, or at most 1 s is left); Stage B then runs `qec_cert` with the remaining time, seeded with
-    `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (skipping its randomized upper-bound stage only when a narrow
-    bracket $0 < d_{\max, A} - \max(1, d_{\min, A}) < 3$ is already known, since 0.17.1), where the lower bound
+    result is returned at once, without importing `qec_cert` or spawning `tropidist`, if it is exact (or
+    `dmin >= dstop > 0`, CC reached `wmax`, `timeout=0`, or at most 1 s is left); Stage B then runs `qec_cert` (or
+    `tropidist` when `qec_cert` is unavailable and `tropidist` is configured) with the remaining time, seeded with
+    `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (skipping `qec_cert`'s randomized upper-bound stage only when a
+    narrow bracket $0 < d_{\max, A} - \max(1, d_{\min, A}) < 3$ is already known, since 0.17.1), where the lower bound
     `dmin_A` certified by CC discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; since 0.17.4, a floor
-    `wmin > 1` is passed with `search_opts={"force_dom": 1}`, so that `qec_cert` keeps the stabilizer half-weight
-    dominance of its search on (by default, it switches it off for `wmin > 1`, although the rule is sound when `wmin`
-    is a certified lower bound; an older `qec_cert` without this option is called as before); if `qec_cert` ends early
-    with an open bracket, the binary continues with the time left, and if `qec_cert` is not installed or not usable
-    (e.g., without its library `libqeccert.so`; then a warning, once per process, since 0.17.2), the binary runs with
-    the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
-    `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
+    `wmin > 1` is passed to `qec_cert` with `search_opts={"force_dom": 1}`, so that `qec_cert` keeps the stabilizer
+    half-weight dominance of its search on (by default, it switches it off for `wmin > 1`, although the rule is sound
+    when `wmin` is a certified lower bound; an older `qec_cert` without this option is called as before); if Stage B
+    ends early with an open bracket, the binary continues with the time left, and if neither `qec_cert` nor `tropidist`
+    is usable (with a warning once per process if `qec_cert` is installed without `libqeccert.so`, since 0.17.2), the
+    binary runs with the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by
+    `explain_bounds()` and `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to
+    `qec_cert`.
   - Hand-off of bounds and codewords (since 0.17.5, with a `qec_cert` whose `certify`, `certify_dem`, or
     `certify_circuit` names the hand-off parameters of its P0 version in its signature; an older `qec_cert` is called
     as before): with `'auto'`, Stage A runs the binary with `json=1` (if it has this option: version 0.17.4 or later,
@@ -1547,7 +1564,7 @@ interoperability without manual threading overhead.
     the certified `dmin` of the cache (or 1) up to `dmax - 1`, `wmax`, or `dstop - 1`, or up to the weight 40 without
     them (its stages which do not depend on the weight may still certify more). An input without logical codewords
     (qec_cert status `infeasible`) gives `[0, 0, 0]`, as with the binary (see above). `--model-lb` always runs the
-    native binary (`solver=` and `engine=` are ignored with a warning).
+    native binary (`solver=`, `engine=`, and `table_gb=` are ignored with a warning).
   - Cache rules for `qec_cert` hand-off: only unconditional lower bounds (`status` in `('exact', 'bounds', 'timeout')`
     without `lb_conditional`) and verified upper-bound witnesses (`witness_verified=True`) are written to the distance
     cache. When the cache already holds a certified lower bound `dmin > 1`, that bound is passed to `qec_cert` as

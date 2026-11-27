@@ -22,6 +22,7 @@ import math
 import time
 import random
 import shutil
+import signal
 import hashlib
 import numbers
 import tempfile
@@ -208,19 +209,86 @@ def _qec_cert_available() -> bool:
     return _probe_qec_cert() == ""
 
 
-def _auto_qec_cert_unusable_reason() -> str:
+def _auto_qec_cert_unusable_reason(fallback: str = "dist_m4ri with the whole timeout") -> str:
     """
     engine='auto' without a usable qec_cert: the reason recorded in _last_run_stats["engine_auto"].  If qec_cert is
     installed but not usable (see _probe_qec_cert()), a warning is written to stderr, once per process.
     """
     global _qec_cert_warned
     if not _qec_cert_status or _qec_cert_missing:
-        return "qec_cert is not installed: dist_m4ri with the whole timeout"
+        return f"qec_cert is not installed: {fallback}"
     if not _qec_cert_warned:
         _qec_cert_warned = True
-        sys.stderr.write(f"# Warning: engine='auto': {_qec_cert_status}; dist_m4ri runs alone, with the whole "
-                         f"timeout (written once)\n")
-    return "qec_cert is not usable: dist_m4ri with the whole timeout"
+        sys.stderr.write(f"# Warning: engine='auto': {_qec_cert_status}; {fallback} (written once)\n")
+    return f"qec_cert is not usable: {fallback}"
+
+
+_TROPIDIST_REMEDY = ("set TROPIDIST_ROOT to a tropidist repository checkout (or add it to PYTHONPATH), "
+                     "where 'python -m cdist' is runnable")
+
+
+def _is_tropidist_root(path: Union[str, Path]) -> bool:
+    """Whether `path` is a tropidist repository checkout runnable via `python -m cdist`."""
+    p = Path(path)
+    return (p / "cdist" / "__main__.py").is_file() and (p / "bench" / "adapters" / "ours_pipeline.py").is_file()
+
+
+def find_tropidist_root(tropidist_root: Optional[Union[str, Path]] = None) -> Optional[str]:
+    """
+    Locates a `tropidist` repository checkout runnable via `python -m cdist`.
+
+    Checks in order:
+      1. Explicit `tropidist_root` argument, if provided.
+      2. The `TROPIDIST_ROOT` environment variable.
+      3. An importable `cdist` package on `sys.path` (`importlib.util.find_spec("cdist")`), taking its repository root.
+
+    Returns:
+        Absolute path string to the tropidist repository root, or None if not found.
+    """
+    candidates: List[Path] = []
+    if tropidist_root is not None:
+        candidates.append(Path(tropidist_root))
+    else:
+        env_root = os.environ.get("TROPIDIST_ROOT")
+        if env_root:
+            candidates.append(Path(env_root))
+        try:
+            import importlib.util
+            spec = importlib.util.find_spec("cdist")
+            origin = getattr(spec, "origin", None) if spec is not None else None
+            if origin and os.path.isfile(origin):
+                candidates.append(Path(origin).resolve().parent.parent)
+        except Exception:
+            pass
+    for cand in candidates:
+        try:
+            if _is_tropidist_root(cand):
+                return str(cand.resolve())
+        except OSError:
+            continue
+    return None
+
+
+def _tropidist_available(tropidist_root: Optional[Union[str, Path]] = None) -> bool:
+    """Whether a runnable `tropidist` checkout is configured (`TROPIDIST_ROOT` or `cdist` on `sys.path`)."""
+    return find_tropidist_root(tropidist_root) is not None
+
+
+def _get_tropidist_root(tropidist_root: Optional[Union[str, Path]] = None) -> str:
+    """
+    Returns the validated `tropidist` repository root, or raises ImportError with installation instructions.
+    """
+    root = find_tropidist_root(tropidist_root)
+    if root is not None:
+        return root
+    env_root = os.environ.get("TROPIDIST_ROOT")
+    if tropidist_root is not None:
+        why = f"is not found at '{tropidist_root}'"
+    elif env_root:
+        why = f"is not found at TROPIDIST_ROOT='{env_root}'"
+    else:
+        why = "is not configured"
+    raise ImportError(f"tropidist {why}: {_TROPIDIST_REMEDY}") from None
 
 
 def __getattr__(name: str) -> Any:
@@ -239,6 +307,8 @@ def __getattr__(name: str) -> Any:
             return False
     if name == "_HAS_QEC_CERT":
         return _has_qec_cert()
+    if name == "_HAS_TROPIDIST":
+        return _tropidist_available()
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 # Global cache for distance results
@@ -774,22 +844,26 @@ def _canon_rule_text(stats: Dict[str, Any]) -> str:
 def _lower_bound_text(dmin: int, stats: Optional[Dict[str, Any]], method: Optional[int] = None) -> str:
     """
     For explain_bounds(): a lower bound dmin > 1 and its source as far as the statistics stats of the call show it
-    (since version 0.17.2; before, every lower bound was attributed to CC): qec_cert (engine='cert'), a stage of
-    engine='auto', the CC search of a run of the binary (also without statistics with method=2), or a cache record.
+    (since version 0.17.2; before, every lower bound was attributed to CC): qec_cert (engine='cert'), tropidist
+    (engine='tropidist'), a stage of engine='auto', the CC search of a run of the binary (also without statistics with
+    method=2), or a cache record.
     """
     st = stats or {}
     none_below = f"no non-trivial codeword of weight w <= {dmin - 1}"
-    cert = st.get("engine_cert")
-    if cert is not None:
-        if cert.get("cached"):
-            return f"{none_below} (a cache record; engine='cert')"
-        if (cert.get("lb", 0) or 0) >= dmin:
-            return f"{none_below}, certified by qec_cert (engine='cert')"
-        return f"{none_below} (a cache record or dmin=; qec_cert itself certified less)"
+    for key, eng_name, opt_name in (("engine_cert", "qec_cert", "cert"),
+                                    ("engine_tropidist", "tropidist", "tropidist")):
+        rec = st.get(key)
+        if rec is not None:
+            if rec.get("cached"):
+                return f"{none_below} (a cache record; engine='{opt_name}')"
+            if (rec.get("lb", 0) or 0) >= dmin:
+                return f"{none_below}, certified by {eng_name} (engine='{opt_name}')"
+            return f"{none_below} (a cache record or dmin=; {eng_name} itself certified less)"
     auto = st.get("engine_auto")
     if auto:
-        for key, what in (("stage_c", "the CC search of the binary after qec_cert (engine='auto')"),
-                          ("stage_b", "qec_cert (Stage B of engine='auto')"),
+        b_eng = auto.get("stage_b_engine") or "qec_cert"
+        for key, what in (("stage_c", f"the CC search of the binary after {b_eng} (engine='auto')"),
+                          ("stage_b", f"{b_eng} (Stage B of engine='auto')"),
                           ("stage_a", "the CC search of the binary (Stage A of engine='auto')")):
             b = auto.get(key)
             if b is not None and (b[0] or 0) >= dmin:
@@ -1874,6 +1948,173 @@ def _k0_of_matrices(H: Any, G: Any = None, L: Any = None, classical: bool = Fals
     return False
 
 
+def _to_binary_csr(matrix: Any) -> Any:
+    """
+    Converts a 2D binary matrix (MatrixMarket file path, SciPy sparse matrix/array, NumPy array, or array-like)
+    to a canonical binary `scipy.sparse.csr_matrix` (dtype uint8, odd entries are 1, duplicate entries summed mod 2).
+    """
+    import numpy as np
+    import scipy.sparse as sp
+    if isinstance(matrix, (str, Path)):
+        import scipy.io
+        try:
+            matrix = scipy.io.mmread(str(matrix), spmatrix=False)
+        except TypeError:
+            matrix = scipy.io.mmread(str(matrix))
+    m, n, rows, cols = _gf2_entries(matrix)
+    return sp.csr_matrix((np.ones(len(rows), dtype=np.uint8), (rows, cols)), shape=(m, n))
+
+
+def _gf2_logicals_from_hg(H: Any, G: Any, ortho: bool = True) -> Any:
+    """
+    Constructs a binary CSR logical operator matrix `L` over GF(2) from parity-check matrix `H` and degeneracy
+    generator `G`, matching `Lx_for_CSS_code()` in `src/util_m4ri.c`: the rows of `L` lie in `ker(G)` (so
+    `G L^T = 0`) and span a complement of `rowspace(H)` inside `rowspace(H) + ker(G)`.  For any `e` in `ker(H)`,
+    `L e != 0` iff `e` is not in `rowspace(G)`.  If `ortho=True` (default), checks `H G^T = 0 (mod 2)` and raises
+    RuntimeError otherwise.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+    H_csr = _to_binary_csr(H)
+    G_csr = _to_binary_csr(G)
+    n = int(H_csr.shape[1])
+    if int(G_csr.shape[1]) != n:
+        raise ValueError(f"H has {n} columns and G has {int(G_csr.shape[1])} columns")
+    if ortho and H_csr.nnz and G_csr.nnz:
+        prod = H_csr.astype(np.int32) @ G_csr.T.astype(np.int32)
+        if prod.nnz and np.any(prod.data & 1):
+            raise RuntimeError("rows of H and G matrices are not orthogonal")
+    if n == 0:
+        return sp.csr_matrix((0, 0), dtype=np.uint8)
+    g_packed, _ = _pack_gf2_rows(G_csr)
+    r_g, piv_g = _gf2_echelon(g_packed)
+    for i in range(r_g - 1, 0, -1):  # back-substitution to full RREF of G
+        c = piv_g[i]
+        w, bit = c >> 6, np.uint64(1) << np.uint64(c & 63)
+        hit = np.flatnonzero((g_packed[:i, w] & bit) != 0)
+        if hit.size:
+            g_packed[hit, w:] ^= g_packed[i, w:]
+    piv_set = set(piv_g)
+    free_cols = [c for c in range(n) if c not in piv_set]
+    if not free_cols:
+        return sp.csr_matrix((0, n), dtype=np.uint8)
+    nw = (n + 63) >> 6
+    n_free = len(free_cols)
+    ker_supports: List[List[int]] = []
+    V = np.zeros((n_free, nw), dtype=np.uint64)
+    for idx, f in enumerate(free_cols):
+        wf, bitf = f >> 6, np.uint64(1) << np.uint64(f & 63)
+        piv_hits = np.flatnonzero((g_packed[:r_g, wf] & bitf) != 0) if r_g else np.empty(0, dtype=np.intp)
+        supp = [piv_g[int(i)] for i in piv_hits]
+        supp.append(f)
+        supp.sort()
+        ker_supports.append(supp)
+        c_arr = np.asarray(supp, dtype=np.intp)
+        np.bitwise_xor.at(V[idx], c_arr >> 6, np.uint64(1) << np.uint64(c_arr & 63))
+    h_packed, _ = _pack_gf2_rows(H_csr)
+    r_h, piv_h = _gf2_echelon(h_packed)
+    for i in range(r_h):  # reduce all ker(G) basis vectors modulo rowspace(H)
+        c = piv_h[i]
+        w, bit = c >> 6, np.uint64(1) << np.uint64(c & 63)
+        hit = np.flatnonzero((V[:, w] & bit) != 0)
+        if hit.size:
+            V[hit, w:] ^= h_packed[i, w:]
+    nz_idx = np.flatnonzero(np.any(V, axis=1))
+    basis: List[Tuple[int, Any]] = []
+    l_rows: List[int] = []
+    l_cols: List[int] = []
+    out_r = 0
+    for idx in nz_idx.tolist():
+        v = V[idx]
+        for p, brow in basis:
+            if (int(v[p >> 6]) >> (p & 63)) & 1:
+                v ^= brow
+        nz_w = np.flatnonzero(v)
+        if nz_w.size:
+            w0 = int(nz_w[0])
+            word = int(v[w0])
+            b0 = (word & -word).bit_length() - 1
+            basis.append(((w0 << 6) + b0, v.copy()))
+            supp = ker_supports[idx]
+            l_rows.extend([out_r] * len(supp))
+            l_cols.extend(supp)
+            out_r += 1
+    return sp.csr_matrix((np.ones(len(l_rows), dtype=np.uint8), (l_rows, l_cols)), shape=(out_r, n))
+
+
+def _dem_to_hl_csr(dem: Any, pmin: float = 0.0) -> Tuple[Any, Any]:
+    """
+    Exports a DEM (a stim.DetectorErrorModel, .dem file, or DEM text) after probability cutoff `pmin` into merged,
+    zero-column-stripped binary CSR matrices `(H, L)` over GF(2) (matching `_dem_k0()`).
+    """
+    import numpy as np
+    import scipy.sparse as sp
+    cols = _dem_error_columns(dem, pmin=pmin)
+    seen: Set[Tuple[frozenset, frozenset]] = set()
+    h_r: List[int] = []
+    h_c: List[int] = []
+    l_r: List[int] = []
+    l_c: List[int] = []
+    max_d = max_o = -1
+    out_c = 0
+    for dets, obs in cols:
+        if not dets and not obs:
+            continue
+        key = (dets, obs)
+        if key in seen:
+            continue
+        seen.add(key)
+        for d in dets:
+            if d > max_d:
+                max_d = d
+            h_r.append(d)
+            h_c.append(out_c)
+        for o in obs:
+            if o > max_o:
+                max_o = o
+            l_r.append(o)
+            l_c.append(out_c)
+        out_c += 1
+    n_det = max(max_d + 1, 1) if out_c > 0 else 0
+    n_obs = max_o + 1 if l_r else 0
+    H = sp.csr_matrix((np.ones(len(h_r), dtype=np.uint8), (h_r, h_c)), shape=(n_det, out_c))
+    L = sp.csr_matrix((np.ones(len(l_r), dtype=np.uint8), (l_r, l_c)), shape=(n_obs, out_c))
+    return H, L
+
+
+def _verify_matrix_witness(H_csr: Any, L_csr: Any, witness: Any, classical: bool = False) -> Tuple[bool, str]:
+    """
+    Independently verifies that `witness` (0-based column indices) is a valid non-trivial codeword: non-empty,
+    distinct indices in `[0, n)`, `H x = 0 (mod 2)`, and (when `not classical`) `L x != 0 (mod 2)`.
+    """
+    import numpy as np
+    if not isinstance(witness, (list, tuple)) or not witness:
+        return False, "empty witness"
+    ncols = int(H_csr.shape[1])
+    cols: List[int] = []
+    seen: Set[int] = set()
+    for c in witness:
+        if isinstance(c, bool) or not isinstance(c, numbers.Integral):
+            return False, f"non-integer column index {c!r}"
+        ic = int(c)
+        if ic < 0 or ic >= ncols:
+            return False, f"column index {ic} out of range [0, {ncols})"
+        if ic in seen:
+            return False, f"duplicate column index {ic}"
+        seen.add(ic)
+        cols.append(ic)
+    syn_h = np.asarray(H_csr[:, cols].sum(axis=1)).ravel() & 1
+    if np.any(syn_h):
+        return False, "H x != 0 (mod 2)"
+    if not classical:
+        if L_csr is None or L_csr.shape[0] == 0:
+            return False, "L has no rows"
+        syn_l = np.asarray(L_csr[:, cols].sum(axis=1)).ravel() & 1
+        if not np.any(syn_l):
+            return False, "L x == 0 (mod 2)"
+    return True, ""
+
+
 # The options of the dist_m4ri binary in the compute_*() functions, with their defaults there, which
 # solver="codedistance" does not use (it uses the matrices or the DEM, num_steps, seed, codedistance_method, and
 # codedistance_params): see _warn_codedistance_ignored().  (start, ortho, noscan, cbeg, cend, outD, and out_reduced
@@ -1883,7 +2124,7 @@ _CODEDISTANCE_UNUSED: Dict[str, Any] = {
     "dstop": 0, "wmin": 1, "wmax": 0, "smax": None, "dW": -1, "maxC": 0, "finC": None, "nothrottle": False,
     "chunk_size": 0, "ksub": 0, "kwin": 0, "win_mode": 0, "win_hyb": 0, "pairs": -1, "sort_rows": None,
     "cc_prune": None, "min_hits": None, "cov_cws": 100, "refresh": None, "dist_m4ri": None, "pmin": 0.0,
-    "merge": True, "drop": None, "expand": False, "rw_opt": None, "dem_rounds": None,
+    "merge": True, "drop": None, "expand": False, "rw_opt": None, "dem_rounds": None, "table_gb": None,
 }
 
 
@@ -1898,18 +2139,39 @@ def _warn_codedistance_ignored(values: Dict[str, Any]) -> None:
 
 
 def _warn_cert_ignored(cert_mode: str, finC: Any = None, smax: Optional[int] = None, dW: int = -1,
-                       maxC: int = 0) -> None:
+                       maxC: int = 0, method: int = 3) -> None:
     """
-    With engine='cert' (cert_mode, see _resolve_cert_engine()): a warning (see _warn_ignored()) on the options of the
-    dist_m4ri binary which qec_cert does not use, since version 0.17.2: finC, smax > 0, dW >= 0, and maxC > 0 (the
-    codeword output is an error, and outD, out_reduced, and the start list have their own warnings).
+    With engine='cert' or engine='tropidist' (cert_mode, see _resolve_cert_engine()): a warning (see _warn_ignored())
+    on the options of the dist_m4ri binary which that external engine does not use: finC, smax > 0, dW >= 0, and
+    maxC > 0 (and method=1 for engine='tropidist', which always runs its certifying pipeline; codeword output is an
+    error, and outD, out_reduced, and the start list have their own warnings).
     """
-    if cert_mode != "cert":
+    if cert_mode not in ("cert", "tropidist"):
         return
     names = [k for k, on in (("finC", bool(finC)), ("smax", smax is not None and smax > 0), ("dW", dW >= 0),
                              ("maxC", maxC > 0)) if on]
+    if cert_mode == "tropidist" and method == 1:
+        names.append("method")
     if names:
-        _warn_ignored(f"{', '.join(k + '=' for k in names)}: not used with engine='cert'; ignored")
+        _warn_ignored(f"{', '.join(k + '=' for k in names)}: not used with engine='{cert_mode}'; ignored")
+
+
+def _check_table_gb(table_gb: Any) -> Optional[int]:
+    """
+    Validates `table_gb` (the lookup-table memory budget in GiB for engine='tropidist'): None (default), 0 (tropidist
+    default: 1 GiB or half RLIMIT_AS), or a positive integer.
+    """
+    if table_gb is None:
+        return None
+    if isinstance(table_gb, bool) or not isinstance(table_gb, numbers.Integral) or int(table_gb) < 0:
+        raise ValueError(f"invalid table_gb={table_gb!r}: expected a non-negative integer (GiB; 0: tropidist default)")
+    return int(table_gb)
+
+
+def _warn_table_gb_unused(table_gb: Any, cert_mode: str, is_codedist: bool = False) -> None:
+    """Warns if `table_gb` is set when neither `engine='tropidist'` nor `engine='auto'` is selected."""
+    if table_gb is not None and not is_codedist and cert_mode not in ("tropidist", "auto"):
+        _warn_ignored("table_gb=: only used with engine='tropidist' or engine='auto'; ignored")
 
 
 # The study options of the dist_m4ri binary (steplog=FILE and the row slabs of rw_opt 4): disabled in the Python
@@ -2066,12 +2328,12 @@ def _prepare_start_option(
     cend: Any = None,
     solver: str = "dist_m4ri",
     start_scan: bool = False,
-    engine_cert: bool = False
+    engine_cert: Union[bool, str] = False
 ) -> Optional[List[int]]:
     """
     Validates the expert CC options of a compute_*_distance() call and issues the warnings to stderr (engine_cert:
-    engine='cert', which runs no CC: the start list is ignored with a warning, since version 0.17.2, instead of the
-    warning on the validity of the CC lower bound).
+    True/'cert' or 'tropidist', which run no CC: the start list is ignored with a warning instead of the warning on the
+    validity of the CC lower bound).
 
     Returns:
         The normalized start list (with the flag `scan` for start_scan, see _StartList), or None if unset (or not
@@ -2086,7 +2348,11 @@ def _prepare_start_option(
             _warn_ignored("start_scan=1 has no effect without a start list")
         return None
     if solver == "codedistance" or engine_cert:
-        name = "engine='cert'" if engine_cert else "solver='codedistance'"
+        if engine_cert:
+            eng = engine_cert if isinstance(engine_cert, str) else "cert"
+            name = f"engine='{eng}'"
+        else:
+            name = "solver='codedistance'"
         _warn_ignored(f"start={_format_start_list(start_list)} is ignored with {name}")
         return None
     start_list = _scan_start_list(start_list, start_scan)
@@ -2149,7 +2415,7 @@ def _single_entry_is_exact(entry: Dict[str, Any], need_cws: bool = False, dstop:
 
 def _resolve_cert_engine(solver: str = "dist_m4ri", engine: Optional[str] = None) -> str:
     """
-    Resolves the qec_cert delegation mode ('off', 'auto', or 'cert') from `solver` and `engine`.
+    Resolves the external engine delegation mode ('off', 'auto', 'cert', or 'tropidist') from `solver` and `engine`.
     Default ('dist_m4ri', engine=None) returns 'off'.
     """
     if engine is not None:
@@ -2160,9 +2426,12 @@ def _resolve_cert_engine(solver: str = "dist_m4ri", engine: Optional[str] = None
             return "auto"
         if e in ("cert", "qec_cert", "qec-cert"):
             return "cert"
+        if e == "tropidist":
+            return "tropidist"
         if e == "codedistance":
             return "off"
-        raise ValueError(f"invalid engine={engine!r}: expected 'dist_m4ri', 'auto', 'cert', or 'codedistance'")
+        raise ValueError(f"invalid engine={engine!r}: expected 'dist_m4ri', 'auto', 'tropidist', 'cert', or "
+                         f"'codedistance'")
     s = str(solver or "dist_m4ri").strip().lower()
     if s in ("dist_m4ri", "codedistance"):
         return "off"
@@ -2170,7 +2439,9 @@ def _resolve_cert_engine(solver: str = "dist_m4ri", engine: Optional[str] = None
         return "auto"
     if s in ("cert", "qec_cert", "qec-cert"):
         return "cert"
-    raise ValueError(f"invalid solver={solver!r}: expected 'dist_m4ri', 'codedistance', 'auto', or 'cert'")
+    if s == "tropidist":
+        return "tropidist"
+    raise ValueError(f"invalid solver={solver!r}: expected 'dist_m4ri', 'codedistance', 'auto', 'cert', or 'tropidist'")
 
 
 def _auto_cert_eligible(
@@ -2238,7 +2509,31 @@ def _can_delegate_to_cert(
                                    outD=outD, out_reduced=out_reduced, pmin=pmin, classical=classical):
             return False
         return _has_qec_cert()
+    if mode != "cert":
+        return False
     _get_qec_cert()
+    if outD or out_reduced:
+        _warn_ignored("outD and out_reduced are only used with solver='dist_m4ri'; ignored")
+    return True
+
+
+def _can_delegate_to_tropidist(
+    mode: str,
+    *,
+    do_cws: bool = False,
+    outC: Optional[str] = None,
+    outD: Optional[Any] = None,
+    out_reduced: Optional[Any] = None,
+) -> bool:
+    """
+    Whether a distance calculation should be delegated directly to `tropidist` (engine='tropidist').
+    Raises ValueError for codeword extraction (do_cws / outC) and ImportError if `tropidist` is not configured.
+    """
+    if mode != "tropidist":
+        return False
+    if do_cws or outC:
+        raise ValueError("Codeword extraction is not supported with engine='tropidist'; use solver='dist_m4ri'.")
+    _get_tropidist_root()
     if outD or out_reduced:
         _warn_ignored("outD and out_reduced are only used with solver='dist_m4ri'; ignored")
     return True
@@ -2687,6 +2982,348 @@ def _cert_code_distance(
     }
 
 
+def _kill_proc_group(proc: Any) -> None:
+    """Terminates a subprocess started with `start_new_session=True`, escalating SIGTERM -> SIGKILL."""
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except OSError:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=2.0)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _tropidist_error_detail(rec: Dict[str, Any]) -> str:
+    """Extracts a concise one-line error description from a tropidist record."""
+    notes = rec.get("notes")
+    if isinstance(notes, str):
+        try:
+            parsed = json.loads(notes)
+            if isinstance(parsed, dict):
+                notes = parsed
+        except ValueError:
+            pass
+    if isinstance(notes, dict):
+        for key in ("error", "stop_reason"):
+            if notes.get(key):
+                return str(notes[key]).strip().splitlines()[0]
+    if isinstance(notes, str) and notes.strip():
+        return notes.strip().splitlines()[0]
+    return f"status={rec.get('status')!r}"
+
+
+def _run_tropidist(
+    *,
+    H_csr: Any = None,
+    L_csr: Any = None,
+    circuit: Any = None,
+    w_lo: int = 1,
+    w_hi: int = 40,
+    threads: Optional[int] = None,
+    timeout: Optional[float] = None,
+    table_gb: Optional[int] = None,
+    tropidist_root: Optional[Union[str, Path]] = None,
+    debug: int = 0,
+    verbose: bool = False,
+) -> Dict[str, Any]:
+    """
+    Runs `tropidist` (`python -m cdist`) in an isolated subprocess and returns its JSON record dict.
+
+    Passes `--config dp=2,kmin=...,kmax=...` (clamped to `1 <= kmin <= kmax <= 40` as required by
+    `ours_pipeline.py`) and optionally `table_gb=N`.  For Stim circuits, passes the `.stim` file directly so
+    `tropidist` retains its native circuit relaxations and runs noiseless Stim witness replay; for matrices and
+    standalone DEMs, writes MatrixMarket coordinate files and invokes `--matrices H.mtx L.mtx`.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+    root = _get_tropidist_root(tropidist_root)
+    kmax = min(max(1, int(w_hi)), 40)
+    kmin = min(max(1, int(w_lo)), kmax)
+    cfg_parts = ["dp=2", f"kmin={kmin}", f"kmax={kmax}"]
+    if table_gb is not None:
+        cfg_parts.append(f"table_gb={int(table_gb)}")
+    n_thr = max(1, int(threads)) if threads else (os.cpu_count() or 8)
+    t_lim = _auto_timeout(timeout)
+    keep = bool(debug & PY_DBG_KEEP_FILES)
+    tmp_dir = tempfile.mkdtemp(prefix="dist_m4ri_tropidist_")
+    if keep:
+        print(f"[dist_m4ri] Keeping temporary tropidist directory: {tmp_dir}")
+    try:
+        out_json = os.path.join(tmp_dir, "record.json")
+        cmd = [sys.executable, "-m", "cdist"]
+        if circuit is not None:
+            if isinstance(circuit, (str, Path)) and os.path.isfile(str(circuit)):
+                stim_path = str(Path(circuit).resolve())
+            else:
+                stim_path = os.path.join(tmp_dir, "circuit.stim")
+                with open(stim_path, "w") as f:
+                    f.write(str(circuit))
+            cmd.append(stim_path)
+        else:
+            if H_csr is None or L_csr is None:
+                raise ValueError("tropidist requires either a Stim circuit or both H and L matrices")
+            h_write = H_csr
+            if int(h_write.shape[0]) == 0:
+                h_write = sp.csr_matrix((1, int(h_write.shape[1])), dtype=np.uint8)
+            h_path = os.path.join(tmp_dir, "H.mtx")
+            l_path = os.path.join(tmp_dir, "L.mtx")
+            _write_mtx_gf2(h_path, h_write)
+            _write_mtx_gf2(l_path, L_csr)
+            cmd.extend(["--matrices", h_path, l_path])
+        cmd.extend([
+            "--out", out_json,
+            "--threads", str(n_thr),
+            "--time-limit", f"{t_lim:g}",
+            "--config", ",".join(cfg_parts),
+        ])
+        env = os.environ.copy()
+        env["OMP_NUM_THREADS"] = str(n_thr)
+        prev_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{root}{os.pathsep}{prev_pp}" if prev_pp else root
+        if verbose or (debug & PY_DBG_COMMANDS):
+            print(f"[dist_m4ri] Running tropidist: {' '.join(cmd)}")
+        t0 = time.monotonic()
+        hard_to = (t_lim + max(30.0, 0.25 * t_lim)) if t_lim > 0.0 else None
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=root, env=env, start_new_session=True,
+        )
+        timed_out = False
+        stdout, stderr = "", ""
+        try:
+            stdout, stderr = proc.communicate(timeout=hard_to)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_proc_group(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=2.0)
+            except Exception:
+                pass
+        except BaseException:
+            _kill_proc_group(proc)
+            raise
+        if verbose or (debug & PY_DBG_COMMANDS):
+            print(f"[dist_m4ri] tropidist finished in {time.monotonic() - t0:.3g} s (rc={proc.returncode})")
+        if os.path.isfile(out_json):
+            try:
+                with open(out_json, "r") as f:
+                    rec = json.load(f)
+                if isinstance(rec, dict):
+                    return rec
+            except (OSError, ValueError):
+                pass
+        if timed_out:
+            return {"status": "timeout", "lower_bound": 1, "upper_bound": None, "witness": None,
+                    "notes": "hard subprocess timeout"}
+        tail = ((stderr or "").strip() or (stdout or "").strip()).splitlines()
+        msg = tail[-1] if tail else f"exit code {proc.returncode}"
+        raise RuntimeError(f"tropidist failed ({msg})")
+    finally:
+        if not keep:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _tropidist_extract_bounds(
+    rec: Dict[str, Any],
+    *,
+    H_csr: Any = None,
+    L_csr: Any = None,
+    classical: bool = False,
+    is_circuit: bool = False,
+    label: str = "code",
+) -> Tuple[int, int, bool]:
+    """
+    Extracts verified `(dmin, dmax, witness_verified)` from a `tropidist` JSON record.
+
+    - Raises `ImportError` on `status == 'unavailable'` and `RuntimeError` on `status == 'error'`.
+    - Accepts `upper_bound` ONLY when `value_only` is False, a witness list of matching weight is returned, and the
+      witness passes independent verification (`H x = 0`, `L x != 0` for matrices/DEMs, or `replay.result == 'pass'`
+      for Stim circuits).
+    - Accepts `lower_bound > 1` only when `status in ('exact', 'bounds', 'timeout')`.
+    """
+    status = str(rec.get("status", "") or "")
+    if status == "unavailable":
+        raise ImportError(f"tropidist is unavailable: {_tropidist_error_detail(rec)}") from None
+    if status == "error":
+        raise RuntimeError(f"tropidist error: {_tropidist_error_detail(rec)}")
+    raw_lb = int(rec["lower_bound"]) if rec.get("lower_bound") is not None else 0
+    raw_ub = int(rec["upper_bound"]) if rec.get("upper_bound") is not None else 0
+    value_only = bool(rec.get("value_only", False))
+    wit = rec.get("witness")
+    wit_ok = False
+    c_ub = 0
+    if raw_ub > 0 and not value_only and isinstance(wit, (list, tuple)) and len(wit) == raw_ub:
+        if is_circuit:
+            replay = rec.get("replay")
+            if isinstance(replay, dict) and replay.get("result") == "pass" and rec.get("witness_ok") is not False:
+                wit_ok = True
+                c_ub = raw_ub
+            else:
+                reason = (replay.get("result") if isinstance(replay, dict) else "missing replay")
+                sys.stderr.write(f"# Warning: tropidist circuit witness for the {label} distance did not pass Stim "
+                                 f"replay ({reason}); upper bound {raw_ub} not used\n")
+        else:
+            ok, why = _verify_matrix_witness(H_csr, L_csr, wit, classical=classical)
+            if ok:
+                wit_ok = True
+                c_ub = raw_ub
+            else:
+                sys.stderr.write(f"# Warning: tropidist returned an invalid witness for the {label} distance "
+                                 f"({why}); upper bound {raw_ub} not used\n")
+    elif raw_ub > 0 and wit is not None and not value_only:
+        sys.stderr.write(f"# Warning: tropidist witness length does not match upper_bound={raw_ub} for the {label} "
+                         f"distance; upper bound not used\n")
+    c_lb = raw_lb if (status in ("exact", "bounds", "timeout") and raw_lb > 1) else 0
+    if c_ub > 0 and c_lb > c_ub:
+        sys.stderr.write(f"# Warning: tropidist lower_bound={c_lb} exceeds verified upper_bound={c_ub} for the "
+                         f"{label} distance; clamping lower bound\n")
+        c_lb = c_ub
+    return c_lb, c_ub, wit_ok
+
+
+def _tropidist_code_distance(
+    key_fn: Callable[[], str],
+    run_trop_fn: Callable[[int, int], Tuple[Dict[str, Any], Any, Any]],
+    *,
+    label: str = "code",
+    classical: bool = False,
+    is_circuit: bool = False,
+    dmin: int = 0,
+    dmax: int = 0,
+    dstop: int = 0,
+    wmax: int = 0,
+    eff_cache_file: Optional[str] = None,
+    debug: int = 0,
+    verbose: bool = False,
+    certified_dmin: int = 0,
+    keep_stats: bool = False,
+) -> Dict[str, Any]:
+    """
+    Runs a `tropidist` callback with `dist_m4ri` cache lookup, independent witness verification, and safe cache
+    write-back (mirroring `_cert_code_distance()`).
+
+    `run_trop_fn(w_lo, w_hi)` receives the already-certified lower bound `w_lo = max(1, p_dmin, certified_dmin)`
+    (never the caller's unverified `dmin`) and upper search target `w_hi`, and returns `(rec, H_csr, L_csr)` (or
+    `({"k0": reason}, None, None)` when `k = 0` is detected before spawning `tropidist`).  Only certified lower bounds
+    and independently verified upper bounds are written to `_distance_cache`.
+    """
+    global _distance_cache, _last_run_stats
+    if not keep_stats:
+        _last_run_stats = {}
+    code_key: Optional[str] = None
+    entry: Optional[Dict[str, Any]] = None
+    eff_dmin, eff_dmax = dmin, dmax
+    if _use_distance_cache:
+        if eff_cache_file:
+            load_distance_cache(eff_cache_file)
+        code_key = key_fn()
+        entry = _distance_cache.get(code_key)
+        if entry is not None and _single_entry_is_exact(entry, need_cws=False, dstop=dstop):
+            if verbose or (debug & PY_DBG_CACHE):
+                c_dmin = entry.get("dmin", 0) or 0
+                found = ("exact distance" if c_dmin == entry.get("dmax") else f"dmin={c_dmin} >= dstop={dstop}")
+                print(f"[dist_m4ri] Cache hit for {label} distance ({found} known)!")
+            if not keep_stats:
+                _last_run_stats["engine_tropidist"] = {"cached": True}
+            return {
+                "dist": entry["dist"], "dmin": entry["dmin"], "dmax": entry["dmax"],
+                "rw_steps": entry.get("rw_steps", 0), "d_info": list(entry["d_info"]),
+                "cws": list(entry.get("cws", [])), "cached": True,
+            }
+        eff_dmin, eff_dmax = _seed_bounds_from_entry(eff_dmin, eff_dmax, entry)
+    p_dmin = (entry.get("dmin", 0) or 0) if entry else 0
+    w_lo = max(1, p_dmin, certified_dmin)
+    w_hi = wmax if wmax > 0 else 40
+    if eff_dmax > 0:
+        w_hi = min(w_hi, max(1, eff_dmax - 1)) if wmax > 0 else max(1, eff_dmax - 1)
+    if dstop > 0:
+        w_hi = min(w_hi, max(1, dstop - 1)) if (wmax > 0 or eff_dmax > 0) else max(1, dstop - 1)
+    t_trop = time.monotonic()
+    rec, H_csr, L_csr = run_trop_fn(w_lo, max(w_lo, w_hi))
+    t_trop = time.monotonic() - t_trop
+    if rec.get("k0"):
+        k0_reason = str(rec["k0"])
+        _note_k0(k0_reason)
+        _last_run_stats["k0"] = k0_reason
+        if not keep_stats:
+            _last_run_stats["engine_tropidist"] = {"cached": False, "k0": True, "wmin": min(w_lo, 40), "time": t_trop}
+        return _k0_result((code_key,), eff_cache_file)
+    c_lb, c_ub, wit_ok = _tropidist_extract_bounds(
+        rec, H_csr=H_csr, L_csr=L_csr, classical=classical, is_circuit=is_circuit, label=label,
+    )
+    if wit_ok and 0 < c_ub < w_lo:
+        sys.stderr.write(f"# Warning: tropidist found a verified codeword of weight {c_ub} below the certified lower "
+                         f"bound {w_lo} for the {label} distance: please report this\n")
+    if not keep_stats:
+        kmax_eff = min(max(w_lo, w_hi), 40)
+        _last_run_stats["engine_tropidist"] = {
+            "cached": False, "lb": c_lb, "ub": c_ub, "wmin": min(w_lo, kmax_eff), "wmax": kmax_eff,
+            "status": str(rec.get("status", "") or ""), "witness_verified": wit_ok,
+            "value_only": bool(rec.get("value_only", False)), "time": t_trop,
+        }
+    p_dmax = (entry.get("dmax", 0) or 0) if entry else 0
+    p_rw = (entry.get("rw_steps", 0) or 0) if entry else 0
+    p_cws = list(entry.get("cws", [])) if entry else []
+    cache_dmin = max(p_dmin, c_lb)
+    cache_dmax = min(p_dmax, c_ub) if (p_dmax > 0 and c_ub > 0) else max(p_dmax, c_ub)
+    if cache_dmax > 0 and cache_dmin > cache_dmax:
+        cache_dmin = cache_dmax
+    if _use_distance_cache and code_key is not None and (c_lb > 1 or c_ub > 0):
+        record = _sector_record(cache_dmin, cache_dmax, p_rw, p_cws)
+        if entry is not None and "dmin_model" in entry:
+            record["dmin_model"] = entry["dmin_model"]
+        if record != entry:
+            _distance_cache[code_key] = record
+            if eff_cache_file:
+                save_distance_cache(eff_cache_file)
+    dmin_res = max(eff_dmin, cache_dmin)
+    pos_ub = [x for x in (eff_dmax, cache_dmax) if x > 0]
+    dmax_res = min(pos_ub) if pos_ub else 0
+    if dmax_res > 0 and dmin_res > dmax_res:
+        dmin_res = min(cache_dmin, dmax_res)
+    dist = _dist_from_bounds(dmin_res, dmax_res)
+    return {
+        "dist": dist, "dmin": dmin_res, "dmax": dmax_res, "rw_steps": p_rw,
+        "d_info": format_bounds_list(dmin_res, dmax_res, p_rw), "cws": p_cws, "cached": False,
+    }
+
+
+def _tropidist_prepare_quantum(H: Any, G: Any, L: Any, ortho: bool = True) -> Tuple[Any, Any, Optional[str]]:
+    """
+    Prepares binary CSR `(H_csr, L_csr, k0_reason)` for `tropidist` on a quantum code or CSS sector.
+    Constructs `L_csr` from `(H, G)` via `_gf2_logicals_from_hg()` when `G` is given (checking `H G^T = 0` when
+    `ortho=True`).  Returns `k0_reason` (a non-empty string) if `k = 0`, else `None`.
+    """
+    H_csr = _to_binary_csr(H)
+    if L is not None:
+        L_csr = _to_binary_csr(L)
+        if int(H_csr.shape[1]) != int(L_csr.shape[1]):
+            raise ValueError(f"H has {int(H_csr.shape[1])} columns and L has {int(L_csr.shape[1])} columns")
+        if int(L_csr.shape[0]) == 0 or _k0_of_matrices(H_csr, L=L_csr):
+            return H_csr, L_csr, "every row of L is in the row space of H"
+        return H_csr, L_csr, None
+    L_csr = _gf2_logicals_from_hg(H_csr, G, ortho=ortho)
+    if int(L_csr.shape[0]) == 0:
+        return H_csr, L_csr, "rank H + rank G = n"
+    return H_csr, L_csr, None
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # engine='auto' (since version 0.17.0): the two-stage portfolio dist_m4ri -> qec_cert, see _auto_two_stage().
 #
@@ -2833,9 +3470,10 @@ def _format_auto_info(info: Dict[str, Any]) -> str:
         parts.append(f"Stage A, dist_m4ri ({t_str}): [{a[0]}, {a[1]}] {src}")
     b = info.get("stage_b")
     if b is not None:
+        b_eng = info.get("stage_b_engine") or "qec_cert"
         tl = info.get("stage_b_time_limit", 0.0) or 0.0
         tl_str = f"time limit {tl:.3g} s" if tl > 0 else "no time limit"
-        parts.append(f"{'Stage B, ' if a is not None else ''}qec_cert ({tl_str}): [{b[0]}, {b[1]}] in "
+        parts.append(f"{'Stage B, ' if a is not None else ''}{b_eng} ({tl_str}): [{b[0]}, {b[1]}] in "
                      f"{info.get('stage_b_time', 0.0):.3g} s")
     c = info.get("stage_c")
     if c is not None:
@@ -2976,6 +3614,7 @@ def _auto_two_stage(
     label: str = "code",
     debug: int = 0,
     verbose: bool = False,
+    run_tropidist: Optional[Callable[..., Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     engine='auto' (since version 0.17.0): the two-stage portfolio for a quantum code, a sector of a CSS code, or a
@@ -2983,9 +3622,10 @@ def _auto_two_stage(
 
     Stage A runs the dist_m4ri binary (method=3) with the time budget tau_1 (see _auto_stage_a_budget()); a cache
     record with the exact distance (or dmin >= dstop) answers the request as usual, without a run.  The result of
-    Stage A is returned at once, without importing qec_cert, if it is exact, if dmin >= dstop > 0, if CC has reached
-    wmax > 0, if at most _AUTO_STAGE_B_MIN_TIME s of the timeout are left, or with timeout=0 (no limit: the binary
-    runs until the bounds meet).  Otherwise, Stage B runs qec_cert (see _cert_code_distance()) with the remaining
+    Stage A is returned at once, without importing qec_cert or spawning tropidist, if it is exact, if dmin >= dstop >
+    0, if CC has reached wmax > 0, if at most _AUTO_STAGE_B_MIN_TIME s of the timeout are left, or with timeout=0 (no
+    limit: the binary runs until the bounds meet).  Otherwise, Stage B runs qec_cert (see _cert_code_distance()), or
+    tropidist if qec_cert is unavailable and tropidist is configured (see _tropidist_available()), with the remaining
     time, from the bounds of Stage A: wmin = max(1, dmin_A) and wmax = dmax_A - 1 (dmax_A: the weight of a codeword
     found and verified by the binary), passed explicitly, so that this also holds with the cache disabled; when a
     narrow bracket is already known (0 < dmax_A - max(1, dmin_A) < _AUTO_STAGE_B_UB_GAP, see _auto_stage_b_use_ub()),
@@ -2994,17 +3634,17 @@ def _auto_two_stage(
     _cert_wmin_discharged()); a lower bound of qec_cert which is conditional for any other reason is not used.  With
     wmin > 1, qec_cert keeps the stabilizer dominance of its search on (search_opts={"force_dom": 1}, since version
     0.17.4, see _cert_search_kw()).  Since version 0.17.5, Stage A runs the binary with json=1 if it has this option
-    (see _binary_has_json()), and a qec_cert with the handoff parameters gets dmax_init=dmax_A and the codeword of
-    weight dmax_A found in this run (its JSON summary as from_dm4ri, or the codeword as ub_witness; not from a cache
-    record, see _auto_stage_a_witness() and _cert_handoff_kw()), which it verifies itself, still from wmin =
-    max(1, dmin_A).  If qec_cert ends early with an open bracket, the binary runs with the time left.  The result is
-    never weaker than that of Stage A.
+    (see _binary_has_json()) and Stage B uses qec_cert, and a qec_cert with the handoff parameters gets
+    dmax_init=dmax_A and the codeword of weight dmax_A found in this run (its JSON summary as from_dm4ri, or the
+    codeword as ub_witness; not from a cache record, see _auto_stage_a_witness() and _cert_handoff_kw()), which it
+    verifies itself, still from wmin = max(1, dmin_A).  If Stage B ends early with an open bracket, the binary runs
+    with the time left.  The result is never weaker than that of Stage A.
 
-    If qec_cert is not installed, the binary runs once with the whole timeout (as with engine=None, without json=1);
-    the same if it is installed but not usable (e.g., its library libqeccert.so is missing, see
-    _qec_cert_available()), with a warning to stderr once per process.  If its import fails only at Stage B, or
-    qec_cert fails, a warning is written to stderr, and the binary continues with the time left.  The stages are
-    recorded in _last_run_stats["engine_auto"] (see explain_bounds()).
+    If neither qec_cert nor tropidist is available, the binary runs once with the whole timeout (as with engine=None,
+    without json=1); if qec_cert is installed but not usable (e.g., its library libqeccert.so is missing, see
+    _qec_cert_available()), a warning is written to stderr once per process.  If Stage B fails, a warning is written
+    to stderr, and the binary continues with the time left.  The stages are recorded in _last_run_stats["engine_auto"]
+    (see explain_bounds()).
 
     Args:
         run_native: (timeout, dmin, dmax, json_out=False) -> the result of _cached_code_distance() for the binary
@@ -3017,6 +3657,8 @@ def _auto_two_stage(
         dstop / wmax: The stop target and the CC weight limit of the call.
         label: The kind of distance, for the messages.
         debug / verbose: With verbose or the debug bit PY_DBG_COMMANDS, the stages are reported.
+        run_tropidist: Optional (dmin, dmax, certified_dmin, time_limit) -> the result of _tropidist_code_distance()
+            when qec_cert is unavailable and tropidist is configured.
 
     Returns:
         The result dict, as returned by _cached_code_distance().
@@ -3024,64 +3666,77 @@ def _auto_two_stage(
     global _last_run_stats
     say = verbose or bool(debug & PY_DBG_COMMANDS)
     t_all = _auto_timeout(timeout)
+    stage_b_engine = "qec_cert"
     if not _qec_cert_available():
-        reason = _auto_qec_cert_unusable_reason()
-        res = run_native(timeout, dmin, dmax)
-        _last_run_stats["engine_auto"] = {"stage": "native", "stage_a": None, "stage_b": None, "reason": reason}
-        return res
+        if run_tropidist is not None and _tropidist_available():
+            _auto_qec_cert_unusable_reason(fallback="falling back to tropidist for Stage B")
+            stage_b_engine = "tropidist"
+        else:
+            reason = _auto_qec_cert_unusable_reason()
+            res = run_native(timeout, dmin, dmax)
+            _last_run_stats["engine_auto"] = {"stage": "native", "stage_a": None, "stage_b": None, "reason": reason}
+            return res
     tau_1 = _auto_stage_a_budget(timeout)
     if say:
         t_str = f"timeout={tau_1:g} s" if tau_1 > 0 else "no time limit"
         print(f"[dist_m4ri] engine='auto': Stage A, dist_m4ri (method=3, {t_str}) for the {label} distance")
     t0 = time.monotonic()
-    res_a = run_native(timeout if tau_1 == t_all else tau_1, dmin, dmax, json_out=True)  # (the whole timeout: as given)
+    res_a = run_native(timeout if tau_1 == t_all else tau_1, dmin, dmax, json_out=stage_b_engine == "qec_cert")
     rj_a = _last_run_stats.get("result_json")  # (of this run only: _cached_code_distance() resets the statistics)
     t_a = time.monotonic() - t0
     a_rw = res_a.get("rw_steps", 0) or 0
     info: Dict[str, Any] = {
         "stage": "A", "timeout": t_all, "tau_1": tau_1, "stage_a": [res_a["dmin"], res_a["dmax"], a_rw],
         "stage_a_time": t_a, "stage_a_cached": bool(res_a.get("cached")), "stage_b": None, "reason": ""}
+    if stage_b_engine != "qec_cert":
+        info["stage_b_engine"] = stage_b_engine
     reason = _auto_done_reason(res_a, "Stage A", dstop, wmax, t_all, t_all - t_a)
     if reason:
         info["reason"] = reason
         _last_run_stats["engine_auto"] = info
         if say:
             print(f"[dist_m4ri] engine='auto': Stage A bounds [{res_a['dmin']}, {res_a['dmax']}] in {t_a:.3g} s; "
-                  f"{reason}: no qec_cert run")
+                  f"{reason}: no {stage_b_engine} run")
         return res_a
     s_dmin, s_dmax = _auto_seed_bounds(dmin, dmax, res_a)
-    wit_a = _auto_stage_a_witness(res_a, rj_a, s_dmax)  # (the codeword of weight dmax_A of this run, for qec_cert)
+    wit_a = _auto_stage_a_witness(res_a, rj_a, s_dmax) if stage_b_engine == "qec_cert" else None
     if say:
         print(f"[dist_m4ri] engine='auto': Stage A bounds [{res_a['dmin']}, {res_a['dmax']}] in {t_a:.3g} s; "
-              f"Stage B, qec_cert with the remaining {t_all - t_a:.3g} s")
+              f"Stage B, {stage_b_engine} with the remaining {t_all - t_a:.3g} s")
     t_b0 = time.monotonic()
     try:
-        _get_qec_cert()  # (the import, before the time limit of qec_cert is set)
-        t_lim = max(t_all - (time.monotonic() - t0), 0.1)  # (never 0.0: no limit in qec_cert)
-        info["stage_b_time_limit"] = t_lim
-        res_b = run_cert(s_dmin, s_dmax, res_a["dmin"], t_lim, dm4ri_json=wit_a)
-    except Exception as e:  # (ImportError of a broken installation, or an error in qec_cert)
-        if isinstance(e, ImportError):  # (found, but not usable, see _probe_qec_cert(): a warning once per process)
+        if stage_b_engine == "qec_cert":
+            _get_qec_cert()  # (the import, before the time limit of qec_cert is set)
+            t_lim = max(t_all - (time.monotonic() - t0), 0.1)  # (never 0.0: no limit in qec_cert)
+            info["stage_b_time_limit"] = t_lim
+            res_b = run_cert(s_dmin, s_dmax, res_a["dmin"], t_lim, dm4ri_json=wit_a)
+        else:
+            t_lim = max(t_all - (time.monotonic() - t0), 0.1)
+            info["stage_b_time_limit"] = t_lim
+            assert run_tropidist is not None
+            res_b = run_tropidist(s_dmin, s_dmax, res_a["dmin"], t_lim)
+    except Exception as e:  # (ImportError of a broken installation, or an error in Stage B)
+        if stage_b_engine == "qec_cert" and isinstance(e, ImportError):
             _auto_qec_cert_unusable_reason()
             info["reason"] = "qec_cert is not usable"
         else:
-            sys.stderr.write(f"# Warning: engine='auto': qec_cert failed ({type(e).__name__}: {e}); using the "
+            sys.stderr.write(f"# Warning: engine='auto': {stage_b_engine} failed ({type(e).__name__}: {e}); using the "
                              f"dist_m4ri bounds [{res_a['dmin']}, {res_a['dmax']}]\n")
-            info["reason"] = "qec_cert failed"
+            info["reason"] = f"{stage_b_engine} failed"
         return _auto_native_tail(run_native, res_a, info, t0=t0, t_all=t_all, dmin=dmin, dmax=dmax, prev_rw=a_rw,
                                  say=say)
     t_b = time.monotonic() - t_b0
     res_b = _auto_add_rw(dict(res_b, cached=False), a_rw)
     info.update(stage="B", stage_b=[res_b["dmin"], res_b["dmax"]], stage_b_time=t_b)
     if say:
-        print(f"[dist_m4ri] engine='auto': Stage B (qec_cert) bounds [{res_b['dmin']}, {res_b['dmax']}] in "
+        print(f"[dist_m4ri] engine='auto': Stage B ({stage_b_engine}) bounds [{res_b['dmin']}, {res_b['dmax']}] in "
               f"{t_b:.3g} s")
     reason = _auto_done_reason(res_b, "Stage B", dstop, wmax, t_all, t_all - (time.monotonic() - t0))
     if reason:
         info["reason"] = reason
         _last_run_stats["engine_auto"] = info
         return res_b
-    info["reason"] = "qec_cert ended early with an open bracket"
+    info["reason"] = f"{stage_b_engine} ended early with an open bracket"
     return _auto_native_tail(run_native, res_b, info, t0=t0, t_all=t_all, dmin=dmin, dmax=dmax, prev_rw=a_rw,
                              say=say)
 
@@ -6287,6 +6942,7 @@ def compute_classical_distance(
     cc_prune: Optional[int] = None,
     engine: Optional[str] = None,
     rw_opt: Optional[int] = None,
+    table_gb: Optional[int] = None,
     **kwargs
 ) -> Any:
     """
@@ -6368,18 +7024,22 @@ def compute_classical_distance(
         do_cws: Whether to return extracted codewords.
         return_info: If True, return (dist, d_info) or (dist, d_info, cws) where d_info is [dmin, dmax, num_rw].
         cache_file: Optional JSON file path for persistent distance caching.
-        solver: "dist_m4ri" or "codedistance".
+        solver: "dist_m4ri", "cert", "tropidist", "auto", or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
         engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert (distance only, see
-            compute_quantum_distance()); "auto": the dist_m4ri binary (since version 0.17.0, a classical code is never
-            delegated to qec_cert, whose import alone takes longer than most runs of the binary).
+            compute_quantum_distance()); "tropidist": external `tropidist` subprocess (`python -m cdist`, located via
+            `TROPIDIST_ROOT` or `cdist` on `sys.path`; distance only, independently verifies every returned witness);
+            "auto": the dist_m4ri binary (since version 0.17.0, a classical code is never delegated to qec_cert or
+            tropidist, whose startup takes longer than most runs of the binary).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it.
+        table_gb: Optional lookup-table memory budget in GiB for `engine="tropidist"` (0: tropidist default; ignored
+            with a warning for other engines).
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
@@ -6388,25 +7048,29 @@ def compute_classical_distance(
 
     Raises:
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
-        ValueError: for an invalid option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside -1..63),
-            for H without columns (n = 0, since version 0.17.2), for method=2 with timeout <= 0 but without wmax,
-            dmax, or dstop, or for do_cws / outC with solver="codedistance".
+        ValueError: for an invalid option value (e.g., start, cc_prune other than 0, 1, or 2, rw_opt outside -1..63,
+            or negative table_gb), for H without columns (n = 0, since version 0.17.2), for method=2 with timeout <= 0
+            but without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance", engine="cert", or
+            engine="tropidist".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
-        RuntimeError: if the binary exits with an error (e.g., for a missing input file).
-        ImportError: if solver="codedistance" but the codedistance package is not installed.
+        RuntimeError: if the binary (or tropidist) exits with an error (e.g., for a missing input file).
+        ImportError: if solver="codedistance", engine="cert", or engine="tropidist" is requested but unavailable.
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_classical_distance, kwargs)
     _check_has_columns("classical", H)
     _check_rw_opt(rw_opt)
+    eff_table_gb = _check_table_gb(table_gb)
     cert_mode = _resolve_cert_engine(solver, engine)
+    is_codedist = solver == "codedistance" or str(engine or "").strip().lower() == "codedistance"
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
-                                       engine_cert=cert_mode == "cert")
-    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
+                                       engine_cert=cert_mode if cert_mode in ("cert", "tropidist") else False)
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC, method=method)
+    _warn_table_gb_unused(eff_table_gb, cert_mode, is_codedist=is_codedist)
     _warn_experimental_ksub(ksub, method, solver)
 
-    if solver == "codedistance" or str(engine or "").strip().lower() == "codedistance":
+    if is_codedist:
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         _warn_codedistance_ignored(locals())
@@ -6433,6 +7097,27 @@ def compute_classical_distance(
         return d
 
     eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+    if _can_delegate_to_tropidist(cert_mode, do_cws=do_cws, outC=outC):
+        def run_trop_classical(w_lo: int, w_hi: int) -> Tuple[Dict[str, Any], Any, Any]:
+            import numpy as np
+            import scipy.sparse as sp
+            H_csr = _to_binary_csr(H)
+            if _k0_of_matrices(H_csr, classical=True):
+                return {"k0": "rank H = n"}, None, None
+            L_csr = sp.eye(int(H_csr.shape[1]), dtype=np.uint8, format="csr")
+            rec = _run_tropidist(
+                H_csr=H_csr, L_csr=L_csr, w_lo=w_lo, w_hi=w_hi, threads=threads, timeout=timeout,
+                table_gb=eff_table_gb, debug=debug, verbose=verbose,
+            )
+            return rec, H_csr, L_csr
+        res = _tropidist_code_distance(
+            lambda: _matrix_cache_key(H, None, None, True), run_trop_classical,
+            label="classical", classical=True, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
+            eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+        )
+        dist, d_info = res["dist"], res["d_info"]
+        return (dist, d_info) if return_info else dist
+
     if _can_delegate_to_cert(
         cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax, dW=dW, maxC=maxC,
         start_list=start_list, classical=True,  # (engine='auto': never for a classical code)
@@ -6523,6 +7208,7 @@ def compute_quantum_distance(
     ortho: bool = True,
     engine: Optional[str] = None,
     rw_opt: Optional[int] = None,
+    table_gb: Optional[int] = None,
     **kwargs
 ) -> Any:
     """
@@ -6612,7 +7298,7 @@ def compute_quantum_distance(
         do_cws: Whether to return extracted codewords.
         return_info: If True, return (dist, d_info) or (dist, d_info, cws) where d_info is [dmin, dmax, num_rw].
         cache_file: Optional JSON file path for persistent distance caching.
-        solver: "dist_m4ri" or "codedistance".
+        solver: "dist_m4ri", "cert", "tropidist", "auto", or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
@@ -6627,27 +7313,33 @@ def compute_quantum_distance(
             conditional on it and
             could not be cached; dmin only tightens the returned bounds) up to dmax - 1 (or wmax, or dstop - 1; 40
             without any of them, where its stages which do not depend on the weight, e.g., the graphlike or rank-DP
-            bounds, may still certify a larger distance), see _cert_code_distance().  "auto" (since version 0.17.0, a
-            two-stage portfolio for a distance-only method=3 call; otherwise the binary, see _auto_two_stage()): Stage
-            A, the binary for tau_1 = timeout if timeout <= 2 s, else min(max(2, timeout / 10), 10) s; if its bracket is
-            still open and more than 1 s is left, Stage B, qec_cert with the remaining time, from the bounds of Stage A
-            (wmin = max(1, dmin_A), wmax = dmax_A - 1; its randomized upper-bound stage only if dmax_A - max(1, dmin_A)
-            >= 3 or no codeword is known, since version 0.17.1); if qec_cert ends early with an open bracket, the binary
-            with the time left; the binary only, with the whole timeout, if qec_cert is not installed (or not usable,
-            with a warning once per process).  A cached exact result is used without a run (and without importing
-            qec_cert).  The details are in _last_run_stats["engine_auto"].  With "cert" and "auto", a floor wmin > 1 (a
-            certified lower bound) is passed with search_opts={"force_dom": 1}, so that qec_cert keeps the stabilizer
-            dominance of its search on (since version 0.17.4; also for a DEM; not for a classical code, which has no
-            such dominance, nor with method=1, whose mode 'ub' runs no search; an older qec_cert without this option
-            is called as before), see _cert_search_kw().  Since version 0.17.5, a qec_cert with the handoff parameters
-            also gets the upper bound dmax (of the caller or of the cache record, if above wmin) as dmax_init, and with
-            "auto" the codeword of weight dmax_A found by the binary in Stage A (which then runs with json=1), as its
-            JSON summary from_dm4ri (or as ub_witness), which qec_cert verifies; the floor stays wmin (see
-            _cert_handoff_kw()).
+            bounds, may still certify a larger distance), see _cert_code_distance().  "tropidist": external `tropidist`
+            subprocess (`python -m cdist`, located via `TROPIDIST_ROOT` or `cdist` on `sys.path`; constructs `L` from
+            `(H, G)` over GF(2) when `G` is given, independently verifies every returned witness `H x = 0, L x != 0`,
+            and uses the same verified-only cache rules; `table_gb` controls its lookup-table memory budget).  "auto"
+            (since version 0.17.0, a two-stage portfolio for a distance-only method=3 call; otherwise the binary, see
+            _auto_two_stage()): Stage A, the binary for tau_1 = timeout if timeout <= 2 s, else min(max(2, timeout /
+            10), 10) s; if its bracket is still open and more than 1 s is left, Stage B, qec_cert (or tropidist when
+            qec_cert is unavailable and tropidist is configured) with the remaining time, from the bounds of Stage A
+            (wmin = max(1, dmin_A), wmax = dmax_A - 1; qec_cert's randomized upper-bound stage only if dmax_A - max(1,
+            dmin_A) >= 3 or no codeword is known, since version 0.17.1); if Stage B ends early with an open bracket,
+            the binary with the time left; the binary only, with the whole timeout, if neither qec_cert nor tropidist
+            is usable (with a warning once per process if qec_cert is installed without libqeccert.so).  A cached exact
+            result is used without a run (and without importing qec_cert or spawning tropidist).  The details are in
+            _last_run_stats["engine_auto"].  With "cert" and "auto", a floor wmin > 1 (a certified lower bound) is
+            passed to qec_cert with search_opts={"force_dom": 1}, so that qec_cert keeps the stabilizer dominance of
+            its search on (since version 0.17.4; also for a DEM; not for a classical code, which has no such dominance,
+            nor with method=1, whose mode 'ub' runs no search; an older qec_cert without this option is called as
+            before), see _cert_search_kw().  Since version 0.17.5, a qec_cert with the handoff parameters also gets the
+            upper bound dmax (of the caller or of the cache record, if above wmin) as dmax_init, and with "auto" the
+            codeword of weight dmax_A found by the binary in Stage A (which then runs with json=1), as its JSON summary
+            from_dm4ri (or as ub_witness), which qec_cert verifies; the floor stays wmin (see _cert_handoff_kw()).
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
             run_dist_m4ri()).
+        table_gb: Optional lookup-table memory budget in GiB for `engine="tropidist"` (or `engine="auto"` when
+            falling back to `tropidist`; 0: tropidist default; ignored with a warning for other engines).
 
     Returns:
         dist or (dist, cws) if do_cws is True (or (dist, d_info) / (dist, d_info, cws) if return_info=True).  A code
@@ -6658,22 +7350,26 @@ def compute_quantum_distance(
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         ValueError: if neither or both of G and L are given (or G is not given, with solver="codedistance"), for a
             matrix without columns (n = 0, since version 0.17.2), for an invalid option value (e.g., start, cc_prune
-            other than 0, 1, or 2, or rw_opt outside -1..63), for method=2 with timeout <= 0 but without wmax, dmax,
-            or dstop, or for do_cws / outC with solver="codedistance".
+            other than 0, 1, or 2, rw_opt outside -1..63, or negative table_gb), for method=2 with timeout <= 0 but
+            without wmax, dmax, or dstop, or for do_cws / outC with solver="codedistance", engine="cert", or
+            engine="tropidist".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
-        RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for rows
-            of H and G which are not orthogonal).
-        ImportError: if solver="codedistance" but the codedistance package is not installed.
+        RuntimeError: if the binary (or tropidist) exits with an error (e.g., for a missing input file, or with
+            ortho=True for rows of H and G which are not orthogonal).
+        ImportError: if solver="codedistance", engine="cert", or engine="tropidist" is requested but unavailable.
     """
     eff_dmin = dmin if dmin > 0 else d_min
     eff_dmax = dmax if dmax > 0 else d_max
     _check_kwargs(compute_quantum_distance, kwargs)
     _check_has_columns("quantum", H, G, L)
     _check_rw_opt(rw_opt)
+    eff_table_gb = _check_table_gb(table_gb)
     cert_mode = _resolve_cert_engine(solver, engine)
+    is_codedist = solver == "codedistance" or str(engine or "").strip().lower() == "codedistance"
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
-                                       engine_cert=cert_mode == "cert")
-    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
+                                       engine_cert=cert_mode if cert_mode in ("cert", "tropidist") else False)
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC, method=method)
+    _warn_table_gb_unused(eff_table_gb, cert_mode, is_codedist=is_codedist)
     _warn_experimental_ksub(ksub, method, solver)
 
     if G is None and L is None:
@@ -6685,7 +7381,7 @@ def compute_quantum_distance(
         raise ValueError("Either G or L should be specified for quantum distance, not both.")
     _warn_ortho(ortho, G is not None, solver)
 
-    if solver == "codedistance" or str(engine or "").strip().lower() == "codedistance":
+    if is_codedist:
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         _warn_codedistance_ignored(locals())
@@ -6760,8 +7456,41 @@ def compute_quantum_distance(
                 dstop=dstop, wmax=wmax, eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
                 certified_dmin=cert_dmin, keep_stats=True,
             )
+        def run_trop(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
+            def run_fn(w_lo: int, w_hi: int) -> Tuple[Dict[str, Any], Any, Any]:
+                H_csr, L_csr, k0_reason = _tropidist_prepare_quantum(H, G, L, ortho=ortho)
+                if k0_reason is not None:
+                    return {"k0": k0_reason}, None, None
+                rec = _run_tropidist(
+                    H_csr=H_csr, L_csr=L_csr, w_lo=w_lo, w_hi=w_hi, threads=threads, timeout=t_lim,
+                    table_gb=eff_table_gb, debug=debug, verbose=verbose,
+                )
+                return rec, H_csr, L_csr
+            return _tropidist_code_distance(
+                lambda: _matrix_cache_key(H, G, L, False), run_fn, label="quantum", dmin=dmin_s, dmax=dmax_s,
+                dstop=dstop, wmax=wmax, eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+                certified_dmin=cert_dmin, keep_stats=True,
+            )
         res = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop,
-                              wmax=wmax, label="quantum", debug=debug, verbose=verbose)
+                              wmax=wmax, label="quantum", debug=debug, verbose=verbose, run_tropidist=run_trop)
+        dist, d_info = res["dist"], res["d_info"]
+        return (dist, d_info) if return_info else dist
+
+    if _can_delegate_to_tropidist(cert_mode, do_cws=do_cws, outC=outC):
+        def run_trop_quantum(w_lo: int, w_hi: int) -> Tuple[Dict[str, Any], Any, Any]:
+            H_csr, L_csr, k0_reason = _tropidist_prepare_quantum(H, G, L, ortho=ortho)
+            if k0_reason is not None:
+                return {"k0": k0_reason}, None, None
+            rec = _run_tropidist(
+                H_csr=H_csr, L_csr=L_csr, w_lo=w_lo, w_hi=w_hi, threads=threads, timeout=timeout,
+                table_gb=eff_table_gb, debug=debug, verbose=verbose,
+            )
+            return rec, H_csr, L_csr
+        res = _tropidist_code_distance(
+            lambda: _matrix_cache_key(H, G, L, False), run_trop_quantum,
+            label="quantum", dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
+            eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+        )
         dist, d_info = res["dist"], res["d_info"]
         return (dist, d_info) if return_info else dist
 
@@ -6880,6 +7609,7 @@ def compute_css_distance(
     ortho: bool = True,
     engine: Optional[str] = None,
     rw_opt: Optional[int] = None,
+    table_gb: Optional[int] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -6968,25 +7698,29 @@ def compute_css_distance(
         cache_file: Optional JSON file path for persistent distance caching.  The two sectors are cached as the
             quantum codes (H=Hx, G=Hz) -> dZ and (H=Hz, G=Hx) -> dX (with L=Lx / L=Lz if given), i.e., they share
             the records of compute_quantum_distance(); CSS records written before version 0.12.0 are converted.
-        solver: "dist_m4ri" or "codedistance".
+        solver: "dist_m4ri", "cert", "tropidist", "auto", or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
         debug: Debug bitmap: the bits in BIN_DBG_MASK for the dist_m4ri binary, and the PY_DBG_* bits.
         verbose: Verbose reporting flag.
         engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert for each sector (as in
-            compute_quantum_distance()); "auto" (since version 0.17.0): the two-stage portfolio of
-            compute_quantum_distance() for each sector (a distance-only method=3 call): the binary first (Stage A,
-            from the timeout as there), qec_cert only for a sector whose bracket is still open (Stage B; wmin =
-            max(1, dmin_A), wmax = dmax_A - 1, its upper-bound stage only for a wide bracket, and with wmin > 1
+            compute_quantum_distance()); "tropidist": external `tropidist` subprocess for each sector (as in
+            compute_quantum_distance(), constructing `Lx`/`Lz` over GF(2) when omitted); "auto" (since version
+            0.17.0): the two-stage portfolio of compute_quantum_distance() for each sector (a distance-only method=3
+            call): the binary first (Stage A, from the timeout as there), qec_cert (or tropidist when qec_cert is
+            unavailable and tropidist is configured) only for a sector whose bracket is still open (Stage B; wmin =
+            max(1, dmin_A), wmax = dmax_A - 1, qec_cert's upper-bound stage only for a wide bracket, and with wmin > 1
             search_opts={"force_dom": 1}, since version 0.17.4; since version 0.17.5, with a qec_cert which has the
             handoff parameters, also dmax_init=dmax_A and the codeword of weight dmax_A found in Stage A, see
-            _cert_handoff_kw()), and the binary again with the time left if qec_cert ends early with an open bracket;
+            _cert_handoff_kw()), and the binary again with the time left if Stage B ends early with an open bracket;
             each sector has the whole timeout, as with the other engines.
         rw_opt: Expert option (since version 0.17.0): the stages of the RW search of the binary (None, the default:
             the binary's -1, automatic; 0: all off, the RW of version 0.16.1; a bitmask 1..63: only the stages listed,
             see run_dist_m4ri()).  The distance and the cache key do not depend on it (for codeword collection, see
             run_dist_m4ri()).
+        table_gb: Optional lookup-table memory budget in GiB for `engine="tropidist"` (or `engine="auto"` when
+            falling back to `tropidist`; 0: tropidist default; ignored with a warning for other engines).
 
     Returns:
         tuple (dist, dX_info, dZ_info, cws_X, cws_Z) if do_cws
@@ -6998,14 +7732,14 @@ def compute_css_distance(
     Raises:
         ValueError: if Hx or Hz is missing or empty (use compute_quantum_distance() for one sector, or
             compute_classical_distance() for a classical code), for matrices without columns (n = 0, since version
-            0.17.2), for an invalid option value (e.g., start, cc_prune other than 0, 1, or 2, or rw_opt outside
-            -1..63), for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
-            solver="codedistance".
+            0.17.2), for an invalid option value (e.g., start, cc_prune other than 0, 1, or 2, rw_opt outside -1..63,
+            or negative table_gb), for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws /
+            outC with solver="codedistance", engine="cert", or engine="tropidist".
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()).
-        RuntimeError: if the binary exits with an error (e.g., for a missing input file, or with ortho=True for
-            rows of Hx and Hz which are not orthogonal).
-        ImportError: if solver="codedistance" but the codedistance package is not installed.
+        RuntimeError: if the binary (or tropidist) exits with an error (e.g., for a missing input file, or with
+            ortho=True for rows of Hx and Hz which are not orthogonal).
+        ImportError: if solver="codedistance", engine="cert", or engine="tropidist" is requested but unavailable.
     """
     def _as_matrix(M: Any) -> Any:  # an array-like (e.g., a list of rows) as a NumPy array
         if M is None or isinstance(M, (str, Path)) or hasattr(M, 'shape'):
@@ -7029,14 +7763,17 @@ def compute_css_distance(
     _check_kwargs(compute_css_distance, kwargs)
     _check_has_columns("CSS", Hx, Hz, Lx, Lz)
     _check_rw_opt(rw_opt)
+    eff_table_gb = _check_table_gb(table_gb)
     cert_mode = _resolve_cert_engine(solver, engine)
+    is_codedist = solver == "codedistance" or str(engine or "").strip().lower() == "codedistance"
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
-                                       engine_cert=cert_mode == "cert")
-    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
+                                       engine_cert=cert_mode if cert_mode in ("cert", "tropidist") else False)
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC, method=method)
+    _warn_table_gb_unused(eff_table_gb, cert_mode, is_codedist=is_codedist)
     _warn_experimental_ksub(ksub, method, solver)
     _warn_ortho(ortho, Lx is None or Lz is None, solver)  # (G of the sectors: Hz unless Lx, Hx unless Lz)
 
-    if solver == "codedistance" or str(engine or "").strip().lower() == "codedistance":
+    if is_codedist:
         if do_cws or outC:
             raise ValueError("Codeword extraction is not supported with codedistance solver; use solver='dist_m4ri'.")
         _warn_codedistance_ignored(locals())
@@ -7138,9 +7875,42 @@ def compute_css_distance(
                     dmax=dmax_s, dstop=sector_stop, wmax=wmax, eff_cache_file=eff_cache_file, debug=debug,
                     verbose=verbose, certified_dmin=cert_dmin, keep_stats=True,
                 )
+            def run_trop(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float,
+                         s: str = s, H_s: Any = H_s, G_s: Any = G_s, L_s: Any = L_s) -> Dict[str, Any]:
+                def run_fn(w_lo: int, w_hi: int) -> Tuple[Dict[str, Any], Any, Any]:
+                    H_csr, L_csr, k0_reason = _tropidist_prepare_quantum(H_s, G_s, L_s, ortho=ortho)
+                    if k0_reason is not None:
+                        return {"k0": k0_reason}, None, None
+                    rec = _run_tropidist(
+                        H_csr=H_csr, L_csr=L_csr, w_lo=w_lo, w_hi=w_hi, threads=threads, timeout=t_lim,
+                        table_gb=eff_table_gb, debug=debug, verbose=verbose,
+                    )
+                    return rec, H_csr, L_csr
+                return _tropidist_code_distance(
+                    lambda: _matrix_cache_key(H_s, G_s, L_s, False), run_fn, label=f"CSS {s}-sector",
+                    dmin=dmin_s, dmax=dmax_s, dstop=sector_stop, wmax=wmax, eff_cache_file=eff_cache_file,
+                    debug=debug, verbose=verbose, certified_dmin=cert_dmin, keep_stats=True,
+                )
             # (a sector: the user's dmax is a bound on min(dX, dZ), passed as the stop target, not as an upper bound)
             res[s] = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=0, dstop=sector_stop,
-                                     wmax=wmax, label=f"CSS {s}-sector", debug=debug, verbose=verbose)
+                                     wmax=wmax, label=f"CSS {s}-sector", debug=debug, verbose=verbose,
+                                     run_tropidist=run_trop)
+        elif _can_delegate_to_tropidist(cert_mode, do_cws=do_cws, outC=outC):
+            def run_trop_css(w_lo: int, w_hi: int, H_s: Any = H_s, G_s: Any = G_s,
+                             L_s: Any = L_s) -> Tuple[Dict[str, Any], Any, Any]:
+                H_csr, L_csr, k0_reason = _tropidist_prepare_quantum(H_s, G_s, L_s, ortho=ortho)
+                if k0_reason is not None:
+                    return {"k0": k0_reason}, None, None
+                rec = _run_tropidist(
+                    H_csr=H_csr, L_csr=L_csr, w_lo=w_lo, w_hi=w_hi, threads=threads, timeout=timeout,
+                    table_gb=eff_table_gb, debug=debug, verbose=verbose,
+                )
+                return rec, H_csr, L_csr
+            res[s] = _tropidist_code_distance(
+                lambda H_s=H_s, G_s=G_s, L_s=L_s: _matrix_cache_key(H_s, G_s, L_s, False),
+                run_trop_css, label=f"CSS {s}-sector", dmin=eff_dmin, dmax=0, dstop=sector_stop, wmax=wmax,
+                eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+            )
         elif _can_delegate_to_cert(
             cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC_s, smax=smax,
             dW=dW, maxC=maxC, start_list=start_list,
@@ -7503,6 +8273,7 @@ def compute_dem_distance(
     engine: Optional[str] = None,
     rw_opt: Optional[int] = None,
     dem_rounds: Optional[int] = None,
+    table_gb: Optional[int] = None,
     **kwargs
 ) -> Tuple[Any, ...]:
     """
@@ -7613,7 +8384,7 @@ def compute_dem_distance(
         outC: Output file to save codewords (NZLIST format).
         do_cws: Whether to return extracted error mechanisms / codewords.
         cache_file: Optional JSON file path for persistent distance caching.
-        solver: "dist_m4ri" or "codedistance".
+        solver: "dist_m4ri", "cert", "tropidist", "auto", or "codedistance".
         codedistance_method: Method if using codedistance library.
         codedistance_params: Extra parameters for codedistance library.
         seed: Random seed.
@@ -7645,14 +8416,19 @@ def compute_dem_distance(
         engine: None or "dist_m4ri" (default): the dist_m4ri binary; "cert": qec_cert (certify_circuit() for a Stim
             circuit, certify_dem() for a DEM; with pmin > 0, certify_dem() of the DEM without the error mechanisms of
             probability < pmin, as the binary reads it: since version 0.17.2, before which qec_cert certified the full
-            DEM, whose distance was cached under the key of the cut DEM); "auto" (since version 0.17.0, for a
-            distance-only method=3 call with pmin=0, without outD and out_reduced; otherwise the binary): with more
-            than 25,000 raw error mechanisms and a timeout of at least 3 s (or 0, no limit), qec_cert first, whose
-            exact reductions of large DEMs run before any search (the binary with the time left if qec_cert ends early
-            with an open bracket, also with timeout=0); otherwise the two-stage portfolio of compute_quantum_distance()
-            (the binary first, then qec_cert if the bracket is still open, and then the binary again with the time
-            left); the binary only, with the whole timeout, if qec_cert is not installed or not usable (a warning).
-            With "cert" and "auto", a floor wmin > 1 is passed to qec_cert with search_opts={"force_dom": 1}, as in
+            DEM, whose distance was cached under the key of the cut DEM); "tropidist": external `tropidist` subprocess
+            (`python -m cdist`, passing the Stim circuit directly when `circuit` is given and `pmin <= 0` so native
+            circuit relaxations and noiseless Stim witness replay apply, otherwise exporting the merged `(H, L)`
+            matrices of the DEM after `pmin` and independently verifying the returned witness; `table_gb` sets its
+            lookup-table memory budget); "auto" (since version 0.17.0, for a distance-only method=3 call with pmin=0,
+            without outD and out_reduced; otherwise the binary): when qec_cert is available, with more than 25,000 raw
+            error mechanisms and a timeout of at least 3 s (or 0, no limit), qec_cert first, whose exact reductions of
+            large DEMs run before any search (the binary with the time left if qec_cert ends early with an open
+            bracket, also with timeout=0); otherwise the two-stage portfolio of compute_quantum_distance() (the binary
+            first, then qec_cert—or tropidist when qec_cert is unavailable and tropidist is configured—if the bracket
+            is still open, and then the binary again with the time left); the binary only, with the whole timeout, if
+            neither qec_cert nor tropidist is usable (a warning once per process if qec_cert is broken).  With "cert"
+            and "auto", a floor wmin > 1 is passed to qec_cert with search_opts={"force_dom": 1}, as in
             compute_quantum_distance() (since version 0.17.4); since version 0.17.5, a qec_cert with the handoff
             parameters also gets dmax_init, and with "auto" for a DEM (not for a Stim circuit, whose DEM qec_cert
             generates itself) the codeword of weight dmax_A found in Stage A, which qec_cert verifies on the DEM, see
@@ -7668,6 +8444,8 @@ def compute_dem_distance(
             rounds=0 for a circuit with one round before its REPEAT block, so that a shallow multi-round DEM whose round
             structure the binary does not see gets no slabs), 0 for a DEM.  The distance and the cache key do not
             depend on it.
+        table_gb: Optional lookup-table memory budget in GiB for `engine="tropidist"` (or `engine="auto"` when
+            falling back to `tropidist`; 0: tropidist default; ignored with a warning for other engines).
 
     Returns:
         tuple (dist, d_info, cws) if do_cws else (dist, d_info)
@@ -7676,14 +8454,14 @@ def compute_dem_distance(
         TypeError: for an unknown keyword argument (e.g., a misspelled option).
         ValueError: if neither dem nor circuit is given, for rounds without a Stim circuit (or rounds < 0), for
             p_noise outside [0, 0.5], for an invalid drop (e.g., a file which does not exist) or another invalid
-            option value (e.g., start, cc_prune other than 0, 1, or 2, rw_opt outside -1..63, or dem_rounds < 0), for
-            method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC with
-            solver="codedistance".
+            option value (e.g., start, cc_prune other than 0, 1, or 2, rw_opt outside -1..63, dem_rounds < 0, or
+            negative table_gb), for method=2 with timeout <= 0 but without wmax, dmax, or dstop, or for do_cws / outC
+            with solver="codedistance", engine="cert", or engine="tropidist".
         FileNotFoundError: if the dist_m4ri binary is not found (see find_dist_m4ri_binary()), or if a DEM or circuit
             file does not exist (since version 0.17.2; before, its name was read as the text of a DEM).
-        RuntimeError: if the binary exits with an error.
-        ImportError: if stim is needed (e.g., for a Stim circuit) or solver="codedistance", but the package is not
-            installed.
+        RuntimeError: if the binary (or tropidist) exits with an error.
+        ImportError: if stim is needed (e.g., for a Stim circuit) or solver="codedistance", engine="cert", or
+            engine="tropidist" is requested but unavailable.
     """
     global _last_run_stats
     eff_dmin = dmin if dmin > 0 else d_min
@@ -7691,13 +8469,16 @@ def compute_dem_distance(
     _check_kwargs(compute_dem_distance, kwargs)
     _check_rw_opt(rw_opt)
     _check_dem_rounds(dem_rounds, allow_none=True)
+    eff_table_gb = _check_table_gb(table_gb)
     cert_mode = _resolve_cert_engine(solver, engine)
+    is_codedist = solver == "codedistance" or str(engine or "").strip().lower() == "codedistance"
     if start_scan:  # (the binary merges the equal columns of a DEM, which changes the order of the columns)
         _warn_ignored("start_scan=1 is not available for a DEM (ignored)")
         start_scan = False
     start_list = _prepare_start_option(start, trust_start, noscan, cbeg, cend, solver, start_scan=start_scan,
-                                       engine_cert=cert_mode == "cert")
-    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC)
+                                       engine_cert=cert_mode if cert_mode in ("cert", "tropidist") else False)
+    _warn_cert_ignored(cert_mode, finC=finC, smax=smax, dW=dW, maxC=maxC, method=method)
+    _warn_table_gb_unused(eff_table_gb, cert_mode, is_codedist=is_codedist)
     _warn_experimental_ksub(ksub, method, solver)
     _warn_disabled_simple_full(simple, full)
 
@@ -7707,7 +8488,6 @@ def compute_dem_distance(
     drop_mode = _drop_mode(drop)  # "auto", "0", "css", or a file name
     src_in = dem if dem is not None else circuit  # (the input, for the names of the files of out_reduced)
     src_name = str(src_in) if isinstance(src_in, (str, Path)) else f"stim.{type(src_in).__name__}"
-    is_codedist = solver == "codedistance" or str(engine or "").strip().lower() == "codedistance"
     css_list: List[int] = []  # the minority-basis detectors of a CSS circuit (drop=css)
     dem, circuit, saved_dem_path = _dem_from_input(
         dem, circuit, basis=basis, rounds=rounds, p_noise=p_noise, out_dir=out_dir, out_dem=out_dem,
@@ -7813,6 +8593,39 @@ def compute_dem_distance(
             def cws_out_fn(cws_in: List[List[int]]) -> List[List[int]]:
                 return _expand_equal_columns(cws_in, fdem_run, pmin=pmin, maxC=maxC, verbose=verbose)
         eff_cache_file = str(Path(cache_file).resolve()) if cache_file is not None else _distance_cache_file
+
+        def _make_trop_dem_runner(t_budget: Optional[float]) -> Callable[[int, int], Tuple[Dict[str, Any], Any, Any]]:
+            use_circuit = circuit is not None and pmin <= 0.0
+
+            def run_fn(w_lo: int, w_hi: int) -> Tuple[Dict[str, Any], Any, Any]:
+                if use_circuit:
+                    if _dem_k0(dem, pmin=0.0):
+                        return {"k0": "no observable independent of the detectors"}, None, None
+                    rec = _run_tropidist(
+                        circuit=circuit, w_lo=w_lo, w_hi=w_hi, threads=threads, timeout=t_budget,
+                        table_gb=eff_table_gb, debug=debug, verbose=verbose,
+                    )
+                    return rec, None, None
+                H_csr, L_csr = _dem_to_hl_csr(dem, pmin=pmin)
+                if int(L_csr.shape[0]) == 0 or int(H_csr.shape[1]) == 0 or _k0_of_matrices(H_csr, L=L_csr):
+                    return {"k0": "no observable independent of the detectors"}, None, None
+                rec = _run_tropidist(
+                    H_csr=H_csr, L_csr=L_csr, w_lo=w_lo, w_hi=w_hi, threads=threads, timeout=t_budget,
+                    table_gb=eff_table_gb, debug=debug, verbose=verbose,
+                )
+                return rec, H_csr, L_csr
+            return run_fn
+
+        if _can_delegate_to_tropidist(cert_mode, do_cws=do_cws, outC=outC, outD=outD, out_reduced=out_reduced):
+            use_circuit = circuit is not None and pmin <= 0.0
+            res = _tropidist_code_distance(
+                lambda: _dem_cache_key(dem, pmin), _make_trop_dem_runner(timeout),
+                label="DEM", is_circuit=use_circuit, dmin=eff_dmin, dmax=eff_dmax, dstop=dstop, wmax=wmax,
+                eff_cache_file=eff_cache_file, debug=debug, verbose=verbose,
+            )
+            dist, d_info, cws = res["dist"], res["d_info"], res["cws"]
+            return (dist, d_info, cws) if do_cws else (dist, d_info)
+
         if cert_mode != "auto" and _can_delegate_to_cert(
             cert_mode, method=method, do_cws=do_cws, outC=outC, finC=finC, smax=smax,
             dW=dW, maxC=maxC, start_list=start_list, outD=outD, out_reduced=out_reduced, pmin=pmin
@@ -7883,14 +8696,23 @@ def compute_dem_distance(
                     wmax=wmax, eff_cache_file=eff_cache_file, debug=debug, verbose=verbose, certified_dmin=cert_dmin,
                     keep_stats=True,
                 )
+            def run_trop(dmin_s: int, dmax_s: int, cert_dmin: int, t_lim: float) -> Dict[str, Any]:
+                use_circuit = circuit is not None and pmin <= 0.0
+                return _tropidist_code_distance(
+                    lambda: _dem_cache_key(dem, pmin), _make_trop_dem_runner(t_lim),
+                    label="DEM", is_circuit=use_circuit, dmin=dmin_s, dmax=dmax_s, dstop=dstop, wmax=wmax,
+                    eff_cache_file=eff_cache_file, debug=debug, verbose=verbose, certified_dmin=cert_dmin,
+                    keep_stats=True,
+                )
             num_err = (_dem_num_raw_errors(dem, limit=_AUTO_DEM_FAST_PATH_ERRORS)
                        if _timeout_at_least(timeout, _AUTO_DEM_FAST_PATH_MIN_TIMEOUT) else -1)
-            if num_err > _AUTO_DEM_FAST_PATH_ERRORS:  # (a large raw DEM: the exact reductions of qec_cert first)
+            if num_err > _AUTO_DEM_FAST_PATH_ERRORS and (_qec_cert_available() or not _tropidist_available()):
                 res = _auto_cert_first(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=eff_dmax,
                                        dstop=dstop, wmax=wmax, num_errors=num_err, debug=debug, verbose=verbose)
             else:
                 res = _auto_two_stage(run_native, run_cert, timeout=timeout, dmin=eff_dmin, dmax=eff_dmax,
-                                      dstop=dstop, wmax=wmax, label="DEM", debug=debug, verbose=verbose)
+                                      dstop=dstop, wmax=wmax, label="DEM", debug=debug, verbose=verbose,
+                                      run_tropidist=run_trop)
         else:
             res = run_native(timeout, eff_dmin, eff_dmax)
         ran = not res["cached"]
@@ -8587,6 +9409,7 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
         "debug": 0,
         "solver": "dist_m4ri",
         "engine": None,
+        "table_gb": None,
         "cache_file": "tmp_dist_cache.json",
         "use_cache": True,
         "do_cws": False,
@@ -9019,6 +9842,11 @@ def parse_cli_args(argv: List[str]) -> Dict[str, Any]:
                 args["solver"] = val
             elif key_lower == "engine":
                 args["engine"] = val
+            elif key_lower in ("table_gb", "table-gb", "tablegb"):
+                tgb = _cli_int(val, num_arg)
+                if tgb < 0:
+                    raise ValueError(f"invalid '{num_arg}': table_gb should be a non-negative integer (GiB)")
+                args["table_gb"] = tgb
             elif key_lower in ("verbose", "v"):
                 args["verbose"] = _cli_flag(val)
             elif key_lower in ("cws", "do_cws", "do-cws", "docws"):
@@ -9136,10 +9964,10 @@ Allowed parameters:
   threads (t, num_threads), nothrottle, chunk_size (batch, chunk), ksub,
   kwin (win), win_mode, win_hyb, pairs, rw_opt, min_hits (max_hits), cov_cws,
   refresh, smax, noscan, start, start_scan, cbeg, cend, finC, outC, maxC,
-  expand, dW, irred, seed, debug (dbg), solver, engine, cache (cache_file),
-  --no-cache, --verbose, --silent (-q, --quiet), --cws (--do_cws),
-  --trust-start, sort_rows, cc_prune, ortho, steplog, slab_rows, slab_bnd,
-  slab_var, slab_every, stamp, json
+  expand, dW, irred, seed, debug (dbg), solver, engine, table_gb,
+  cache (cache_file), --no-cache, --verbose, --silent (-q, --quiet),
+  --cws (--do_cws), --trust-start, sort_rows, cc_prune, ortho,
+  steplog, slab_rows, slab_bnd, slab_var, slab_every, stamp, json
 
 Help options:
   -h, -?, --help : display help for commonly used parameters (fits 80 rows; --help TOPIC: as --morehelp TOPIC)
@@ -9192,7 +10020,7 @@ Search limits and stopping criteria:
 
 Multithreading & execution:
   threads=N             Max worker threads (default: all logical CPUs; throttled unless nothrottle=1; t, num_threads)
-  solver=NAME           Distance solver backend: 'dist_m4ri' (default), 'cert', 'auto', or 'codedistance' (also engine=)
+  solver=NAME           'dist_m4ri' (default), 'cert', 'tropidist', 'auto', 'codedistance' (also engine=, table_gb=N)
 
 Codeword collection & caching:
   --cws                 Collect minimum-weight codewords in the cache record (outC=FILE writes them; --do_cws)
@@ -9791,7 +10619,7 @@ General options:
   solver=NAME, engine=NAME
                         Distance calculation engine (engine takes precedence over solver; ignored with
                         a warning under --model-lb): 'dist_m4ri' (default; engine=native or off),
-                        'cert' ('qec_cert', 'qec-cert'), 'auto', or 'codedistance'.
+                        'cert' ('qec_cert', 'qec-cert'), 'tropidist', 'auto', or 'codedistance'.
                         'cert': runs qec_cert on distance-only requests (error if qec_cert or
                         libqeccert.so is missing, or with codeword collection --cws or outC; outD,
                         --out-reduced, finC, smax, dW, maxC, and start are ignored with a warning; with
@@ -9803,29 +10631,45 @@ General options:
                         dstop-1 (40 if none); only unconditional
                         lower bounds (including those conditioned solely on that cached certified
                         wmin) and upper bounds with a verified witness are cached.
+                        'tropidist': runs an external tropidist checkout ('python -m cdist', located
+                        via TROPIDIST_ROOT or cdist on PYTHONPATH) in a separate subprocess on
+                        distance-only requests (error if tropidist is not configured or with --cws /
+                        outC; outD, --out-reduced, finC, smax, dW, maxC, start, and method=1 are
+                        ignored with a warning; '0 0 0' when k = 0).  For Stim circuits with pmin = 0,
+                        passes the .stim file directly so tropidist keeps its native circuit
+                        relaxations and noiseless Stim witness replay; for matrices (constructing L
+                        from H and G over GF(2) when G is given) and standalone DEMs (after pmin),
+                        passes --matrices H.mtx L.mtx and independently verifies every returned
+                        witness (H x = 0, L x != 0) before accepting or caching the upper bound
+                        (value_only DP bounds without a witness are not accepted as upper bounds).
+                        Search range kmin..kmax is clamped to 1..40, starting from a cached certified
+                        lower bound only; table_gb sets the lookup-table memory budget in GiB.
                         'auto' (since version 0.17.0): two-stage portfolio for distance-only method=3
                         runs on quantum codes, CSS sectors, DEMs, or Stim circuits (classical codes,
                         method=1 or 2, codeword collection --cws/outC/dW>=0/maxC>0, finC, smax>0,
                         start, outD, --out-reduced, and pmin>0 run the native dist_m4ri binary
-                        without importing qec_cert):
-                        - A DEM or Stim circuit with > 25,000 raw error mechanisms (and timeout >= 3 s
-                          or 0) runs qec_cert first (exact DEM reductions before search); if qec_cert
-                          fails or ends early with an open bracket and > 1 s remains (or timeout=0),
-                          Stage C runs the native binary with the remaining time (no limit for
-                          timeout=0), seeded with the qec_cert bounds.
+                        without importing qec_cert or spawning tropidist):
+                        - When qec_cert is available, a DEM or Stim circuit with > 25,000 raw error
+                          mechanisms (and timeout >= 3 s or 0) runs qec_cert first (exact DEM
+                          reductions before search); if qec_cert fails or ends early with an open
+                          bracket and > 1 s remains (or timeout=0), Stage C runs the native binary
+                          with the remaining time (no limit for timeout=0), seeded with the qec_cert
+                          bounds.
                         - Otherwise, Stage A runs the native binary (method=3) for tau_1 = timeout if
                           timeout <= 2 s, else min(max(2, timeout/10), 10) s, returning at once
-                          without importing qec_cert if exact, dmin >= dstop > 0, CC reached wmax > 0,
-                          timeout=0, or <= 1 s remains; Stage B then imports and runs qec_cert with
-                          the remaining time, seeded with wmin = max(1, dmin_A) and wmax = dmax_A - 1
-                          (Stage A's CC-certified dmin_A discharges lb_assumed_wmin <= dmin_A;
-                          qec_cert runs its randomized upper-bound stage use_ub=True when dmax_A <= 0
-                          or dmax_A - max(1, dmin_A) >= 3, skipping it use_ub=False only for a narrow
-                          bracket 0 < dmax_A - max(1, dmin_A) < 3); if Stage B fails or ends early
-                          with an open bracket and > 1 s remains, Stage C runs the native binary with
-                          the remaining time from the tightened bounds.
-                        If qec_cert is not installed (or not usable, e.g., without libqeccert.so:
-                        warns once per process), the native binary runs once with the whole timeout.
+                          without importing qec_cert or spawning tropidist if exact, dmin >= dstop > 0,
+                          CC reached wmax > 0, timeout=0, or <= 1 s remains; Stage B then runs
+                          qec_cert (or tropidist when qec_cert is unavailable and tropidist is
+                          configured) with the remaining time, seeded with wmin = max(1, dmin_A) and
+                          wmax = dmax_A - 1 (Stage A's CC-certified dmin_A discharges
+                          lb_assumed_wmin <= dmin_A; qec_cert runs its randomized upper-bound stage
+                          use_ub=True when dmax_A <= 0 or dmax_A - max(1, dmin_A) >= 3, skipping it
+                          use_ub=False only for a narrow bracket 0 < dmax_A - max(1, dmin_A) < 3); if
+                          Stage B fails or ends early with an open bracket and > 1 s remains, Stage C
+                          runs the native binary with the remaining time from the tightened bounds.
+                        If neither qec_cert nor tropidist is available (warns once per process if
+                        qec_cert is installed without libqeccert.so), the native binary runs once
+                        with the whole timeout.
                         With 'cert' and 'auto', a floor wmin > 1 (a certified lower bound) keeps the
                         stabilizer dominance of the qec_cert search on for quantum codes and DEMs
                         (force_dom=1 if this qec_cert has the option, since 0.17.4).  Since 0.17.5, a
@@ -9835,6 +10679,9 @@ General options:
                         'codedistance': runs the codedistance Python package (error if missing, or
                         with --cws or outC; uses steps and seed, and ignores non-default dist_m4ri
                         binary options with a warning).  --verbose reports the engine='auto' stages.
+  table_gb=N            Lookup-table memory budget in GiB for engine='tropidist' (and engine='auto'
+                        when falling back to tropidist; also --table-gb N; 0: tropidist default,
+                        1 GiB or half RLIMIT_AS; ignored with a warning for other engines).
   --verbose / -v        Enable verbose output with detailed explanations of bounds,
                         timings, steps, and cache status (implies the debug bits 1, 2,
                         65536, and 131072).  For a RW upper bound which is not certified,
@@ -9906,10 +10753,10 @@ Help options:
 Exit codes:
   exit codes            0: success; 1: an invalid value of an argument (also an unknown help topic);
                         2 (since version 0.17.2; a traceback before): a package or library which is
-                        missing or not usable (e.g., qec_cert without libqeccert.so, stim), the
-                        binary not found or failed (its error message), or a file which cannot be
-                        read or written; 255: an unrecognized parameter, or no input.  Errors are
-                        written to stderr on one line: 'Error: ...'.
+                        missing or not usable (e.g., qec_cert without libqeccert.so, tropidist without
+                        TROPIDIST_ROOT, stim), the binary not found or failed (its error message), or
+                        a file which cannot be read or written; 255: an unrecognized parameter, or no
+                        input.  Errors are written to stderr on one line: 'Error: ...'.
 """
 
 
@@ -10138,7 +10985,8 @@ def _warn_cli_conflicts(args: Dict[str, Any]) -> None:
                                    ("cov_cws=", args.get("cov_cws", 100) != 100),
                                    ("refresh=", args.get("refresh") is not None),
                                    ("solver=", args.get("solver") not in (None, "dist_m4ri")),
-                                   ("engine=", args.get("engine") not in (None, "dist_m4ri"))) if on]
+                                   ("engine=", args.get("engine") not in (None, "dist_m4ri")),
+                                   ("table_gb=", args.get("table_gb") is not None)) if on]
         ign = [opt for opt in ign if opt not in warned]
         if ign:
             warns.append(f"{', '.join(ign)}: not used with --model-lb; ignored")
@@ -10303,6 +11151,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 cache_file=cache_file,
                 solver=args["solver"],
                 engine=args["engine"],
+                table_gb=args["table_gb"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],
@@ -10375,6 +11224,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 cache_file=cache_file,
                 solver=args["solver"],
                 engine=args["engine"],
+                table_gb=args["table_gb"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],
@@ -10465,6 +11315,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 cache_file=cache_file,
                 solver=args["solver"],
                 engine=args["engine"],
+                table_gb=args["table_gb"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],
@@ -10524,6 +11375,7 @@ def _main(argv: Optional[List[str]] = None) -> int:
                 cache_file=cache_file,
                 solver=args["solver"],
                 engine=args["engine"],
+                table_gb=args["table_gb"],
                 seed=args["seed"],
                 debug=args["debug"],
                 verbose=args["verbose"],
