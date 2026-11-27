@@ -9,5 +9,5 @@ var searchData=
   ['7_20rotated_20surface_20circuits_20benchmark_20stim_5fsurface_20and_20standalone_20dem_20suite_20benchmark_20dem_6',['2.7 Rotated Surface Circuits (&lt;span class=&quot;tt&quot;&gt;benchmark/stim_surface/&lt;/span&gt;) and Standalone DEM Suite (&lt;span class=&quot;tt&quot;&gt;benchmark/dem/&lt;/span&gt;)',['..//home/runner/work/dist-m4ri/dist-m4ri/benchmark/BENCHMARK.md#autotoc_md50',1,'']]],
   ['7_20rw_20windows_20and_20thread_20throttle_20of_200_2014_203_202026_2010_2014_7',['7. RW Windows and Thread Throttle of 0.14.3 (2026-10-14)',['../md_benchmark_2HISTORY.html#autotoc_md74',1,'']]],
   ['7_3a_20full_20dems_20time_20to_20a_20minimum_20weight_20codeword_8',['Figure 7: Full DEMs, time to a minimum-weight codeword',['../md_benchmark_2BENCHMARK.html#autotoc_md25',1,'']]],
-  ['7_3a_20weight_203_20degeneracies_20_24_20t_20_5f3_24_20in_20rw_3a_20implementation_20of_20the_20nov_202026_20study_9',['Task 7: Weight-3 Degeneracies ($\\mathcal{T}_3$) in RW: Implementation of the Nov 2026 Study',['../md_todo.html#autotoc_md188',1,'']]]
+  ['7_3a_20weight_203_20degeneracies_20_24_20t_20_5f3_24_20in_20rw_3a_20implementation_20of_20the_20nov_202026_20study_9',['Task 7: Weight-3 Degeneracies ($\\mathcal{T}_3$) in RW: Implementation of the Nov 2026 Study',['../md_todo.html#autotoc_md189',1,'']]]
 ];

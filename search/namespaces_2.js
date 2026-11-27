@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['gen_5fsegfault_5fmatrix_0',['gen_segfault_matrix',['../namespacegen__segfault__matrix.html',1,'']]]
+  ['dist_5fm4ri_0',['dist_m4ri',['../namespacedist__m4ri.html',1,'']]]
 ];

@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.4</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.5</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -91,7 +91,8 @@ autotoc_md56</h2>
 \setlength{\emergencystretch}{1.5em}</h2>
 <h1 class="doxsection"><a class="anchor" id="autotoc_md58"></a>
 Benchmark History of <span class="tt">dist-m4ri</span></h1>
-<p>This file collects the dated, version-by-version results of the benchmarks of <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span>, from the overnight benchmark of 0.14.0 (2026-10-11) to the validation, long-running thread scaling, and 128-thread certification of 0.17.3–0.17.4 (2026-11-24), with all their tables and the runs behind the figures. The current figures with plain captions, the terms used, and the inputs are in <a class="el" href="md_benchmark_2BENCHMARK.html">BENCHMARK.md</a>. Sections 4–11 keep the numbers which they had in <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a> until 2026-11-24, so that references to "Section N of the benchmark" in older notes still apply, and Section 12 adds the 2026-11-24 runs; Sections 1–3 (the codes, the circuits with their circuit-level distances, and the full DEMs with their exact reduction) are in <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a>. The raw data and scripts are in <span class="tt">scratch/</span> (not in the repository; the directory of each benchmark is given in its section).</p>
+<p>This file collects the dated, version-by-version results of the benchmarks of <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span>, from the overnight benchmark of 0.14.0 (2026-10-11) to the validation, long-running thread scaling, 128-thread certification, and 0.17.5 figure refresh of 0.17.3–0.17.5 (2026-11-24 to 2026-11-27), with all their tables and the runs behind the figures. The current figures with plain captions, the terms used, and the inputs are in <a class="el" href="md_benchmark_2BENCHMARK.html">BENCHMARK.md</a>. Sections 4–11 keep the numbers which they had in <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a> until 2026-11-24, so that references to "Section N of the
+benchmark" in older notes still apply, and Section 12 adds the 2026-11-24 and 2026-11-27 runs; Sections 1–3 (the codes, the circuits with their circuit-level distances, and the full DEMs with their exact reduction) are in <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a>. The raw data and scripts are in <span class="tt">scratch/</span> (not in the repository; the directory of each benchmark is given in its section).</p>
 <ul>
 <li>Section 4: the scaling with the number of threads, versions and details (Figures 2–5 of <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a>);</li>
 <li>Section 5: the overnight benchmark of 0.14.0 (2026-10-11);</li>
@@ -101,7 +102,7 @@ Benchmark History of <span class="tt">dist-m4ri</span></h1>
 <li>Section 9: the branch-and-bound CC search of 0.15.0 (2026-10-25);</li>
 <li>Section 10: the checks of 0.15.1 and the per-node cost of 0.15.2 (2026-10-28);</li>
 <li>Section 11: the RW triplet pipeline and the thread scaling of 0.17.0 (2026-11-13);</li>
-<li>Section 12: validation of 0.17.1–0.17.4, long-running CC/<span class="tt">method=3</span> thread scaling (Figure 6), and 128-thread certification (Figure 1) (2026-11-24).</li>
+<li>Section 12: validation of 0.17.1–0.17.4, long-running CC/<span class="tt">method=3</span> thread scaling (Figure 6), 128-thread certification (Figure 1), and 0.17.5 figure refresh (Figures 2–5, 7–9) (2026-11-24 to 2026-11-27).</li>
 </ul>
 <hr  />
 <div id="4-scaling-with-the-number-of-threads-versions-and-details"></div><h2 class="doxsection"><a class="anchor" id="autotoc_md60"></a>
@@ -519,7 +520,7 @@ Benchmark History of <span class="tt">dist-m4ri</span></h1>
 </table>
 <h3 class="doxsection"><a class="anchor" id="autotoc_md82"></a>
 8.2 Large DEMs: the time to light codewords</h3>
-<p>RW with the default threads (32 RW threads, Section 7.1) on the full DEMs of the double-gross circuit (<span class="tt">wmin=18</span>, three seeds) and of <span class="tt">bb_360</span> (<span class="tt">wmin=23</span>, two seeds, timeout 240 s). The time of the first codeword of each weight is that of its message "RW found new upper bound", since the start of the run (reading and reducing the DEM take about 1 s and 2 s). The figure (<a href="BENCHMARK.md#figure-8-lightest-codeword-against-time-with-and-without-the-rw-pairs">Figure 8</a> of <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a>) shows 0.14.6 (Section 8.7), which finds these codewords as soon as 0.14.5, against 0.14.3.</p>
+<p>RW with the default threads (32 RW threads, Section 7.1) on the full DEMs of the double-gross circuit (<span class="tt">wmin=18</span>, three seeds) and of <span class="tt">bb_360</span> (<span class="tt">wmin=23</span>, two seeds, timeout 240 s). The time of the first codeword of each weight is that of its message "RW found new upper bound", since the start of the run (reading and reducing the DEM take about 1 s and 2 s). The figure (<a href="BENCHMARK.md#figure-8-lightest-codeword-against-time-with-rw-pairs-and-stages">Figure 8</a> of <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a>) shows 0.14.6 (Section 8.7), which finds these codewords as soon as 0.14.5, against 0.14.3 (and now 0.17.5, Section 12.4).</p>
 <table class="markdownTable">
 <tr class="markdownTableHead">
 <th class="markdownTableHeadLeft">DEM  </th><th class="markdownTableHeadCenter">weight  </th><th class="markdownTableHeadLeft">0.14.3: time (s)/RW steps, per seed  </th><th class="markdownTableHeadLeft">0.14.5  </th><th class="markdownTableHeadLeft">0.14.6 (Section 8.7)  </th></tr>
@@ -944,7 +945,7 @@ Benchmark History of <span class="tt">dist-m4ri</span></h1>
 </ul>
 <h3 class="doxsection"><a class="anchor" id="autotoc_md101"></a>
 11.2 Thread scaling of the RW stages</h3>
-<p>The figure is <a href="BENCHMARK.md#figure-9-rw-stages-of-0170-against-threads">Figure 9</a> of <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a>.</p>
+<p>The 0.17.0 run below was refreshed with 0.17.5 in <a href="BENCHMARK.md#figure-9-rw-stages-of-0175-against-threads">Figure 9</a> of <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a> (Section 12.4).</p>
 <p><span class="tt">rw_opt=0</span> (the RW of 0.16.1) against <span class="tt">rw_opt=-1</span> on <span class="tt">taskset -c 0..p-1</span>, rates per second of RW time. Top two rows: hit-heavy RW (<span class="tt">min_hits=10^9</span>, hits on the up to <span class="tt">cov_cws = 100</span> stored minimum-weight codewords, Section 11.1; <span class="tt">nothrottle=1</span>; <span class="tt">2bga_102</span> stops at the 30 s timeout at $p = 1, 2$). Bottom row: first three panels, <span class="tt">steps/s</span> on deep and wide DEMs (<span class="tt">min_hits=0</span>), default throttle and <span class="tt">nothrottle=1</span> (on <span class="tt">bb_756</span>, all six default-throttle points stop at the 25 s timeout after 3 of 24 steps on 3 RW threads, <span class="tt">min_w</span> 673 and 578, so the coinciding $\approx 0.12$ steps/s curves, <span class="tt">rw_opt=0</span> drawn beneath <span class="tt">-1</span>, equal $3 / 25\text{ s}$; <span class="tt">nothrottle=1</span> <span class="tt">rw_opt=0</span> at $p = 16$, 20 of 24 steps, and <span class="tt">bb_360</span> <span class="tt">rw_opt=0</span> at $p = 1$, 51–52 of 80, also stop at 25 s); fourth panel, RW threads used under the default throttle (<span class="tt">rw_opt=0</span> coincides with <span class="tt">-1</span> and lies beneath it: 128 on <span class="tt">shyps_225</span>, 8 on <span class="tt">bb_360</span>, 3 on <span class="tt">bb_756</span>). The cases of Section 4 (<a href="BENCHMARK.md#key-results">Figures 2–5</a> of <a class="el" href="BENCHMARK_8md.html">BENCHMARK.md</a>) were re-run with the parameters of 0.15.2.</p>
 <table class="markdownTable">
 <tr class="markdownTableHead">

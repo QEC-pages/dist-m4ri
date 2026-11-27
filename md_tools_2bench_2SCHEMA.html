@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.4</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.5</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -82,17 +82,17 @@ $(function() {
   <div class="headertitle"><div class="title">SCHEMA </div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><h2 class="doxsection"><a class="anchor" id="autotoc_md207"></a>
-autotoc_md207</h2>
+<div class="textblock"><h2 class="doxsection"><a class="anchor" id="autotoc_md208"></a>
+autotoc_md208</h2>
 <p>geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in" header-includes:</p><ul>
 <li>| \makeatletter \DeclareRobustCommand{_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi} \makeatother </li>
 </ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md208"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md209"></a>
 \setlength{\emergencystretch}{1.5em}</h2>
-<h1 class="doxsection"><a class="anchor" id="autotoc_md209"></a>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md210"></a>
 Record Schemas of the Certification Benchmark (<span class="tt">tools/bench/</span>)</h1>
 <p>This file defines the JSON written by <span class="tt"><a class="el" href="harness_8py.html">harness.py</a></span> and read by <span class="tt"><a class="el" href="verify_8py.html">verify.py</a></span> and <span class="tt"><a class="el" href="analyze_8py.html">analyze.py</a></span>: the run record <span class="tt">dm4ri-bench-run/1</span>, the environment <span class="tt">dm4ri-bench-env/1</span>, and the plan <span class="tt">dm4ri-bench-plan/1</span>. The instance manifest <span class="tt">dm4ri-bench-manifest/1</span> is described in <a class="el" href="dir_7a858838c9e48f7d37e445dd103d1a9c.html"><span class="tt">benchmark/manifest/README.md</span></a>. The design is that of <span class="tt">scratch/bench_review/REVIEW.md</span>, Sections 3.3-3.5. Standard result fields include <span class="tt">lb</span>, <span class="tt">ub</span>, <span class="tt">exact</span>, <span class="tt">wall_sec</span>, <span class="tt">cap_sec</span>, <span class="tt">threads</span>, <span class="tt">lock_wait_sec</span>, <span class="tt">witness</span>, <span class="tt">witness_weight</span>, <span class="tt">witness_verified_numpy</span>, <span class="tt">witness_check_detail</span>, and the <span class="tt">engine</span> block.</p>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md210"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md211"></a>
 1. Session directory</h2>
 <div class="fragment"><div class="line">&lt;session&gt;/</div>
 <div class="line">  session.json     # session id, harness version, command lines, options, input check (dm4ri-bench-session/1)</div>
@@ -101,7 +101,7 @@ Record Schemas of the Certification Benchmark (<span class="tt">tools/bench/</sp
 <div class="line">  results.jsonl    # one run record per line (Section 2), appended atomically; the LAST record of a run_id wins</div>
 <div class="line">  runs/&lt;run_id&gt;/   # run.json (the same record), out.txt (stdout), err.txt (stderr)</div>
 <div class="line">  harness.log      # one line per event</div>
-</div><!-- fragment --><h2 class="doxsection"><a class="anchor" id="autotoc_md211"></a>
+</div><!-- fragment --><h2 class="doxsection"><a class="anchor" id="autotoc_md212"></a>
 2. The run record <span class="tt">dm4ri-bench-run/1</span></h2>
 <p>One JSON object per run. Times are in seconds, sizes <span class="tt">[m, n]</span> are rows x columns, and every bound is an integer. A field that does not apply, or is unknown, is <span class="tt">null</span>; <span class="tt"><a class="el" href="harness_8py.html">harness.py</a></span> writes every field listed here.</p>
 <p><b>Top level</b></p>
@@ -164,7 +164,7 @@ Record Schemas of the Certification Benchmark (<span class="tt">tools/bench/</sp
 <li><span class="tt">violations</span>: the text of each failed check (not empty only for the status <span class="tt">wrong</span>).</li>
 <li><span class="tt">unverified_reason</span>: why the upper bound could not be verified (no witness printed, a truncated support, ...).</li>
 </ul>
-<h3 class="doxsection"><a class="anchor" id="autotoc_md212"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md213"></a>
 2.1 Checks that make a run <span class="tt">wrong</span></h3>
 <ol type="1">
 <li>The witness fails the GF(2) check: <span class="tt">H e != 0</span>, or <span class="tt">e</span> is trivial (<span class="tt">L e = 0</span>, or <span class="tt">e</span> in the row space of <span class="tt">G</span>).</li>
@@ -183,7 +183,7 @@ Record Schemas of the Certification Benchmark (<span class="tt">tools/bench/</sp
 <li><span class="tt">contaminated</span>: <span class="tt">ext_cpu_s &gt; 0.02 * threads * wall_sec</span>.</li>
 <li><span class="tt">started_at</span>, <span class="tt">ended_at</span>: UTC, ISO 8601.</li>
 </ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md213"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md214"></a>
 3. The engine block (<span class="tt">Adapter.describe()</span>)</h2>
 <ul>
 <li><span class="tt">name</span>: <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a></span> (the binary), <span class="tt"><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a></span> (Python), <span class="tt">qec_cert</span>, <span class="tt">tropidist</span>.</li>
@@ -194,7 +194,7 @@ Record Schemas of the Certification Benchmark (<span class="tt">tools/bench/</sp
 <li><span class="tt">features</span>: e.g. <span class="tt">{"json": true}</span>: the binary's machine-readable output (<span class="tt">json=1 stamp=1</span>) was used.</li>
 </ul>
 <p>An <b>engine entry</b> of the analysis is <span class="tt">name:config@<a class="el" href="util__io_8c.html#a7f2c4105dff7b2edaad052d06bc4001f">p</a>&lt;threads&gt;</span>, e.g. <span class="tt"><a class="el" href="namespacedist__m4ri.html">dist_m4ri</a>:default@p128</span> (the baseline) or <span class="tt"><a class="el" href="dist__m4ri_8py.html">dist_m4ri.py</a>:auto@p128</span>. Only records of the league <span class="tt">default</span> that are not canaries (<span class="tt">options.canary</span> null) enter Tables A-B and Figures 1-4. Figure 5 uses the league <span class="tt">scaling</span> (and the <span class="tt">default</span> records of the binary at p = 64 and 128); the canaries are shown as a drift check.</p>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md214"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md215"></a>
 4. <span class="tt">env.json</span> (<span class="tt">dm4ri-bench-env/1</span>)</h2>
 <ul>
 <li><span class="tt">schema</span>, <span class="tt">created</span> (UTC), <span class="tt">host</span>, <span class="tt">kernel</span>, <span class="tt">os</span>, <span class="tt">vm</span>, <span class="tt">sched</span> {<span class="tt">autogroup</span>}.</li>
@@ -208,7 +208,7 @@ Record Schemas of the Certification Benchmark (<span class="tt">tools/bench/</sp
 <li><span class="tt">manifest</span>: <span class="tt">id</span>, <span class="tt">version</span>, <span class="tt">sha256</span>.</li>
 <li><span class="tt">inputs</span>: <span class="tt">checked</span>, <span class="tt">files</span>, <span class="tt">bytes</span>, <span class="tt">sha256_ok</span>, <span class="tt">page_cache_warmed</span>.</li>
 </ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md215"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md216"></a>
 5. <span class="tt">plan.json</span> (<span class="tt">dm4ri-bench-plan/1</span>)</h2>
 <p><span class="tt">schema</span>, <span class="tt">created</span>, <span class="tt">order_seed</span>, <span class="tt">manifest</span>, <span class="tt">options</span> (the tiers, budgets, seeds, threads, and engines), and <span class="tt">runs</span>: a list in run order of {<span class="tt">run_id</span>, <span class="tt">key</span>, <span class="tt">tier</span>, <span class="tt">instance</span>, <span class="tt">engine</span>, <span class="tt">config</span>, <span class="tt">threads</span>, <span class="tt">budget_s</span>, <span class="tt">seed</span>}. Within a tier the runs are a random permutation (from <span class="tt">order_seed</span>); the tiers run in the order T0, T1, T2, T3. The canary runs are not in the plan: the harness inserts one when the last canary is older than <span class="tt">--canary-every</span> (default 1800 s). </p>
 </div></div><!-- contents -->

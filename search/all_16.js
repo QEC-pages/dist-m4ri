@@ -12,14 +12,14 @@ var searchData=
   ['k_5fzero_5fnote_9',['k_zero_note',['../util__io_8c.html#a7dc880c2ae5285ff26236964da844e50',1,'k_zero_note(const params_t *const p, const char *const result):&#160;util_io.c'],['../util__io_8h.html#a7dc880c2ae5285ff26236964da844e50',1,'k_zero_note(const params_t *const p, const char *const result):&#160;util_io.c']]],
   ['k_5fzero_5frank_10',['k_zero_rank',['../util__io_8c.html#a2c25a20b2a1fa421512e034bceabd3b0',1,'k_zero_rank(const csr_t *const H, const csr_t *const L, char *const reason, const size_t len, atomic_int *const stop):&#160;util_io.c'],['../util__io_8h.html#a2c25a20b2a1fa421512e034bceabd3b0',1,'k_zero_rank(const csr_t *const H, const csr_t *const L, char *const reason, const size_t len, atomic_int *const stop):&#160;util_io.c']]],
   ['key_11',['key',['../structcc__hash__slot__t.html#af61235f635d88b5df7b46a1f217d08d4',1,'cc_hash_slot_t::key'],['../structsteplog__thr.html#a02cd3caaaea60805b2fa922a5899dbe2',1,'steplog_thr::key'],['../structrw__rec__t.html#ac257a00604a9e49be960ae4f2b83575f',1,'rw_rec_t::key'],['../structrw__canon__tab__t.html#a7aa1e18e8e030dd7fd026ac8be076b26',1,'rw_canon_tab_t::key'],['../structUT__hash__handle.html#a8a850ff11c07f6fd424e2ef9f592582f',1,'UT_hash_handle::key'],['../structhelp__entry__t.html#a975978a152763f96c7f9e66528ab9032',1,'help_entry_t::key']]],
-  ['key_20python_20functions_12',['Key Python Functions',['../md_README.html#autotoc_md160',1,'']]],
+  ['key_20python_20functions_12',['Key Python Functions',['../md_README.html#autotoc_md161',1,'']]],
   ['key_20results_13',['Key Results',['../md_benchmark_2BENCHMARK.html#autotoc_md15',1,'']]],
   ['keylen_14',['keylen',['../structUT__hash__handle.html#af2abdc405972a6bbdee2ade2c0f346c4',1,'UT_hash_handle']]],
   ['kfirst_15',['kfirst',['../structcc__walk__t.html#a82c551bc42fca81dfc46700df3d30ac1',1,'cc_walk_t']]],
   ['kill_5fafter_5fseconds_16',['kill_after_seconds',['../namespaceharness.html#ad6dcbb0a4631e9411652d0dd2dac41fb',1,'harness']]],
   ['known_17',['known',['../structrw__pair__t.html#a4c4a3fbc94922e226664bffd3daa6425',1,'rw_pair_t']]],
   ['ksub_18',['ksub',['../structparams__t.html#a401904911baccabcc93773249ff36237',1,'params_t']]],
-  ['ksub_20experimental_20for_20in_20cache_20multicore_20scaling_19',['Task 1: Subspace Sketching (&lt;span class=&quot;tt&quot;&gt;ksub&lt;/span&gt;, experimental) for In-Cache Multicore Scaling',['../md_todo.html#autotoc_md176',1,'']]],
+  ['ksub_20experimental_20for_20in_20cache_20multicore_20scaling_19',['Task 1: Subspace Sketching (&lt;span class=&quot;tt&quot;&gt;ksub&lt;/span&gt;, experimental) for In-Cache Multicore Scaling',['../md_todo.html#autotoc_md177',1,'']]],
   ['kw_20',['kw',['../structcolmask__t.html#a1b74e3c436cc579e291b9edb81f97311',1,'colmask_t']]],
   ['kwin_21',['kwin',['../structparams__t.html#ae9e8c1535fe7eccf661e6eeb92b41c32',1,'params_t']]]
 ];

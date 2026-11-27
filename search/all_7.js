@@ -9,5 +9,5 @@ var searchData=
   ['6_20circuit_20level_20distances_6',['2.6 Circuit-Level Distances',['..//home/runner/work/dist-m4ri/dist-m4ri/benchmark/BENCHMARK.md#autotoc_md49',1,'']]],
   ['6_20follow_20up_20runs_20of_200_2014_201_202026_2010_2014_7',['6. Follow-up Runs of 0.14.1 (2026-10-14)',['../md_benchmark_2HISTORY.html#autotoc_md69',1,'']]],
   ['6_3a_20long_20running_20cc_20and_20exact_20certification_20against_20threads_8',['Figure 6: Long-running CC and exact certification against threads',['../md_benchmark_2BENCHMARK.html#autotoc_md23',1,'']]],
-  ['6_3a_20miss_20probability_20estimate_20for_20matrices_20with_20many_20small_20weight_20dual_20vectors_9',['Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors',['../md_todo.html#autotoc_md186',1,'']]]
+  ['6_3a_20miss_20probability_20estimate_20for_20matrices_20with_20many_20small_20weight_20dual_20vectors_9',['Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors',['../md_todo.html#autotoc_md187',1,'']]]
 ];

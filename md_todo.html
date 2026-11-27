@@ -30,7 +30,7 @@ MathJax.Hub.Config({
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.4</span>
+   <div id="projectname">Dist m4ri<span id="projectnumber">&#160;0.17.5</span>
    </div>
    <div id="projectbrief">Computing distance of a classical or quantum CSS code</div>
   </td>
@@ -82,20 +82,20 @@ $(function() {
   <div class="headertitle"><div class="title">todo </div></div>
 </div><!--header-->
 <div class="contents">
-<div class="textblock"><h2 class="doxsection"><a class="anchor" id="autotoc_md170"></a>
-autotoc_md170</h2>
+<div class="textblock"><h2 class="doxsection"><a class="anchor" id="autotoc_md171"></a>
+autotoc_md171</h2>
 <p>geometry: "top=0.5in, bottom=0.5in, left=0.25in, right=0.25in" header-includes:</p><ul>
 <li>| \makeatletter \DeclareRobustCommand{_}{\ifmmode\nfss@text{\textunderscore}\else\textunderscore\allowbreak\fi} \makeatother </li>
 </ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md171"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md172"></a>
 \setlength{\emergencystretch}{1.5em}</h2>
-<h1 class="doxsection"><a class="anchor" id="autotoc_md172"></a>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md173"></a>
 Todo Notes for <span class="tt">dist_m4ri</span> Program</h1>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md173"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md174"></a>
 1. High-Priority Roadmap: High-Performance RW Overhaul</h2>
 <p>This work optimizes the Random Information-Set Decoding (RW, <span class="tt">method=1</span>) algorithm to achieve linear multicore scaling (32–128 cores), minimal per-core memory footprint, and enhanced hit rates for quantum CSS codes and Detector Error Models (DEMs).</p>
 <p>Inspired by <span class="tt">sqetch</span> (arXiv:2607.28795, Appendix H) and the empirical convergence criteria in <span class="tt">QDistRnd</span> (<a href="http://github.com/QEC-pages/QDistRnd">http://github.com/QEC-pages/QDistRnd</a>).</p>
-<h3 class="doxsection"><a class="anchor" id="autotoc_md174"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md175"></a>
 Implementation Strategy</h3>
 <ul>
 <li><b>Stage 1 (Immediate / Functional Baseline)</b>:<ul>
@@ -110,7 +110,7 @@ Implementation Strategy</h3>
 </li>
 </ul>
 <hr  />
-<h3 class="doxsection"><a class="anchor" id="autotoc_md176"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md177"></a>
 Task 1: Subspace Sketching (<span class="tt">ksub</span>, experimental) for In-Cache Multicore Scaling</h3>
 <ul class="check">
 <li class="checked">Add CLI parameter <span class="tt">ksub=[int]</span> (default <span class="tt">0</span> retains original full-matrix RW).</li>
@@ -146,7 +146,7 @@ Task 1: Subspace Sketching (<span class="tt">ksub</span>, experimental) for In-C
 <li class="unchecked">Find a subspace sampling for which the hit counts are uniform (or drop <span class="tt">ksub</span>). See also <span class="tt">../qec-cert/doc/algorithms-ub.tex</span>, Sec. "Why Row-Sum Premultiplication (`ksub`) Fails at Large Weight" (Theorem <span class="tt">thm:ub-ksub</span>): a sum of $k_{\text{sub}}$ systematic rows needs $d - k_{\text{sub}}$ columns of the codeword among the pivots, and pre-mixed rows bias the hits toward codewords aligned with the basis; <span class="tt">qec_cert</span>'s Stern ISD has no such option. This supports dropping <span class="tt">ksub</span> (with the <span class="tt">refresh</span> of Task 3 and the RCU item).</li>
 </ul>
 <hr  />
-<h3 class="doxsection"><a class="anchor" id="autotoc_md178"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md179"></a>
 Task 2: Localized &amp; Windowed Column Permutations for DEMs</h3>
 <ul class="check">
 <li class="checked">Add parameters <span class="tt">kwin=[int]</span> (window size $W$ in every step; default <span class="tt">0</span>: uniform random permutations, and for $n \ge 500$ an index window of <span class="tt">win_hyb</span> columns on every other step, since 0.17.0 for matrices only with <span class="tt">rw_opt=0</span> or <span class="tt">win_hyb &gt; 0</span>, see <b>RW windows for big DEMs</b> in section 2; alias <span class="tt">win=[int]</span>) and <span class="tt">win_mode=[0|1]</span> (default <span class="tt">0</span>). A negative <span class="tt">kwin</span> (e.g., <span class="tt">-1</span>) turns the windows off (uniform random permutations in every step; documented, and passed by the Python wrapper, since 2026-11-07).</li>
@@ -174,7 +174,7 @@ Task 2: Localized &amp; Windowed Column Permutations for DEMs</h3>
 </li>
 </ul>
 <hr  />
-<h3 class="doxsection"><a class="anchor" id="autotoc_md180"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md181"></a>
 Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$</h3>
 <ul class="check">
 <li class="checked"><b>Density Degradation Prevention</b>:<ul>
@@ -203,7 +203,7 @@ Task 3: Adaptive Basis Evolution &amp; Periodic Refresh of $N$</h3>
 </li>
 </ul>
 <hr  />
-<h3 class="doxsection"><a class="anchor" id="autotoc_md182"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md183"></a>
 Task 4: Hit-Count Stopping Criterion (<span class="tt">QDistRnd</span> Convergence Style)</h3>
 <ul class="check">
 <li class="checked">Add parameters <span class="tt">min_hits=[int]</span> (default <span class="tt">5</span>; <span class="tt">0</span> turns off both the stop and the hit counting: without <span class="tt">outC</span> or <span class="tt">maxC</span>, RW then records only the codewords lighter than the upper bound, each with a single hit) and <span class="tt">cov_cws=[int]</span> (size of the representative set of lowest-weight codewords, default <span class="tt">100</span>).</li>
@@ -234,10 +234,10 @@ Task 4: Hit-Count Stopping Criterion (<span class="tt">QDistRnd</span> Convergen
 <li class="checked"><b>Proper estimate for matrices with many small-weight dual vectors</b>: studied in Nov 2026, see Task 6; the implementation is Stage 5 of Task 7.</li>
 </ul>
 <hr  />
-<h3 class="doxsection"><a class="anchor" id="autotoc_md184"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md185"></a>
 Task 5: Native SIMD Bit-Matrix Engine (Stage 2)</h3>
 <ul class="check">
-<li class="unchecked">Implement a header-only, self-contained SIMD kernel (<span class="tt">src/simd_matrix.h</span>) for $k_{\text{sub}} \le 64$:<ul>
+<li class="unchecked">Implement a header-only, self-contained SIMD kernel (<span class="tt">src/simd_matrix.h</span>) for $k_{\text{sub}} \le 64$ (only for the experimental <span class="tt">ksub</span>; moot if <span class="tt">ksub</span> is dropped, see Task 1):<ul>
 <li>Flat bit-sliced column layout: <span class="tt">uint64_t cols[n]</span>.</li>
 <li>Contiguous row layout: <span class="tt">uint64_t rows[64][(n + 63) / 64]</span>.</li>
 <li>Permutation via single-instruction array indexing: <span class="tt">cols_perm[j] = cols[perm[j]]</span>.</li>
@@ -248,7 +248,7 @@ Task 5: Native SIMD Bit-Matrix Engine (Stage 2)</h3>
 </li>
 </ul>
 <hr  />
-<h3 class="doxsection"><a class="anchor" id="autotoc_md186"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md187"></a>
 Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vectors</h3>
 <ul class="check">
 <li class="checked">Find a proper estimate of the probability that RW misses a lighter codeword when the check matrix has many small-weight dual vectors (small-weight trivial vectors in $\ker H$). This is particularly bad for circuit DEMs, whose matrices have a huge number of column triplets summing to zero, as a consequence of the circuit structure: a weight-one error after a CX gate may give a weight-two error, and the net action of the three single-qubit errors is trivial. Both current estimates (Task 4) stay in place until then.<ul>
@@ -274,7 +274,7 @@ Task 6: Miss-Probability Estimate for Matrices with Many Small-Weight Dual Vecto
 </li>
 </ul>
 <hr  />
-<h3 class="doxsection"><a class="anchor" id="autotoc_md188"></a>
+<h3 class="doxsection"><a class="anchor" id="autotoc_md189"></a>
 Task 7: Weight-3 Degeneracies ($\mathcal{T}_3$) in RW: Implementation of the Nov 2026 Study</h3>
 <ul class="check">
 <li class="checked"><b>Study</b> (Nov 2026): <span class="tt">doc/rw_triplet_degeneracies.tex</span> (with <span class="tt">doc/rw_triplet_degeneracies.bib</span>; prototypes and benchmarks in <span class="tt">scratch/triplet_rw/</span>, whose raw logs are only in <span class="tt">/tmp/exp5/</span> and <span class="tt">/tmp/exp2_out.txt</span>, to be copied to <span class="tt">scratch/triplet_rw/logs/</span>; summary in <span class="tt">scratch/reports/triplet_rw_analysis.md</span>). Weight-3 degeneracies (column triplets with zero sum in $H$ and $L$) come from the CNOT hook triangles of the circuit (Prop. 1, Sec. 3.1), are found exactly with $\sum_i \binom{|G_i|}{2}$ hash probes (Lemma 1, Sec. 3.2), and span the whole degeneracy space $\ker H \cap \ker L$ on 12 of 14 circuit DEMs (Sec. 3.3). Their effects on RW (ambushed pivot pairs, contraction, Stern buckets; Secs. 4–5), the exact information-set law and the miss estimate (Secs. 6 and 8.5; Task 6), the canonical stopping rule (Sec. 7), and the answers for the three non-multi-round regimes (Sec. 8) lead to the roadmap of Sec. 9 (Stages 1–5 and dispatch rules D1–D5; stage matrix in Sec. 8.6):<ul>

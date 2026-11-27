@@ -1,6 +1,6 @@
 var searchData=
 [
-  ['key_20python_20functions_0',['Key Python Functions',['../md_README.html#autotoc_md160',1,'']]],
+  ['key_20python_20functions_0',['Key Python Functions',['../md_README.html#autotoc_md161',1,'']]],
   ['key_20results_1',['Key Results',['../md_benchmark_2BENCHMARK.html#autotoc_md15',1,'']]],
-  ['ksub_20experimental_20for_20in_20cache_20multicore_20scaling_2',['Task 1: Subspace Sketching (&lt;span class=&quot;tt&quot;&gt;ksub&lt;/span&gt;, experimental) for In-Cache Multicore Scaling',['../md_todo.html#autotoc_md176',1,'']]]
+  ['ksub_20experimental_20for_20in_20cache_20multicore_20scaling_2',['Task 1: Subspace Sketching (&lt;span class=&quot;tt&quot;&gt;ksub&lt;/span&gt;, experimental) for In-Cache Multicore Scaling',['../md_todo.html#autotoc_md177',1,'']]]
 ];
