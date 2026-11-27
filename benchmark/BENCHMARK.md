@@ -179,9 +179,13 @@ versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
 - *Reading:* with perfect scaling, the time halves with each doubling of $p$.
 - *Result:* RW scales almost linearly up to 64 threads, and the SMT siblings ($p > 64$) add more: 0.17.5 takes 82.2 s
   on one thread, with a speedup of 53.2x at 64 threads (1.55 s) and 68.2x at 128 (1.21 s; 0.14.0: 50.5 s, 58.1x, and
-  79.8x). A step of 0.15.2 or 0.17.5 takes ~1.6x longer than one of 0.12.2 or 0.14.0 because it also scans pairs of
-  non-pivot columns (added in 0.14.4; with `pairs=0`, 0.17.x matches 0.14.0); the pairs find light codewords in far
-  fewer steps (Figures 7 and 8).
+  79.8x).
+- *Why newer versions appear slower per step:* a fixed-step run of 0.15.2 or 0.17.5 takes ~1.5–1.6x longer than 0.12.2
+  or 0.14.0 because each step also scans pairs of non-pivot columns (added in 0.14.4; with `pairs=0 rw_opt=0`, 0.17.5
+  matches 0.14.0), which cuts the steps needed to find light codewords by 6–30x (Figures 7 and 8). The smaller ~5–8%
+  extra cost of 0.17.5 over 0.15.2 is per-step `rw_opt=0x01` bookkeeping (reduced-$L$ syndrome table and per-step
+  candidate buffer, still active on quantum codes when $\mathcal{T}_3 = \emptyset$), plus single-run jitter on ~1 s
+  runs at $p = 64..128$.
 - *Not shown:* CC up to weight 11 and the exact distance (`method=2 wmax=11` and `method=3`), which take a fraction of
   a second with 0.14.0 and later and are dominated by the start-up of the threads (Figure 6 measures multi-second to
   multi-minute CC and `method=3` runs); their times are in HISTORY.md.
@@ -204,6 +208,11 @@ versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
   faster from version to version: up to weight 15, 0.17.5 takes 0.835 s on one thread, 3.8x less than 0.15.2 (3.15 s),
   and 0.14.0 took 10 s, while 0.9.0 needs 472 s on 128 threads. On 64–128 threads, 0.17.5 takes only 0.036–0.046 s,
   and more threads hardly help. RW + CC: 46.1 s on one thread and 0.76 s on 128 with 0.17.5.
+- *Why newer versions appear slower on the RW and RW + CC panels:* both panels do a fixed number of RW steps (1,000,000
+  and 500,000, dominating RW + CC once CC is under 1 s). Since 0.14.4, each step also scans pairs of non-pivot columns
+  (~1.5x per step; with `pairs=0 rw_opt=0`, 0.17.5 matches 0.14.0) to reach light codewords in far fewer steps (Figures
+  7 and 8); 0.17.5 adds ~5% per-step `rw_opt=0x01` bookkeeping (plus ~1 s single-run jitter at $p = 128$, where repeats
+  measure 1.30–1.35 s for RW).
 - *Versions:* as in Figure 2; 0.9.0 ran CC and RW + CC on 128 threads only (it was limited to 600 s per case and
   method).
 - *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details) and
@@ -223,11 +232,12 @@ versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
   (`method=3 steps=150 wmax=5 min_hits=0`).
 - *Axes:* as in Figure 3.
 - *Result:* until 0.15.2, RW on this large matrix is limited by the memory bandwidth (each thread works on dense
-  copies of the matrix and of its transpose): at most about 15–20x faster with 0.14.0 and 11x with 0.15.2, and the SMT
-  siblings make it slower. 0.17.5 instead uses the sparse elimination (see [How to Read](#how-to-read-the-results))
-  and scales almost linearly to 32 threads (23.8x): 20.4 s on one thread and 0.638 s on 64 threads (31.9x), 3.7 times
-  less than 0.15.2 (2.36 s). RW + CC benefits further from the 0.17.4 RW-to-CC thread handoff: 11.2 s on one thread,
-  0.562 s on 64 (20.0x), and 0.662 s on 128 (0.15.2: 15.4 s, 1.17 s, and 1.21 s).
+  copies of the matrix and of its transpose; 0.15.2 sits above 0.14.0 because it also scans RW pairs on the dense
+  matrix): at most about 15–20x faster with 0.14.0 and 11x with 0.15.2, and the SMT siblings make it slower. 0.17.5
+  instead uses the sparse elimination (see [How to Read](#how-to-read-the-results)) and scales almost linearly to 32
+  threads (23.8x): 20.4 s on one thread and 0.638 s on 64 threads (31.9x), 3.7 times less than 0.15.2 (2.36 s), beating
+  every earlier version even while scanning pairs and triplets. RW + CC benefits further from the 0.17.4 RW-to-CC
+  thread handoff: 11.2 s on one thread, 0.562 s on 64 (20.0x), and 0.662 s on 128 (0.15.2: 15.4 s, 1.17 s, and 1.21 s).
 - *Not shown:* CC alone up to weight 5 (`method=2 wmax=5`), which takes under one second with 0.14.0 and later (Figure
   6 shows deeper CC rounds); its times are in HISTORY.md.
 - *Versions:* as in Figure 2; 0.9.0 ran RW + CC from $p = 2$ on only (600 s per case), so it has no speedup curve
@@ -252,8 +262,12 @@ versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
 - *Axes:* left, the wall time against $p$; right, the speedup $T(1)/T(p)$ of each version (dotted: ideal).
 - *Result:* the exact reduction makes RW much faster: 0.14.0 takes 5.56 s on one thread instead of 98.9 s (0.12.2) and
   163 s (0.9.0, two threads), and 0.183 s on 128 threads instead of 2.14 s and 7.2 s. 0.17.5 takes 11.5 s on one thread
-  and 0.332 s on 128 (34.5x): its steps are 1.28 times longer than those of 0.15.2 (8.93 s on one thread), since they
-  also shorten the candidate codewords with triplets, and they record more minimum-weight hits per second (Figure 9 and
+  and 0.332 s on 128 (34.5x).
+- *Why 0.15.2 and 0.17.5 appear slower per step than 0.14.0:* each step does more search work on purpose—0.15.2 adds
+  RW column-pair scanning (~1.6x longer per step, 8.93 vs 5.56 s at $p = 1$), and 0.17.5 adds triplet shortening on the
+  2,376 weight-3 degeneracies of this DEM (another ~1.28x, 11.5 vs 8.93 s). With `pairs=0 rw_opt=0`, 0.17.5 takes
+  5.47 s at $p = 1$, matching 0.14.0; with both enabled, it yields higher minimum-weight hit rates per second (Figure 9)
+  and cuts median steps to $d = 6$ from 7 down to 1 (Figure 7;
   [HISTORY.md, Section 11.1](HISTORY.md#111-stage-ablation-16-threads)).
 - *Not shown:* the complete CC search up to weight 5 (`method=2 wmax=5`, which finds nothing, since $d = 6$) and the
   exact distance with the default parameters (`method=3`), which take a fraction of a second with 0.14.0 and later,
@@ -376,6 +390,9 @@ of 0.17.5 (`rw_opt=-1`); 2026-11-27.**
   `11.2–13.3 steps/s`; 3 for `bb_756` with 24 steps, where no full step completes within 25 s because aborted steps are
   no longer counted since 0.17.1); in sustained 1,280-step runs (0.17.3), `-1` reaches 311 steps/s on `bb_360`
   (9.9–13.5x `0`) and 8.35 steps/s on `bb_756` (5.3–7.7x `0`).
+- *Why `rw_opt=-1` has fewer steps/s on some top-row panels:* on `bb_72` full, `2bga_102` $X$, and the `bb_72` model,
+  each `-1` step spends extra work on triplet shortening and per-step candidate processing, which lowers raw steps/s
+  (top row) in order to produce higher minimum-weight **hits per second** (middle row).
 - *Versions:* 0.17.5 (2026-11-27), comparing `rw_opt=-1` against `rw_opt=0`.
 - *Details:* [HISTORY.md, Sections 11.2](HISTORY.md#112-thread-scaling-of-the-rw-stages),
   [11.1](HISTORY.md#111-stage-ablation-16-threads),
