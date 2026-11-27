@@ -160,7 +160,8 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
 ---
 
 ### Task 5: Native SIMD Bit-Matrix Engine (Stage 2)
-- [ ] Implement a header-only, self-contained SIMD kernel (`src/simd_matrix.h`) for $k_{\text{sub}} \le 64$:
+- [ ] Implement a header-only, self-contained SIMD kernel (`src/simd_matrix.h`) for $k_{\text{sub}} \le 64$ (only for
+  the experimental `ksub`; moot if `ksub` is dropped, see Task 1):
   - Flat bit-sliced column layout: `uint64_t cols[n]`.
   - Contiguous row layout: `uint64_t rows[64][(n + 63) / 64]`.
   - Permutation via single-instruction array indexing: `cols_perm[j] = cols[perm[j]]`.
@@ -645,33 +646,23 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   `^` components mod 2, so a logical observable listed in two components of one `error(...)` line appears twice in $L$
   (`examples/surf_d3_L.mmx` and `examples/surf_d5_L.mmx` were cleaned in 0.17.2, and `dist_m4ri` now sums duplicate
   Matrix Market entries mod 2 with a warning, C2-01).
-- [ ] **For `qec-cert` (ship `libqeccert.so` in the wheel)**: `qec-cert`'s wheel should ship `libqeccert.so` (currently
-  `Makefile` builds `build/libqeccert.so` while `pyproject.toml` packages `qec_cert/*.so`, so a non-editable install
-  without it cannot load the library unless `QEC_CERT_LIB` is set; `dist_m4ri` reports this with one clear error or
-  warning since 0.17.2, PY-14 / PY-C01).
-- [ ] **For `qec-cert` (`force_dom` default with a certified `wmin > 1`)**: `qec_cert/pipeline.py:1798` sets
-  `s_kw.setdefault("force_dom", int(wmin == 1))`, which turns off the stabilizer half-weight dominance pruning
-  (`use_dom`) whenever a caller passes a certified lower bound `wmin > 1`, although `doc/soundness_search.md`, Sec. 8,
-  proves it sound under P0_W and calls `force_dom = 1` the default. Found in the final benchmark of 2026-11-24
-  (`scratch/final_bench/SUMMARY_phase1.md`, A4): Stage B of the two-stage `engine="auto"` (seeded with
-  `wmin = dmin_A > 1`) took 7.25–8.80 s on `bb_360_12_24` against 2.26 s for `engine="cert"` (`wmin = 1`), and timed
-  out at $[22, 23]$ on `2bga_292` in all 35 runs, where `engine="cert"` certifies 23 in 41.4 s. Decision (2026-11-24):
-  keep the `qec-cert` default for now and fix it in `qec-cert` next; `dist_m4ri.py` 0.17.4 passes
-  `search_opts={"force_dom": 1}` itself when it seeds `qec_cert` with a certified `wmin > 1` (fix A4, at all seven
-  `qec_cert` call sites, including `engine="cert"` with a cached certified `dmin`). Not covered from `dist_m4ri.py`:
-  with `wmin = 1` (no cache record, or the DEM fast path), `certify_dem()` raises its own floor internally and then
-  turns dominance off as well; the `qec-cert` fix should cover that path. Related soundness issue (found by the A4
-  verification, 2026-11-24): `certify_dem()` treats a caller's `wmin > 1` as a floor for its inexact coarse
-  sub-problems too (`p1_projection_lb` when the sandwich is not exact, `fold_dem`/`fold_mod_*`), where
-  $d(\mathcal{P}_1) \le d(\mathrm{DEM})$ gives no such floor; with a conditional bound above `wmax`, the DEM search is
-  skipped and the returned lower bound can exceed the true distance (a constructed DEM: `d = 15`, `wmin = 6`, lower
-  bound 19). `dist_m4ri.py` 0.17.4 no longer accepts such conditional coarse bounds; in `qec-cert`, treat the
-  caller's `wmin` as a floor of the full DEM only (pass `wmin = 1` to inexact projections and folds). After the
-  `qec-cert` fix, re-compute the speed tests that involve `qec_cert`: the 35-instance portfolio (`BENCHMARK.md`,
-  Figure 1; `HISTORY.md`, Section 11.3), the $\tau_1 \times$ `use_ub`-gap grid of the `auto` engine (re-test $\tau_1$
-  at `timeout` $\in \{15, 45, 180\}$ s; at 45 s, $\tau_1 = 1.5$–2 s saved 13% against the default 4.5 s, but with
-  `force_dom` off in Stage B), and the engine comparison of the final benchmark (block N3, dropped from the run of
-  2026-11-24).
+- [x] **For `qec-cert` (ship `libqeccert.so` in the wheel)**: resolved in `qec-cert` P0 (`pyproject.toml` / build
+  packaging; `dist_m4ri` also reports missing or unloadable `libqeccert.so` with one clear error or warning since
+  0.17.2, PY-14 / PY-C01).
+- [x] **For `qec-cert` (`force_dom` default with a certified `wmin > 1` & M1 coarse-floor leak & P0 handoff)**:
+  resolved on both sides (2026-11-27):
+  - In `qec-cert` P0 (merged to `qec-cert` `main`): `force_dom=1` unconditionally (P0.1), per-level `wmin=1` floors on
+    inexact DEM relaxations (M1), F1 Option B early exit in `certify_dem()` when `lb == best_ub` with a verified
+    witness even for `wmin > 1` (`status="bounds"`), and `from_dm4ri` / `ub_witness` / `dmax_init` handoff parameters.
+  - In `dist_m4ri.py` 0.17.4–0.17.5: passes `search_opts={"force_dom": 1}` when `wmin > 1` (0.17.4), rejects
+    conditional coarse DEM relaxation bounds (0.17.4), and passes `dmax_init` + Stage-A `json=1` `from_dm4ri` /
+    `ub_witness` handoff with `wmin=w_lo` (0.17.5). Note: `dist_m4ri` currently emits `stop.code == "rw_converged"`
+    only in `method=1` (not `method=3`), so `qec_cert`'s `skip_stage1_stern` optimization does not fire on Stage A yet
+    (small optional follow-up if needed).
+  - [ ] **Internal `qec_cert` benchmark re-run (post-P0)**: re-compute the internal speed tests that involve
+    `qec_cert` (kept out of public `BENCHMARK.md`, under `scratch/internal_qec_cert/`): the 35-instance portfolio, the
+    $\tau_1 \times$ `use_ub`-gap grid of `engine="auto"` at `timeout` $\in \{15, 45, 180\}$ s, and block N3 of the
+    final benchmark (dropped from the 2026-11-24 run).
 - [ ] **Stage-5 canonicalization latency on inputs with many twin columns** (found with fix A3, 2026-11-24,
   `scratch/fixes_a3a4/A3_REPORT.md` §6 and `a3/verify/VERIFY.md`, check 5; no soundness issue): on
   `bb_72_r3_X_unmerged` ($180 \times 9180$, 6x unmerged twin columns, $|\mathcal{T}_3| = 653{,}688$), an RW step takes
@@ -681,6 +672,20 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   `canon_w = INT_MAX`, so all buffered weights up to 64 are canonicalized before the ones above `min_w` are dropped;
   `canon_t3()` does not merge identical columns. Fix: poll the stop flags in the loop, canonicalize only weights up to
   the current `min_w`, and collapse twin columns in the canonical form.
+- [ ] **RW micro-overhead studies on fast static codes (post-0.17.5)**:
+  - **(a) Skip `rw_opt=0x01` per-step overhead when $\mathcal{T}_3 = \emptyset$ and `min_hits == 0`:** on static CSS
+    codes with $\mathcal{T}_3 = \emptyset$ (`gross`, `double_gross`), `rw_opt=-1` still resolves to `0x01`, so
+    `run_rw_steps()` computes the Stage-2a reduced-$L$ syndrome table (`rw_srows()`), flushes per-step candidate
+    buffers (`rw_rec_flush()`), and accumulates the FKG score on every step (~5–8% per step vs `rw_opt=0`: `82.2 s` vs
+    `76.1 s` on `gross` 3M steps at $p = 1$, `4.36e-5` vs `4.05e-5 s/step`). Study disabling `0x01` when
+    $\mathcal{T}_3 = \emptyset$ and `min_hits == 0` (checking whether `rw_pairs_step()` still benefits from `rw_srows`,
+    and keeping Stage 5 `0x10` unchanged when `min_hits > 0`).
+  - **(b) Batch `rw_steps_completed` and `rw_time_step()` updates at high thread counts ($p = 64..128$):**
+    `run_rw_steps()` currently runs `atomic_fetch_add(&ctx->rw_steps_completed, 1)` (`seq_cst`, sharing a 64-byte cache
+    line with `rw_steps_started`) and `rw_time_step()` (`clock_gettime`) on every step. On very short steps (20–40 µs
+    on `gross` / `double_gross`), 128 threads contend on that cache line; study accumulating completed steps locally
+    and flushing per batch or every 1–2 ms (`memory_order_relaxed`, plus cache-line separation), verifying 64–128
+    thread scaling, `method=3` coordinator responsiveness, and `timeout` accuracy.
 
 ---
 
@@ -1524,27 +1529,29 @@ Inspired by `sqetch` (arXiv:2607.28795, Appendix H) and the empirical convergenc
   certified 37 of its 50 benchmark instances in 60 s. Raw DEMs with more than 25,000 mechanisms go to `qec_cert`
   first (its exact reductions). Keep the verified-only cache rules of the hand-off; this also changes the order of
   the `tropidist` item below.
-- [ ] **Optional `engine="tropidist"` delegation fallback** (future work): an external subprocess fallback for large
-  quantum codes and circuits when `qec_cert` is not installed:
-  - **Auto resolution order**: in `engine="auto"` (since 0.17.0), the native `dist_m4ri` binary first (Stage A; raw
-    DEMs above 25,000 mechanisms go to `qec_cert` first), then `qec_cert` for an open bracket (Stage B), then
-    `tropidist` (if configured via `TROPIDIST_ROOT` and the instance size exceeds a minimum threshold), and the binary
-    again with the time left.
-  - **Delegation gate & cache safety**: apply the same distance-only gate as `engine="auto"` (fall back to native
-    `dist_m4ri` when codeword enumeration `do_cws` / `outC`, `finC`, `smax`, `dW`, `maxC`, `start` list, `outD`,
-    `out_reduced`, `pmin > 0`, or single-sided `method=1` / `2` is requested) and the same verified-only cache write
-    rules (only unconditional lower bounds and independently verified upper-bound witnesses are written to the cache).
-  - **Subprocess invocation**: invoke `python -m cdist --matrices H.mtx L.mtx --threads N --time-limit S --out rec.json`
-    for matrix pairs, or `python -m cdist circuit.stim --threads N --time-limit S --out rec.json` directly for `.stim`
-    circuits so `tropidist` retains its native circuit relaxations; a DEM-only input (`fdem` without a circuit) is
-    exported as `(H, L)` matrices.
-  - **CSS codes**: run one call per sector (`X` and `Z`), constructing `L` (`Lx` / `Lz`) in `dist_m4ri` when only
-    `(Hx, Hz)` are supplied.
-  - **Location & memory**: locate the checkout via `TROPIDIST_ROOT` (a repository checkout whose C kernels compile on
-    first use) and expose a `table_gb` memory option for Rank-DP table sizing.
-  - **Witness re-verification & size threshold**: independently re-verify every returned witness ($H x = 0$,
-    $L x \neq 0$, or DEM replay) in `dist_m4ri`; because spawning `python -m cdist` incurs
-    $\approx 0.1\text{--}1\text{ s}$ of subprocess overhead, `engine="auto"` should delegate to `tropidist` only
-    above an instance size threshold.
-  - **Licensing & testing**: `tropidist` is MIT-licensed and invoked as a separate process, so licenses remain fully
-    compatible; unit tests should mock the subprocess invocation and JSON record parsing.
+- [x] **Optional `engine="tropidist"` delegation fallback** (implemented in 0.17.5, 2026-11-27): an external
+  subprocess option and `engine="auto"` fallback for quantum codes, CSS codes, classical codes, DEMs, and Stim
+  circuits when `qec_cert` is not installed (note: `scratch/ext_bench/` 2026-11-26 4-way benchmark confirmed
+  `qec-cert` beats `tropidist` across the board when available, while `tropidist` is a useful MIT-licensed fallback
+  before `qec-cert` is publicly available on GitHub):
+  - **Auto resolution order**: in `engine="auto"`, the native `dist_m4ri` binary runs first (Stage A; when `qec_cert`
+    is available, raw DEMs above 25,000 mechanisms go to `qec_cert` first), then Stage B runs `qec_cert` if available,
+    or `tropidist` if `qec_cert` is unavailable and `TROPIDIST_ROOT` (or `cdist` on `PYTHONPATH`) is configured, and
+    Stage C returns to the native binary with any remaining time. Because Stage A runs the native binary for
+    $\tau_1 = \min(\max(2, \text{timeout}/10), 10)$ s first, fast/small instances finish in milliseconds without
+    spawning `tropidist`.
+  - **Delegation gate & cache safety**: applies the same distance-only gate as `engine="auto"` and the same
+    verified-only cache write rules (only certified lower bounds and independently verified upper-bound witnesses are
+    written to `_distance_cache`; `value_only` DP bounds without a witness are never accepted as upper bounds;
+    `kmin..kmax` clamped to `1..40`, starting only from a certified cached or Stage-A floor).
+  - **Subprocess invocation**: invokes `python -m cdist --matrices H.mtx L.mtx --threads N --time-limit S --config ...
+    --out rec.json` for classical codes ($L = I_n$), quantum/CSS codes (constructing `L` from `(H, G)` over
+    $\mathrm{GF}(2)$ via `_gf2_logicals_from_hg()` when `G` is given), and standalone DEMs (or DEMs with `pmin > 0`,
+    exported via `_dem_to_hl_csr()`), or `python -m cdist circuit.stim ...` directly for Stim circuits (`pmin = 0`) so
+    `tropidist` retains its native circuit relaxations and noiseless Stim witness replay.
+  - **Location, memory & verification**: `find_tropidist_root()` locates the checkout via `TROPIDIST_ROOT` or `cdist`
+    on `sys.path`; `table_gb` (`--table-gb N`) configures Rank-DP / lookup-table memory budget in GiB; every returned
+    matrix/DEM witness is independently verified ($H x = 0$, $L x \neq 0$) in `_verify_matrix_witness()`, and circuit
+    witnesses require `replay.result == "pass"`.
+  - **Licensing & testing**: `tropidist` is MIT-licensed and invoked as a separate process; covered by both mocked
+    unit tests and real end-to-end integration tests in `tests/test_dist_m4ri.py`.

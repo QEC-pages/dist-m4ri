@@ -979,7 +979,7 @@ unrecognized parameter or a missing input, end the binary with the exit code 255
 
 ```text
 $ ./src/dist_m4ri --help
-./src/dist_m4ri (version 0.17.4): calculate distance of a classical or quantum CSS code
+./src/dist_m4ri (version 0.17.5): calculate distance of a classical or quantum CSS code
 Usage: ./src/dist_m4ri [method=1|2|3] [parameter=value ...]
 
 Calculation method:
@@ -1136,7 +1136,8 @@ default, leaving the default `stdout` and `stderr` output unchanged for backward
   - Core result (matches `stdout`): `schema`, `version`, `dmin`, `dmax`, `rw_steps`, `k0`, `k0_reason`, `search`
     (`false` when no worker search ran).
   - Stop reason: `stop: {"code", "text"}` with stable `code` in `bounds`, `cc_found`, `rw_converged`, `rw_steps`,
-    `timeout`, `cc_done`, `cc_slow`, `wmin`, `maxc`, `collected`, `dstop`, `k0`, `none`.
+    `timeout`, `cc_done`, `cc_slow`, `wmin`, `maxc`, `collected`, `dstop`, `k0`, `none` (`rw_converged` only with
+    `method=1`; with `method=3`, the convergence of RW only ends the RW threads, while CC continues).
   - Timings: `t_input` (process start to search start), `t_stop` (search clock at stop, matching `# stopped after`),
     `t_ub` (`null` if no upper bound or $k = 0$) and `t_lb` (search clock when `dmax` / `dmin` reached their final
     values).
@@ -1444,9 +1445,9 @@ interoperability without manual threading overhead.
   file), `RuntimeError` if it exits with an error (e.g., for a missing matrix file, or rows of $H$ and $G$ which are not
   orthogonal), `ValueError` for invalid option values (e.g., `cc_prune`, `drop`, `p_noise`, a NaN `timeout`, a matrix
   without columns, or `method=2` without a limit `wmax`, `dmax`, `dstop`, or `timeout`), and `ImportError` if `stim`,
-  `qec_cert` (with `solver="cert"` / `engine="cert"`), or `codedistance` is needed but not installed; for `qec_cert`,
-  since 0.17.2, one `ImportError` without a chained traceback says why (not installed, or its library `libqeccert.so`
-  cannot be loaded) and how to install it.
+  `qec_cert` (with `solver="cert"` / `engine="cert"`), `tropidist` (with `solver="tropidist"` / `engine="tropidist"`),
+  or `codedistance` is needed but not installed or configured; for `qec_cert`, since 0.17.2, one `ImportError` without
+  a chained traceback says why (not installed, or its library `libqeccert.so` cannot be loaded) and how to install it.
 - `timeout` of the `compute_*()` functions: in seconds (default: 60); `None` means 60 s for every engine (since 0.17.2;
   before, no limit with `engine="cert"`, and a `TypeError` with `method=2`), and `0` or `inf` no limit.
 - Inputs which are ignored give a warning on `stderr` (`# Warning: ...`), unless `set_silent()` is on (in the CLI:
@@ -1468,8 +1469,8 @@ interoperability without manual threading overhead.
   `--cws` (`do_cws`) collects the minimum-weight codewords into the cache record (written to the file `outC=FILE`;
   nothing is printed). The exit code is 0 on success, 1 for an invalid value (also an unknown help topic), 255 for an
   unrecognized parameter or no input, and, since 0.17.2, 2 for a package or library which is missing or not usable
-  (e.g., `qec_cert` without `libqeccert.so`), a binary which is missing or fails, or a file which cannot be read or
-  written (one line `Error: ...` on `stderr`; a traceback before).
+  (e.g., `qec_cert` without `libqeccert.so`, or `tropidist` without `TROPIDIST_ROOT`), a binary which is missing or
+  fails, or a file which cannot be read or written (one line `Error: ...` on `stderr`; a traceback before).
 - CLI help: `--help` (commonly used parameters, fits 80 rows) and `--morehelp` (all parameters); `--morehelp TOPIC`
   (also `--morehelp=TOPIC`, and `--help TOPIC` or `--help=TOPIC`) prints only the entries of the parameters `TOPIC`
   (several separated by commas, e.g., `--morehelp maxC,dW`; the names are case-insensitive, `-` and `_` are ignored,
@@ -1497,24 +1498,59 @@ interoperability without manual threading overhead.
     make `qec_cert` importable, install the `qec-cert` package in the active Python environment (e.g.,
     `pip install -e /path/to/qec-cert` after building its native library with `make`) or add its repository root to
     `PYTHONPATH`.
+  - `'tropidist'` (since 0.17.5): delegates distance-only requests to an external MIT-licensed `tropidist` checkout in
+    an isolated subprocess (`python -m cdist`, located by `find_tropidist_root()` via the `TROPIDIST_ROOT` environment
+    variable or an importable `cdist` package on `PYTHONPATH`; `ImportError` if not configured, `ValueError` with
+    codeword output `do_cws=True` or `outC`; `finC`, `smax > 0`, `dW >= 0`, `maxC > 0`, `start`, `outD`, `out_reduced`,
+    and `method=1` are ignored with a warning; `[0, 0, 0]` when $k = 0$). For Stim circuits with `pmin=0`, the
+    processed `.stim` circuit is passed directly so `tropidist` retains its native circuit relaxations and noiseless
+    Stim witness replay (`replay.result == "pass"`); for classical codes ($L = I_n$), quantum/CSS codes (constructing
+    $L$ from $(H, G)$ over $\mathrm{GF}(2)$ when `G` is given, checking $H G^T = 0$ unless `ortho=False`), and
+    standalone DEMs (or DEMs with `pmin > 0`, exported as merged $(H, L)$ matrices), `--matrices H.mtx L.mtx` is used
+    and every returned witness is independently verified ($H x = 0$, $L x \neq 0$) before accepting or caching the
+    upper bound (`value_only` DP bounds without a witness are never accepted as upper bounds). The search bounds
+    `kmin`..`kmax` are clamped to `1..40`, starting only from a certified cached or Stage-A lower bound (never an
+    unverified caller `dmin`); `table_gb` (CLI: `table_gb=N` or `--table-gb N`) sets the lookup-table memory budget in
+    GiB (`0`: `tropidist` default).
   - `'auto'` (since 0.17.0): a two-stage portfolio for distance-only `method=3` requests. Classical codes always run
-    the native binary (without importing `qec_cert`). A DEM or Stim circuit with more than 25,000 raw error mechanisms
-    (and a timeout of at least 3 s, or none) goes to `qec_cert` first, whose exact reductions of large DEMs come before
-    any search; the binary runs with the time left if the bracket stays open. Otherwise (quantum codes, sectors of CSS
-    codes, smaller DEMs), Stage A runs the native binary for $\tau_1$ = the timeout if it is at most 2 s, else
+    the native binary (without importing `qec_cert` or spawning `tropidist`). When `qec_cert` is available, a DEM or
+    Stim circuit with more than 25,000 raw error mechanisms (and a timeout of at least 3 s, or none) goes to `qec_cert`
+    first, whose exact reductions of large DEMs come before any search; the binary runs with the time left if the
+    bracket stays open. Otherwise (quantum codes, sectors of CSS codes, smaller DEMs, or all DEMs when falling back to
+    `tropidist`), Stage A runs the native binary for $\tau_1$ = the timeout if it is at most 2 s, else
     $\min(\max(2, \text{timeout}/10), 10)$ s (since 0.17.1; $\min(\max(2, \text{timeout}/2), 30)$ s in 0.17.0), and its
-    result is returned at once, without importing `qec_cert`, if it is exact (or `dmin >= dstop > 0`, CC reached `wmax`,
-    `timeout=0`, or at most 1 s is left); Stage B then runs `qec_cert` with the remaining time, seeded with
-    `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (skipping its randomized upper-bound stage only when a narrow
-    bracket $0 < d_{\max, A} - \max(1, d_{\min, A}) < 3$ is already known, since 0.17.1), where the lower bound
+    result is returned at once, without importing `qec_cert` or spawning `tropidist`, if it is exact (or
+    `dmin >= dstop > 0`, CC reached `wmax`, `timeout=0`, or at most 1 s is left); Stage B then runs `qec_cert` (or
+    `tropidist` when `qec_cert` is unavailable and `tropidist` is configured) with the remaining time, seeded with
+    `wmin = max(1, dmin_A)` and `wmax = dmax_A - 1` (skipping `qec_cert`'s randomized upper-bound stage only when a
+    narrow bracket $0 < d_{\max, A} - \max(1, d_{\min, A}) < 3$ is already known, since 0.17.1), where the lower bound
     `dmin_A` certified by CC discharges the floor assumption `lb_assumed_wmin` of `qec_cert`; since 0.17.4, a floor
-    `wmin > 1` is passed with `search_opts={"force_dom": 1}`, so that `qec_cert` keeps the stabilizer half-weight
-    dominance of its search on (by default, it switches it off for `wmin > 1`, although the rule is sound when `wmin`
-    is a certified lower bound; an older `qec_cert` without this option is called as before); if `qec_cert` ends early
-    with an open bracket, the binary continues with the time left, and if `qec_cert` is not installed or not usable
-    (e.g., without its library `libqeccert.so`; then a warning, once per process, since 0.17.2), the binary runs with
-    the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by `explain_bounds()` and
-    `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to `qec_cert`.
+    `wmin > 1` is passed to `qec_cert` with `search_opts={"force_dom": 1}`, so that `qec_cert` keeps the stabilizer
+    half-weight dominance of its search on (by default, it switches it off for `wmin > 1`, although the rule is sound
+    when `wmin` is a certified lower bound; an older `qec_cert` without this option is called as before); if Stage B
+    ends early with an open bracket, the binary continues with the time left, and if neither `qec_cert` nor `tropidist`
+    is usable (with a warning once per process if `qec_cert` is installed without `libqeccert.so`, since 0.17.2), the
+    binary runs with the whole timeout. The stages are recorded in `_last_run_stats["engine_auto"]` (shown by
+    `explain_bounds()` and `--verbose`). Until 0.16.1, `'auto'` handed every eligible request (classical codes too) to
+    `qec_cert`.
+  - Hand-off of bounds and codewords (since 0.17.5, with a `qec_cert` whose `certify`, `certify_dem`, or
+    `certify_circuit` names the hand-off parameters of its P0 version in its signature; an older `qec_cert` is called
+    as before): with `'auto'`, Stage A runs the binary with `json=1` (if it has this option: version 0.17.4 or later,
+    and not `dist_m4ri_old`, which ignores it), and Stage B passes, besides `wmin` and `wmax`, `dmax_init=dmax_A` and
+    the codeword of weight `dmax_A` found by the binary in this run (never one of a cache record): its JSON summary as
+    `from_dm4ri` (or the codeword as the 0-based list `ub_witness` with `ub_witness_base=0`, if only that parameter is
+    named), whose 1-based original columns are those of `H` for a code, and the error mechanisms of the flattened DEM
+    for `certify_dem` (`repeat` blocks unrolled, the first of the equal columns merged by the binary; a codeword found
+    with detectors dropped is a codeword of the DEM); not for a Stim circuit, whose DEM `certify_circuit` generates
+    itself. `qec_cert` verifies the codeword itself (`H x = 0` and `L x != 0`, for a DEM on its error mechanisms)
+    before it uses it as its upper bound, e.g., to stop its exact search, also with `use_ub=False`. `'cert'` passes
+    `dmax_init` as well (the `dmax` of the caller, tightened by the cache record). The floor stays `wmin` (from it,
+    `certify_dem` of `qec-cert` P0 also stops as soon as its lower bound meets a verified upper bound, with
+    `status='bounds'`, whose bounds are then exact here); its advisory `floor_hint` is not passed, since it changes
+    nothing with this floor. A warning goes to `stderr` if `qec_cert` does not verify the codeword
+    (`ub_witness_status` `invalid` or `unreadable`), or if it finds a verified codeword below the certified floor
+    (`precondition_violated`). The stop code `rw_converged`, with which `certify` skips its Stage-1 Stern search, is
+    only written with `method=1`, not by Stage A.
   - Hand-off scope: the hand-off covers distance-only requests. Codeword output (`do_cws=True` or `outC`), `finC`,
     `smax > 0`, an explicit `dW >= 0` (the Python default `dW=-1` means not set), `maxC > 0`, `start`, `outD`,
     `out_reduced`, `pmin > 0`, and `method=1` or `2` stay on the native `dist_m4ri` binary with `'auto'` (which also
@@ -1528,7 +1564,7 @@ interoperability without manual threading overhead.
     the certified `dmin` of the cache (or 1) up to `dmax - 1`, `wmax`, or `dstop - 1`, or up to the weight 40 without
     them (its stages which do not depend on the weight may still certify more). An input without logical codewords
     (qec_cert status `infeasible`) gives `[0, 0, 0]`, as with the binary (see above). `--model-lb` always runs the
-    native binary (`solver=` and `engine=` are ignored with a warning).
+    native binary (`solver=`, `engine=`, and `table_gb=` are ignored with a warning).
   - Cache rules for `qec_cert` hand-off: only unconditional lower bounds (`status` in `('exact', 'bounds', 'timeout')`
     without `lb_conditional`) and verified upper-bound witnesses (`witness_verified=True`) are written to the distance
     cache. When the cache already holds a certified lower bound `dmin > 1`, that bound is passed to `qec_cert` as
@@ -1631,30 +1667,32 @@ The [`benchmark/`](benchmark/BENCHMARK.md) directory provides quantum CSS codes 
 (bivariate bicycle codes including the gross and double-gross codes, Mitten codes including those of arXiv:2607.28795
 with circuits of their published hook-free schedules, SHYPS codes, and 2D-local torus BB circuits),
 their code and circuit-level distances computed with `dist_m4ri`, and the results of the benchmarks of the program on a
-128-thread server: the scaling with the number of threads (0.17.0, 0.15.2, and earlier versions), and a comparison of
-the versions 0.14.6, 0.14.5, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. [`benchmark/BENCHMARK.md`](benchmark/BENCHMARK.md) shows
-the current results in figures with plain captions, and [`benchmark/HISTORY.md`](benchmark/HISTORY.md) the dated results
-of each version. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight in at most
-1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9 of the
-`mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the minority-basis
-detectors stripped, whose distance is only a lower bound). Section 7 of the history measures the RW window size and the
-thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its Section 8 the RW pairs of 0.14.4 with the
-work bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5. With the pairs, RW needs 6-30 times fewer
-steps to a minimum-weight codeword of a full DEM where many steps are needed (the time of these short runs is mostly
-reading and reducing the DEM), it finds the weight 18 of the double-gross circuit in 1.5-2.7 s instead of 10-19 s and
-the weight 23 of the `bb_360` circuit in 1-2 min (0.14.3: 24 in 4 min), and it finds lighter codewords of codes with a
-large distance. Sections 9 and 10 of the history measure the branch-and-bound CC search of 0.15.0 (4-35 times faster for
-the codes with $d = 14$-18; the distances of the larger `yarn_*` codes and of `bb_360` certified, up to $d = 24$, and
-those up to $d = 18$ confirmed with the walk of the earlier versions) and the lower cost per node of 0.15.2. Sections 11
-and 12 of the history measure the RW stages of 0.17.0–0.17.4 (`rw_opt`: a stage ablation on 22 inputs, sustained
-sparse-dual scaling at 9.9–13.5x on `bb_360` and 5.3–7.7x on `bb_756`, and automatic row slabs reaching weight 16 in
-11/11 seeds on single-round double gross), long-running `method=2`/`method=3` scaling (58–65x on 64 cores, 63–84x on
-128 threads), and 128-thread certification of 24 of 25 multi-round circuits and CSS codes in 0.145–1,697 s (`bb_360`
-code in 53.5 s, `gross` SI1000 circuit in 77.6 s).
+128-thread server: the scaling with the number of threads (0.17.5, 0.15.2, and earlier versions), and a comparison of
+the versions 0.17.5, 0.14.6, 0.14.3, 0.14.0, 0.12.2, and 0.9.0. [`benchmark/BENCHMARK.md`](benchmark/BENCHMARK.md)
+shows the current results in figures with plain captions, and [`benchmark/HISTORY.md`](benchmark/HISTORY.md) the dated
+results of each version. For example, on the full DEMs of the circuits, 0.14.0 finds a codeword of the minimum weight
+in at most 1.4 s, while 0.12.2 needs up to 52 s or finds none in 300 s, and it certifies the circuit-level distance 9
+of the `mitten_270` circuit (custom schedule) on its full DEM in 3 min (0.12.1: 2.1 h for the DEM with the
+minority-basis detectors stripped, whose distance is only a lower bound). Section 7 of the history measures the RW
+window size and the thread throttle of 0.14.3 on the large circuit DEMs (see `win_hyb`), and its Section 8 the RW pairs
+of 0.14.4 with the work bound of 0.14.6 (see `pairs`) and the code-sized model bound of 0.14.5. With the RW pairs,
+0.14.6 already needs 6–30 times fewer steps than 0.14.3 to a minimum-weight codeword of a full DEM, finding weight 18
+of the double-gross circuit in 1.5–2.4 s instead of 9.6–18.8 s and weight 23 of `bb_360` in 56–119 s (0.14.3: 24 in
+4 min), as well as lighter codewords of codes with a large distance. Sections 9 and 10 of the history measure the
+branch-and-bound CC search of 0.15.0 (4–35 times faster for the codes with $d = 14$–18; the distances of the larger
+`yarn_*` codes and of `bb_360` certified, up to $d = 24$, and those up to $d = 18$ confirmed with the walk of the
+earlier versions) and the lower cost per node of 0.15.2. Sections 11 and 12 of the history measure the RW stages of
+0.17.0–0.17.5 (`rw_opt`: sparse-dual elimination, triplet shortening, automatic row slabs, and canonical-class
+stopping): in 0.17.5, RW reaches weight 18 of the double-gross circuit in 1.16–1.53 s (wall 1.35–1.74 s) and weight 23
+of the `bb_360` circuit in **3.0 and 8.6 s** (wall 3.35 and 8.96 s, 183 and 1,096 steps, using all 128 RW threads under
+sparse elimination vs 32 dense threads in 0.14.6), cuts median steps on the 12 full DEMs further (e.g., 27 vs 62 on
+`gross`, 1 step on 6 of 12 circuits), achieves 58–65x long-running `method=2`/`method=3` scaling on 64 cores (63–84x on
+128 threads), and certifies 24 of 25 multi-round circuits and CSS codes on 128 threads in 0.145–1,697 s (`bb_360` code
+in 53.5 s, `gross` SI1000 circuit in 77.6 s).
 
 ![Time and RW steps to a minimum-weight codeword in the full DEMs](benchmark/figures/time_to_d_full_dems.png)
 
-![The lightest codeword found against time, 0.14.3 and 0.14.6](benchmark/figures/lightest_vs_time.png)
+![The lightest codeword found against time, 0.14.3, 0.14.6, and 0.17.5](benchmark/figures/lightest_vs_time.png)
 
 ---
 

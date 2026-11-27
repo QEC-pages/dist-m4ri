@@ -3751,7 +3751,7 @@ def test_cert_wmin_discharged_without_symmetry(monkeypatch, tmp_path):
     assert dist_m4ri._cert_wmin_discharged(cert(sym_kind="orbit", sym_verified=2), 5)  # (a verified symmetry)
     dist_m4ri.disable_distance_cache()
     try:
-        assert dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi: cert(w_lo, w_hi, status="bounds"),
+        assert dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi, _: cert(w_lo, w_hi, status="bounds"),
                                              dmin=5, dmax=7, certified_dmin=5)["d_info"] == [7, 7, 0]
         # engine='auto' end to end: Stage A [5, 7], Stage B proves no codeword of weight 5..6 without symmetry
         fake = _FakeBinary(["5 7 40"])
@@ -3785,7 +3785,7 @@ def test_cert_code_distance_certified_dmin():
         seen = []
 
         def run(dmin, certified_dmin):
-            def cert(w_lo, w_hi):
+            def cert(w_lo, w_hi, dmax):
                 seen.append((w_lo, w_hi))
                 return _cert_search_lb()(wmin=w_lo, wmax=w_hi)
             return dist_m4ri._cert_code_distance(lambda: "unused", cert, dmin=dmin, dmax=5,
@@ -3796,7 +3796,7 @@ def test_cert_code_distance_certified_dmin():
         assert run(4, 3)["d_info"] == [5, 5, 0] and seen[-1] == (3, 4)  # (the floor is the certified 3, not 4)
         assert run(0, 0)["d_info"] == [5, 5, 0] and seen[-1] == (1, 4)
         # a caller's dmin above the weight of a verified witness is not valid: the certified bounds are returned
-        res = dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi: _cert_exact(3)(), dmin=4, dmax=0)
+        res = dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi, _: _cert_exact(3)(), dmin=4, dmax=0)
         assert res["d_info"] == [3, 3, 0]
     finally:
         dist_m4ri.enable_distance_cache()
@@ -5024,38 +5024,40 @@ def test_bin_stamp_and_json(capsys, tmp_path, monkeypatch):
     dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
     res_def = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=dist_m4ri.PY_DBG_COMMANDS)
     out_def = capsys.readouterr()
-    assert res_def == (3, 3, 6)
+    assert res_def[:2] == (3, 3) and res_def[2] >= 1
     assert "stamp=" not in out_def.out and "json=" not in out_def.out
     assert "result_json" not in dist_m4ri._last_run_stats
 
     res_sj = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=3, stamp=True, json_out=True)
     out_sj = capsys.readouterr()
-    assert res_sj == (3, 3, 6)
+    assert res_sj[:2] == (3, 3) and res_sj[2] >= 1
     assert " [t=" in out_sj.out and "# RESULT " in out_sj.out
     rj = dist_m4ri._last_run_stats.get("result_json")
     assert rj is not None and rj["schema"] == "dm4ri-result/1"
-    assert [rj["dmin"], rj["dmax"], rj["rw_steps"]] == [3, 3, 6]
+    assert [rj["dmin"], rj["dmax"], rj["rw_steps"]] == list(res_sj)
     assert rj["witness"]["available"] is True and rj["witness"]["weight"] == 3 and len(rj["witness"]["support"]) == 3
 
     # debug=0 with json_out=True decodes result_json without forwarding raw '# RESULT {...}' to stderr
     res_q = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=True)
     out_q = capsys.readouterr()
-    assert res_q == (3, 3, 6) and out_q.err == "" and out_q.out == ""
-    assert dist_m4ri._last_run_stats["result_json"]["stop"]["code"] == "bounds"
+    assert res_q[:2] == (3, 3) and res_q[2] >= 1 and out_q.err == "" and out_q.out == ""
+    rj_q = dist_m4ri._last_run_stats["result_json"]
+    assert rj_q["stop"]["code"] == "bounds" and [rj_q["dmin"], rj_q["dmax"], rj_q["rw_steps"]] == list(res_q)
 
     jf = tmp_path / "res.json"
     res_f = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=jf)
     out_f = capsys.readouterr()
-    assert res_f == (3, 3, 6) and "# RESULT" not in out_f.err
+    assert res_f[:2] == (3, 3) and res_f[2] >= 1 and "# RESULT" not in out_f.err
     rj_f = json.loads(jf.read_text())
     assert rj_f["schema"] == "dm4ri-result/1" and rj_f["stop"]["code"] == "bounds"
+    assert [rj_f["dmin"], rj_f["dmax"], rj_f["rw_steps"]] == list(res_f)
     assert rj_f["size"]["full"] == [24, 221] and rj_f["size"]["searched"] == [16, 55]
 
     # Path("./1") and Path("./0") keep file semantics despite pathlib normalizing them to "1" / "0"
     monkeypatch.chdir(tmp_path)
     for name in ("1", "0"):
-        assert dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=Path(f"./{name}")) == (
-            3, 3, 6)
+        res_p = dist_m4ri.run_dist_m4ri(fdem=dem_file, seed=1, threads=1, debug=0, json_out=Path(f"./{name}"))
+        assert res_p[:2] == (3, 3) and res_p[2] >= 1
         assert capsys.readouterr().err == ""
         assert json.loads((tmp_path / name).read_text())["dmax"] == 3
 
@@ -5367,7 +5369,7 @@ def test_cert_wmin_discharged_dem_relaxations():
     # end to end, from the floor 6: the bound 19 of the leak is not used
     dist_m4ri.disable_distance_cache()
     try:
-        res = dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi: leak, dmin=6, certified_dmin=6)
+        res = dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi, _: leak, dmin=6, certified_dmin=6)
         assert res["d_info"] == [6, 0, 0]
     finally:
         dist_m4ri.enable_distance_cache()
@@ -5412,6 +5414,1009 @@ def test_cert_wmin_discharged_p1_leak_real_qec_cert(tmp_path):
         bounds = dist_m4ri._cert_extract_bounds(cert, wmin)
         assert bounds[0] <= 15, (wmin, extra, cert.lower_bound, bounds)  # (never above the distance)
         assert expected is None or bounds == expected, (wmin, extra, bounds)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Version 0.17.5: the handoff to qec_cert P0 (its branch feat/p0-foundation; the findings F1-F5 of the review in
+# scratch/review_qec_cert_companion_patch.md): a qec_cert whose signatures name the handoff parameters gets the upper
+# bound as dmax_init and, with engine='auto', the codeword of weight dmax_A found by the binary in Stage A (its JSON
+# summary as from_dm4ri, or as ub_witness); the floor stays wmin (F1, with the early exits of certify_dem() from
+# wmin > 1, Option B); no floor_hint branch in _cert_wmin_discharged() (F2); dmax_init from the dmax tightened by the
+# cache record (F3); json=1 never for dist_m4ri_old (F4), and passed explicitly to the binary (F5); a warning if
+# qec_cert does not verify the codeword, or finds one below the certified floor.
+# ---------------------------------------------------------------------------------------------------------------
+
+_P0_PARAMS = ("floor_hint", "ub_witness", "ub_witnesses", "ub_witness_base", "from_dm4ri", "dmax_init")
+_HANDOFF = frozenset({"dmax_init", "from_dm4ri", "ub_witness", "ub_witness_base"})  # (those dist_m4ri may pass)
+_RJ6 = {"schema": "dm4ri-result/1", "version": "0.17.5", "dmin": 3, "dmax": 6, "rw_steps": 10, "k0": False,
+        "stop": {"code": "timeout", "text": "timeout=2s reached"}, "size": {"full": [40, 41], "searched": [40, 41]},
+        "witness": {"available": True, "weight": 6, "source": "rw", "base": 1, "support": [13, 9, 5, 1, 17, 21]}}
+_WIT6 = [0, 4, 8, 12, 16, 20]  # (the codeword of _RJ6, 0-based and sorted)
+
+
+def _handoff_pipeline(cert, params=_P0_PARAMS):
+    """
+    A fake qec_cert pipeline (with qec_io) whose certify() and certify_dem() name, besides the parameters of older
+    versions, the handoff parameters params of qec_cert P0 (all of them by default; () as an older qec_cert), and whose
+    certify_circuit() forwards **kwargs to certify_dem(), as qec_cert does; cert(kind, kwargs) is the certificate of a
+    call.  Returns (qec_io, pipeline, calls), with the calls (kind, kwargs).
+    """
+    import inspect
+    from types import SimpleNamespace
+    calls = []
+
+    def proto(problem, *, wmin=1, wmax=40, threads=8, seed=1, time_limit=0.0, mode="auto", use_ub=True,
+              search_opts=None, floor_hint=1, ub_witness=None, ub_witnesses=None, ub_witness_base="auto",
+              from_dm4ri=None, dmax_init=None, **kwargs):
+        pass
+
+    def circuit_proto(circuit_or_path, *, name=None, default_noise_p=0.001, **kwargs):
+        pass
+
+    full = inspect.signature(proto)
+    sig = full.replace(parameters=[p for k, p in full.parameters.items() if k not in _P0_PARAMS or k in params])
+
+    def make(kind, signature):
+        def f(*a, **kw):
+            calls.append((kind, kw))
+            return cert(kind, kw)
+        f.__signature__ = signature  # (for the feature probes _qec_cert_handoff() and _qec_cert_has_force_dom())
+        return f
+    pipeline = SimpleNamespace(certify=make("certify", sig), certify_dem=make("certify_dem", sig),
+                               certify_circuit=make("certify_circuit", inspect.signature(circuit_proto)))
+    qec_io = SimpleNamespace(DistanceProblem=lambda *a, **kw: SimpleNamespace(args=a, **kw),
+                             read_mtx=lambda p: None, binary_csr=lambda m: m)
+    return qec_io, pipeline, calls
+
+
+def _install_handoff_qec_cert(monkeypatch, params=_P0_PARAMS, cert=None):
+    """Installs _handoff_pipeline() as the usable qec_cert (with force_dom); returns the list of its calls."""
+    qec_io, pipeline, calls = _handoff_pipeline(cert or (lambda kind, kw: _cert_search_lb()(**kw)), params)
+    monkeypatch.setattr(dist_m4ri, "_get_qec_cert", lambda: (None, qec_io, pipeline))
+    monkeypatch.setattr(dist_m4ri, "_qec_cert_available", lambda: True)
+    monkeypatch.setattr(dist_m4ri, "_has_qec_cert", lambda: True)
+    monkeypatch.setattr(dist_m4ri, "_qec_cert_has_force_dom", lambda qp: True)
+    return calls
+
+
+def test_qec_cert_handoff_probe_and_kwargs(monkeypatch, capsys):
+    # the handoff parameters named in the signatures (not only **kwargs; certify_circuit() has those of certify_dem(),
+    # to which it forwards **kwargs) -> dmax_init (only above the floor), the codeword of Stage A as from_dm4ri (or as
+    # ub_witness, 0-based, with ub_witness_base=0), never for certify_circuit(), never floor_hint; the floor stays wmin
+    from types import SimpleNamespace
+    monkeypatch.setattr(dist_m4ri, "_qec_cert_has_force_dom", lambda qp: True)
+    hp, kw = dist_m4ri._qec_cert_handoff, dist_m4ri._cert_handoff_kw
+    _, new, _ = _handoff_pipeline(None)
+    _, ub_only, _ = _handoff_pipeline(None, tuple(k for k in _P0_PARAMS if k != "from_dm4ri"))
+    _, no_base, _ = _handoff_pipeline(None, ("ub_witness", "dmax_init"))
+    _, old, _ = _handoff_pipeline(None, ())
+    assert hp(new) == hp(new, "certify_dem") == hp(new, "certify_circuit") == _HANDOFF
+    assert hp(ub_only) == hp(ub_only, "certify_circuit") == _HANDOFF - {"from_dm4ri"}
+    assert hp(old) == hp(old, "certify_dem") == hp(old, "certify_circuit") == frozenset()
+    kw_only = SimpleNamespace(certify=lambda problem, **kwargs: None, certify_circuit=lambda c, *, name=None: None)
+    assert hp(kw_only) == hp(kw_only, "certify_circuit") == hp(kw_only, "certify_dem") == frozenset()
+    assert new.certify in [v[0] for v in dist_m4ri._qec_cert_handoff_probed.values()]  # (probed once, kept)
+    force = {"search_opts": {"force_dom": 1}}
+    for w in (1, 2, 5):  # an older qec_cert: called as before
+        for search in (True, False):
+            assert kw(old, w, search=search, dmax=7, dm4ri_json=_RJ6) == dict(
+                wmin=w, **dist_m4ri._cert_search_kw(old, w, search=search))
+    assert kw(new, 5, dmax=7, dm4ri_json=_RJ6) == {"wmin": 5, **force, "dmax_init": 7, "from_dm4ri": _RJ6}
+    assert kw(new, 1, dmax=7, dm4ri_json=_RJ6) == {"wmin": 1, "dmax_init": 7, "from_dm4ri": _RJ6}
+    assert kw(new, 5, search=False, dmax=7) == {"wmin": 5, "dmax_init": 7}  # (a classical code: no dominance)
+    for dmax in (0, 1, 4, 5):  # (no upper bound above the floor: no dmax_init)
+        assert kw(new, 5, dmax=dmax) == {"wmin": 5, **force}, dmax
+    assert kw(new, 1, dmax=1) == {"wmin": 1} and kw(new, 1, dmax=2) == {"wmin": 1, "dmax_init": 2}
+    assert kw(new, 5, {"use_cayley": 0}) == {"wmin": 5, "search_opts": {"use_cayley": 0, "force_dom": 1}}
+    assert kw(ub_only, 3, dmax=6, dm4ri_json=_RJ6) == {"wmin": 3, **force, "dmax_init": 6, "ub_witness": _WIT6,
+                                                       "ub_witness_base": 0}
+    assert kw(no_base, 3, dmax=6, dm4ri_json=_RJ6) == {"wmin": 3, **force, "dmax_init": 6, "ub_witness": _WIT6}
+    for func in ("certify_dem", "certify_circuit"):  # (certify_circuit() generates its own DEM: no codeword)
+        expected = {"wmin": 3, **force, "dmax_init": 6}
+        if func == "certify_dem":
+            expected["from_dm4ri"] = _RJ6
+        assert kw(new, 3, func=func, dmax=6, dm4ri_json=_RJ6) == expected, func
+    none = dict(_RJ6, witness={"available": False, "weight": 0, "source": None, "base": 1, "support": []})
+    assert kw(new, 3, dmax=6, dm4ri_json=none) == kw(new, 3, dmax=6, dm4ri_json=None) == {"wmin": 3, **force,
+                                                                                         "dmax_init": 6}
+    assert capsys.readouterr().out == ""  # (a note only with verbose or PY_DBG_COMMANDS)
+    kw(new, 3, func="certify_dem", dmax=6, dm4ri_json=_RJ6, verbose=True)
+    assert ("[dist_m4ri] qec_cert certify_dem(): wmin=3, dmax_init=6, from_dm4ri (the codeword of weight 6 found by "
+            "dist_m4ri in Stage A)") in capsys.readouterr().out
+    kw(ub_only, 3, dmax=6, dm4ri_json=_RJ6, debug=dist_m4ri.PY_DBG_COMMANDS)
+    assert "certify(): wmin=3, dmax_init=6, ub_witness (the codeword of weight 6" in capsys.readouterr().out
+    kw(old, 3, dmax=6, dm4ri_json=_RJ6, verbose=True)
+    assert "qec_cert certify():" not in capsys.readouterr().out
+
+
+def test_auto_stage_a_witness():
+    # the JSON summary of Stage A for qec_cert only with a codeword of weight dmax_s found in this run
+    res = {"dmin": 3, "dmax": 6, "rw_steps": 10, "cached": False}
+    wa = dist_m4ri._auto_stage_a_witness
+    assert wa(res, _RJ6, 6) is _RJ6
+
+    def wit(**w):
+        return dict(_RJ6, witness=dict(_RJ6["witness"], **w))
+    for bad_res, rj, dmax_s in (
+        (dict(res, cached=True), _RJ6, 6),  # (a cache record: never the statistics of an earlier run)
+        (dict(res, k0=True), _RJ6, 6), (res, _RJ6, 5), (res, _RJ6, 0), (dict(res, dmax=7), _RJ6, 6),
+        (res, None, 6), (res, {}, 6), (res, dict(_RJ6, schema="dm4ri-result/2"), 6), (res, dict(_RJ6, k0=True), 6),
+        (res, dict(_RJ6, witness=None), 6), (res, wit(available=False), 6), (res, wit(base=0), 6),
+        (res, wit(weight=7), 6), (res, wit(support=[1, 5, 9, 13, 17]), 6), (res, wit(support=[1, 1, 9, 13, 17, 21]), 6),
+        (res, wit(support=[0, 5, 9, 13, 17, 21]), 6), (res, wit(support="1 5 9 13 17 21"), 6),
+        (res, wit(support=[1, "x", 9, 13, 17, 21]), 6), (res, wit(weight=None), 6),
+    ):
+        assert wa(bad_res, rj, dmax_s) is None, (bad_res, rj, dmax_s)
+
+
+def test_binary_has_json(monkeypatch, tmp_path):
+    # F4: json=1 only for a binary of version >= 0.17.4 which is not dist_m4ri_old (the same version, and its
+    # '--help json' also exits 0, but it ignores json=1 with a warning); checked once per binary
+    monkeypatch.setattr(dist_m4ri, "_binary_json_ok", {})
+    new = dist_m4ri.find_dist_m4ri_binary()
+    old = os.path.join(os.path.dirname(new), "dist_m4ri_old")
+    assert dist_m4ri._binary_has_json() is True and dist_m4ri._binary_has_json(new) is True
+    if os.path.isfile(old):
+        assert dist_m4ri._binary_version(old)[1] == dist_m4ri._binary_version(new)[1]  # (the version of dist_m4ri)
+        assert dist_m4ri._binary_has_json(old) is False
+        (tmp_path / "dm4ri").symlink_to(old)
+        assert dist_m4ri._binary_has_json(str(tmp_path / "dm4ri")) is False  # (dist_m4ri_old behind a link)
+    (tmp_path / "dist_m4ri_old").symlink_to(new)
+    assert dist_m4ri._binary_has_json(str(tmp_path / "dist_m4ri_old")) is False
+    for ver, ok in (("0.17.3", False), ("0.17.4", True), ("0.17.10", True), ("0.18.0", True), (None, False)):
+        script = tmp_path / f"fake_{ver}"
+        script.write_text("#!/bin/sh\n" + (f"echo 'dist_m4ri version {ver}'\n" if ver else "exit 1\n"))
+        script.chmod(0o755)
+        assert dist_m4ri._binary_has_json(str(script)) is ok, ver
+    assert dist_m4ri._binary_has_json(str(tmp_path / "missing")) is False
+    seen = []
+    real = dist_m4ri._binary_version
+    monkeypatch.setattr(dist_m4ri, "_binary_version", lambda p=None: seen.append(p) or real(p))
+    dist_m4ri._binary_json_ok.clear()
+    assert dist_m4ri._binary_has_json(new) and dist_m4ri._binary_has_json() and seen == [new]
+
+
+def test_auto_stage_a_json_out(monkeypatch):
+    # F5: json=1 for Stage A of engine='auto' only (an explicit json_out of run_native() and _cached_code_distance(),
+    # no module flag), not for its Stage C, engine=None, engine='cert', or without qec_cert; F4: never for dist_m4ri_old
+    assert not hasattr(dist_m4ri, "_auto_stage_a_json")
+    calls = _install_handoff_qec_cert(monkeypatch, cert=lambda kind, kw: _cert_search_lb(lb=4)(**kw))
+    fake = _FakeBinary(["3 6 10", "5 5 7"], stderr="# RESULT " + json.dumps(_RJ6) + "\n")
+    monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake.popen)
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2,
+                                                     return_info=True)
+        assert (d, info) == (5, [5, 5, 0]) and len(fake.cmds) == 2 and len(calls) == 1  # (A, B: [4, 6], C)
+        assert "json=1" in fake.cmds[0] and "json=1" not in fake.cmds[1]
+        assert calls[0][1]["from_dm4ri"] == _RJ6 and calls[0][1]["dmax_init"] == 6
+        old = os.path.join(os.path.dirname(dist_m4ri.find_dist_m4ri_binary()), "dist_m4ri_old")
+        if os.path.isfile(old):  # (the fake answers for dist_m4ri_old, which writes no JSON summary)
+            fake.cmds.clear()
+            fake.stderr, fake.outputs = "", ["3 6 10", "5 5 7"]
+            calls.clear()
+            dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2, dist_m4ri=old)
+            assert len(fake.cmds) == 2 and not any("json=1" in c for c in fake.cmds)
+            assert len(calls) == 1 and "from_dm4ri" not in calls[0][1] and calls[0][1]["dmax_init"] == 6
+        fake.stderr, fake.outputs = "# RESULT " + json.dumps(_RJ6) + "\n", ["3 6 10"]
+        for kw in ({"engine": None}, {"engine": "auto", "method": 1}, {"engine": "auto", "do_cws": True}):
+            fake.cmds.clear()
+            dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, timeout=20, threads=2, **kw)
+            assert len(fake.cmds) == 1 and "json=1" not in fake.cmds[0], kw
+        fake.cmds.clear()
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="cert", timeout=20)
+        assert fake.cmds == []  # (engine='cert': qec_cert alone, no Stage A)
+        monkeypatch.setattr(dist_m4ri, "_qec_cert_available", lambda: False)  # (not installed: the binary alone)
+        fake.cmds.clear()
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2)
+        assert len(fake.cmds) == 1 and "json=1" not in fake.cmds[0]
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cert_handoff_call_sites(monkeypatch):
+    # every call site, for a qec_cert P0 (from_dm4ri), one with ub_witness only, and an older one: Stage B of
+    # engine='auto' from wmin = dmin_A = 3 (F1: still the floor, with force_dom=1), wmax = 5, dmax_init = dmax_A = 6,
+    # and the codeword of weight 6 of Stage A (not for certify_circuit()); engine='cert' from wmin=1 (no cache record)
+    # with dmax_init = the caller's dmax, never a codeword (no Stage A); never floor_hint
+    stim = pytest.importorskip("stim")
+    circ = stim.Circuit.generated("repetition_code:memory", distance=5, rounds=2, after_clifford_depolarization=0.001)
+    auto_runs = {  # (the call, the outputs of the fake binary, the function of qec_cert, with the codeword)
+        "quantum": (lambda: dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=20, threads=2,
+                                                               return_info=True), ["3 6 10"], "certify", True),
+        "css": (lambda: dist_m4ri.compute_css_distance(S5_H, S5_H, Lx=S5_L, Lz=S5_L, engine="auto", timeout=20,
+                                                       threads=2), ["6 6 0", "3 6 50"], "certify", True),
+        "dem": (lambda: dist_m4ri.compute_dem_distance(SURF_D3_DEM, engine="auto", timeout=20, threads=2),
+                ["3 6 10"], "certify_dem", True),
+        "circuit": (lambda: dist_m4ri.compute_dem_distance(circuit=circ, engine="auto", timeout=20, threads=2),
+                    ["3 6 10"], "certify_circuit", False),
+    }
+    variants = {"p0": _P0_PARAMS, "ub_witness": tuple(k for k in _P0_PARAMS if k != "from_dm4ri"), "old": ()}
+    no_wit = {"from_dm4ri", "ub_witness", "ub_witness_base"}
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        for name, (run, outputs, kind, with_wit) in auto_runs.items():
+            for var, params in variants.items():
+                calls = _install_handoff_qec_cert(monkeypatch, params)
+                fake = _FakeBinary(outputs, stderr="# RESULT " + json.dumps(_RJ6) + "\n")
+                monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake.popen)
+                res = run()
+                assert res[0] == 6 and [c[0] for c in calls] == [kind], (name, var, res, calls)
+                assert fake.cmds and all("json=1" in c for c in fake.cmds), (name, var)  # (Stage A only)
+                kw = calls[0][1]
+                assert (kw["wmin"], kw["wmax"], kw["search_opts"]) == (3, 5, {"force_dom": 1}), (name, var, kw)
+                assert "floor_hint" not in kw and kw["use_ub"] is True, (name, var, kw)  # (gap 3: use_ub)
+                if var == "old":
+                    assert not _HANDOFF & set(kw), (name, kw)
+                    continue
+                assert kw["dmax_init"] == 6, (name, var, kw)
+                if not with_wit:
+                    assert not no_wit & set(kw), (name, var, kw)
+                elif var == "p0":
+                    assert kw["from_dm4ri"] == _RJ6 and not {"ub_witness", "ub_witness_base"} & set(kw), (name, kw)
+                else:
+                    assert (kw["ub_witness"], kw["ub_witness_base"]) == (_WIT6, 0) and "from_dm4ri" not in kw, name
+        # engine='cert' (the classical code without dominance; the sectors of a CSS code have no upper bound of
+        # their own: the user's dmax of the CSS code is their stop target)
+        for var, params in variants.items():
+            calls = _install_handoff_qec_cert(monkeypatch, params)
+            dist_m4ri.compute_classical_distance(HAMMING_H, engine="cert", dmax=4)
+            dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="cert", dmax=6)
+            dist_m4ri.compute_css_distance(S5_H, S5_H, Lx=S5_L, Lz=S5_L, engine="cert", dmax=6)
+            dist_m4ri.compute_dem_distance(SURF_D3_DEM, engine="cert", dmax=4)
+            dist_m4ri.compute_dem_distance(circuit=circ, engine="cert", dmax=4)
+            kinds = [c[0] for c in calls]
+            assert kinds == ["certify"] * 4 + ["certify_dem", "certify_circuit"], (var, kinds)
+            for (kind, kw), dmax, w_hi in zip(calls, (4, 6, 0, 0, 4, 4), (3, 5, 5, 5, 3, 3)):
+                assert (kw["wmin"], kw["wmax"]) == (1, w_hi) and "search_opts" not in kw, (var, kind, kw)
+                assert kw.get("dmax_init") == (dmax if (dmax and var != "old") else None), (var, kind, kw)
+                assert not (no_wit | {"floor_hint"}) & set(kw), (var, kind, kw)
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cert_handoff_cache_tightened_bounds(monkeypatch, tmp_path):
+    # F3: dmax_init is the dmax tightened by the cache record (as wmax = dmax - 1), never one at or below the floor;
+    # F1: the floor of qec_cert is the certified dmin of the record (wmin, with force_dom=1), as before
+    calls = _install_handoff_qec_cert(monkeypatch)
+    fake = _FakeBinary(["3 5 10"])
+    monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake.popen)
+    force = {"force_dom": 1}
+    try:
+        for user_dmax, w_hi, dmax_init in ((0, 4, 5), (7, 4, 5), (4, 3, 4), (3, 3, None), (2, 3, None)):
+            cache_file = str(tmp_path / f"f3_{user_dmax}.json")
+            dist_m4ri.clear_distance_cache()
+            dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, threads=2, cache_file=cache_file)  # (the record [3, 5])
+            calls.clear()
+            dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="cert", dmax=user_dmax, cache_file=cache_file)
+            kw = calls[0][1]
+            assert (kw["wmin"], kw["wmax"], kw.get("dmax_init"), kw["search_opts"]) == (3, w_hi, dmax_init, force), \
+                (user_dmax, kw)
+            assert dist_m4ri._last_run_stats["engine_cert"]["dmax"] == (dmax_init or 0)
+        # the sectors of a CSS code (no dmax of their own, but that of their records) and a DEM (also on the fast path
+        # of engine='auto', qec_cert first: without a codeword, as there is no Stage A)
+        for name, write, cert in (
+            ("css", lambda **kw: dist_m4ri.compute_css_distance(QX40, QZ40, **kw),
+             lambda **kw: dist_m4ri.compute_css_distance(QX40, QZ40, engine="cert", **kw)),
+            ("dem", lambda **kw: dist_m4ri.compute_dem_distance(SURF_D3_DEM, **kw),
+             lambda **kw: dist_m4ri.compute_dem_distance(SURF_D3_DEM, engine="cert", **kw)),
+            ("dem_fast_path", lambda **kw: dist_m4ri.compute_dem_distance(SURF_D3_DEM, **kw),
+             lambda **kw: dist_m4ri.compute_dem_distance(SURF_D3_DEM, engine="auto", timeout=10, **kw)),
+        ):
+            cache_file = str(tmp_path / f"f3_{name}.json")
+            dist_m4ri.clear_distance_cache()
+            write(threads=2, cache_file=cache_file)
+            calls.clear()
+            if name == "dem_fast_path":  # (more than 25,000 raw error mechanisms)
+                monkeypatch.setattr(dist_m4ri, "_dem_num_raw_errors", lambda dem, limit=0: 30000)
+            cert(cache_file=cache_file)
+            assert len(calls) == (2 if name == "css" else 1), (name, calls)
+            assert all((kw["wmin"], kw["wmax"], kw["dmax_init"]) == (3, 4, 5) for _, kw in calls), (name, calls)
+            assert not any({"from_dm4ri", "ub_witness"} & set(kw) for _, kw in calls), name
+    finally:
+        dist_m4ri.clear_distance_cache()
+    # _cert_code_distance() directly: the dmax of the callback (also with the cache disabled)
+    dist_m4ri.disable_distance_cache()
+    try:
+        seen = []
+
+        def cert(w_lo, w_hi, dmax):
+            seen.append((w_lo, w_hi, dmax))
+            return _cert_search_lb()(wmin=w_lo, wmax=w_hi)
+        for dmin, dmax, cdmin, wmax, dstop, expected in ((0, 6, 3, 0, 0, (3, 5, 6)), (0, 6, 0, 0, 0, (1, 5, 6)),
+                                                         (0, 0, 3, 0, 0, (3, 40, 0)), (0, 6, 3, 4, 0, (3, 4, 6)),
+                                                         (0, 6, 3, 0, 5, (3, 4, 6)), (0, 3, 3, 0, 0, (3, 3, 0)),
+                                                         (5, 6, 2, 0, 0, (2, 5, 6))):
+            dist_m4ri._cert_code_distance(lambda: "unused", cert, dmin=dmin, dmax=dmax, certified_dmin=cdmin,
+                                          wmax=wmax, dstop=dstop)
+            assert seen[-1] == expected, (dmin, dmax, cdmin, wmax, dstop, seen[-1])
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cert_handoff_warnings(capsys):
+    # a warning if qec_cert does not verify the codeword of the binary (ub_witness_status 'invalid' or 'unreadable')
+    # or finds a verified codeword below the floor certified by the binary (precondition_violated, also
+    # floor_hint_contradicted); the bounds are extracted as before
+    def run(cert):
+        return dist_m4ri._cert_code_distance(lambda: "unused", lambda w_lo, w_hi, _: cert, label="quantum", dmin=5,
+                                             dmax=7, certified_dmin=5)
+
+    def floor_cert(**kw):  # (no codeword of weight 5..6, conditional only on the floor 5)
+        inst = {"lb_conditional": True, "lb_assumed_wmin": 5, **kw.pop("instance", {})}
+        return _FakeCert(**dict(dict(status="bounds", lower_bound=7, instance=inst), **kw))
+    dist_m4ri.disable_distance_cache()
+    try:
+        for status in ("invalid", "unreadable"):
+            err_text = "from_dm4ri: no candidates" if status == "invalid" else "from_dm4ri: cannot read"
+            res = run(floor_cert(instance={"ub_witness_status": status, "ub_witness_error": err_text}))
+            err = capsys.readouterr().err
+            assert (f"# Warning: qec_cert did not verify the codeword found by dist_m4ri for the quantum distance "
+                    f"(ub_witness_status '{status}': {err_text}); it was not used: please report this") in err, err
+            assert err.count("# Warning") == 1 and res["d_info"] == [7, 7, 0]
+        assert run(floor_cert(instance={"ub_witness_status": "invalid"}))["d_info"] == [7, 7, 0]
+        assert "(ub_witness_status 'invalid'); it was not used" in capsys.readouterr().err
+        for ok in ({"ub_witness_status": "ok", "ub_witness_weight": 7}, {"ub_witness_status": "none"}, {}):
+            assert run(floor_cert(instance=ok))["d_info"] == [7, 7, 0] and capsys.readouterr().err == "", ok
+        below = floor_cert(lower_bound=4, upper_bound=4, witness_verified=True, precondition_violated=True,
+                           instance={"precondition_violated": True})
+        assert run(below)["dmax"] == 4
+        assert ("# Warning: qec_cert found a verified codeword of weight 4 below the lower bound 5 certified by "
+                "dist_m4ri for the quantum distance (precondition_violated): please report this") in \
+            capsys.readouterr().err
+        hint = {"status": "bounds", "lower_bound": 3, "upper_bound": 4, "witness_verified": True,
+                "instance": {"floor_hint": 5, "floor_hint_contradicted": True}}  # (a dict, the floor as floor_hint)
+        run(hint)
+        err = capsys.readouterr().err
+        assert err.count("found a verified codeword of weight 4 below the lower bound 5") == 1, err
+        assert "quantum distance (floor_hint_contradicted): please report this" in err
+        unverified = floor_cert(upper_bound=4, witness_verified=False)
+        above = floor_cert(upper_bound=7, witness_verified=True)
+        for fine in (unverified, above, floor_cert(upper_bound=None, witness_verified=None)):
+            run(fine)
+            assert capsys.readouterr().err == ""
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_cert_wmin_discharged_option_b_early_exits():
+    # F1, Option B: certify_dem() of qec_cert P0 stops from a floor wmin > 1 as soon as its lower bound meets a verified
+    # upper bound, with the status 'bounds', conditional only on lb_assumed_wmin = wmin (the stages of its early exits:
+    # the witness import, the exact zero-solve sandwich with a graph-like P_1, the graph-like work DEM, the P_1
+    # projection with R4): exact if the floor is certified, only the upper bound otherwise.  F2: floor_hint discharges
+    # nothing (no handoff branch in _cert_wmin_discharged(), which needs lb_assumed_wmin > 1)
+    def early(method, stages=(), reductions=(), w=3, d=5):  # (as Certificate.to_dict(), with lb_conditional)
+        return {"status": "bounds", "lower_bound": d, "upper_bound": d, "witness_verified": True, "method": method,
+                "lb_conditional": True, "lb_assumed_wmin": w,
+                "instance": {"lb_conditional": True, "lb_assumed_wmin": w, "lb_uncond": 2, "ub_witness_status": "ok"},
+                "stages": [{"name": "dem_extract_merge", "status": "ok"}, {"name": "ub_witness_import",
+                                                                          "status": "ok", "weight": d}, *stages],
+                "reductions": [{"name": "dem_parallel_merge", "params": {}}, *reductions],
+                "lb_trail": [{"stage": "user_wmin", "lb": w, "conditional": True},
+                             {"stage": "dem_final", "lb": d, "conditional": True}]}
+    p1 = {"name": "p1_projection_lb", "status": "exact", "lb": 5, "lb_conditional": False}
+    p1_red = {"name": "p1_projection_lb", "params": {"lb": 5, "lb_conditional": False}}
+    certs = [
+        early("ub_witness_import", w=5),
+        early("sandwich_graphlike", [{"name": "zero_solve_sandwich", "status": "exact"}, p1], [p1_red]),
+        early("dem_graphlike", [{"name": "dem_graphlike", "status": "ok", "distance": 5}],
+              [{"name": "graphlike_exact", "params": {"level": "work"}}]),
+        early("p1_fiber_lb", [{"name": "zero_solve_sandwich", "status": "inexact"}, dict(p1, lb=4),
+                              {"name": "p1_zero_slack_fiber_lb", "status": "ok", "lb_conditional": False}],
+              [{"name": "p1_projection_lb", "params": {"lb": 4, "lb_conditional": False}}]),
+    ]
+    for c in certs:
+        w = c["instance"]["lb_assumed_wmin"]
+        for cert in (c, _FakeCert(**c)):
+            assert dist_m4ri._cert_is_conditional(cert) and dist_m4ri._cert_wmin_discharged(cert, w), c["method"]
+            assert dist_m4ri._cert_extract_bounds(cert, w) == (5, 5), c["method"]
+            assert not dist_m4ri._cert_wmin_discharged(cert, w - 1) and dist_m4ri._cert_extract_bounds(cert, w - 1) \
+                == (0, 5), c["method"]
+    # a conditional P_1 bound above the certified floor with an inexact sandwich (as since 0.17.4): not discharged
+    cond = early("sandwich_ub", [{"name": "zero_solve_sandwich", "status": "inexact"}, dict(p1, lb_conditional=True)])
+    assert not dist_m4ri._cert_wmin_discharged(cond, 3) and dist_m4ri._cert_extract_bounds(cond, 3) == (0, 5)
+    # F2: floor_hint alone (no lb_assumed_wmin) discharges nothing; an unconditional certificate needs no discharge
+    hinted = {"status": "bounds", "lower_bound": 5, "upper_bound": 5, "witness_verified": True, "lb_conditional": True,
+              "instance": {"floor_hint": 3, "lb_conditional": True}, "stages": [], "reductions": []}
+    assert not dist_m4ri._cert_wmin_discharged(hinted, 3) and dist_m4ri._cert_extract_bounds(hinted, 3) == (0, 5)
+    exact = dict(hinted, status="exact", lb_conditional=False, instance={"floor_hint": 3})
+    assert not dist_m4ri._cert_wmin_discharged(exact, 3) and dist_m4ri._cert_extract_bounds(exact, 3) == (5, 5)
+
+
+def _real_qec_cert_p0(func="certify"):
+    """(qec_io, pipeline) of the real qec_cert, if it is usable and its func names from_dm4ri (P0); else a skip."""
+    if not dist_m4ri._has_qec_cert():
+        pytest.skip(f"qec_cert is not usable: {dist_m4ri._qec_cert_status}")
+    _, qio, qp = dist_m4ri._get_qec_cert()
+    if "from_dm4ri" not in dist_m4ri._qec_cert_handoff(qp, func):
+        pytest.skip(f"qec_cert {func}() without the handoff parameters of its P0 version")
+    return qio, qp
+
+
+def _weak_stage_a(monkeypatch, floor):
+    """
+    The real binary (run_dist_m4ri()) with the lower bound it returns capped at floor: a weaker certified lower bound,
+    as of Stage A ended by its time limit with CC at the weight floor (deterministic, unlike a short timeout), with its
+    JSON summary (json=1) and the codeword found.  Returns the list of the keyword arguments of its runs.
+    """
+    real, runs = dist_m4ri.run_dist_m4ri, []
+
+    def run(*a, **kw):
+        runs.append(dict(kw))
+        dmin, dmax, rw = real(*a, **kw)
+        return min(dmin, floor), dmax, rw
+    monkeypatch.setattr(dist_m4ri, "run_dist_m4ri", run)
+    return runs
+
+
+def _spy(monkeypatch, qp, func, sig_params=None):
+    """
+    Replaces the function func of the real qec_cert pipeline qp by a spy with its signature (or, with sig_params, by a
+    wrapper which names only those of its parameters, as an older qec_cert would); returns the list (kwargs, cert).
+    """
+    import functools
+    import inspect
+    real, seen = getattr(qp, func), []
+
+    @functools.wraps(real)
+    def spy(*a, **kw):
+        seen.append((kw, real(*a, **kw)))
+        return seen[-1][1]
+    if sig_params is not None:
+        del spy.__wrapped__
+        sig = inspect.signature(real)
+        spy.__signature__ = sig.replace(parameters=[p for k, p in sig.parameters.items() if k in sig_params])
+    monkeypatch.setattr(qp, func, spy)
+    return seen
+
+
+def test_handoff_real_quantum_and_css(monkeypatch, capsys):
+    # the real binary (Stage A: the bracket [3, 5] of surf_d5, see _weak_stage_a()) and the real qec_cert P0 (Stage B):
+    # wmin=3 (the floor, F1), dmax_init=5, from_dm4ri with the codeword of weight 5, which qec_cert verifies
+    # (ub_witness_status 'ok'); its lower bound 5 (status 'bounds' from wmin > 1) is discharged: exact 5; the same for
+    # both sectors of a CSS code, and with a qec_cert which names ub_witness only (0-based, ub_witness_base=0)
+    _, qp = _real_qec_cert_p0()
+    runs = _weak_stage_a(monkeypatch, 3)
+    real_certify = qp.certify
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        for variant in ("from_dm4ri", "ub_witness", "css"):
+            monkeypatch.setattr(qp, "certify", real_certify)  # (the real one again; restored at the end)
+            old = None if variant != "ub_witness" else (
+                "problem", "wmin", "wmax", "threads", "seed", "time_limit", "mode", "use_ub", "search_opts",
+                "ub_witness", "ub_witness_base", "dmax_init")
+            certs = _spy(monkeypatch, qp, "certify", old)
+            runs.clear()
+            if variant == "css":
+                d, dx, dz = dist_m4ri.compute_css_distance(S5_H, S5_H, Lx=S5_L, Lz=S5_L, engine="auto", timeout=30,
+                                                           threads=2)
+                assert d == 5 and dx[:2] == dz[:2] == [5, 5] and len(runs) == len(certs) == 2
+            else:
+                d, info = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=30, threads=2,
+                                                             return_info=True)
+                assert (d, info[:2]) == (5, [5, 5]) and len(runs) == len(certs) == 1, (variant, d, info)
+                assert dist_m4ri._last_run_stats["engine_auto"]["stage_b"] == [5, 5]
+            assert all(r["json_out"] is True and r["method"] == 3 for r in runs), runs
+            for kw, cert in certs:
+                assert (kw["wmin"], kw["wmax"], kw["dmax_init"], kw["use_ub"]) == (3, 4, 5, False), (variant, kw)
+                assert "floor_hint" not in kw
+                if variant == "ub_witness":
+                    assert "from_dm4ri" not in kw and kw["ub_witness_base"] == 0 and len(kw["ub_witness"]) == 5
+                else:
+                    assert kw["from_dm4ri"]["witness"]["weight"] == 5 and "ub_witness" not in kw
+                inst = cert.instance
+                assert (inst["ub_witness_status"], inst["ub_witness_weight"], inst["lb_assumed_wmin"]) == ("ok", 5, 3)
+                assert (cert.status, cert.lower_bound, cert.upper_bound) == ("bounds", 5, 5), variant
+                imp = [s for s in cert.stages if s.get("name") == "ub_witness_import"]
+                assert imp and imp[0]["status"] == "ok" and not imp[0].get("skip_stage1_stern")  # (method=3)
+        assert "# Warning" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_handoff_real_rw_converged_skips_stage1_stern():
+    # the stop code rw_converged of the binary (method=1 only; never in Stage A of engine='auto', which runs method=3)
+    # with its JSON summary as from_dm4ri: certify() of qec_cert P0 skips its Stage-1 Stern search (also with
+    # use_ub=True) and certifies 5 from the floor 2 with the codeword of the binary
+    qio, qp = _real_qec_cert_p0()
+    dist_m4ri.run_dist_m4ri(finH=S5_H, finL=S5_L, method=3, threads=1, seed=1, json_out=True)
+    assert dist_m4ri._last_run_stats["result_json"]["stop"]["code"] != "rw_converged"
+    dist_m4ri.run_dist_m4ri(finH=S5_H, finL=S5_L, method=1, steps=20000, threads=1, seed=1, json_out=True)
+    rj = dist_m4ri._last_run_stats["result_json"]
+    if rj["stop"]["code"] != "rw_converged":
+        pytest.skip(f"the RW of the binary did not converge: {rj['stop']}")
+    w = rj["witness"]["weight"]
+    kw = dist_m4ri._cert_handoff_kw(qp, 2, dmax=w, dm4ri_json=rj)
+    assert kw["from_dm4ri"] is rj and kw["dmax_init"] == w == 5
+    cert = qp.certify(qio.DistanceProblem(qio.read_mtx(S5_H), qio.read_mtx(S5_L), None), wmax=w - 1, threads=2,
+                      time_limit=30, use_ub=True, **kw)
+    imp = [s for s in cert.stages if s.get("name") == "ub_witness_import"]
+    assert imp and imp[0]["status"] == "ok" and imp[0]["skip_stage1_stern"] is True, imp
+    assert not any(s.get("name") == "ub_stern" for s in cert.stages)
+    assert cert.instance["dm4ri_stop_code"] == "rw_converged" and dist_m4ri._cert_extract_bounds(cert, 2) == (5, 5)
+
+
+def _handoff_dem(kind, path):
+    """
+    A DEM of a Stim circuit with a repeat block, written to path with a copy of its first error line in front (equal
+    columns, which the binary merges): 'rep', the repetition code (d=5, 6 rounds; graph-like), or 'surf', the rotated
+    surface code (d=3, 10 rounds; its X-type detectors are dropped by drop=auto of the binary).  Returns its circuit.
+    """
+    stim = pytest.importorskip("stim")
+    if kind == "rep":
+        circ = stim.Circuit.generated("repetition_code:memory", distance=5, rounds=6,
+                                      after_clifford_depolarization=0.01, before_measure_flip_probability=0.01)
+    else:
+        circ = stim.Circuit.generated("surface_code:rotated_memory_z", distance=3, rounds=10,
+                                      after_clifford_depolarization=0.002, before_measure_flip_probability=0.002)
+    lines = str(circ.detector_error_model(decompose_errors=False)).splitlines()
+    assert any(ln.startswith("repeat ") for ln in lines)
+    with open(path, "w") as f:
+        f.write("\n".join([next(ln for ln in lines if ln.startswith("error("))] + lines) + "\n")
+    return circ
+
+
+def test_handoff_real_dem_repeat_merge_drop(monkeypatch, tmp_path, capsys):
+    # the real binary (Stage A, json=1: the bracket [2, d], see _weak_stage_a()) on DEMs with a repeat block, equal
+    # columns (merged), and dropped detectors, and the real certify_dem() of qec_cert P0 (Stage B, from wmin=2): it
+    # verifies the codeword of weight d of Stage A (1-based original columns: the error mechanisms of the flattened
+    # DEM) and stops early (no pinning or search, F1 Option B) with the status 'bounds', whose bounds are exact here
+    _, qp = _real_qec_cert_p0("certify_dem")
+    runs = _weak_stage_a(monkeypatch, 2)
+    certs = _spy(monkeypatch, qp, "certify_dem")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        for kind, d in (("rep", 5), ("surf", 3)):
+            path = str(tmp_path / f"{kind}.dem")
+            _handoff_dem(kind, path)
+            runs.clear()
+            certs.clear()
+            res = dist_m4ri.compute_dem_distance(dem=path, engine="auto", timeout=30, threads=2)
+            assert res[0] == d and res[1][:2] == [d, d], (kind, res)
+            assert len(runs) == len(certs) == 1 and runs[0]["json_out"] is True and runs[0]["drop"] == "auto"
+            kw, cert = certs[0]
+            rj = kw["from_dm4ri"]
+            assert (kw["wmin"], kw["wmax"], kw["dmax_init"]) == (2, d - 1, d) and "ub_witness" not in kw, (kind, kw)
+            assert rj["witness"]["weight"] == d and rj["size"]["searched"][1] < rj["size"]["full"][1] - 1  # (merged)
+            assert rj["size"]["searched"][0] < rj["size"]["full"][0] or kind == "rep", rj["size"]  # (dropped)
+            inst = cert.instance
+            assert (inst["ub_witness_status"], inst["ub_witness_weight"], inst["lb_assumed_wmin"]) == ("ok", d, 2)
+            assert (cert.status, cert.lower_bound, cert.upper_bound) == ("bounds", d, d), (kind, cert.status)
+            assert not any(s.get("name") in ("polymer_pinning", "search") for s in cert.stages), cert.method
+            assert dist_m4ri._cert_wmin_discharged(cert, 2) and dist_m4ri._cert_extract_bounds(cert, 2) == (d, d)
+        assert "# Warning" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_handoff_real_dem_p1_projection(monkeypatch, tmp_path, capsys):
+    # the DEM whose time-collapsed projection P_1 is the simplex code (distance 15, an inexact zero-solve sandwich, see
+    # _simplex_p1_dem()), from the floor 6 of Stage A (the real binary, see _weak_stage_a()): the real certify_dem() of
+    # qec_cert P0 projects to P_1 from its own proven floor (d(P_1) = 4, not conditional), runs R4 and the pinned
+    # search from wmin=6 (conditional only on the floor, without symmetry), with the codeword of weight 15 of Stage A
+    # (which does not skip its upper-bound stages, use_ub=True for the wide bracket [6, 15]): the floor 6 discharges
+    # it, exact 15
+    _, qp = _real_qec_cert_p0("certify_dem")
+    runs = _weak_stage_a(monkeypatch, 6)
+    certs = _spy(monkeypatch, qp, "certify_dem")
+    path = str(tmp_path / "simplex_p1.dem")
+    with open(path, "w") as f:
+        f.write(_simplex_p1_dem())
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        res = dist_m4ri.compute_dem_distance(dem=path, engine="auto", timeout=30, threads=2)
+        assert res[0] == 15 and res[1][:2] == [15, 15] and len(runs) == len(certs) == 1, res
+        kw, cert = certs[0]
+        assert (kw["wmin"], kw["wmax"], kw["dmax_init"], kw["from_dm4ri"]["witness"]["weight"]) == (6, 14, 15, 15)
+        assert (cert.instance["ub_witness_status"], cert.status, cert.lower_bound, cert.upper_bound) == (
+            "ok", "bounds", 15, 15)
+        stages = {s.get("name"): s for s in cert.stages if isinstance(s, dict)}
+        assert stages["zero_solve_sandwich"]["status"] == "inexact" and not stages["p1_projection_lb"]["lb_conditional"]
+        assert "p1_zero_slack_fiber_lb" in stages and dist_m4ri._cert_wmin_discharged(cert, 6)
+        assert kw["use_ub"] is True and any("stern" in name for name in stages)  # (its UB stages still run)
+        assert not dist_m4ri._cert_wmin_discharged(cert, 5) and dist_m4ri._cert_extract_bounds(cert, 5) == (0, 15)
+        assert "# Warning" not in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_handoff_real_circuit_without_codeword(monkeypatch, tmp_path):
+    # a Stim circuit (Stage B: certify_circuit() of the real qec_cert P0, which generates its own DEM): dmax_init, but
+    # never the codeword of Stage A, which indexes the error mechanisms of the DEM of the binary
+    _, qp = _real_qec_cert_p0("certify_circuit")
+    runs = _weak_stage_a(monkeypatch, 2)
+    certs = _spy(monkeypatch, qp, "certify_circuit")
+    circ = _handoff_dem("rep", str(tmp_path / "rep.dem"))
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.disable_distance_cache()
+    try:
+        res = dist_m4ri.compute_dem_distance(circuit=circ, engine="auto", timeout=30, threads=2)
+        assert res[0] == 5 and res[1][:2] == [5, 5] and len(runs) == len(certs) == 1 and runs[0]["json_out"] is True
+        kw, cert = certs[0]
+        assert (kw["wmin"], kw["wmax"], kw["dmax_init"]) == (2, 4, 5) and not {"from_dm4ri", "ub_witness"} & set(kw)
+        assert cert.instance["ub_witness_status"] == "none" and (cert.lower_bound, cert.upper_bound) == (5, 5)
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def _make_fake_tropidist_root(tmp_path):
+    """Creates a minimal fake tropidist directory layout passing find_tropidist_root()."""
+    root = tmp_path / "fake_tropidist"
+    (root / "cdist").mkdir(parents=True)
+    (root / "cdist" / "__main__.py").write_text("# stub\n")
+    (root / "bench" / "adapters").mkdir(parents=True)
+    (root / "bench" / "adapters" / "ours_pipeline.py").write_text("# stub\n")
+    return root
+
+
+def test_tropidist_discovery_and_options(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("TROPIDIST_ROOT", raising=False)
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
+    assert dist_m4ri.find_tropidist_root() is None
+    assert not dist_m4ri._tropidist_available() and not dist_m4ri._HAS_TROPIDIST
+    with pytest.raises(ImportError, match="TROPIDIST_ROOT"):
+        dist_m4ri._get_tropidist_root()
+    # CLI returns exit code 2 on missing tropidist
+    assert dist_m4ri.main([f"finH={S5_H}", f"finL={S5_L}", "engine=tropidist", "--no-cache"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("Error: tropidist is not configured") and err.count("\n") == 1
+
+    # Invalid TROPIDIST_ROOT reports the path
+    bad = tmp_path / "empty_dir"
+    bad.mkdir()
+    monkeypatch.setenv("TROPIDIST_ROOT", str(bad))
+    assert dist_m4ri.find_tropidist_root() is None
+    with pytest.raises(ImportError, match=re.escape(str(bad))):
+        dist_m4ri._get_tropidist_root()
+
+    # Valid checkout layout via TROPIDIST_ROOT
+    fake_root = _make_fake_tropidist_root(tmp_path)
+    monkeypatch.setenv("TROPIDIST_ROOT", str(fake_root))
+    assert dist_m4ri.find_tropidist_root() == str(fake_root.resolve())
+    assert dist_m4ri._tropidist_available() and dist_m4ri._HAS_TROPIDIST
+    assert dist_m4ri._resolve_cert_engine(engine="tropidist") == "tropidist"
+    assert dist_m4ri._resolve_cert_engine(solver="tropidist") == "tropidist"
+
+    # table_gb validation and CLI parsing
+    assert dist_m4ri._check_table_gb(None) is None
+    assert dist_m4ri._check_table_gb(0) == 0 and dist_m4ri._check_table_gb(8) == 8
+    for bad_gb in (-1, True, 1.5, "4"):
+        with pytest.raises(ValueError, match="table_gb"):
+            dist_m4ri._check_table_gb(bad_gb)
+    parsed = dist_m4ri.parse_cli_args([f"finH={S5_H}", f"finL={S5_L}", "engine=tropidist", "--table-gb", "4"])
+    assert parsed["engine"] == "tropidist" and parsed["table_gb"] == 4
+    assert dist_m4ri.parse_cli_args([f"finH={S5_H}", "table_gb=0"])["table_gb"] == 0
+    with pytest.raises(ValueError, match="table_gb"):
+        dist_m4ri.parse_cli_args([f"finH={S5_H}", "table_gb=-2"])
+
+    # Codeword extraction rejected with ValueError
+    with pytest.raises(ValueError, match="Codeword extraction is not supported with engine='tropidist'"):
+        dist_m4ri.compute_classical_distance(HAMMING_H, engine="tropidist", do_cws=True)
+    with pytest.raises(ValueError, match="Codeword extraction is not supported with engine='tropidist'"):
+        dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="tropidist", outC=str(tmp_path / "c.nz"))
+
+    # Ignored options warnings for tropidist (including method=1, start, smax, dW, maxC, outD) and table_gb on native
+    monkeypatch.setattr(
+        dist_m4ri, "_run_tropidist",
+        lambda **kw: {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [0, 1, 3]},
+    )
+    dist_m4ri.disable_distance_cache()
+    try:
+        capsys.readouterr()
+        d = dist_m4ri.compute_classical_distance(
+            HAMMING_H, engine="tropidist", method=1, smax=3, dW=1, maxC=5, start=[0, 1], table_gb=2,
+        )
+        assert d == 3
+        err = capsys.readouterr().err
+        assert "smax=, dW=, maxC=, method=: not used with engine='tropidist'; ignored" in err
+        assert "start=0,1 is ignored with engine='tropidist'" in err and "# WARNING: start=" not in err
+        # table_gb ignored on native engine
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, table_gb=4, threads=1) == 3
+        assert "table_gb=: only used with engine='tropidist' or engine='auto'; ignored" in capsys.readouterr().err
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_tropidist_gf2_logicals_and_witness_verification(capsys):
+    # CSS pair: QX40 / QZ40 -> L commutes with G (G L^T = 0) and spans ker(G) / rowspace(H)
+    H_csr = dist_m4ri._to_binary_csr(QX40)
+    G_csr = dist_m4ri._to_binary_csr(QZ40)
+    L_csr = dist_m4ri._gf2_logicals_from_hg(H_csr, G_csr, ortho=True)
+    r_h = dist_m4ri._gf2_rank(H_csr)
+    r_g = dist_m4ri._gf2_rank(G_csr)
+    k = H_csr.shape[1] - r_h - r_g
+    assert L_csr.shape == (k, H_csr.shape[1]) and k > 0
+    gl = (G_csr.astype(np.int32) @ L_csr.T.astype(np.int32)).toarray() & 1
+    assert not np.any(gl)
+    # Every row of L is independent modulo rowspace(H): rank([H; L]) == rank(H) + k
+    import scipy.sparse as sp
+    assert dist_m4ri._gf2_rank(sp.vstack([H_csr, L_csr])) == r_h + k
+
+    # Non-orthogonal (H, G) raises RuntimeError with ortho=True, succeeds with ortho=False
+    H_bad = np.array([[1, 1, 0, 0]], dtype=np.uint8)
+    G_bad = np.array([[1, 0, 1, 0]], dtype=np.uint8)
+    with pytest.raises(RuntimeError, match="not orthogonal"):
+        dist_m4ri._gf2_logicals_from_hg(H_bad, G_bad, ortho=True)
+    L_sub = dist_m4ri._gf2_logicals_from_hg(H_bad, G_bad, ortho=False)
+    assert L_sub.shape[0] > 0 and not np.any((G_bad @ L_sub.T.toarray()) & 1)
+
+    # Full-rank / k=0 yields 0 rows in L
+    assert dist_m4ri._gf2_logicals_from_hg(np.array([[1, 1]]), np.array([[1, 1]]), ortho=True).shape == (0, 2)
+
+    # DEM to (H, L) with repeat block and pmin filtering
+    dem_text = (
+        "error(0.1) D0 L0\n"
+        "error(0.001) D0 L0\n"  # merged with col 0 when pmin=0, dropped when pmin=0.01
+        "error(0.001) D1 L0\n"  # dropped when pmin=0.01
+        "repeat 2 {\n"
+        "  error(0.1) D0 D1\n"
+        "  shift_detectors 1\n"
+        "}\n"
+        "error(0.1) D2 L0\n"
+    )
+    H_d0, L_d0 = dist_m4ri._dem_to_hl_csr(dem_text, pmin=0.0)
+    H_d1, L_d1 = dist_m4ri._dem_to_hl_csr(dem_text, pmin=0.01)
+    assert H_d0.shape[1] == 5 and H_d1.shape[1] == 4  # D1 L0 dropped by pmin=0.01
+
+    # Witness verification: valid vs invalid cases
+    H_ham = dist_m4ri._to_binary_csr(HAMMING_H)
+    L_ham = sp.eye(7, dtype=np.uint8, format="csr")
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 1, 3], classical=True)[0] is True
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 1], classical=True)[0] is False
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 0, 3], classical=True)[0] is False
+    assert dist_m4ri._verify_matrix_witness(H_ham, L_ham, [0, 99], classical=True)[0] is False
+    assert dist_m4ri._verify_matrix_witness(H_ham, sp.csr_matrix((1, 7), dtype=np.uint8), [0, 1, 3])[0] is False
+
+    # _tropidist_extract_bounds: value_only rejects UB, keeps LB; tampered witness warns & drops UB
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": None, "value_only": True},
+        H_csr=H_ham, L_csr=L_ham, classical=True,
+    )
+    assert (lb, ub, ok) == (3, 0, False)
+
+    capsys.readouterr()
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 2, "witness": [0, 1], "value_only": False},
+        H_csr=H_ham, L_csr=L_ham, classical=True, label="classical",
+    )
+    assert (lb, ub, ok) == (3, 0, False)
+    assert "invalid witness" in capsys.readouterr().err
+
+    # Circuit witness requires replay.result == 'pass'
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [0, 1, 2],
+         "replay": {"result": "fail"}},
+        is_circuit=True, label="DEM",
+    )
+    assert (lb, ub, ok) == (3, 0, False) and "did not pass Stim replay" in capsys.readouterr().err
+    lb, ub, ok = dist_m4ri._tropidist_extract_bounds(
+        {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [0, 1, 2],
+         "replay": {"result": "pass"}},
+        is_circuit=True, label="DEM",
+    )
+    assert (lb, ub, ok) == (3, 3, True)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        dist_m4ri._tropidist_extract_bounds({"status": "error", "notes": '{"error": "boom"}'})
+    with pytest.raises(ImportError, match="no c lib"):
+        dist_m4ri._tropidist_extract_bounds({"status": "unavailable", "notes": '{"error": "no c lib"}'})
+
+
+def test_tropidist_delegation_mocked_and_cache(monkeypatch, tmp_path, capsys):
+    fake_root = _make_fake_tropidist_root(tmp_path)
+    monkeypatch.setenv("TROPIDIST_ROOT", str(fake_root))
+    cache_file = str(tmp_path / "trop_cache.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    orig_run_trop = dist_m4ri._run_tropidist
+    calls = []
+
+    def fake_run(**kw):
+        calls.append(kw)
+        if kw.get("circuit") is not None:
+            return {"status": "exact", "lower_bound": 3, "upper_bound": 3, "witness": [1, 2, 3],
+                    "replay": {"result": "pass"}}
+        # Return a real valid codeword of HAMMING_H ([0, 1, 3]) or bounds-only
+        return {"status": "bounds", "lower_bound": 2, "upper_bound": 3, "witness": [0, 1, 3]}
+
+    monkeypatch.setattr(dist_m4ri, "_run_tropidist", fake_run)
+    try:
+        # 1. Partial result with caller's unverified dmin=3: caller dmin tightens return, NEVER cached!
+        d, info = dist_m4ri.compute_classical_distance(
+            HAMMING_H, dmin=3, engine="tropidist", table_gb=4, return_info=True, cache_file=cache_file,
+        )
+        assert d == 3 and info == [3, 3, 0] and len(calls) == 1
+        assert calls[0]["w_lo"] == 1 and calls[0]["table_gb"] == 4
+        cached = dist_m4ri.get_cached_distance(H=HAMMING_H, cache_file=cache_file)
+        assert cached["dmin"] == 2 and cached["dmax"] == 3
+        assert "certified by tropidist" in dist_m4ri.explain_bounds([2, 3, 0], stats=dist_m4ri._last_run_stats)
+
+        # 2. Next call resumes from cached certified dmin=2 (w_lo=2) and w_hi=2 (eff_dmax-1=2)
+        monkeypatch.setattr(
+            dist_m4ri, "_run_tropidist",
+            lambda **kw: (calls.append(kw), {"status": "bounds", "lower_bound": 3, "upper_bound": None,
+                                             "witness": None})[1],
+        )
+        d2, info2 = dist_m4ri.compute_classical_distance(
+            HAMMING_H, engine="tropidist", return_info=True, cache_file=cache_file,
+        )
+        assert d2 == 3 and info2 == [3, 3, 0] and calls[-1]["w_lo"] == 2 and calls[-1]["w_hi"] == 2
+        assert dist_m4ri.get_cached_distance(H=HAMMING_H, cache_file=cache_file)["dmin"] == 3
+
+        # 3. Third call hits exact cache without calling _run_tropidist
+        n_before = len(calls)
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, engine="tropidist", cache_file=cache_file) == 3
+        assert len(calls) == n_before and dist_m4ri._last_run_stats["engine_tropidist"]["cached"] is True
+
+        # 4. k = 0 returns [0, 0, 0] without calling _run_tropidist
+        capsys.readouterr()
+        assert dist_m4ri.compute_classical_distance(
+            np.eye(3, dtype=np.uint8), engine="tropidist", return_info=True, cache_file=cache_file,
+        ) == (0, [0, 0, 0])
+        assert len(calls) == n_before and "# Note: k=0" in capsys.readouterr().err
+
+        # 5. Stim circuit passes circuit= directly when pmin=0, and falls back to matrices when pmin > 0
+        import stim
+        circ = stim.Circuit.generated(
+            "repetition_code:memory", rounds=2, distance=3, after_clifford_depolarization=0.01,
+        )
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", fake_run)
+        dist_m4ri.disable_distance_cache()
+        d_c, info_c = dist_m4ri.compute_dem_distance(circuit=circ, engine="tropidist")
+        assert d_c == 3 and info_c == [3, 3, 0] and calls[-1]["circuit"] is not None
+        monkeypatch.setattr(
+            dist_m4ri, "_run_tropidist",
+            lambda **kw: (calls.append(kw), {"status": "bounds", "lower_bound": 2, "upper_bound": None,
+                                             "witness": None})[1],
+        )
+        d_p, info_p = dist_m4ri.compute_dem_distance(circuit=circ, pmin=0.001, engine="tropidist")
+        assert calls[-1].get("circuit") is None and calls[-1]["H_csr"] is not None and info_p == [2, 0, 0]
+
+        # 6. CLI --model-lb warns on table_gb=
+        capsys.readouterr()
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        dist_m4ri._warn_cli_conflicts(dist_m4ri.parse_cli_args([f"fdem={dem_file}", "--model-lb", "--table-gb", "4"]))
+        assert "table_gb=" in capsys.readouterr().err
+
+        # 7. _run_tropidist clamps kmin..kmax to 1..40 in --config
+        seen_cmds = []
+
+        class _FakeTropPopen:
+            def __init__(self, cmd, **kw):
+                seen_cmds.append(cmd)
+                self.pid = 12345
+                self.returncode = 0
+                out_p = cmd[cmd.index("--out") + 1]
+                Path(out_p).write_text(json.dumps({
+                    "status": "bounds", "lower_bound": 40, "upper_bound": None, "witness": None,
+                }))
+
+            def communicate(self, timeout=None):
+                return "", ""
+
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", orig_run_trop)
+        monkeypatch.setattr(dist_m4ri.subprocess, "Popen", _FakeTropPopen)
+        H_ham = dist_m4ri._to_binary_csr(HAMMING_H)
+        import scipy.sparse as sp
+        L_ham = sp.eye(7, dtype=np.uint8, format="csr")
+        rec = dist_m4ri._run_tropidist(H_csr=H_ham, L_csr=L_ham, w_lo=45, w_hi=60, threads=1, timeout=5, table_gb=3)
+        assert rec["lower_bound"] == 40
+        cfg = seen_cmds[0][seen_cmds[0].index("--config") + 1]
+        assert cfg == "dp=2,kmin=40,kmax=40,table_gb=3"
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_tropidist_auto_fallback_mocked(monkeypatch, tmp_path, capsys):
+    # When qec_cert is unavailable and TROPIDIST_ROOT is set:
+    # - classical codes stay native
+    # - quantum/CSS/DEM open Stage-A brackets delegate Stage B to tropidist
+    # - tropidist failure falls back to Stage C native tail
+    fake_root = _make_fake_tropidist_root(tmp_path)
+    monkeypatch.setenv("TROPIDIST_ROOT", str(fake_root))
+    _probe_state(monkeypatch)
+    monkeypatch.setitem(sys.modules, "qec_cert", None)
+    assert not dist_m4ri._qec_cert_available() and dist_m4ri._tropidist_available()
+
+    dist_m4ri.disable_distance_cache()
+    try:
+        # 1. Classical code bypasses tropidist in engine='auto'
+        trop_calls = []
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", lambda **kw: trop_calls.append(kw))
+        assert dist_m4ri.compute_classical_distance(HAMMING_H, engine="auto", threads=1) == 3
+        assert trop_calls == []
+
+        # 2. Quantum open Stage A [2, 5, 10] -> Stage B tropidist certifies lb=5 -> exact [5, 5, 0]
+        fake_bin = _FakeBinary(["2 5 10"])
+        monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake_bin.popen)
+        monkeypatch.setattr(
+            dist_m4ri, "_run_tropidist",
+            lambda **kw: (trop_calls.append(kw), {"status": "bounds", "lower_bound": 5, "upper_bound": None,
+                                                  "witness": None})[1],
+        )
+        d, info = dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, engine="auto", timeout=30, table_gb=2, return_info=True,
+        )
+        assert d == 5 and info == [5, 5, 0] and len(trop_calls) == 1
+        assert trop_calls[0]["w_lo"] == 2 and trop_calls[0]["w_hi"] == 4 and trop_calls[0]["table_gb"] == 2
+        auto = dist_m4ri._last_run_stats["engine_auto"]
+        assert auto["stage"] == "B" and auto["stage_b_engine"] == "tropidist"
+        txt = dist_m4ri.explain_bounds([4, 5, 0], stats=dist_m4ri._last_run_stats)
+        assert "tropidist" in txt
+
+        # 3. Stage B tropidist failure warns and runs Stage C native tail
+        fake_bin2 = _FakeBinary(["2 5 10", "5 5 0"])
+        monkeypatch.setattr(dist_m4ri.subprocess, "Popen", fake_bin2.popen)
+
+        def fail_trop(**kw):
+            raise RuntimeError("kernel build failed")
+
+        monkeypatch.setattr(dist_m4ri, "_run_tropidist", fail_trop)
+        capsys.readouterr()
+        d3, info3 = dist_m4ri.compute_quantum_distance(S5_H, L=S5_L, engine="auto", timeout=30, return_info=True)
+        assert d3 == 5 and info3 == [5, 5, 0] and len(fake_bin2.cmds) == 2
+        assert "engine='auto': tropidist failed" in capsys.readouterr().err
+        assert dist_m4ri._last_run_stats["engine_auto"]["stage_c"] == [5, 5]
+    finally:
+        dist_m4ri.enable_distance_cache()
+
+
+def test_tropidist_real_end_to_end(monkeypatch, tmp_path, capsys):
+    # Real integration test against compiled local tropidist checkout (skipped if absent).
+    repo_root = Path(__file__).resolve().parent.parent
+    trop_root = repo_root / "scratch" / "ext_bench" / "builds" / "tropidist"
+    if not (trop_root / "cdist" / "__main__.py").is_file() or not (trop_root / "cdist" / "libgmitm.so").is_file():
+        pytest.skip("compiled tropidist checkout not present in scratch/ext_bench/builds/tropidist")
+    monkeypatch.setenv("TROPIDIST_ROOT", str(trop_root))
+    cache_file = str(tmp_path / "trop_real.json")
+    dist_m4ri.clear_distance_cache()
+    dist_m4ri.enable_distance_cache()
+    try:
+        # Classical Hamming [7, 4, 3]
+        assert dist_m4ri.compute_classical_distance(
+            HAMMING_H, engine="tropidist", threads=2, timeout=15, return_info=True, cache_file=cache_file,
+        ) == (3, [3, 3, 0])
+        assert dist_m4ri._last_run_stats["engine_tropidist"]["witness_verified"] is True
+
+        # Quantum with L (surf_d5) and with G (QX40/QZ40)
+        assert dist_m4ri.compute_quantum_distance(
+            S5_H, L=S5_L, engine="tropidist", threads=2, timeout=15, return_info=True, cache_file=cache_file,
+        ) == (5, [5, 5, 0])
+        assert dist_m4ri.compute_quantum_distance(
+            QX40, G=QZ40, engine="tropidist", threads=2, timeout=15, return_info=True, cache_file=cache_file,
+        ) == (4, [4, 4, 0])
+
+        # CSS (both sectors; Z sector hits cache from above, X sector runs tropidist)
+        assert dist_m4ri.compute_css_distance(
+            QX40, QZ40, engine="tropidist", threads=2, timeout=15, cache_file=cache_file,
+        ) == (4, [4, 4, 0], [4, 4, 0])
+
+        # Standalone DEM (surf_d3.dem) and Stim circuit (repetition code d=3)
+        dem_file = os.path.join(EXAMPLES_DIR, "surf_d3.dem")
+        assert dist_m4ri.compute_dem_distance(
+            dem=dem_file, engine="tropidist", threads=2, timeout=15, cache_file=cache_file,
+        ) == (3, [3, 3, 0])
+        import stim
+        circ = stim.Circuit.generated(
+            "repetition_code:memory", rounds=2, distance=3, after_clifford_depolarization=0.001,
+        )
+        assert dist_m4ri.compute_dem_distance(
+            circuit=circ, engine="tropidist", threads=2, timeout=15, table_gb=1, cache_file=cache_file,
+        ) == (3, [3, 3, 0])
+        assert dist_m4ri._last_run_stats["engine_tropidist"]["witness_verified"] is True
+
+        # CLI end-to-end with engine=tropidist and --table-gb
+        capsys.readouterr()
+        rc = dist_m4ri.main([f"finH={QX40}", f"finG={QZ40}", "engine=tropidist", "--table-gb", "1",
+                             "threads=2", "--no-cache"])
+        assert rc == 0 and "4 4 0 (exact)" in capsys.readouterr().out
+    finally:
+        dist_m4ri.enable_distance_cache()
 
 
 if __name__ == "__main__":

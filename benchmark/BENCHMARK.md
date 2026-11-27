@@ -78,9 +78,10 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
   example, on a large matrix whose dense RW working copies take more than 15 MB per thread, at most 32 threads run RW
   (the memory bus saturates at 32–64 threads), and a short run gets about one RW thread per 10 steps
   ($\lceil\texttt{steps}/10\rceil$).
-- **The sparse elimination** (0.17.0). On wide DEMs, with many more columns than detectors, an RW step of 0.17.0
-  eliminates with an $m \times m$ inverse per thread ($m$ detectors) instead of dense copies of the whole
-  $m \times n$ matrix and of its transpose, which lifts the memory-bandwidth limit (Figures 4 and 9).
+- **The sparse elimination** (since 0.17.0). On wide DEMs, with many more columns than detectors, an RW step eliminates
+  with an $m \times m$ inverse per thread ($m$ detectors) instead of dense copies of the whole $m \times n$ matrix and
+  of its transpose, which lifts the memory-bandwidth limit and removes the 32-thread dense-memory cap (Figures 4, 8, and
+  9).
 - **The Python wrapper and reference values.** `dist_m4ri.py` is the Python interface of the binary: it also builds the
   DEMs of Stim circuits and adds noise. All figures in this document measure the native `dist_m4ri` binary; for
   instances in Sections 1–2 and T3 whose `dist_m4ri` bracket remains open, known exact distances or tighter brackets
@@ -91,8 +92,8 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
   the cores of socket 0, 32–63 those of socket 1, and 64–95 and 96–127 their SMT siblings (the second hardware threads
   of the cores of socket 0 and 1). Up to $p = 64$, each thread has a core of its own; beyond, the threads share cores.
   The gray line in the figures marks $p = 64$.
-- **Versions.** The figures compare versions of `dist_m4ri`, from 0.9.0 (pull request #26, 2026-09-18) to 0.17.3–0.17.4
-  (2026-11-24); `dist_m4ri_old` is the legacy single-threaded program, built from the 0.14.0 sources.
+- **Versions.** The figures compare versions of `dist_m4ri`, from 0.9.0 (pull request #26, 2026-09-18) to 0.17.5
+  (2026-11-27); `dist_m4ri_old` is the legacy single-threaded program, built from the 0.14.0 sources.
 
 ---
 
@@ -106,9 +107,9 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
 - **Wall time.** The time of the whole process: for Figures 1–8, from the binary's start to its exit, including reading
   the input and, for a DEM, merging and reducing it. Figure 9 shows rates per second of the RW time reported by the
   binary.
-- **Exclusive runs.** Within each benchmark, one run at a time. The runs of 0.17.3 (Figures 1 and 6) and 0.17.0
-  (Figure 9, and the 0.17.0 curves of Figures 2–5) were made on a server without other jobs, with the load recorded;
-  for the earlier runs, the load was not recorded.
+- **Exclusive runs.** Within each benchmark, one run at a time. The runs of 0.17.5 (Figures 2–5, 7–9) and 0.17.3
+  (Figures 1 and 6) were made on a server without other jobs, with the load recorded; for the earlier runs, the load was
+  not recorded.
 - **Protocol of each figure:**
   - Figure 1: `method=3` with the default parameters on 128 threads (`nothrottle=1`, `timeout=1800`); 5 seeds (3 or 2
     where a run exceeds 300 or 900 s).
@@ -120,11 +121,11 @@ The dated, version-by-version results (Sections 4–12, with all the tables) are
     parameters, `timeout=0`); $p = 1, \dots, 128$ threads on the CPUs $0..p-1$ (`p >= 4` for `gross` `method=3`), with
     `nothrottle=1`; median of three runs where $\le 150$ s, one run otherwise.
   - Figure 7: until a codeword of weight $d$ (`wmin=d`, `min_hits=0`, `steps=10^9`); 128 threads, not pinned, with
-    `nothrottle=1`; a time limit of 300 s (120 s for gross); five seeds for 0.14.x (seven for gross), one run for
-    0.12.2 and 0.9.0.
-  - Figure 8: the lightest codeword found against time; the default threads (32 RW threads on the two DEMs, 128 on the
-    codes), not pinned; until weight 18 (time limit 180 s) or 23 (240 s) on the DEMs, and 30 s on the codes; three
-    seeds (two for `bb_360`).
+    `nothrottle=1`; a time limit of 300 s (120 s for gross); five seeds for 0.17.5 and 0.14.x (seven for gross), one
+    run for 0.12.2 and 0.9.0.
+  - Figure 8: the lightest codeword found against time; the default threads (32 RW threads on the two DEMs in 0.14.x,
+    128 in 0.17.5 via sparse elimination, and 128 on the codes), not pinned; until weight 18 (time limit 180 s) or 23
+    (240 s) on the DEMs, and 30 s on the codes; three seeds (two for `bb_360`).
   - Figure 9: RW with a fixed step limit; $p = 1, \dots, 128$ threads on the CPUs $0..p-1$, with `nothrottle=1` and
     with the default throttle; a time limit of 25–30 s; one run per point.
 
@@ -166,7 +167,7 @@ figures are grouped: the certification of distances (Figure 1), the scaling with
 #### Figure 2: Gross code, RW with fixed work
 
 **Wall time of 3,000,000 RW steps on one sector of the gross code $[[144, 12, 12]]$ against the number of threads;
-versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
 
 ![Thread scaling of RW on the gross code](figures/threads_gross_code.png)
 
@@ -176,20 +177,26 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
 - *Axes:* left, the wall time against $p$ (both axes logarithmic); right, the speedup $T(1)/T(p)$ of each version,
   with the ideal speedup $p$ dotted. The star is the legacy single-threaded `dist_m4ri_old` (one thread).
 - *Reading:* with perfect scaling, the time halves with each doubling of $p$.
-- *Result:* RW scales almost linearly up to 64 threads, and the SMT siblings ($p > 64$) add more: 0.17.0 takes 80 s
-  on one thread, with a speedup of 57x at 64 threads and 76x at 128 (0.14.0: 50 s, 58x, and 80x). A step of 0.15.2 or
-  0.17.0 takes ~1.6x longer than one of 0.12.2 or 0.14.0 because it also scans pairs of non-pivot columns (added in
-  0.14.4; with `pairs=0`, 0.17.x matches 0.14.0); the pairs find light codewords in far fewer steps (Figures 7 and 8).
+- *Result:* RW scales almost linearly up to 64 threads, and the SMT siblings ($p > 64$) add more: 0.17.5 takes 82.2 s
+  on one thread, with a speedup of 53.2x at 64 threads (1.55 s) and 68.2x at 128 (1.21 s; 0.14.0: 50.5 s, 58.1x, and
+  79.8x).
+- *Why newer versions appear slower per step:* a fixed-step run of 0.15.2 or 0.17.5 takes ~1.5–1.6x longer than 0.12.2
+  or 0.14.0 because each step also scans pairs of non-pivot columns (added in 0.14.4; with `pairs=0 rw_opt=0`, 0.17.5
+  matches 0.14.0), which cuts the steps needed to find light codewords by 6–30x (Figures 7 and 8). The smaller ~5–8%
+  extra cost of 0.17.5 over 0.15.2 is per-step `rw_opt=0x01` bookkeeping (reduced-$L$ syndrome table and per-step
+  candidate buffer, still active on quantum codes when $\mathcal{T}_3 = \emptyset$), plus single-run jitter on ~1 s
+  runs at $p = 64..128$.
 - *Not shown:* CC up to weight 11 and the exact distance (`method=2 wmax=11` and `method=3`), which take a fraction of
   a second with 0.14.0 and later and are dominated by the start-up of the threads (Figure 6 measures multi-second to
   multi-minute CC and `method=3` runs); their times are in HISTORY.md.
-- *Versions (run dates):* 0.17.0 (2026-11-13), 0.15.2 (2026-10-28), and 0.14.0, 0.12.2, and 0.9.0 (2026-10-11).
-- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
+- *Versions (run dates):* 0.17.5 (2026-11-27), 0.15.2 (2026-10-28), and 0.14.0, 0.12.2, and 0.9.0 (2026-10-11).
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details) and
+  [Section 12.4](HISTORY.md#124-0175-figure-refresh-2026-11-27).
 
 #### Figure 3: Double-gross code, RW, CC, and both with fixed work
 
 **Wall time of fixed-work RW, CC, and RW + CC on the double-gross code $[[288, 12, 18]]$ against the threads;
-versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
 
 ![Thread scaling of RW, CC, and both on the double-gross code](figures/threads_dgross_code.png)
 
@@ -197,18 +204,24 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
   weight 15 (`method=2 wmax=15`), which finds no codeword, since $d = 18$, and so proves $d \ge 16$; right, both
   (`method=3 steps=500000 wmax=15 min_hits=0`), which gives the bracket $16 \le d \le 18$.
 - *Axes:* top, the wall time against $p$; bottom, the speedup $T(1)/T(p)$ of each version (dotted: ideal).
-- *Result:* RW scales as on the gross code (0.17.0: 82 s on one thread, 1.18 s on 128). CC became much faster from
-  version to version: up to weight 15, 0.17.0 takes 0.83 s on one thread, 3.8x less than 0.15.2 (3.1 s), and 0.14.0
-  took 10 s, while 0.9.0 needs 472 s on 128 threads. On 64–128 threads, 0.17.0 takes only 0.035–0.047 s, and more
-  threads hardly help. RW + CC: 42 s on one thread and 0.59 s on 128 with 0.17.0.
+- *Result:* RW scales as on the gross code (0.17.5: 83.1 s on one thread, 1.54 s at 64, 1.52 s at 128). CC became much
+  faster from version to version: up to weight 15, 0.17.5 takes 0.835 s on one thread, 3.8x less than 0.15.2 (3.15 s),
+  and 0.14.0 took 10 s, while 0.9.0 needs 472 s on 128 threads. On 64–128 threads, 0.17.5 takes only 0.036–0.046 s,
+  and more threads hardly help. RW + CC: 46.1 s on one thread and 0.76 s on 128 with 0.17.5.
+- *Why newer versions appear slower on the RW and RW + CC panels:* both panels do a fixed number of RW steps (1,000,000
+  and 500,000, dominating RW + CC once CC is under 1 s). Since 0.14.4, each step also scans pairs of non-pivot columns
+  (~1.5x per step; with `pairs=0 rw_opt=0`, 0.17.5 matches 0.14.0) to reach light codewords in far fewer steps (Figures
+  7 and 8); 0.17.5 adds ~5% per-step `rw_opt=0x01` bookkeeping (plus ~1 s single-run jitter at $p = 128$, where repeats
+  measure 1.30–1.35 s for RW).
 - *Versions:* as in Figure 2; 0.9.0 ran CC and RW + CC on 128 threads only (it was limited to 600 s per case and
   method).
-- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details) and
+  [Section 12.4](HISTORY.md#124-0175-figure-refresh-2026-11-27).
 
 #### Figure 4: Double-gross circuit, RW and RW + CC with fixed work
 
 **Wall time of fixed-work RW and RW + CC on the DEM of the double-gross circuit against the number of threads;
-versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
 
 ![Thread scaling of RW and RW + CC on the DEM of the double-gross circuit](figures/threads_dgross_circuit.png)
 
@@ -219,41 +232,49 @@ versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
   (`method=3 steps=150 wmax=5 min_hits=0`).
 - *Axes:* as in Figure 3.
 - *Result:* until 0.15.2, RW on this large matrix is limited by the memory bandwidth (each thread works on dense
-  copies of the matrix and of its transpose): at most about 15–20x faster with 0.14.0 and 11x with 0.15.2, and the SMT
-  siblings make it slower. 0.17.0 instead uses the sparse elimination (see [How to Read](#how-to-read-the-results))
-  and scales almost linearly to 32 threads (25x): 21.6 s on one thread and 0.63 s on 64 threads, 3.7 times less than
-  0.15.2 (2.36 s). RW + CC: 12.9 s on one thread and 0.75 s on 64 (0.15.2: 15.4 s and 1.17 s).
+  copies of the matrix and of its transpose; 0.15.2 sits above 0.14.0 because it also scans RW pairs on the dense
+  matrix): at most about 15–20x faster with 0.14.0 and 11x with 0.15.2, and the SMT siblings make it slower. 0.17.5
+  instead uses the sparse elimination (see [How to Read](#how-to-read-the-results)) and scales almost linearly to 32
+  threads (23.8x): 20.4 s on one thread and 0.638 s on 64 threads (31.9x), 3.7 times less than 0.15.2 (2.36 s), beating
+  every earlier version even while scanning pairs and triplets. RW + CC benefits further from the 0.17.4 RW-to-CC
+  thread handoff: 11.2 s on one thread, 0.562 s on 64 (20.0x), and 0.662 s on 128 (0.15.2: 15.4 s, 1.17 s, and 1.21 s).
 - *Not shown:* CC alone up to weight 5 (`method=2 wmax=5`), which takes under one second with 0.14.0 and later (Figure
   6 shows deeper CC rounds); its times are in HISTORY.md.
 - *Versions:* as in Figure 2; 0.9.0 ran RW + CC from $p = 2$ on only (600 s per case), so it has no speedup curve
   there.
-- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details) (and
-  [Section 11.2](HISTORY.md#112-thread-scaling-of-the-rw-stages) for 0.17.0).
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details),
+  [Section 11.2](HISTORY.md#112-thread-scaling-of-the-rw-stages), and
+  [Section 12.4](HISTORY.md#124-0175-figure-refresh-2026-11-27).
 
 #### Figure 5: bb_72 circuit, RW with fixed work on the full DEM
 
 **Wall time of 20,000 RW steps on the full DEM of the `bb_72` circuit, reduction included, against the threads;
-versions 0.9.0–0.17.0, run 2026-10-11 to 2026-11-13.**
+versions 0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
 
 ![Thread scaling of RW on the full DEM of the bb_72 circuit](figures/threads_bb72_full_dem.png)
 
 - *Run:* the $X$-basis memory circuit of the $[[72, 12, 6]]$ bivariate bicycle code with `si1000` noise and 6 rounds
   (`stim_bb/bb_72_12_6_si1000_r6_X.stim`), as its full DEM with 432 detectors and 17280 error mechanisms;
   `method=1 steps=20000 min_hits=0`: a fixed 20,000 RW steps. This is the RW throughput, not the time to find a
-  codeword of the minimum weight 6, which takes 0.092 s on 128 threads (Figure 7).
+  codeword of the minimum weight 6, which takes 0.098 s on 128 threads (Figure 7).
 - *Input stage:* every time includes reading the full DEM and, since 0.14.0, reducing it exactly to $252 \times 2232$
   (the stripped DEM with its equal columns merged); 0.12.2 and 0.9.0 search the full matrix.
 - *Axes:* left, the wall time against $p$; right, the speedup $T(1)/T(p)$ of each version (dotted: ideal).
-- *Result:* the exact reduction makes RW much faster: 0.14.0 takes 5.6 s on one thread instead of 99 s (0.12.2) and
-  163 s (0.9.0, two threads), and 0.18 s on 128 threads instead of 2.1 s and 7.2 s. 0.17.0 takes 11.2 s on one thread
-  and 0.28 s on 128: its steps are 1.25 times longer than those of 0.15.2 (8.9 s on one thread), since they also
-  shorten the candidate codewords, and they record 1.5 times more minimum-weight hits per second
-  ([HISTORY.md, Section 11.1](HISTORY.md#111-stage-ablation-16-threads)).
+- *Result:* the exact reduction makes RW much faster: 0.14.0 takes 5.56 s on one thread instead of 98.9 s (0.12.2) and
+  163 s (0.9.0, two threads), and 0.183 s on 128 threads instead of 2.14 s and 7.2 s. 0.17.5 takes 11.5 s on one thread
+  and 0.332 s on 128 (34.5x).
+- *Why 0.15.2 and 0.17.5 appear slower per step than 0.14.0:* each step does more search work on purpose—0.15.2 adds
+  RW column-pair scanning (~1.6x longer per step, 8.93 vs 5.56 s at $p = 1$), and 0.17.5 adds triplet shortening on the
+  2,376 weight-3 degeneracies of this DEM (another ~1.28x, 11.5 vs 8.93 s). With `pairs=0 rw_opt=0`, 0.17.5 takes
+  5.47 s at $p = 1$, matching 0.14.0; with both enabled, it yields higher minimum-weight hit rates per second (Figure 9)
+  and cuts median steps to $d = 6$ from 7 down to 1 (Figure 7;
+  [HISTORY.md, Section 11.1](HISTORY.md#111-stage-ablation-16-threads)).
 - *Not shown:* the complete CC search up to weight 5 (`method=2 wmax=5`, which finds nothing, since $d = 6$) and the
   exact distance with the default parameters (`method=3`), which take a fraction of a second with 0.14.0 and later,
   mostly the input stage (see Figure 6 for larger DEMs); their times are in HISTORY.md.
 - *Versions:* as in Figure 2; 0.9.0 ran from $p = 2$ on only, so it has no speedup curve.
-- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details).
+- *Details:* [HISTORY.md, Section 4](HISTORY.md#4-scaling-with-the-number-of-threads-versions-and-details) and
+  [Section 12.4](HISTORY.md#124-0175-figure-refresh-2026-11-27).
 
 #### Figure 6: Long-running CC and exact certification against threads
 
@@ -283,7 +304,7 @@ and three full circuit DEMs; 0.17.3 and 0.16.1, 2026-11-24.**
 #### Figure 7: Full DEMs, time to a minimum-weight codeword
 
 **Wall time and RW steps until RW finds a codeword of the minimum weight in the full DEMs of 12 circuits; versions
-0.9.0–0.14.6, run 2026-10-11 and 2026-10-15.**
+0.9.0–0.17.5, run 2026-10-11 to 2026-11-27.**
 
 ![Time and RW steps to a minimum-weight codeword in the full DEMs](figures/time_to_d_full_dems.png)
 
@@ -291,75 +312,92 @@ and three full circuit DEMs; 0.17.3 and 0.16.1, 2026-11-24.**
   300 s, 120 s for gross; 0.9.0 has no `min_hits`), with 128 threads and `nothrottle=1`, on the full DEMs of the ten
   Mitten circuits, the `bb_72` circuit, and the gross circuit; $d$ is the certified circuit distance (Section 2.6).
 - *Axes:* top, the wall time (logarithmic), which includes reading the DEM, merging, and the exact reduction; bottom,
-  the RW steps until the codeword was found. The bars of 0.14.x are the medians of five seeds (seven for gross), with
-  error bars from the fastest to the slowest run; 0.12.2 and 0.9.0: one run each, not run on gross; hatched: no
-  codeword of weight $d$ found in 300 s.
+  the RW steps until the codeword was found. The bars of 0.17.5 and 0.14.x are the medians of five seeds (seven for
+  gross), with error bars from the fastest to the slowest run; 0.12.2 and 0.9.0: one run each, not run on gross;
+  hatched: no codeword of weight $d$ found in 300 s.
 - *Result:* since the exact reduction of 0.14.0, a codeword of the minimum weight is found in at most 1.4 s for every
   circuit, while 0.12.2 needs up to 52 s and finds none for the two `mitten_270` circuits in 300 s, and 0.9.0 misses
-  three. With the RW pairs, 0.14.5 needs 6–30 times fewer steps than 0.14.3 where many steps are needed (`mitten_150`,
-  `mitten_210` hef, `mitten_270`, gross), and 0.14.6 about as few; the wall time is then mostly the input stage
-  (0.07–0.7 s).
-- *Versions:* 0.14.6, 0.14.5, 0.14.3, and 0.14.0 (2026-10-15); 0.12.2 and 0.9.0 (2026-10-11).
+  three. Adding RW pairs (0.14.6) and triplet shortening (0.17.5) lowers the median RW steps on every circuit: 0.17.5
+  needs 27 steps on `gross` (vs 62 in 0.14.6 and 778 in 0.14.3), 5 on `mitten_150` custom (vs 13 and 413), 130–173 on
+  `mitten_270` (vs 161–220 and 1,489–1,650), and 1 step on 6 of the 12 circuits; the wall time (0.098–0.77 s) is
+  almost entirely the input and reduction stage.
+- *Versions:* 0.17.5 (2026-11-27); 0.14.6, 0.14.3, and 0.14.0 (2026-10-15); 0.12.2 and 0.9.0 (2026-10-11).
 - *Details:* [HISTORY.md, Sections 5.2](HISTORY.md#52-full-dems-time-to-a-codeword-of-the-minimum-weight),
-  [8.1](HISTORY.md#81-full-dems-time-to-a-codeword-of-the-minimum-weight), and
-  [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146).
+  [8.1](HISTORY.md#81-full-dems-time-to-a-codeword-of-the-minimum-weight),
+  [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146), and
+  [12.4](HISTORY.md#124-0175-figure-refresh-2026-11-27).
 
-#### Figure 8: Lightest codeword against time, with and without the RW pairs
+#### Figure 8: Lightest codeword against time, with RW pairs and stages
 
-**Weight of the lightest codeword found by RW against time, without (0.14.3) and with (0.14.6) the RW pairs;
-2026-10-15.**
+**Weight of the lightest codeword found by RW against time: 0.14.3 (before pairs), 0.14.6 (RW pairs), and 0.17.5
+(RW stages + pairs); 2026-10-15 and 2026-11-27.**
 
-![The lightest codeword found against time, 0.14.3 and 0.14.6](figures/lightest_vs_time.png)
+![The lightest codeword found against time, 0.14.3, 0.14.6, and 0.17.5](figures/lightest_vs_time.png)
 
 - *Run:* RW (`method=1 min_hits=0 steps=10^9`) on the full DEMs of the double-gross circuit (until a codeword of
   weight 18, `wmin=18`, three seeds) and of the `bb_360` circuit (until weight 23 or 240 s, two seeds), with the
-  default 32 RW threads (the thread throttle, see [How to Read](#how-to-read-the-results)); and on the classical codes
-  `c1920H` ($n = 1920$, $k = 641$) and a random (3,6)-regular LDPC code with $n = 3000$, for 30 s on 128 threads,
-  three seeds.
+  default thread throttle (32 RW threads in 0.14.x, 128 in 0.17.5 because sparse elimination avoids large dense copies,
+  see [How to Read](#how-to-read-the-results)); and on the classical codes `c1920H` ($n = 1920$, $k = 641$) and a
+  random (3,6)-regular LDPC code with $n = 3000$, for 30 s on 128 threads, three seeds.
 - *Axes:* the weight of the lightest codeword found so far against the time since the start of the run (logarithmic),
-  which includes reading and reducing the input (about 1 s and 2 s for the two DEMs); one line per run, and each step
-  down is a lighter codeword.
-- *Result:* the RW pairs (since 0.14.4) find light codewords much sooner: weight 18 of the double-gross circuit after
-  1.5–2.4 s instead of 9.6–18.8 s, and weight 23 of `bb_360` after 56 and 119 s, while 0.14.3 found only 24 in 240 s.
-  For the two classical codes, the lightest codeword found is lighter at all times; at 30 s, 227–234 against 253–265
-  for `c1920H`, and 396–402 against 410–426 for the LDPC code.
+  which includes reading and reducing the input (0.91 s and 1.5 s in 0.17.5; about 1 s and 2 s in 0.14.x); one line
+  per run, and each step down is a lighter codeword.
+- *Result:* the RW pairs (0.14.6) already cut the search time sharply compared to 0.14.3, and 0.17.5 adds sparse
+  elimination and triplet shortening: weight 18 of the double-gross circuit is reached in 1.16–1.53 s (wall 1.35–1.74 s,
+  of which 0.91 s is input/reduction) vs 1.52–2.37 s in 0.14.6 and 9.57–18.8 s in 0.14.3; weight 23 of `bb_360` is
+  reached in **3.00 and 8.60 s** (wall 3.35 and 8.96 s, 183 and 1,096 steps) vs 56.0 and 119 s in 0.14.6 (2,242 and
+  5,132 steps), while 0.14.3 found only 24 in 240 s. On the two classical codes (where $\mathcal{T}_3 = \emptyset$),
+  0.17.5 tracks 0.14.6 closely at 30 s: 232–241 against 227–234 (0.14.3: 253–265) for `c1920H`, and 396–402 (matching
+  0.14.6; 0.14.3: 410–426) for `ldpc3000`.
 - *Note:* 18 is not the distance of the double-gross circuit: an external exact search verified a codeword of weight 16
   and the bracket $[13, 16]$ (Section 2.6; on one round, row slabs find weight 16 in 0.08–0.14 s,
   [HISTORY.md, Section 12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174)).
-- *Versions:* 0.14.3 and 0.14.6 (2026-10-15).
+- *Versions:* 0.17.5 (2026-11-27); 0.14.3 and 0.14.6 (2026-10-15).
 - *Details:* [HISTORY.md, Sections 8.2](HISTORY.md#82-large-dems-the-time-to-light-codewords),
-  [8.3](HISTORY.md#83-codes-with-a-large-distance), and [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146).
+  [8.3](HISTORY.md#83-codes-with-a-large-distance), [8.7](HISTORY.md#87-a-work-bound-for-the-rw-pairs-0146), and
+  [12.4](HISTORY.md#124-0175-figure-refresh-2026-11-27).
 
-#### Figure 9: RW stages of 0.17.0 against threads
+#### Figure 9: RW stages of 0.17.5 against threads
 
-**RW steps and minimum-weight hits per second against the threads: the RW of 0.16.1 and the RW stages of 0.17.0;
-2026-11-13.**
+**RW steps and minimum-weight hits per second against the threads: baseline RW (`rw_opt=0`) and the automatic RW stages
+of 0.17.5 (`rw_opt=-1`); 2026-11-27.**
 
-![RW stages of 0.17.0 against threads](figures/threads_rw_stages.png)
+![RW stages of 0.17.5 against threads](figures/threads_rw_stages.png)
 
 - *Run:* `method=1` with a fixed step limit, or a 25–30 s timeout on the slower inputs (as given in the panel titles),
-  with `rw_opt=0` (the RW of 0.16.1) and with `rw_opt=-1` (the automatic stages of 0.17.0, which shorten the
-  candidate codewords and record the codewords found in a step together, and which also choose the sparse elimination
-  on the two wide DEMs, `bb_360` and `bb_756`). Top two rows: four inputs on which RW finds minimum-weight codewords
-  often (`min_hits=10^9`, so that RW does not stop early), with `nothrottle=1`; the fourth is the code-sized model of
-  the `bb_72` circuit, a $36 \times 180$ matrix with one column per net effect of a single fault on the checks, whose
-  distance is a certified lower bound on the circuit distance
+  with `rw_opt=0` (baseline RW without triplet/slab/sparse stages) and with `rw_opt=-1` (the automatic stages of
+  0.17.5, which shorten candidate codewords with triplets, enable row slabs on no-round DEMs with $m \le 640$, and
+  select sparse elimination on the two wide DEMs, `bb_360` and `bb_756`). Top two rows: four inputs on which RW finds
+  minimum-weight codewords often (`min_hits=10^9`, so that RW does not stop early), with `nothrottle=1`; the fourth is
+  the code-sized model of the `bb_72` circuit, a $36 \times 180$ matrix with one column per net effect of a single
+  fault on the checks, whose distance is a certified lower bound on the circuit distance
   ([HISTORY.md, Section 6.3](HISTORY.md#63-certified-lower-bounds-from-a-code-sized-model)). Bottom row: three deep or
   wide DEMs (`min_hits=0`), with the default thread throttle and with `nothrottle=1`, and, on the right, the RW
   threads which the default throttle allowed.
 - *Axes:* the RW steps per second (top and bottom rows) and the minimum-weight hits per second (middle row; a hit is an
   RW step finding one of the up to 100 stored codewords of the minimum weight) against $p$. The rates use the RW time
   reported by the binary, without reading the input.
-- *Result:* where hits are frequent, 0.17.0 records them per step, which removes the contention of the threads on the
-  shared codeword table of 0.16.1: on the full `bb_72` DEM, the step rate grows 63x from one to 128 threads instead of
-  34x, and at 128 threads, 0.17.0 records 1.9x the hits per second. On the wide `bb_360` DEM, the sparse elimination
-  runs 2.3x the steps per second on one thread. With the default throttle, the short runs of the bottom row get few RW
-  threads (8 for `bb_360` with 80 steps, 3 for `bb_756` with 24), equally for both modes; in sustained 1,280-step runs
-  (`0.17.3`), `-1` reaches 311 steps/s on `bb_360` (9.9–13.5x `0`) and 8.35 steps/s on `bb_756` (5.3–7.7x `0`).
-- *Versions:* 0.17.0 (2026-11-13), with `rw_opt=0` for the RW of 0.16.1.
+- *Result:* on the full `bb_72` DEM, `-1` scales 61.4x from 1 to 128 threads (`1,580` to `97,087 steps/s`) and records
+  `50,735 hits/s` at 128 threads (1.32x `rw_opt=0`'s `38,561`); on `2bga_102` $X$, `-1` reaches `10,701 steps/s` and
+  `71.2 hits/s` at 128 threads (1.19x `0`'s `59.7`, and +60% above 0.17.0); on `bb_72` model, `-1` peaks at
+  `524,470 hits/s` at $p = 32$ (1.37x `0`) and `346,061` at $p = 128$ (1.50x `0`). On `mitten_150` $T = 1$, automatic
+  row slabs (`0x15`, added in 0.17.3) run on every second step, lifting throughput to `416,667 steps/s` at 128 threads
+  (1.53x `0`), while weight-7 codewords on this input are found only by uniform steps (`7,458` vs `15,088 hits/s` for
+  `0`; on single-round double gross, the same rule reaches weight 16 in 11/11 seeds vs 0/11 without slabs). On the
+  wide DEMs, `-1` reaches `4.86 steps/s` at $p = 1$ (2.38x `0`) and `159.4 steps/s` at $p = 64$ unthrottled on `bb_360`
+  (5.2x `0`'s `30.4`), and `3.05 / 4.14 / 2.82 steps/s` at $p = 16 / 64 / 128$ unthrottled on `bb_756` (2.9–4.8x `0`).
+  With the default throttle, short runs get few RW threads (8 for `bb_360` with 80 steps: `39.4–40.8` vs
+  `11.2–13.3 steps/s`; 3 for `bb_756` with 24 steps, where no full step completes within 25 s because aborted steps are
+  no longer counted since 0.17.1); in sustained 1,280-step runs (0.17.3), `-1` reaches 311 steps/s on `bb_360`
+  (9.9–13.5x `0`) and 8.35 steps/s on `bb_756` (5.3–7.7x `0`).
+- *Why `rw_opt=-1` has fewer steps/s on some top-row panels:* on `bb_72` full, `2bga_102` $X$, and the `bb_72` model,
+  each `-1` step spends extra work on triplet shortening and per-step candidate processing, which lowers raw steps/s
+  (top row) in order to produce higher minimum-weight **hits per second** (middle row).
+- *Versions:* 0.17.5 (2026-11-27), comparing `rw_opt=-1` against `rw_opt=0`.
 - *Details:* [HISTORY.md, Sections 11.2](HISTORY.md#112-thread-scaling-of-the-rw-stages),
-  [11.1](HISTORY.md#111-stage-ablation-16-threads), and
-  [12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174).
+  [11.1](HISTORY.md#111-stage-ablation-16-threads),
+  [12.3](HISTORY.md#123-rw-pipeline-validation-and-open-points-of-01710174), and
+  [12.4](HISTORY.md#124-0175-figure-refresh-2026-11-27).
 
 ---
 
@@ -483,10 +521,11 @@ budget).
   canonical DEM builder ([`manifest/make_inputs.py`](manifest/make_inputs.py); harness in
   [`tools/bench/`](../tools/bench/README.md)).
 - `figures/`: the figures of the [Key Results](#key-results): 128-thread certification and long-running CC/`method=3`
-  scaling (Section 12 of [HISTORY.md](HISTORY.md)), fixed-work scaling across versions (Section 4), the time to a
-  minimum-weight codeword in the full DEMs of the circuits (Sections 5 and 8), the lightest codeword found against time
-  with and without the RW pairs (Section 8), and the RW scaling of the stages of 0.17.0 (Section 11); made by
-  `scratch/bench_doc/make_doc_figures.py` and `scratch/bench_fold/make_phase2_figures.py` (not in the repository).
+  scaling (Section 12 of [HISTORY.md](HISTORY.md)), fixed-work scaling across versions (Sections 4 and 12.4), the time
+  to a minimum-weight codeword in the full DEMs of the circuits (Sections 5, 8, and 12.4), the lightest codeword found
+  against time with RW pairs and stages (Sections 8 and 12.4), and the RW scaling of the stages of 0.17.5 (Sections 11
+  and 12.4); made by `scratch/bench_0.17.5/make_figures_0175.py` and `scratch/bench_fold/make_phase2_figures.py` (not
+  in the repository).
 
 ### Running `dist_m4ri` on the Inputs
 
